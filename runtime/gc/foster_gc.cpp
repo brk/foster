@@ -37,6 +37,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 // can do effective dead-code elimination. If we were JIT compiling
 // the GC we could (re-)specialize these config vars at runtime...
 #define GCLOG_DETAIL 0
+#define GCLOG_PRINT_LINE_MARKS 0
 #define ENABLE_LINE_GCLOG 0
 #define ENABLE_GCLOG_PREP 0
 #define ENABLE_GCLOG_ENDGC 1
@@ -56,7 +57,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define TRACK_NUM_ALLOC_BYTES         1
 #define TRACK_NUM_REMSET_ROOTS        1
 #define TRACK_NUM_OBJECTS_MARKED      1
-#define TRACK_WRITE_BARRIER_COUNTS    0
+#define TRACK_WRITE_BARRIER_COUNTS    1
 #define TRACK_BYTES_KEPT_ENTRIES      0
 #define TRACK_BYTES_ALLOCATED_ENTRIES 0
 #define TRACK_BYTES_ALLOCATED_PINHOOK 0
@@ -68,7 +69,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 // a way of easily overriding-without-overwriting the defaults.
 #include "gc/foster_gc_reconfig-inl.h"
 
-const double kFosterDefragReserveFraction = 0.02;
+const double kFosterDefragReserveFraction = 0.01;
 const ssize_t inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
 
 extern void* foster__typeMapList[];
@@ -104,6 +105,7 @@ extern void* foster__typeMapList[];
 static_assert(IMMIX_GRANULES_PER_LINE == 16,    "documenting expected values");
 static_assert(IMMIX_GRANULES_PER_BLOCK == 2048, "documenting expected values");
 
+uint64_t g_approx_lines_allocated_since_last_collection = 0;
 
 int num_free_lines = 0; // TODO move to gcglobals
 
@@ -111,10 +113,6 @@ extern "C" {
   void foster_pin_hook_memalloc_cell(uint64_t nbytes);
   void foster_pin_hook_memalloc_array(uint64_t nbytes);
 }
-
-//#define remset_t std::unordered_set<tori**>
-//#define remset_t std::set<tori**>
-#define remset_t google::dense_hash_set<tori**>
 
 namespace foster {
 namespace runtime {
@@ -213,6 +211,8 @@ struct free_linegroup {
   free_linegroup* next;
 };
 
+int linegroup_size_in_lines(free_linegroup* g) { return distance((void*) g, g->bound) / IMMIX_BYTES_PER_LINE; }
+
 struct used_linegroup {
   void*           base;
   int             count;
@@ -238,22 +238,6 @@ struct used_linegroup {
   void clear_line_and_object_mark_bits();
 };
 
-struct byte_limit {
-  ssize_t frame15s_left;
-  ssize_t max_size_in_lines;
-
-  byte_limit(ssize_t maxbytes) {
-    // Round up; a request for 10K should be one frame15, not zero.
-    this->frame15s_left = (maxbytes + ((1 << 15) - 1)) >> 15;
-    this->max_size_in_lines = this->frame15s_left * IMMIX_LINES_PER_FRAME15;
-
-    auto mb = foster::humanize_s(double(maxbytes), "B");
-    auto fb = foster::humanize_s(double(frame15s_left * (1 << 15)), "B");
-    fprintf(gclog, "byte_limit: maxbytes = %s, maxframe15s = %ld, framebytes=%s, maxlines=%ld\n",
-          mb.c_str(), frame15s_left, fb.c_str(), frame15s_left * IMMIX_LINES_PER_FRAME15);
-  }
-};
-
 typedef void* ret_addr;
 typedef void* frameptr;
 // I've looked at using std::unordered_map or google::sparsehash instead,
@@ -261,6 +245,37 @@ typedef void* frameptr;
 // because chromium_base (etc) already uses std::map...
 typedef std::map<frameptr, const stackmap::PointCluster*> ClusterMap;
 // }}}
+
+struct remset_t {
+  remset_t() { dhs.set_empty_key(nullptr); }
+
+  void insert(tori** slot) {
+    buffer.push_back(slot);
+    if (buffer.size() == 100) {
+      consolidate(); 
+    }
+  }
+
+  void consolidate() {
+    for (auto slot : buffer) {
+      dhs.insert(slot);
+    }
+    buffer.clear();
+  }
+
+  std::vector<tori**> move_to_vector() {
+    consolidate();
+    std::vector<tori**> slots(dhs.begin(), dhs.end());
+    dhs.clear();
+    return slots;
+  }
+
+  void clear() { dhs.clear(); buffer.clear(); }
+private:
+  std::vector<tori**> buffer;
+  google::dense_hash_set<tori**> dhs;
+};
+
 
 uint32_t fold_64_to_32(uint64_t x) {
   return uint32_t(x) ^ uint32_t(x >> uint64_t(32));
@@ -288,8 +303,7 @@ public:
 
   virtual void visit_root(unchecked_ptr* root, const char* slotname) = 0;
 
-  virtual int64_t immix_sweep(clocktimer<false>& phase,
-                              clocktimer<false>& gcstart) = 0;
+  virtual int64_t immix_sweep(clocktimer<false>& phase) = 0;
 
   virtual void trim_remset() = 0;
   virtual remset_t& get_incoming_ptr_addrs() = 0;
@@ -448,7 +462,7 @@ struct condemned_set {
 
   // Use line marks to reclaim space, then reset linemaps and object marks.
   int64_t sweep_condemned(Allocator* active_space,
-                          clocktimer<false>& phase, clocktimer<false>& gcstart,
+                          clocktimer<false>& phase,
                           bool hadEmptyRootSet);
 
   int64_t approx_condemned_capacity_in_bytes(Allocator* active_space);
@@ -468,8 +482,6 @@ struct GCGlobals {
   uint32_t current_subheap_hash;
 
   condemned_set<Allocator> condemned_set;
-
-  byte_limit* space_limit;
 
   ClusterMap clusterForAddress;
   memory_range typemap_memory;
@@ -541,28 +553,25 @@ struct GCGlobals {
 GCGlobals<immix_heap> gcglobals;
 
 void reset_marked_histogram() {
-  for (int i = 0; i < 128; ++i) {
-    gcglobals.marked_histogram[i] = 0;
-  }
+  for (int i = 0; i < 128; ++i) { gcglobals.marked_histogram[i] = 0; }
 }
 
 int num_avail_defrag_frame15s();
 int num_assigned_defrag_frame15s();
 
-int select_defrag_threshold() {
-  int64_t reserved = int64_t(double(gcglobals.space_limit->max_size_in_lines) * kFosterDefragReserveFraction);
-  // Be a little bit aggressive: the "required" count is inflated due to
-  // internal fragmentation, and it's opportunistic anyways.
-  int64_t avail = int64_t(double(reserved) * 1.25);
+int select_defrag_threshold(double defrag_pad_factor) {
+  int64_t reserved = int64_t(double(num_avail_defrag_frame15s() * IMMIX_LINES_PER_FRAME15));
+  int64_t avail = int64_t(double(reserved) * defrag_pad_factor);
   int64_t required = 0;
 
   int thresh = 128;
   while (thresh-- > 0) {
     required += gcglobals.marked_histogram[thresh];
     if (required > avail) {
-      fprintf(gclog, "defrag threshold: %d; backing off from %zd to %zd lines assumed needed vs %zd lines assumed avail (%d/%d frames)\n",
+      fprintf(gclog, "defrag threshold: %d; backing off from %zd to %zd lines assumed needed vs %zd lines assumed avail (%d/%d frames = %d actual lines)\n",
         thresh + 1,
-        required, required - gcglobals.marked_histogram[thresh], avail, num_avail_defrag_frame15s(), num_assigned_defrag_frame15s());
+        required, required - gcglobals.marked_histogram[thresh], avail, num_avail_defrag_frame15s(), num_assigned_defrag_frame15s(),
+        num_avail_defrag_frame15s() * IMMIX_LINES_PER_FRAME15);
       return thresh + 1;
     }
   }
@@ -636,6 +645,8 @@ void set_associated_for_frame15_id(frame15_id fid, void* v) {
 }
 
 inline bool obj_is_marked(heap_cell* obj) {
+  // Young objects aren't marked, but generally we only take shortcuts for
+  // marked objects, not unmarked ones, so checking the young bit is pointless.
   uint8_t* markbyte = &gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)];
   return *markbyte == 1;
 }
@@ -645,6 +656,7 @@ frame15kind frame15_classification(void* addr);
 immix_heap* heap_for(void* val);
 
 inline void do_mark_obj(heap_cell* obj) {
+  obj->mark_not_young();
   if (GCLOG_DETAIL > 3) { fprintf(gclog, "setting granule bit  for object %p in frame %u\n", obj, frame15_id_of(obj)); }
   gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)] = 1;
 }
@@ -834,21 +846,20 @@ void set_frame15_classification(void* addr, frame15kind v) {
 // Returns either null (for static data) or a valid immix_space*.
 immix_heap* heap_for(void* addr);
 
+// Markable objects live in the upper bits of address space;
+// the low 4 GB is for constants, (immutable) globals, etc.
 bool non_markable_addr(void* addr) {
-  intptr_t signed_val = intptr_t(addr);
-  return signed_val < intptr_t(0x100000000ULL);
+  return uintptr_t(addr) < uintptr_t(0x100000000ULL);
 }
 
 bool non_kosher_addr(void* addr) {
-  intptr_t signed_val = intptr_t(addr);
-  return signed_val < 0x100000;
-  // Including negative values, which correspond to high-bit-set addrs;
-  // this implies that we can't use the 3rd GB of the 32-bit addr pace.
+  // The signed test catches negative values, which we assume are the
+  // result of looking at data that was supposed to be a pointer but isn't.
+  return intptr_t(addr) < 0x1000000;
 }
 
-// TODO make sure the addresses we use for allocation are kosher...
 bool owned_by(tori* body, immix_heap* space) {
-  if (non_kosher_addr(body)) {
+  if (non_markable_addr(body)) {
     return false;
   }
 
@@ -1021,9 +1032,7 @@ namespace helpers {
   }
 
   void do_trim_remset(remset_t& incoming_ptr_addrs, immix_heap* space) {
-    std::vector<tori**> slots(incoming_ptr_addrs.begin(), incoming_ptr_addrs.end());
-    incoming_ptr_addrs.clear();
-
+    std::vector<tori**> slots = incoming_ptr_addrs.move_to_vector();
     //fprintf(gclog, "gc %d: pre-trim remset contains %zu slots in space %p\n", 
     //  gcglobals.num_gcs_triggered, slots.size(), space);
     for (tori** slot : slots) {
@@ -1058,6 +1067,7 @@ frame21* allocate_frame21() {
   return rv;
 }
 
+// Returning un-needed memory to the OS is good, but churning virtual memory is not.
 void deallocate_frame21(frame21* f) {
   gcglobals.all_frame21s.erase(f);
   pages_unmap(f, 1 << 21);
@@ -1066,10 +1076,18 @@ void deallocate_frame21(frame21* f) {
 struct frame15_allocator {
   frame15_allocator() : num_defrag_reserved_frames(0), next_frame15(nullptr) {}
 
-  void set_defrag_reserved_frames(byte_limit* b) {
+  void set_heap_size(ssize_t maxbytes) {
+    // Round up; a request for 10K should be one frame15, not zero.
+    this->frame15s_left = (maxbytes + ((1 << 15) - 1)) >> 15;
+
+    auto mb = foster::humanize_s(double(maxbytes), "B");
+    auto fb = foster::humanize_s(double(frame15s_left * (1 << 15)), "B");
+    fprintf(gclog, "byte_limit: maxbytes = %s, maxframe15s = %ld, framebytes=%s, maxlines=%ld\n",
+          mb.c_str(), frame15s_left, fb.c_str(), frame15s_left * IMMIX_LINES_PER_FRAME15);
+
     this->num_defrag_reserved_frames =
-            int(double(b->frame15s_left) * kFosterDefragReserveFraction) + 1;
-    b->frame15s_left -= num_defrag_reserved_frames;
+            int(double(frame15s_left) * kFosterDefragReserveFraction) + 1;
+    frame15s_left -= num_defrag_reserved_frames;
     for (int i = 0; i < num_defrag_reserved_frames; ++i) {
       defrag_frame15s.push_back(get_frame15());
     }
@@ -1110,11 +1128,14 @@ struct frame15_allocator {
       defrag_frame15s.push_back(f);
       
     } else {
+      ++frame15s_left;
       spare_frame15s.push_back(f);
     }
   }
 
   void give_frame21(frame21* f) {
+    frame15s_left += IMMIX_ACTIVE_F15_PER_F21;
+
     if (MEMSET_FREED_MEMORY) { clear_frame21(f); }
     fprintf(gclog, "marking frame21 %p, from space %p, as spare\n", f, heap_for(f));
     spare_frame21s.push_back(f);
@@ -1132,8 +1153,14 @@ private:
     return rv;
   }
 
+  ssize_t frame15s_left;
 public:
+  bool empty() { return frame15s_left == 0; }
+
+  // Precondition: !empty()
   frame15* get_frame15() {
+    --frame15s_left;
+
     if (!spare_frame15s.empty()) {
       frame15* f = spare_frame15s.back(); spare_frame15s.pop_back();
       return f;
@@ -1174,6 +1201,7 @@ public:
     spare_line_frame15s.push_back(f);
   }
 
+  // TODO this has a different invariant...
   immix_line_frame15* get_line_frame15() {
     if (!spare_line_frame15s.empty()) {
       auto f = spare_line_frame15s.back(); spare_line_frame15s.pop_back();
@@ -1671,7 +1699,7 @@ struct immix_common {
     remset_t& incoming_ptr_addrs = space->get_incoming_ptr_addrs();
     uint64_t numRemSetRoots = 0;
 
-    std::vector<tori**> slots(incoming_ptr_addrs.begin(), incoming_ptr_addrs.end());
+    std::vector<tori**> slots = incoming_ptr_addrs.move_to_vector();
     
     for (tori** src_slot : slots) {
       // We can ignore the remembered set root if the source is also getting collected.
@@ -1733,17 +1761,13 @@ public:
   void note_clean_frame15(frame15* f15) { clean_frame15s.push_back(f15); }
   void note_clean_frame21(frame21* f21) { clean_frame21s.push_back(f21); }
 
-  void release_clean_frames(byte_limit* lim) {
-    lim->frame15s_left += frame15s_in_reserve_clean();
-
+  void release_clean_frames() {
     for (auto f15 : clean_frame15s) {
       global_frame15_allocator.give_frame15(f15);
     }
 
     for (auto f21 : clean_frame21s) {
       global_frame15_allocator.give_frame21(f21);
-      //fprintf(gclog, "deallocating frame21: %p\n", f21);
-      //deallocate_frame21(f21);
     }
 
     clean_frame15s.clear();
@@ -2075,7 +2099,7 @@ public:
     return bytes;
   }
 
-  void reclaim_frames(byte_limit* lim) {
+  void reclaim_frames() {
     if (freeable_frames.empty()) { return; }
 
     std::vector<used_linegroup> avail(avail_lines);
@@ -2091,7 +2115,6 @@ public:
     }
 
     for (frame15_id fid : freeable_frames) {
-      ++lim->frame15s_left;
       global_frame15_allocator.give_line_frame15((immix_line_frame15*) frame15_for_frame15_id(fid));
       gcglobals.lazy_mapped_frame15info[fid].num_available_lines_at_last_collection = 0;
     }
@@ -2143,12 +2166,7 @@ private:
 public:
   immix_line_space() : condemned_flag(false) {
     this->next_collection_sticky = !__foster_globals.disable_sticky;
-    if (GCLOG_DETAIL > 2) {
-      fprintf(gclog, "new immix_line_space %p, current byte limit: %zd f15s\n", this,
-          gcglobals.space_limit->frame15s_left);
-    }
-
-    incoming_ptr_addrs.set_empty_key(nullptr);
+    if (GCLOG_DETAIL > 2) { fprintf(gclog, "new immix_line_space %p\n", this); }
   }
 
   virtual void dump_stats(FILE* json) {
@@ -2171,7 +2189,7 @@ public:
   }
 
   immix_line_frame15* get_new_frame(bool secondtry = false) {
-    if (gcglobals.space_limit->frame15s_left == 0) {
+    if (global_frame15_allocator.empty()) {
       {
         condemned_set_status_manager tmp(condemned_set_status::whole_heap_condemned);
         if (GCLOG_DETAIL > 2) { fprintf(gclog, "get_new_(line)frame triggering immix gc\n"); }
@@ -2180,16 +2198,11 @@ public:
         }
       }
 
-      if (GCLOG_DETAIL > 2) {
-        fprintf(gclog, "forced line-frame gc reclaimed %zd frames\n", gcglobals.space_limit->frame15s_left);
-      }
-
       if (secondtry) {
         helpers::oops_we_died_from_heap_starvation();
       } else return get_new_frame(true);
     }
 
-    --gcglobals.space_limit->frame15s_left;
     auto lineframe = global_frame15_allocator.get_line_frame15();
     gc_assert(! is_in_metadata_frame(lineframe), "shouldn't line allocate into a metadata frame!");
     designate_as_lineframe(lineframe);
@@ -2273,8 +2286,7 @@ public:
 
   // TODO should mark-clearing and sweeping be handled via condemned sets?
   //
-  virtual int64_t immix_sweep(clocktimer<false>& phase,
-                              clocktimer<false>& gcstart) { // immix_line_sweep / sweep_line_space
+  virtual int64_t immix_sweep(clocktimer<false>& phase) { // immix_line_sweep / sweep_line_space
     int64_t num_lines_reclaimed = 0;
     laa.sweep_arrays();
 
@@ -2441,6 +2453,8 @@ void immix_line_allocator::ensure_sufficient_lines(immix_line_space* owner, int6
   owner->establish_ownership_for_allocation(current_frame, cell_size);
 }
 
+void process_worklist(immix_heap* active_space, immix_common* common);
+
 bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     gcglobals.num_gcs_triggered += 1;
     if (!voluntary) { gcglobals.num_gcs_triggered_involuntarily++; }
@@ -2453,6 +2467,7 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     int64_t t0 = __foster_getticks_start();
 #endif
 
+    g_approx_lines_allocated_since_last_collection = 0;
     gcglobals.lines_live_at_whole_heap_gc = 0;
     auto num_marked_at_start   = gcglobals.num_objects_marked_total;
     auto bytes_marked_at_start = gcglobals.alloc_bytes_marked_total;
@@ -2461,9 +2476,22 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
 
     if (isWholeHeapGC) {
       if (gcglobals.last_full_gc_fragmentation_percentage > 40.0) {
-        gcglobals.evac_threshold = select_defrag_threshold();
+        // This dynamically corrects for the (a priori unknown) density
+        // of lines on defragmented frames. A factor of 2.0 implies that
+        // lines selected for defragmentation are, on average, half full.
+        // The density of lines on defragmentation-candidate frames is
+        // a priori unknown. We assume lines are 25% full. Note: the goal
+        // of this guess is not to maximize the amount of data copied into
+        // our defrag reserve; the ideal is to defrag just enough that
+        // (rare) medium allocations don't cause premature triggering of GC.
+        // A runtime-adaptive scheme to adjust the pad factor can consistently
+        // use more of the defrag reserve, but doing so usually just degrades
+        // performance, since the extra copying has more cost than benefit.
+        double defrag_pad_factor = 4.0;
+        gcglobals.evac_threshold = select_defrag_threshold(defrag_pad_factor);
         reset_marked_histogram();
       } else {
+        // Disable evacuation because there isn't much fragmentation to eliminate.
         gcglobals.evac_threshold = 0;
       }
     }
@@ -2474,7 +2502,7 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     uint64_t numGenRoots = 0;
     uint64_t numRemSetRoots = 0;
     gcglobals.condemned_set.prepare_for_collection(active_space, voluntary, this, &numGenRoots, &numRemSetRoots);
-    auto markResettingAndRemsetTracing_us = phase.elapsed_us();
+    auto markResettingAndRemsetCollection_us = phase.elapsed_us();
 
     fprintf(gclog, "# generational roots: %zu; # subheap roots: %zu\n", numGenRoots, numRemSetRoots);
 
@@ -2510,12 +2538,14 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     //fprintf(gclog, "num condemned + remset roots: %zu\n", numCondemnedRoots + numRemSetRoots);
     //double trace_ms = ct.elapsed_ms();
 
+    auto rootCollection_us = phase.elapsed_us();
+
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
     hdr_record_value(gcglobals.hist_gc_rootscan_ticks, __foster_getticks_elapsed(phaseStartTicks, __foster_getticks_end()));
 #endif
 
     //hdr_record_value(gcglobals.hist_gc_stackscan_roots, gNumRootsScanned);
-
+    phase.start();
     foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
     foster_bare_coro*  coro = *coro_slot;
     if (coro) {
@@ -2529,14 +2559,7 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     }
 
     //ct.start();
-    switch (gcglobals.condemned_set.status) {
-    case                 condemned_set_status::single_subheap_condemned:
-      immix_worklist.process<condemned_set_status::single_subheap_condemned>(active_space, *this);
-    case                 condemned_set_status::per_frame_condemned:
-      immix_worklist.process<condemned_set_status::per_frame_condemned>(active_space, *this);
-    case                 condemned_set_status::whole_heap_condemned:
-      immix_worklist.process<condemned_set_status::whole_heap_condemned>(active_space, *this);
-    }
+    process_worklist(active_space, this);
     //double worklist_ms = ct.elapsed_ms();
 
     auto deltaRecursiveMarking_us = phase.elapsed_us();
@@ -2546,14 +2569,14 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
 #endif
 
     //ct.start();
-
     int64_t approx_condemned_space_in_lines =
               gcglobals.condemned_set.approx_condemned_capacity_in_bytes(active_space)
                 / IMMIX_BYTES_PER_LINE;
 
     bool hadEmptyRootSet = false; // (numCondemnedRoots + numRemSetRoots + numGenRoots) == 0;
-    int64_t num_lines_reclaimed = gcglobals.condemned_set.sweep_condemned(active_space, phase, gcstart, hadEmptyRootSet);
+    int64_t num_lines_reclaimed = gcglobals.condemned_set.sweep_condemned(active_space, phase, hadEmptyRootSet);
     //double sweep_ms = ct.elapsed_ms();
+    double sweep_us = phase.elapsed_us();
 
     uint64_t bytes_live = gcglobals.alloc_bytes_marked_total - bytes_marked_at_start;
     uint64_t bytes_used = gcglobals.lines_live_at_whole_heap_gc * uint64_t(IMMIX_BYTES_PER_LINE);
@@ -2587,11 +2610,20 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
         gcglobals.max_bytes_live_at_whole_heap_gc =
           std::max(gcglobals.max_bytes_live_at_whole_heap_gc, bytes_live);
       }
-      fprintf(gclog, "%zu bytes live in %zu line bytes; %f%% overhead; %f%% of %zd condemned lines are live\n",
-        bytes_live, bytes_used,
-        byte_level_fragmentation_percentage,
-        ((double(gcglobals.lines_live_at_whole_heap_gc) / double(approx_condemned_space_in_lines)) * 100.0),
-        approx_condemned_space_in_lines);
+      if (was_sticky_collection) {
+        fprintf(gclog, "%zu bytes live / %zu line bytes allocated = %f%% overhead; ",
+          bytes_live, g_approx_lines_allocated_since_last_collection * IMMIX_BYTES_PER_LINE,
+              ((double(bytes_used) / double(g_approx_lines_allocated_since_last_collection * IMMIX_BYTES_PER_LINE)) - 1.0) * 100.0);
+        fprintf(gclog, "%.1f%% of %zd condemned lines are live\n",
+          ((double(gcglobals.lines_live_at_whole_heap_gc) / double(approx_condemned_space_in_lines)) * 100.0),
+          approx_condemned_space_in_lines);
+      } else {
+        fprintf(gclog, "%zu bytes live in %zu line bytes; %f%% overhead; %f%% of %zd condemned lines are live\n",
+          bytes_live, bytes_used,
+          byte_level_fragmentation_percentage,
+          ((double(gcglobals.lines_live_at_whole_heap_gc) / double(approx_condemned_space_in_lines)) * 100.0),
+          approx_condemned_space_in_lines);
+      }
     }
   }
 
@@ -2610,14 +2642,33 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     if (isWholeHeapGC) {
       if (ENABLE_GC_TIMING) {
         double delta_us = gcstart.elapsed_us();
-        fprintf(gclog, "\ttook %zd us which was %f%% marking\n",
+        double other_us = delta_us - (rootCollection_us + deltaRecursiveMarking_us + sweep_us + markResettingAndRemsetCollection_us);
+        fprintf(gclog, "\ttook %zd us which was %.2f%% stack root collection, %.2f%% (%.1f us) from remsets & mark resetting, %.2f%% marking, %.2f%% sweeping (%.1f us), %.2f%% other (%.1f us)\n",
                           int64_t(delta_us),
-                          (deltaRecursiveMarking_us * 100.0)/delta_us);      }
+                          (rootCollection_us * 100.0)/delta_us,
+                          (markResettingAndRemsetCollection_us * 100.0)/delta_us, markResettingAndRemsetCollection_us,
+                          (deltaRecursiveMarking_us * 100.0)/delta_us,
+                          (sweep_us * 100.0)/delta_us, sweep_us,
+                          (other_us * 100.0)/delta_us, other_us
+                          );
+
+        //double collection_us = deltaRecursiveMarking_us + sweep_us;
+        //g_sweeping_total_us += sweep_us;
+        double lines_per_us = double(num_lines_reclaimed) / delta_us;
+        double ns_per_line = (delta_us * 1000.0) / double(num_lines_reclaimed);
+        fprintf(gclog, "    lines/us: %.2f;  ns/line: %.2f\n", lines_per_us, ns_per_line);
+        
+        //fprintf(gclog, "Sweeping reclaimed %zd lines in %f us.     (total RC sweeping time: %.2f us)\n", num_lines_reclaimed, sweeping_us, g_rc_sweeping_total_us);
+
+      }
 /*
       fprintf(gclog, "       num_free_lines (line spaces only): %d, num avail bytes: %zd (%zd lines)\n", num_free_lines,
                                        global_immix_line_allocator.count_available_bytes(),
                                        global_immix_line_allocator.count_available_bytes() / IMMIX_BYTES_PER_LINE); num_free_lines = 0;
                                        */
+
+
+
       fprintf(gclog, "\t/endgc %d of immix heap %p, voluntary? %d; gctype %d\n\n", gcglobals.num_gcs_triggered,
                                                 active_space, int(voluntary), int(gcglobals.condemned_set.status));
 
@@ -2659,6 +2710,7 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
         // Lower the yield threshold if we've raised it.
         if (gcglobals.yield_percentage_threshold >= (4.0 + __foster_globals.sticky_base_threshold)) {
           gcglobals.yield_percentage_threshold -= 5.0;
+          fprintf(gclog, "Adjusted the sticky yield threshold to %.1f\n", gcglobals.yield_percentage_threshold);
         }
       }
       return need_immediate_recollection;
@@ -2735,14 +2787,13 @@ int64_t condemned_set<Allocator>::approx_condemned_capacity_in_bytes(Allocator* 
 
 template<typename Allocator>
 int64_t condemned_set<Allocator>::sweep_condemned(Allocator* active_space,
-             clocktimer<false>& phase, clocktimer<false>& gcstart,
-             bool hadEmptyRootSet) {
+             clocktimer<false>& phase, bool hadEmptyRootSet) {
   int64_t num_lines_reclaimed = 0;
   std::vector<heap_handle<immix_heap>*> subheap_handles;
 
   switch (this->status) {
     case condemned_set_status::single_subheap_condemned: {
-      num_lines_reclaimed += active_space->immix_sweep(phase, gcstart);
+      num_lines_reclaimed += active_space->immix_sweep(phase);
       break;
     }
 
@@ -2754,7 +2805,7 @@ int64_t condemned_set<Allocator>::sweep_condemned(Allocator* active_space,
       }
       
       for (auto space : spaces) {
-        num_lines_reclaimed += space->immix_sweep(phase, gcstart);
+        num_lines_reclaimed += space->immix_sweep(phase);
       }
       spaces.clear();
       status = condemned_set_status::single_subheap_condemned;
@@ -2787,9 +2838,9 @@ int64_t condemned_set<Allocator>::sweep_condemned(Allocator* active_space,
         handle->body->trim_remset();
       }
 
-      num_lines_reclaimed += gcglobals.default_allocator->immix_sweep(phase, gcstart);
+      num_lines_reclaimed += gcglobals.default_allocator->immix_sweep(phase);
       for (auto handle : subheap_handles) {
-        num_lines_reclaimed += handle->body->immix_sweep(phase, gcstart);
+        num_lines_reclaimed += handle->body->immix_sweep(phase);
       }
 
       break;
@@ -2797,7 +2848,7 @@ int64_t condemned_set<Allocator>::sweep_condemned(Allocator* active_space,
   }
 
   // Invariant: line spaces have returned unmarked linegroups to the global line allocator.
-  global_immix_line_allocator.reclaim_frames(gcglobals.space_limit);
+  global_immix_line_allocator.reclaim_frames();
 
   // Subheap deallocation effectively only happens for whole-heap collections.
   for (auto handle : subheap_handles) {
@@ -2916,9 +2967,8 @@ class immix_space : public heap {
 public:
   immix_space() : condemned_flag(false) {
     this->next_collection_sticky = !__foster_globals.disable_sticky;
-    if (GCLOG_DETAIL > 2) { fprintf(gclog, "new immix_space %p, current space limit: %zd f15s\n", this, gcglobals.space_limit->frame15s_left); }
-
-    incoming_ptr_addrs.set_empty_key(nullptr);
+    approx_lines_allocated_since_last_collection = 0;
+    if (GCLOG_DETAIL > 2) { fprintf(gclog, "new immix_space %p\n", this); }
   }
 
   virtual void dump_stats(FILE* json) {
@@ -2927,20 +2977,15 @@ public:
 
   virtual uint64_t prepare_for_collection() {
     if (this->next_collection_sticky) {
-      uint64_t numRoots = 0;
+      std::vector<tori**> roots = generational_remset.move_to_vector();
       // Process generational remset.
       // We must be careful not to process the same root more than once;
       // otherwise, we might evacuate the same object multiple times.
-      std::set<void**> processed;
-      for (auto slot : generational_remset) {
-        if (processed.count(slot) == 0) {
-          processed.insert(slot);
-          //fprintf(gclog, "visiting generational remset root %p in slot %p\n", *slot, slot); fflush(gclog);
-          common.visit_root(this, (unchecked_ptr*) slot, "generational_remset_root");
-        }
+      for (auto slot : roots) {
+        //fprintf(gclog, "visiting generational remset root %p in slot %p\n", *slot, slot); fflush(gclog);
+        common.visit_root(this, (unchecked_ptr*) slot, "generational_remset_root");
       }
-      generational_remset.clear();
-      return numRoots;
+      return roots.size();
     } else {
       clear_line_and_object_mark_bits();
       generational_remset.clear();
@@ -3047,6 +3092,7 @@ public:
             bumper->size(), recycled_lines.size());
         //for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap[i] ? 'd' : '_'); } fprintf(gclog, "\n");
       }
+      approx_lines_allocated_since_last_collection += distance(g, g->bound) / IMMIX_LINE_SIZE;
       return true;
     }
     
@@ -3068,11 +3114,11 @@ public:
             bumper->size(), recycled_lines_large.size());
         //for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap[i] ? 'd' : '_'); } fprintf(gclog, "\n");
       }
+      approx_lines_allocated_since_last_collection += distance(g, g->bound) / IMMIX_LINE_SIZE;
       return true;
     }
 
-    if (gcglobals.space_limit->frame15s_left > 0) {
-      --gcglobals.space_limit->frame15s_left;
+    if (!global_frame15_allocator.empty()) {
       // Note: cannot call clear() on global allocator until
       // all frame15s it has distributed are relinquished.
       frame15* f = global_frame15_allocator.get_frame15();
@@ -3082,6 +3128,7 @@ public:
       set_parent_for_frame(this, f);
       bumper->base  = realigned_for_allocation(f);
       bumper->bound = offset(f, 1 << 15);
+      approx_lines_allocated_since_last_collection += IMMIX_LINES_PER_FRAME15;
       return true;
     }
 
@@ -3186,7 +3233,16 @@ public:
   {
     int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
 
-    if (GCLOG_DETAIL > 2) { fprintf(gclog, "allocate_cell_slowpath triggering immix gc\n"); }
+    if (true || GCLOG_DETAIL > 2) { fprintf(gclog, "allocate_cell_slowpath for size-%zd cell triggering immix gc\n", cell_size);
+      int large_lines = 0;
+      for (auto linegroup : recycled_lines_large) {
+        while (linegroup) {
+          large_lines += linegroup_size_in_lines(linegroup);
+          linegroup = linegroup->next;
+        }
+      }
+      fprintf(gclog, "      (large line reserve: %d lines)\n", large_lines);
+    }
 
     // When we run out of memory, we should collect the whole heap, regardless of
     // what the active subheap happens to be -- the underlying principle being that
@@ -3200,10 +3256,6 @@ public:
       if (common.common_gc(this, false)) {
           common.common_gc(this, false);
       }
-    }
-
-    if (GCLOG_DETAIL > 2) {
-      fprintf(gclog, "forced heap-frame gc reclaimed %zd frames\n", gcglobals.space_limit->frame15s_left);
     }
 
     if (!try_establish_alloc_precondition(&small_bumper, cell_size)) {
@@ -3250,7 +3302,7 @@ public:
     if (try_establish_alloc_precondition(bumper, req_bytes)) {
       return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, gcglobals.current_subheap_hash, init);
     } else {
-      if (GCLOG_DETAIL > 2) { fprintf(gclog, "allocate_array_into_bumper triggering immix gc\n"); }
+      if (true || GCLOG_DETAIL > 2) { fprintf(gclog, "allocate_array_into_bumper needing %zd bytes triggering immix gc\n", req_bytes); }
       {
         condemned_set_status_manager tmp(condemned_set_status::whole_heap_condemned);
         if (common.common_gc(this, false)) {
@@ -3304,8 +3356,10 @@ public:
   virtual void trim_remset() { helpers::do_trim_remset(incoming_ptr_addrs, this); }
   virtual remset_t& get_incoming_ptr_addrs() { return incoming_ptr_addrs; }
 
-  virtual int64_t immix_sweep(clocktimer<false>& phase,
-                              clocktimer<false>& gcstart) {
+  virtual int64_t immix_sweep(clocktimer<false>& phase) {
+    fprintf(gclog, "Tracking %zd logical frame15s at start of sweep.\n",
+      tracking.logical_frame15s());
+
     // The current block will probably get marked recycled;
     // rather than trying to stop it, we just accept it and reset the base ptr
     // so that the next allocation will trigger a fetch of a new block to use.
@@ -3338,15 +3392,39 @@ public:
 
     size_t frame15s_total = tracking.logical_frame15s();
     size_t lines_tracked = (tracking.logical_frame15s() + tracking.frame15s_in_reserve_clean()) * IMMIX_LINES_PER_FRAME15;
-    double yield_percentage = 100.0 * (double(num_lines_reclaimed) / double(lines_tracked));
+    size_t lines_allocated = this->approx_lines_allocated_since_last_collection;
+    double nursery_ratio = double(lines_allocated) / double(lines_tracked);
+    double yield_rate = double(num_lines_reclaimed) / double(lines_tracked);
+    double local_yield = double(num_lines_reclaimed) / double(lines_allocated);
+    double yield_percentage = 100.0 * yield_rate; // usually around 75% - 95%
+    double survival_rate = 1.0 - yield_rate; // usually around 0.05 to 0.25
 
+    bool was_sticky = this->next_collection_sticky;
     // If we see signs that we're running out of space, discard sticky bits to get more space next time.
+    // High survival rates mean both less room to run until the next collection,
+    // and also higher cost per collection.
+    if (yield_percentage <= gcglobals.yield_percentage_threshold) {
+      fprintf(gclog, "Scheduling a non-sticky collection because our yield percentage (%.1f) was below our threshold (%.1f).\n",
+          yield_percentage, gcglobals.yield_percentage_threshold);
+    }
     this->next_collection_sticky = (!__foster_globals.disable_sticky)
-                                    && (yield_percentage > gcglobals.yield_percentage_threshold)
-                                    && ((num_avail_defrag_frame15s() * 3) > num_assigned_defrag_frame15s());
+                                    && (yield_percentage > gcglobals.yield_percentage_threshold);
 
 #if ((GCLOG_DETAIL > 1) && ENABLE_GCLOG_ENDGC) || 1
-      fprintf(gclog, "Reclaimed %.2f%% (%zd) of %zd lines.\n", yield_percentage, num_lines_reclaimed, lines_tracked);
+      { auto s = foster::humanize_s(nursery_ratio * double(lines_tracked * IMMIX_BYTES_PER_LINE), "B");
+      fprintf(gclog, "Allocated into %zd lines ('nursery' was %.1f%% = %s of %zd total)\n", lines_allocated, 100.0 * nursery_ratio, s.c_str(), lines_tracked);
+      }
+      fprintf(gclog, "    global yield rate: %f\n", 100.0 * (double(num_lines_reclaimed) / double(lines_tracked)));
+      fprintf(gclog, "     local yield rate: %f\n", 100.0 * local_yield);
+      fprintf(gclog, "                                     defrag frame15s left: %zd (before reclaiming clean frames)\n",
+        global_frame15_allocator.defrag_frame15s.size());
+      
+      if (was_sticky) {
+        fprintf(gclog, "Reclaimed %.2f%% (%zd) of %zd new lines.\n", 100.0 * local_yield, num_lines_reclaimed, lines_allocated);
+      } else {
+        fprintf(gclog, "Reclaimed %.2f%% (%zd) of %zd lines.\n", yield_percentage, num_lines_reclaimed, lines_tracked);
+      }
+
 #endif
 #if ((GCLOG_DETAIL > 1) && ENABLE_GCLOG_ENDGC) && 0
       auto total_heap_size = foster::humanize_s(double(frame15s_total * (1 << 15)), "B");
@@ -3379,7 +3457,9 @@ public:
       //}
 #endif
 
-    tracking.release_clean_frames(gcglobals.space_limit);
+    g_approx_lines_allocated_since_last_collection += approx_lines_allocated_since_last_collection;
+    approx_lines_allocated_since_last_collection = 0;
+    tracking.release_clean_frames();
     return num_lines_reclaimed;
   }
 
@@ -3437,7 +3517,7 @@ public:
     int num_marked_lines = count_marked_lines_for_frame15(f15, linemap);
     gcglobals.lines_live_at_whole_heap_gc += num_marked_lines;
     
-    if (GCLOG_DETAIL > 2) {
+    if (GCLOG_PRINT_LINE_MARKS) {
       fprintf(gclog, "frame %u: ", fid);
       for(int i = 0;i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", (linemap[i] == 0) ? '_' : 'd'); }
       fprintf(gclog, "\n");
@@ -3526,7 +3606,7 @@ public:
   }
 
   void remember_generational(void* obj, void** slot) {
-    generational_remset.push_back(slot);
+    generational_remset.insert((tori**)slot);
   }
 
 public:
@@ -3551,12 +3631,23 @@ private:
   // card table inspected for pointers that actually point here.
   //std::set<frame15_id> frames_pointing_here;
   remset_t incoming_ptr_addrs;
-  std::vector<void**> generational_remset;
+  remset_t generational_remset;
 
+  uint64_t approx_lines_allocated_since_last_collection;
   bool condemned_flag;
   // immix_space_end
 };
 
+void process_worklist(immix_heap* active_space, immix_common* common) {
+  switch (gcglobals.condemned_set.status) {
+    case condemned_set_status::single_subheap_condemned:
+      immix_worklist.process<condemned_set_status::single_subheap_condemned>(active_space, *common); break;
+    case condemned_set_status::per_frame_condemned:
+      immix_worklist.process<condemned_set_status::per_frame_condemned>(active_space, *common); break;
+    case condemned_set_status::whole_heap_condemned:
+      immix_worklist.process<condemned_set_status::whole_heap_condemned>(active_space, *common); break;
+  }
+}
 
 template <condemned_set_status condemned_status>
 void immix_worklist_t::process(immix_heap* target, immix_common& common) {
@@ -3760,11 +3851,6 @@ void visitGCRoots(void* start_frame, immix_heap* visitor) {
       if (!non_markable_addr(*(void**)rootaddr)) {
         immix_worklist.add_root((unchecked_ptr*) rootaddr);
       }
-/*
-      condemnedRootsVisited +=
-        visitor->visit_root(static_cast<unchecked_ptr*>(rootaddr),
-                            static_cast<const char*>(m));
-                            */
     }
 
     gc_assert(pc->liveCountWithoutMetadata == 0,
@@ -3908,13 +3994,11 @@ void initialize(void* stack_highest_addr) {
 
   pages_boot();
 
-  gcglobals.space_limit = new byte_limit(gSEMISPACE_SIZE());
+  global_frame15_allocator.set_heap_size(gSEMISPACE_SIZE());
   gcglobals.allocator = new immix_space();
   gcglobals.default_allocator = gcglobals.allocator;
   gcglobals.allocator_handle = nullptr;
   gcglobals.current_subheap_hash = gcglobals.allocator->hash_for_object_headers();
-
-  global_frame15_allocator.set_defrag_reserved_frames(gcglobals.space_limit);
 
   gcglobals.condemned_set.status = condemned_set_status::single_subheap_condemned;
 
@@ -4227,12 +4311,10 @@ FILE* print_timing_stats() {
         double(gcglobals.alloc_bytes_marked_total) / double(gcglobals.num_alloc_bytes));
   }
   if (TRACK_WRITE_BARRIER_COUNTS) {
-    // Better terminology would be nice. "Fast" means "executed barrier that did not take the subheap slow path."
-    //                                   "Slow" means "executed barrier that did     take the subheap slow path."
-    //                                   "Gen" could be a fast OR slow execution that took the generational slow path.
-    //fprintf(gclog, "'Num_Write_Barriers_Fast': %lu\n", (gcglobals.write_barrier_phase0_hits - gcglobals.write_barrier_phase1_hits));
     fprintf(gclog, "'Num_Write_Barriers_Subheap': %lu\n",  gcglobals.write_barrier_phase1_hits);
     fprintf(gclog, "'Num_Write_Barriers_Gen': %lu\n",  gcglobals.write_barrier_phase1g_hits);
+  }
+  if (TRACK_WRITE_BARRIER_COUNTS > 3) {
     fprintf(gclog, "'Num_Write_Barriers_Started': %lu\n",  gcglobals.write_barrier_phase0_hits);
     fprintf(gclog, "'Num_Write_Barriers_NonNull': %lu\n",  gcglobals.write_barrier_phase0b_hits);
     fprintf(gclog, "'Num_Write_Barriers_Null': %lu\n", gcglobals.write_barrier_phase0_hits - gcglobals.write_barrier_phase0b_hits);
@@ -4451,60 +4533,48 @@ void foster_generational_write_barrier_slowpath(void* val, void* obj, void** slo
   if (obj_is_marked(heap_cell::for_tidy((tidy*)val))) {
     return; // Don't bother recording old-to-old pointers.
   }
-  //fprintf(gclog, "remembering slot %p, currently updated to contain val %p\n", slot, val);
   immix_heap* hs = heap_for_wb(obj);
   ((immix_space*)hs)->remember_generational(obj, slot); // TODO fix this assumption
   if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1g_hits; }
 }
 
-
 __attribute__((noinline))
 void foster_write_barrier_with_obj_fullpath(void* val, void* obj, void** slot) {
   immix_heap* hv = heap_for_wb(val);
   immix_heap* hs = heap_for_wb(obj);
-
   // Invariant: hv != hs
   // Invariant: nv != nullptr
-  //if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
-  //fprintf(gclog, "write barrier (%zu) writing ptr %p from heap %p into slot %p in heap %p\n",
-  //    gcglobals.write_barrier_phase0_hits, val, hv, slot, hs); fflush(gclog);
-
-  //if (hv == hs) { return; }
-
   // Preconditions:
   //   val SHOULD NOT point into the same frame as slot
   //   val SHOULD NOT point into the oldest generation
   // Violations of these preconditions will not produce errors, but will result
   // in remembered sets that are larger than necessary.
-  //if (hv) {
-    if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1_hits; }
-    if (GCLOG_DETAIL > 3) { fprintf(gclog, "space %p remembering slot %p with inc ptr %p and old pointer %p; slot heap is %p\n", hv, slot, val, *slot, hs); }
-    hv->remember_into(slot);
-  //}
+  if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1_hits; }
+  if (GCLOG_DETAIL > 3) { fprintf(gclog, "space %p remembering slot %p with inc ptr %p and old pointer %p; slot heap is %p\n", hv, slot, val, *slot, hs); }
+  hv->remember_into(slot);
 }
 
+// TODO implement and test per-instance customized barriers.
 __attribute__((always_inline))
 void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot) /*__attribute((always_inline))*/ {
   *slot = val;
 
-  if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
+  if (TRACK_WRITE_BARRIER_COUNTS > 3) { ++gcglobals.write_barrier_phase0_hits; }
   if (non_markable_addr(val)) { return; }
-  if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0b_hits; }
+  if (TRACK_WRITE_BARRIER_COUNTS > 3) { ++gcglobals.write_barrier_phase0b_hits; }
 
-  if (
-       (space_id_of_header(heap_cell::for_tidy((tidy*) val)->raw_header())
-     == space_id_of_header(heap_cell::for_tidy((tidy*) obj)->raw_header()))) {
-    // Note we can't use raw line marks (even as an approximation/filter) since
-    // large arrays do not have line marks.
-    //if (heap_cell::for_tidy((tidy*)obj)->is_marked_inline())
-    if (obj_is_marked(heap_cell::for_tidy((tidy*)obj)))
-    {
+  auto val_header = heap_cell::for_tidy((tidy*) val)->raw_header();
+  auto obj_header = heap_cell::for_tidy((tidy*) obj)->raw_header();
+
+  if (space_id_of_header(val_header) == space_id_of_header(obj_header)) {
+    // Note we can't use raw line marks (even as an approximation/filter)
+    // since large arrays do not have line marks.
+    if (!header_is_young(obj_header)) {
       foster_generational_write_barrier_slowpath(val, obj, slot);
     }
-    return;
+  } else {
+    foster_write_barrier_with_obj_fullpath(val, obj, slot);
   }
-
-  foster_write_barrier_with_obj_fullpath(val, obj, slot);
 }
 
 // We need a degree of separation between the possibly-moving
