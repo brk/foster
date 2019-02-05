@@ -79,12 +79,13 @@ run-minicache-subheaps-common :: { Int32 => Int32 => Int32 => Array (Maybe Tree)
 run-minicache-subheaps-common = { b => n => k => c => subheaps =>
   REC go = { idx => stepsleft =>
     if stepsleft >=SInt32 1 then
-      s = subheaps[idx];
-      //_ignored = foster_subheap_activate s;
       None >^  c[idx];
+      s = subheaps[idx];
       foster_subheap_collect s;
+      prev = foster_subheap_activate s;
       newnode = make-entry n idx;
       (Some newnode) >^ c[idx];
+      //_ignored = foster_subheap_activate prev;
 
 /*
       if idx >SInt32 1 then
@@ -126,8 +127,10 @@ make-cache-subheaps = { b => n =>
   enumRange32 0 b { idx =>
     s = foster_subheap_create !;
     s >^ subheaps[idx];
-    _ignored = foster_subheap_activate s;
-      (Some (make-entry n idx)) >^ c[idx]
+    prev = foster_subheap_activate s;
+      (Some (make-entry n idx)) >^ c[idx];
+    _ignored = foster_subheap_activate prev;
+    ()
    };
   (c, subheaps)
 };
