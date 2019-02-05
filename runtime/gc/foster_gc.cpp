@@ -85,6 +85,8 @@ extern void* foster__typeMapList[];
 #include <map>
 #include <set>
 
+//std::map<uint32_t, int> refPatterns;
+
 #define IMMIX_LINE_SIZE     256
 #define IMMIX_LINE_SIZE_LOG 8
 #define IMMIX_LINES_PER_FRAME15_LOG 7 /*15 - 8*/
@@ -279,6 +281,20 @@ private:
 
 uint32_t fold_64_to_32(uint64_t x) {
   return uint32_t(x) ^ uint32_t(x >> uint64_t(32));
+}
+
+uint32_t refPattern(const typemap* map) {
+  uint32_t rv = 0;
+  for (int i = 0; i < map->numOffsets; ++i) {
+    int refoff = map->offsets[i] / 8;
+    if (refoff < 28) {
+      rv |=  (1 << refoff);
+    } else {
+      rv =  (1 << 30);
+      break;
+    }
+  }
+  return rv;
 }
 
 class heap {
@@ -1506,9 +1522,19 @@ bool should_opportunistically_evacuate(immix_heap* space, heap_cell* obj);
 
 
 template <typename CellThunk>
-void apply_thunk_to_child_slots_of_cell(intr* body, const typemap* map, CellThunk thunk) {
-  for (int i = 0; i < map->numOffsets; ++i) {
-    thunk((intr*) offset(body, map->offsets[i]));
+void apply_thunk_to_child_slots_of_cell(intr* body, const typemap* map, uint8_t ptrMap, CellThunk thunk) {
+  switch (ptrMap & 7) {
+    case 0x1:
+      thunk((intr*) body);
+      break;
+    case 0x3:
+      thunk((intr*) body);
+      thunk((intr*) offset(body, 8));
+      break;
+    default:
+      for (int i = 0; i < map->numOffsets; ++i) {
+        thunk((intr*) offset(body, map->offsets[i]));
+      }
   }
 }
 
@@ -1517,10 +1543,13 @@ void for_each_child_slot_with(heap_cell* cell, heap_array* arr, const typemap* m
                               int64_t cell_size, CellThunk thunk) {
   if (!map) { return; }
 
-  if (map->numOffsets == 0) { return; }
+  //refPatterns[refPattern(map)]++;
+
+  uint8_t ptrMap = map->ptrMap;
+  if (ptrMap == 0) { return; }
 
   if (!arr) {
-    apply_thunk_to_child_slots_of_cell(from_tidy(cell->body_addr()), map, thunk);
+    apply_thunk_to_child_slots_of_cell(from_tidy(cell->body_addr()), map, ptrMap, thunk);
   //} else if (map->numOffsets == 1 && map->offsets[0] == 0 && map->cell_size == sizeof(void*)) {
   //  int64_t numcells = arr->num_elts();
   //  for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
@@ -1529,7 +1558,7 @@ void for_each_child_slot_with(heap_cell* cell, heap_array* arr, const typemap* m
   } else {
     int64_t numcells = arr->num_elts();
     for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
-      apply_thunk_to_child_slots_of_cell(arr->elt_body(cellnum, map->cell_size), map, thunk);
+      apply_thunk_to_child_slots_of_cell(arr->elt_body(cellnum, map->cell_size), map, ptrMap, thunk);
     }
   }
 
@@ -4253,6 +4282,22 @@ FILE* print_timing_stats() {
     auto s = foster::humanize_s(gcglobals.num_closure_calls, "");
     fprintf(gclog, "'Num_Closure_Calls': %s\n", s.c_str());
   }
+
+  /*
+  fprintf(gclog, "Ref patterns seen:\n");
+  std::map<int, int> refOrderPatterns;
+  int totalSeen = 0;
+  for (auto it : refPatterns) {
+    fprintf(gclog, "     ");
+    for (int i = 0; i < 32; ++i) { fprintf(gclog, (x & (1<<i)) ? '1' : '_'); }
+    fprintf(gclog, ": %d\n", it.second);
+    totalSeen += it.second;
+    refOrderPatterns[__builtin_popcount(it.first)] += it.second;
+  }
+  for (auto it : refOrderPatterns) {
+    fprintf(gclog, "           %d: %d (%.2f%%)\n", it.first, it.second, 100.0 * double(it.second)/double(totalSeen));
+  }
+  */
 
   //fprintf(gclog, "sizeof immix_space: %lu\n", sizeof(immix_space));
   //fprintf(gclog, "sizeof immix_line_space: %lu\n", sizeof(immix_line_space));

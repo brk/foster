@@ -217,7 +217,7 @@ struct typemap {
   int8_t      ctorId;
   int8_t      isCoro;
   int8_t      isArray;
-  int8_t      unused_padding;
+  uint8_t     ptrMap;
   int32_t     offsets[0];
 };
 
