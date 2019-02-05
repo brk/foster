@@ -588,7 +588,7 @@ void reset_marked_histogram() {
     }
 
     fprintf(gclog, "Mark histogram from prior collection:\n");
-    fprintf(gclog, "   holes   marked      pct                 a          [cumulative]\n");
+    fprintf(gclog, "   holes   marked      pct                               [cumulative]\n");
     int64_t cumx = 0;
     int64_t cumf = 0;
     int64_t cumu = 0;
@@ -603,9 +603,14 @@ void reset_marked_histogram() {
       cumf += f;
       cumu += u;
       cumv += v;
-      if (x > 0) { fprintf(gclog, "   %4d: %7zd   (%4.1f%%)     {%9.1f lines live}    [%9.1f lines live; %7zd lines used; %4.1f%% of used, %4.1f%% of all] [%4zd frames; %4.1f%%] [%6zd lines free; %4.1f%% of free; %4.1f%% of all] (%.3f u/m ratio (%.3f runway factor?))\n",
-          i, x, double(x * 100)/double(sum_x), double(v)/double(IMMIX_BYTES_PER_LINE), double(cumv)/double(IMMIX_BYTES_PER_LINE),
-                                               cumx, double(cumx * 100)/double(sum_x), double(cumx * 100) / double(all),
+      if (x > 0) {
+        fprintf(gclog, "   %4d: %7zd   (%4.1f%%)     {%9.1f lines live}    [%9.1f lines live; %7zd lines used (%.2f%%);",
+          i, x, double(x * 100)/double(sum_x), double(v)/double(IMMIX_BYTES_PER_LINE), // {lines live}
+                                               double(cumv)/double(IMMIX_BYTES_PER_LINE),
+                                               cumx, // lines used
+                                              (100.0 * double(cumv)/double(IMMIX_BYTES_PER_LINE)) / double(cumx));
+        fprintf(gclog, "%4.1f%% of used, %4.1f%% of all] [%4zd frames; %4.1f%%] [%6zd lines free; %4.1f%% of free; %4.1f%% of all] (%.3f u/m ratio (%.3f runway factor?))\n",
+                                               double(cumx * 100)/double(sum_x), double(cumx * 100) / double(all), // of used; of all
                                                cumf, double(cumf * 100)/double(sum_f),
                                                cumu, double(cumu * 100)/double(sum_u), double(cumu * 100) / double(all),
                                                //(double(cumf)/double(sum_f)) / (double(cumx) / double(all))
@@ -1163,6 +1168,7 @@ struct defrag_reserve_t {
     if (defrag_frame15s.empty()) return nullptr;
     frame15* f15 = defrag_frame15s.back();
     defrag_frame15s.pop_back();
+    reserved_lines_current -= IMMIX_LINES_PER_FRAME15;
     return f15;
   }
 };
@@ -1193,6 +1199,8 @@ struct frame15_allocator {
     for (int i = 0; i < num_defrag_reserved_frames; ++i) {
       defrag_reserve.give_frame15(get_frame15());
     }
+    defrag_reserve.freeze_target_line_count();
+    full_heap_frame15_count = frame15s_left;
   }
 
   void clear() {
@@ -1247,8 +1255,11 @@ private:
     return rv;
   }
 
+  ssize_t full_heap_frame15_count;
   ssize_t frame15s_left;
 public:
+  ssize_t get_frame15s_left() { return frame15s_left; }
+  double  get_relative_size() { return double(frame15s_left)/double(full_heap_frame15_count); }
   bool empty() { return frame15s_left == 0; }
 
   // Precondition: !empty()
@@ -2585,14 +2596,14 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
         // of lines on defragmented frames. A factor of 2.0 implies that
         // lines selected for defragmentation are, on average, half full.
         // The density of lines on defragmentation-candidate frames is
-        // a priori unknown. We assume lines are 25% full. Note: the goal
+        // a priori unknown. We assume lines are 50% full. Note: the goal
         // of this guess is not to maximize the amount of data copied into
         // our defrag reserve; the ideal is to defrag just enough that
         // (rare) medium allocations don't cause premature triggering of GC.
         // A runtime-adaptive scheme to adjust the pad factor can consistently
         // use more of the defrag reserve, but doing so usually just degrades
         // performance, since the extra copying has more cost than benefit.
-        double defrag_pad_factor = 4.0;
+        double defrag_pad_factor = 2.0;
         gcglobals.evac_threshold = select_defrag_threshold(defrag_pad_factor);
         reset_marked_histogram();
       } else {
@@ -2609,7 +2620,7 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     gcglobals.condemned_set.prepare_for_collection(active_space, voluntary, was_sticky_collection, this, &numGenRoots, &numRemSetRoots);
     auto markResettingAndRemsetCollection_us = phase.elapsed_us();
 
-    fprintf(gclog, "# generational roots: %zu; # subheap roots: %zu\n", numGenRoots, numRemSetRoots);
+    fprintf(gclog, "# generational roots: %zu; # subheap roots: %zu (sticky=%d)\n", numGenRoots, numRemSetRoots, was_sticky_collection);
 
     phase.start();
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
@@ -3501,8 +3512,8 @@ public:
     size_t lines_tracked = (tracking.logical_frame15s() + tracking.frame15s_in_reserve_clean()) * IMMIX_LINES_PER_FRAME15;
     size_t lines_allocated = this->approx_lines_allocated_since_last_collection;
     double nursery_ratio = double(lines_allocated) / double(lines_tracked);
-    double yield_rate = double(num_lines_reclaimed) / double(lines_tracked);
-    double local_yield = double(num_lines_reclaimed) / double(lines_allocated);
+    double yield_rate   = double(num_lines_reclaimed) / double(lines_tracked);
+    double local_yield  = double(num_lines_reclaimed) / double(lines_allocated);
     double yield_percentage = 100.0 * yield_rate; // usually around 75% - 95%
     double survival_rate = 1.0 - yield_rate; // usually around 0.05 to 0.25
 
@@ -3529,7 +3540,7 @@ public:
       { auto s = foster::humanize_s(nursery_ratio * double(lines_tracked * IMMIX_BYTES_PER_LINE), "B");
       fprintf(gclog, "Allocated into %zd lines ('nursery' was %.1f%% = %s of %zd total)\n", lines_allocated, 100.0 * nursery_ratio, s.c_str(), lines_tracked);
       }
-      fprintf(gclog, "    global yield rate: %f\n", 100.0 * (double(num_lines_reclaimed) / double(lines_tracked)));
+      fprintf(gclog, "    global yield rate: %f\n", 100.0 * yield_rate);
       fprintf(gclog, "     local yield rate: %f\n", 100.0 * local_yield);
       fprintf(gclog, "                                     defrag frame15s left: %zd (before reclaiming clean frames)\n",
         defrag_reserve.defrag_frame15s.size());
