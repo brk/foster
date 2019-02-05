@@ -316,7 +316,7 @@ public:
 
   virtual void force_gc_for_debugging_purposes() = 0;
 
-  virtual uint64_t prepare_for_collection() = 0;
+  virtual uint64_t prepare_for_collection(bool) = 0;
 
   virtual void condemn() = 0;
   virtual void uncondemn() = 0;
@@ -395,15 +395,14 @@ enum class frame15kind : uint8_t {
   immix_linebased,
   immix_malloc_start, // associated is immix_malloc_frame15info*
   immix_malloc_continue, // associated is heap_array* base.
-  staticdata // parent is nullptr
 };
 
 struct frame15info {
   void*            associated;
   frame15kind      frame_classification;
-  uint8_t          num_available_lines_at_last_collection;
-  uint8_t          num_condemned_lines;
+  uint8_t          num_available_lines_at_last_collection; // TODO these two fields are mutually exclusively used...
   uint8_t          num_holes_at_last_full_collection;
+  uint8_t pad0;
 };
 
 // We track "available" rather than "marked" lines because it's more natural
@@ -487,7 +486,7 @@ struct condemned_set {
 
   int64_t approx_condemned_capacity_in_bytes(Allocator* active_space);
 
-  void prepare_for_collection(Allocator* active_space, bool voluntary, immix_common* common, uint64_t*, uint64_t*);
+  void prepare_for_collection(Allocator* active_space, bool voluntary, bool sticky, immix_common* common, uint64_t*, uint64_t*);
 };
 
 template<typename Allocator>
@@ -548,6 +547,7 @@ struct GCGlobals {
   uint8_t*          lazy_mapped_coarse_marks;
 
   uint8_t*          lazy_mapped_granule_marks;
+  uint16_t*         lazy_mapped_frame_liveness;
 
   struct hdr_histogram* hist_gc_stackscan_frames;
   struct hdr_histogram* hist_gc_stackscan_roots;
@@ -565,19 +565,65 @@ struct GCGlobals {
   double last_full_gc_fragmentation_percentage;
   int evac_threshold;
   int64_t marked_histogram[128];
+  int64_t marked_histogram_frames[128];
+  int64_t residency_histogram[128];
 };
 
 GCGlobals<immix_heap> gcglobals;
 
 void reset_marked_histogram() {
+  {
+    int64_t sum_x = 0;
+    int64_t sum_f = 0;
+    int64_t sum_u = 0;
+    int64_t sum_v = 0;
+    for (int i = 0; i < 128; ++i) {
+      auto x = gcglobals.marked_histogram[i];
+      auto f = gcglobals.marked_histogram_frames[i];
+      auto u = (f * IMMIX_LINES_PER_BLOCK) - x;
+      sum_x += x;
+      sum_f += f;
+      sum_u += u;
+      sum_v += gcglobals.residency_histogram[i];
+    }
+
+    fprintf(gclog, "Mark histogram from prior collection:\n");
+    fprintf(gclog, "   holes   marked      pct                 a          [cumulative]\n");
+    int64_t cumx = 0;
+    int64_t cumf = 0;
+    int64_t cumu = 0;
+    int64_t cumv = 0;
+    int64_t all = sum_f * IMMIX_LINES_PER_BLOCK;
+    for (int i = 127; i >= 0; --i) {
+      auto x = gcglobals.marked_histogram[i];
+      auto f = gcglobals.marked_histogram_frames[i];
+      auto u = (f * IMMIX_LINES_PER_BLOCK) - x;
+      auto v = gcglobals.residency_histogram[i];
+      cumx += x;
+      cumf += f;
+      cumu += u;
+      cumv += v;
+      if (x > 0) { fprintf(gclog, "   %4d: %7zd   (%4.1f%%)     {%9.1f lines live}    [%9.1f lines live; %7zd lines used; %4.1f%% of used, %4.1f%% of all] [%4zd frames; %4.1f%%] [%6zd lines free; %4.1f%% of free; %4.1f%% of all] (%.3f u/m ratio (%.3f runway factor?))\n",
+          i, x, double(x * 100)/double(sum_x), double(v)/double(IMMIX_BYTES_PER_LINE), double(cumv)/double(IMMIX_BYTES_PER_LINE),
+                                               cumx, double(cumx * 100)/double(sum_x), double(cumx * 100) / double(all),
+                                               cumf, double(cumf * 100)/double(sum_f),
+                                               cumu, double(cumu * 100)/double(sum_u), double(cumu * 100) / double(all),
+                                               //(double(cumf)/double(sum_f)) / (double(cumx) / double(all))
+                                               double(cumu)/double(cumx),
+                                                 (1.0 - (double(cumu) / double(sum_u))) * (double(cumu)/double(cumx))
+                                              ); }
+    }
+  }
   for (int i = 0; i < 128; ++i) { gcglobals.marked_histogram[i] = 0; }
+  for (int i = 0; i < 128; ++i) { gcglobals.marked_histogram_frames[i] = 0; }
+  for (int i = 0; i < 128; ++i) { gcglobals.residency_histogram[i] = 0; }
 }
 
-int num_avail_defrag_frame15s();
-int num_assigned_defrag_frame15s();
+int num_avail_defrag_lines();
+int num_assigned_defrag_lines();
 
 int select_defrag_threshold(double defrag_pad_factor) {
-  int64_t reserved = int64_t(double(num_avail_defrag_frame15s() * IMMIX_LINES_PER_FRAME15));
+  int64_t reserved = num_avail_defrag_lines();
   int64_t avail = int64_t(double(reserved) * defrag_pad_factor);
   int64_t required = 0;
 
@@ -585,10 +631,9 @@ int select_defrag_threshold(double defrag_pad_factor) {
   while (thresh-- > 0) {
     required += gcglobals.marked_histogram[thresh];
     if (required > avail) {
-      fprintf(gclog, "defrag threshold: %d; backing off from %zd to %zd lines assumed needed vs %zd lines assumed avail (%d/%d frames = %d actual lines)\n",
+      fprintf(gclog, "defrag threshold: %d; backing off from %zd to %zd lines assumed needed vs %zd lines assumed avail (%d/%d lines)\n",
         thresh + 1,
-        required, required - gcglobals.marked_histogram[thresh], avail, num_avail_defrag_frame15s(), num_assigned_defrag_frame15s(),
-        num_avail_defrag_frame15s() * IMMIX_LINES_PER_FRAME15);
+        required, required - gcglobals.marked_histogram[thresh], avail, num_avail_defrag_lines(), num_assigned_defrag_lines());
       return thresh + 1;
     }
   }
@@ -685,12 +730,16 @@ inline void do_unmark_granule(void* obj) {
 void clear_object_mark_bits_for_frame15(void* f15) {
   if (GCLOG_DETAIL > 2) { fprintf(gclog, "clearing granule bits for frame %p (%u)\n", f15, frame15_id_of(f15)); }
   memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)], 0, IMMIX_GRANULES_PER_BLOCK);
+
+  gcglobals.lazy_mapped_frame_liveness[frame15_id_of(f15)] = 0;
 }
 
 void clear_object_mark_bits_for_frame15(void* f15, int startline, int numlines) {
   uintptr_t granule = global_granule_for(offset(f15, startline * IMMIX_BYTES_PER_LINE));
   if (GCLOG_DETAIL > 2) { fprintf(gclog, "clearing granule bits for %d lines starting at %d in frame %p (%u), granule %zu\n", numlines, startline, f15, frame15_id_of(f15), granule); }
   memset(&gcglobals.lazy_mapped_granule_marks[granule],     0, (numlines * IMMIX_GRANULES_PER_LINE));
+
+  gcglobals.lazy_mapped_frame_liveness[frame15_id_of(f15)] = 0;
 }
 
 
@@ -1029,7 +1078,7 @@ namespace helpers {
     tori* ptr = *slot;
     if (non_kosher_addr(ptr)) { return true; }
     frame15kind fk = classification_for_frame15_id(frame15_id_of(ptr));
-    if (fk == frame15kind::unknown || fk == frame15kind::staticdata) { return true; }
+    if (fk == frame15kind::unknown) { return true; }
     
     heap_cell* cell = heap_cell::for_tidy((tidy*) ptr);
     /*
@@ -1090,8 +1139,43 @@ void deallocate_frame21(frame21* f) {
   pages_unmap(f, 1 << 21);
 }
 
+// We prefer to use empty frames for the defrag reserve, but in tight heaps we're often
+// stuck with linegroups. Because we only defrag within the default subheap, it's okay
+// to use lines as long as they only come from the default subheap.
+struct defrag_reserve_t {
+  int32_t reserved_lines_target;
+  int32_t reserved_lines_current;
+
+  std::vector<frame15*> defrag_frame15s; // TODOX
+
+  defrag_reserve_t() : reserved_lines_target(0), reserved_lines_current(0) {}
+
+  bool full() { return reserved_lines_current >= reserved_lines_target; }
+
+  void freeze_target_line_count() { reserved_lines_target = reserved_lines_current; }
+  void give_frame15(frame15* f15) {
+    reserved_lines_current += IMMIX_LINES_PER_FRAME15;
+    defrag_frame15s.push_back(f15);
+  }
+  //void give_linegroup() {}
+
+  frame15* try_get_frame15_for_defrag() {
+    if (defrag_frame15s.empty()) return nullptr;
+    frame15* f15 = defrag_frame15s.back();
+    defrag_frame15s.pop_back();
+    return f15;
+  }
+};
+
+defrag_reserve_t defrag_reserve;
+
+// TODOX
+int num_avail_defrag_lines() { return defrag_reserve.reserved_lines_current; }
+int num_assigned_defrag_lines() { return defrag_reserve.reserved_lines_target; }
+
+
 struct frame15_allocator {
-  frame15_allocator() : num_defrag_reserved_frames(0), next_frame15(nullptr) {}
+  frame15_allocator() : next_frame15(nullptr) {}
 
   void set_heap_size(ssize_t maxbytes) {
     // Round up; a request for 10K should be one frame15, not zero.
@@ -1102,19 +1186,13 @@ struct frame15_allocator {
     fprintf(gclog, "byte_limit: maxbytes = %s, maxframe15s = %ld, framebytes=%s, maxlines=%ld\n",
           mb.c_str(), frame15s_left, fb.c_str(), frame15s_left * IMMIX_LINES_PER_FRAME15);
 
-    this->num_defrag_reserved_frames =
-            int(double(frame15s_left) * kFosterDefragReserveFraction) + 1;
+    // At 10M, 1% + 6 == 4 + 6 = 2.5%; at 1000M, 1% + 6 = 400 + 6 = 1%
+    auto num_defrag_reserved_frames =
+            int(double(frame15s_left) * kFosterDefragReserveFraction) + 6;
     frame15s_left -= num_defrag_reserved_frames;
     for (int i = 0; i < num_defrag_reserved_frames; ++i) {
-      defrag_frame15s.push_back(get_frame15());
+      defrag_reserve.give_frame15(get_frame15());
     }
-  }
-
-  frame15* try_get_frame15_for_defrag() {
-    if (defrag_frame15s.empty()) return nullptr;
-    frame15* f15 = defrag_frame15s.back();
-    defrag_frame15s.pop_back();
-    return f15;
   }
 
   void clear() {
@@ -1141,9 +1219,8 @@ struct frame15_allocator {
 
   void give_frame15(frame15* f) {
     if (MEMSET_FREED_MEMORY) { clear_frame15(f); }
-    if (defrag_frame15s.size() < num_defrag_reserved_frames) {
-      defrag_frame15s.push_back(f);
-      
+    if (!defrag_reserve.full()) {
+      defrag_reserve.give_frame15(f);
     } else {
       ++frame15s_left;
       spare_frame15s.push_back(f);
@@ -1229,8 +1306,6 @@ public:
   }
 
   // Note: the associated f21 may or may not be owned by this class...
-  int num_defrag_reserved_frames;
-
   frame15* next_frame15;
   immix_line_frame15* next_line_frame15;
   std::vector<frame15*> spare_frame15s;
@@ -1238,7 +1313,6 @@ public:
   std::vector<immix_line_frame15*> spare_line_frame15s;
 
   std::vector<frame21*> self_owned_allocated_frame21s;
-  std::vector<frame15*> defrag_frame15s;
 };
 
 class immix_line_space;
@@ -1278,9 +1352,6 @@ immix_heap* heap_for(void* addr) {
 //}
 
 frame15_allocator global_frame15_allocator;
-
-int num_avail_defrag_frame15s() { return global_frame15_allocator.defrag_frame15s.size(); }
-int num_assigned_defrag_frame15s() { return global_frame15_allocator.num_defrag_reserved_frames; }
 
 // 64 * 32 KB = 2 MB  ~~~ 2^6 * 2^15 = 2^21
 struct frame21_15_metadata_block {
@@ -1622,7 +1693,9 @@ struct immix_common {
   void scan_cell(immix_heap* space, heap_cell* cell) {
     if (GCLOG_DETAIL > 3) { fprintf(gclog, "scanning cell %p for space %p\n", cell, space); fflush(gclog); }
 
-    auto frameclass = frame15_classification(cell);
+
+    frame15info* finfo = frame15_info_for_frame15_id(frame15_id_of(cell));
+    auto frameclass = finfo->frame_classification;
     if (GCLOG_DETAIL > 3) { fprintf(gclog, "frame classification for obj %p in frame %u is %d\n", cell, frame15_id_of(cell), int(frameclass)); }
 
     heap_array* arr = NULL;
@@ -1634,8 +1707,10 @@ struct immix_common {
     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += cell_size; }
 
-    if (frameclass == frame15kind::immix_smallmedium
-     || frameclass == frame15kind::immix_linebased) {
+    if (frameclass == frame15kind::immix_smallmedium) {
+        mark_lines_for_slots((void*) cell, cell_size);
+        gcglobals.lazy_mapped_frame_liveness[frame15_id_of(cell)] += uint16_t(cell_size);
+    } else if (frameclass == frame15kind::immix_linebased) {
         mark_lines_for_slots((void*) cell, cell_size);
     } else if (frameclass == frame15kind::unknown) {
       gcglobals.condemned_set.unframed_and_marked.insert(cell);
@@ -2287,7 +2362,7 @@ public:
     common.common_gc(this, true);
   }
 
-  virtual uint64_t prepare_for_collection() {
+  virtual uint64_t prepare_for_collection(bool) {
     exit(42);
     return 0;
   }
@@ -2497,8 +2572,14 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     auto bytes_marked_at_start = gcglobals.alloc_bytes_marked_total;
     bool isWholeHeapGC = gcglobals.condemned_set.status == condemned_set_status::whole_heap_condemned;
     bool was_sticky_collection = active_space->next_collection_sticky;
+    bool unstick_next_coll = false;
 
     if (isWholeHeapGC) {
+      if (was_sticky_collection && (num_avail_defrag_lines() < (num_assigned_defrag_lines() / 2))) {
+        fprintf(gclog, "Scheduling un-sticky collection due to defrag reserve shortage.\n");
+        unstick_next_coll = true;
+      }
+
       if (gcglobals.last_full_gc_fragmentation_percentage > 40.0) {
         // This dynamically corrects for the (a priori unknown) density
         // of lines on defragmented frames. A factor of 2.0 implies that
@@ -2525,7 +2606,7 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     phase.start();
     uint64_t numGenRoots = 0;
     uint64_t numRemSetRoots = 0;
-    gcglobals.condemned_set.prepare_for_collection(active_space, voluntary, this, &numGenRoots, &numRemSetRoots);
+    gcglobals.condemned_set.prepare_for_collection(active_space, voluntary, was_sticky_collection, this, &numGenRoots, &numRemSetRoots);
     auto markResettingAndRemsetCollection_us = phase.elapsed_us();
 
     fprintf(gclog, "# generational roots: %zu; # subheap roots: %zu\n", numGenRoots, numRemSetRoots);
@@ -2611,9 +2692,14 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
           std::max(gcglobals.max_bytes_live_at_whole_heap_gc, bytes_live);
       }
       if (was_sticky_collection) {
-        fprintf(gclog, "%zu bytes live / %zu line bytes allocated = %f%% overhead; ",
-          bytes_live, g_approx_lines_allocated_since_last_collection * IMMIX_BYTES_PER_LINE,
-              ((double(bytes_used) / double(g_approx_lines_allocated_since_last_collection * IMMIX_BYTES_PER_LINE)) - 1.0) * 100.0);
+        auto bytes_alloc = g_approx_lines_allocated_since_last_collection * IMMIX_BYTES_PER_LINE;
+        auto s_bytes_live  = foster::humanize_s(bytes_live, "");
+        auto s_bytes_alloc = foster::humanize_s(bytes_alloc, "");
+        auto s_bytes_used  = foster::humanize_s(bytes_used, "");
+        fprintf(gclog, "%s bytes live / %s line bytes allocated = %f%% overhead (%s bytes used); ",
+          s_bytes_live.c_str(), s_bytes_alloc.c_str(),
+              (double(bytes_alloc) / double(bytes_live)) * 100.0,
+          s_bytes_used.c_str());
         fprintf(gclog, "%.1f%% of %zd condemned lines are live\n",
           ((double(gcglobals.lines_live_at_whole_heap_gc) / double(approx_condemned_space_in_lines)) * 100.0),
           approx_condemned_space_in_lines);
@@ -2694,14 +2780,16 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     gcglobals.subheap_ticks += __foster_getticks_elapsed(t0, t1);
 #endif
 
+    if (unstick_next_coll) active_space->next_collection_sticky = false;
+
     if (was_sticky_collection && !active_space->next_collection_sticky) {
       // We're close to running out of room. If we're REALLY close, trigger a non-sticky collection to reclaim more.
 
-      int64_t defrag_headroom_lines = num_assigned_defrag_frame15s() * IMMIX_LINES_PER_FRAME15;
+      int64_t defrag_headroom_lines = num_assigned_defrag_lines();
       // Our "nursery" is full; need a full-heap collection to reset it.
       // Question is, do we trigger an immediate collection or not?
       //  Current heuristic: immediately collect if we didn't reclaim enough to fill the headroom.
-      bool need_immediate_recollection = num_lines_reclaimed < defrag_headroom_lines;
+      bool need_immediate_recollection = num_lines_reclaimed <= (defrag_headroom_lines / 4);
       if (need_immediate_recollection) {
         // Raise the yield threshold so we make it less likely to trigger a double collection.
         gcglobals.yield_percentage_threshold += 5.0;
@@ -2721,27 +2809,28 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
 template<typename Allocator>
 void condemned_set<Allocator>::prepare_for_collection(Allocator* active_space,
                                                       bool voluntary,
+                                                      bool was_sticky,
                                                       immix_common* common,
                                                       uint64_t* numGenRoots,
                                                       uint64_t* numRemSetRoots) {
 
   switch (this->status) {
     case condemned_set_status::single_subheap_condemned: {
-      *numGenRoots += active_space->prepare_for_collection();
+      *numGenRoots += active_space->prepare_for_collection(was_sticky);
       break;
     }
 
     case condemned_set_status::per_frame_condemned: {
       for (auto space : spaces) {
-        *numGenRoots += space->prepare_for_collection();
+        *numGenRoots += space->prepare_for_collection(was_sticky);
       }
       break;
     }
 
     case condemned_set_status::whole_heap_condemned: {
-      *numGenRoots += gcglobals.default_allocator->prepare_for_collection();
+      *numGenRoots += gcglobals.default_allocator->prepare_for_collection(was_sticky);
       for (auto handle : gcglobals.all_subheap_handles_except_default_allocator) {
-        *numGenRoots += handle->body->prepare_for_collection();
+        *numGenRoots += handle->body->prepare_for_collection(was_sticky);
       }
       break;
     }
@@ -2975,8 +3064,8 @@ public:
     return;
   }
 
-  virtual uint64_t prepare_for_collection() {
-    if (this->next_collection_sticky) {
+  virtual uint64_t prepare_for_collection(bool sticky) {
+    if (sticky) {
       std::vector<tori**> roots = generational_remset.move_to_vector();
       // Process generational remset.
       // We must be careful not to process the same root more than once;
@@ -3051,16 +3140,42 @@ public:
   }
   // }}}
 
+  template <bool small>
+  free_linegroup* grab_recycled_linegroup(int64_t cell_size) {
+    free_linegroup* g = recycled_lines_medium;
+    if (small) {
+      PREFETCH_FOR_WRITES(g->next);
+      recycled_lines_medium = g->next;
+      return g;
+    }
+
+    free_linegroup** prev = &recycled_lines_medium;
+    int medium_lines_tried = 1;
+    while (g) {
+      int size_bytes = distance(g, g->bound);
+      if (size_bytes >= cell_size) {
+        *prev = g->next; // unlink g from singly-linked list.
+        break;
+      } else {
+        prev = &(g->next);
+        g = g->next;
+        ++medium_lines_tried;
+      }
+    }
+    return g;
+  }
 
   // {{{ Allocation, in various flavors & specializations.
 
   // If this function returns false, we'll trigger a GC and try again.
   // If the function still returns false after GCing, game over!
+  template <bool small>
   inline bool try_establish_alloc_precondition(bump_allocator* bumper, int64_t cell_size) {
-     if (bumper->size() < cell_size) return try_prep_allocatable_block(bumper, cell_size);
+     if (bumper->size() < cell_size) return try_prep_allocatable_block<small>(bumper, cell_size);
      return true;
   }
 
+  template <bool small>
   bool try_prep_allocatable_block(bump_allocator* bumper, int64_t cell_size) __attribute__((noinline)) {
     // Note the implicit policy embodied below in the preference between
     // using recycled frames, clean used frames, or fresh/new frames.
@@ -3068,15 +3183,13 @@ public:
     // The immix paper uses a policy of expansion -> recycled -> clean used.
     // The order below is different.
 
-    // Recycled frames are only used if we just need one free line.
-    // Using recycled frames for medium allocations raises
-    // the risk for fragmentation to require searching many recycled frames.
-    if (!recycled_lines.empty() && cell_size <= IMMIX_LINE_SIZE) {
-      free_linegroup* g = recycled_lines.back();
+    // Single lines can service only small allocations.
+    if (small && !recycled_lines_single.empty()) {
+      free_linegroup* g = recycled_lines_single.back();
 
       if (g->next) {
-        recycled_lines.back() = g->next;
-      } else { recycled_lines.pop_back(); }
+        recycled_lines_single.back() = g->next;
+      } else { recycled_lines_single.pop_back(); }
 
       bumper->bound = g->bound;
       bumper->base  = realigned_for_allocation(g);
@@ -3084,38 +3197,40 @@ public:
       if (MEMSET_FREED_MEMORY) { memset(g, 0xef, distance(g, g->bound)); }
 
       if ((GCLOG_DETAIL > 0) || ENABLE_GCLOG_PREP) {
-        fprintf(gclog, "after GC# %d, using recycled line group in line %d of full frame (%u); # lines %.2f (bytes %zu); # groups left: %zu\n",
+        fprintf(gclog, "after GC# %d, using recycled single-line group in line %d of full frame (%u); # lines %.2f (bytes %zu); # groups left: %zu\n",
             gcglobals.num_gcs_triggered,
             line_offset_within_f15(bumper->base),
             frame15_id_of(g),
             double(bumper->size()) / double(IMMIX_LINE_SIZE),
-            bumper->size(), recycled_lines.size());
+            bumper->size(), recycled_lines_single.size());
         //for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap[i] ? 'd' : '_'); } fprintf(gclog, "\n");
       }
-      approx_lines_allocated_since_last_collection += distance(g, g->bound) / IMMIX_LINE_SIZE;
+      approx_lines_allocated_since_last_collection += 1;
       return true;
     }
     
-    if (!recycled_lines_large.empty() && cell_size <= (IMMIX_LINE_SIZE * 25)) {
-      free_linegroup* g = recycled_lines_large.back();
-      recycled_lines_large.pop_back();
+    // Otherwise, if we're out of single lines OR we have a medium allocation,
+    // search through all the medium groups until we find one big enough.
+    if (recycled_lines_medium != nullptr) {
+      if (free_linegroup* g = grab_recycled_linegroup<small>(cell_size)) {
+        bumper->bound = g->bound;
+        bumper->base  = realigned_for_allocation(g);
 
-      bumper->bound = g->bound;
-      bumper->base  = realigned_for_allocation(g);
+        if (MEMSET_FREED_MEMORY) { memset(g, 0xef, distance(g, g->bound)); }
 
-      if (MEMSET_FREED_MEMORY) { memset(g, 0xef, distance(g, g->bound)); }
-
-      if ((GCLOG_DETAIL > 0) || ENABLE_GCLOG_PREP) {
-        fprintf(gclog, "after GC# %d, using recycled large line group in line %d of full frame (%u); # lines %.2f (bytes %d); # groups left: %zu\n",
-            gcglobals.num_gcs_triggered,
-            line_offset_within_f15(bumper->base),
-            frame15_id_of(g),
-            double(bumper->size()) / double(IMMIX_LINE_SIZE),
-            bumper->size(), recycled_lines_large.size());
-        //for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap[i] ? 'd' : '_'); } fprintf(gclog, "\n");
+        if ((GCLOG_DETAIL > 0) || ENABLE_GCLOG_PREP) {
+          fprintf(gclog, "after GC# %d, using recycled medium line group in line %d of full frame (%u); # lines %.2f (bytes %zd) for %zd-byte alloc\n",
+              gcglobals.num_gcs_triggered,
+              line_offset_within_f15(bumper->base),
+              frame15_id_of(g),
+              double(bumper->size()) / double(IMMIX_LINE_SIZE),
+              bumper->size(),
+              cell_size);
+          //for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap[i] ? 'd' : '_'); } fprintf(gclog, "\n");
+        }
+        approx_lines_allocated_since_last_collection += linegroup_size_in_lines(g);
+        return true;
       }
-      approx_lines_allocated_since_last_collection += distance(g, g->bound) / IMMIX_LINE_SIZE;
-      return true;
     }
 
     if (!global_frame15_allocator.empty()) {
@@ -3151,18 +3266,18 @@ public:
 
   bool can_alloc_for_defrag(int64_t needed_bytes) {
     if (small_bumper.size() >= needed_bytes) return true;
-    
-    frame15* f = global_frame15_allocator.try_get_frame15_for_defrag();
+
+    frame15* f = defrag_reserve.try_get_frame15_for_defrag();
     if (!f) {
       // Make sure we short-circuit further attempts to defrag.
       gcglobals.evac_threshold = 0;
       return false;
+    } else {
+      tracking.add_frame15(f);
+      set_parent_for_frame(this, f);
+      small_bumper.base  = realigned_for_allocation(f);
+      small_bumper.bound = offset(f, 1 << 15);
     }
-    
-    tracking.add_frame15(f);
-    set_parent_for_frame(this, f);
-    small_bumper.base  = realigned_for_allocation(f);
-    small_bumper.bound = offset(f, 1 << 15);
     return true;
   }
 
@@ -3189,7 +3304,7 @@ public:
   virtual void* allocate_cell(typemap* typeinfo) {
     int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
 
-    if (try_establish_alloc_precondition(&small_bumper, cell_size)) {
+    if (try_establish_alloc_precondition<true>(&small_bumper, cell_size)) {
       return allocate_cell_prechecked(typeinfo);
     } else {
       return allocate_cell_slowpath(typeinfo);
@@ -3199,7 +3314,7 @@ public:
   // Invariant: N is less than one line.
   template <int N>
   void* allocate_cell_N(typemap* typeinfo) {
-    if (try_establish_alloc_precondition(&small_bumper, N)) {
+    if (try_establish_alloc_precondition<true>(&small_bumper, N)) {
       return allocate_cell_prechecked_N<N>(typeinfo);
     } else {
       return allocate_cell_slowpath(typeinfo);
@@ -3215,14 +3330,13 @@ public:
     int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
 
     if (true || GCLOG_DETAIL > 2) { fprintf(gclog, "allocate_cell_slowpath for size-%zd cell triggering immix gc\n", cell_size);
-      int large_lines = 0;
-      for (auto linegroup : recycled_lines_large) {
-        while (linegroup) {
-          large_lines += linegroup_size_in_lines(linegroup);
-          linegroup = linegroup->next;
-        }
+      int medium_lines = 0;
+      auto linegroup = recycled_lines_medium;
+      while (linegroup) {
+        medium_lines += linegroup_size_in_lines(linegroup);
+        linegroup = linegroup->next;
       }
-      fprintf(gclog, "      (large line reserve: %d lines)\n", large_lines);
+      fprintf(gclog, "      (medium line reserve: %d lines)\n", medium_lines);
     }
 
     // When we run out of memory, we should collect the whole heap, regardless of
@@ -3239,7 +3353,7 @@ public:
       }
     }
 
-    if (!try_establish_alloc_precondition(&small_bumper, cell_size)) {
+    if (!try_establish_alloc_precondition<true>(&small_bumper, cell_size)) {
       helpers::oops_we_died_from_heap_starvation(); return NULL;
     }
 
@@ -3268,34 +3382,46 @@ public:
     }
 
     if (req_bytes <= IMMIX_LINE_SIZE) {
-      return allocate_array_into_bumper(&small_bumper, elt_typeinfo, n, req_bytes, init);
+      return allocate_array_into_bumper<true>(&small_bumper, elt_typeinfo, n, req_bytes, init);
     } else if (req_bytes > (1 << 13)) {
       // The Immix paper, since it built on top of Jikes RVM, uses an 8 KB
       // threshold to distinguish medium-sized allocations from large ones.
       return laa.allocate_array(elt_typeinfo, n, req_bytes, init, this);
     } else {
       // If it's not small and it's not large, it must be medium.
-      return allocate_array_into_bumper(&medium_bumper, elt_typeinfo, n, req_bytes, init);
+      return allocate_array_into_bumper<false>(&medium_bumper, elt_typeinfo, n, req_bytes, init);
     }
   }
 
+  template <bool small>
   void* allocate_array_into_bumper(bump_allocator* bumper, typemap* elt_typeinfo, int64_t n, int64_t req_bytes, bool init) {
-    if (try_establish_alloc_precondition(bumper, req_bytes)) {
+    if (try_establish_alloc_precondition<small>(bumper, req_bytes)) {
       return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, gcglobals.current_subheap_hash, init);
     } else {
       if (true || GCLOG_DETAIL > 2) { fprintf(gclog, "allocate_array_into_bumper needing %zd bytes triggering immix gc\n", req_bytes); }
       {
         condemned_set_status_manager tmp(condemned_set_status::whole_heap_condemned);
         if (common.common_gc(this, false)) {
+            fprintf(gclog, "allocate_array_into_bumper: running emergency GC...\n");
             common.common_gc(this, false);
         }
       }
 
-      if (try_establish_alloc_precondition(bumper, req_bytes)) {
+      if (try_establish_alloc_precondition<small>(bumper, req_bytes)) {
         //fprintf(gclog, "gc collection freed space for array, now have %lld\n", curr->free_size());
         //fflush(gclog);
         return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, gcglobals.current_subheap_hash, init);
-      } else { helpers::oops_we_died_from_heap_starvation(); return NULL; }
+      } else {
+        int recycled_lines_left = 0;
+        auto g = recycled_lines_medium;
+        while (g) {
+          int size_in_lines = distance(g, g->bound) / IMMIX_LINE_SIZE;
+          recycled_lines_left += size_in_lines;
+          fprintf(gclog, "       %d lines [medium]\n", size_in_lines);
+          g = g->next;
+        }
+        fprintf(gclog, "Unable to allocate array of %zd bytes; have %d recycled medium lines in aggregate.\n", req_bytes, recycled_lines_left);
+        helpers::oops_we_died_from_heap_starvation(); return NULL; }
     }
   }
 
@@ -3324,8 +3450,8 @@ public:
       }
       */
 
-  virtual bool is_empty() { return recycled_lines.empty()
-                                    && recycled_lines_large.empty()
+  virtual bool is_empty() { return recycled_lines_single.empty()
+                                    && recycled_lines_medium == nullptr
                                     && laa.empty()
                                     && tracking.logical_frame15s() == 0; }
 
@@ -3347,8 +3473,8 @@ public:
     clear_current_blocks();
 
     // This vector will get filled by the calls to inspect_*_postgc().
-    recycled_lines.clear();
-    recycled_lines_large.clear();
+    recycled_lines_single.clear();
+    recycled_lines_medium = nullptr;
 
     int64_t num_lines_reclaimed = 0;
 
@@ -3381,15 +3507,23 @@ public:
     double survival_rate = 1.0 - yield_rate; // usually around 0.05 to 0.25
 
     bool was_sticky = this->next_collection_sticky;
-    // If we see signs that we're running out of space, discard sticky bits to get more space next time.
-    // High survival rates mean both less room to run until the next collection,
-    // and also higher cost per collection.
-    if (yield_percentage <= gcglobals.yield_percentage_threshold) {
-      fprintf(gclog, "Scheduling a non-sticky collection because our yield percentage (%.1f) was below our threshold (%.1f).\n",
-          yield_percentage, gcglobals.yield_percentage_threshold);
+
+    if (this == gcglobals.default_allocator) {
+      // If we see signs that we're running out of space, discard sticky bits to get more space next time.
+      // High survival rates mean both less room to run until the next collection,
+      // and also higher cost per collection.
+      if (yield_percentage <= gcglobals.yield_percentage_threshold) {
+        fprintf(gclog, "Scheduling a non-sticky collection because our yield percentage (%.1f) was below our threshold (%.1f).\n",
+            yield_percentage, gcglobals.yield_percentage_threshold);
+      }
+      else if (yield_rate <= 0.02) {
+        fprintf(gclog, "Scheduling a non-sticky collection because our upcoming nursery percentage (%.1f) was below 2%%.\n",
+            100.0 * yield_rate);
+      }
+      this->next_collection_sticky = (!__foster_globals.disable_sticky)
+                                      && (yield_percentage > gcglobals.yield_percentage_threshold)
+                                      && (yield_rate > 0.02);
     }
-    this->next_collection_sticky = (!__foster_globals.disable_sticky)
-                                    && (yield_percentage > gcglobals.yield_percentage_threshold);
 
 #if ((GCLOG_DETAIL > 1) && ENABLE_GCLOG_ENDGC) || 1
       { auto s = foster::humanize_s(nursery_ratio * double(lines_tracked * IMMIX_BYTES_PER_LINE), "B");
@@ -3398,7 +3532,7 @@ public:
       fprintf(gclog, "    global yield rate: %f\n", 100.0 * (double(num_lines_reclaimed) / double(lines_tracked)));
       fprintf(gclog, "     local yield rate: %f\n", 100.0 * local_yield);
       fprintf(gclog, "                                     defrag frame15s left: %zd (before reclaiming clean frames)\n",
-        global_frame15_allocator.defrag_frame15s.size());
+        defrag_reserve.defrag_frame15s.size());
       
       if (was_sticky) {
         fprintf(gclog, "Reclaimed %.2f%% (%zd) of %zd new lines.\n", 100.0 * local_yield, num_lines_reclaimed, lines_allocated);
@@ -3452,11 +3586,13 @@ public:
   // Note: O(n) (in the number of recycled line groups).
   size_t frame15s_in_reserve_recycled() {
     std::set<frame15_id> recycled;
-    for (auto g : recycled_lines) {
+    for (auto g : recycled_lines_single) {
       recycled.insert(frame15_id_of(g));
     }
-    for (auto g : recycled_lines_large) {
+    auto g = recycled_lines_medium;
+    while (g) {
       recycled.insert(frame15_id_of(g));
+      g = g->next;
     }
     return recycled.size();
   }
@@ -3514,7 +3650,7 @@ public:
       return num_available_lines;
     }
 
-    free_linegroup* nextgroup = nullptr;
+    free_linegroup* singlegroup = nullptr;
 
     // The first line of the next block is off-limits (implicitly marked).
     int cursor = IMMIX_LINES_PER_BLOCK;
@@ -3539,11 +3675,12 @@ public:
       if (MEMSET_FREED_MEMORY) { memset(offset(g, 16), 0xdd, distance(g, g->bound) - 16); }
 
       int num_lines_in_group = (rightmost_unmarked_line - leftmost_unmarked_line) + 1;
-      if (num_lines_in_group >= 25) {
-        recycled_lines_large.push_back(g);
+      if (num_lines_in_group == 1) {
+        g->next = singlegroup;
+        singlegroup = g;
       } else {
-        g->next = nextgroup;
-        nextgroup = g;
+        g->next = recycled_lines_medium;
+        recycled_lines_medium = g;
       }
 
       num_lines_to_process -= num_lines_in_group;
@@ -3551,11 +3688,11 @@ public:
       //fprintf(gclog, "num lines in group: %d\n", num_lines_in_group); fflush(gclog);
       if (num_lines_in_group <= 0) abort();
     }
-    // Postcondition: nextgroup refers to leftmost hole, if any
+    // Postcondition: singlegroup refers to leftmost hole, if any
 
-    if (nextgroup) {
-      if (GCLOG_DETAIL > 0) { fprintf(gclog, "Adding frame %p to recycled list; n marked = %d\n", f15, num_marked_lines); }
-      recycled_lines.push_back(nextgroup);
+    if (singlegroup) {
+      //if (GCLOG_DETAIL > 0) { fprintf(gclog, "Adding frame %p to recycled list; n marked = %d\n", f15, num_marked_lines); }
+      recycled_lines_single.push_back(singlegroup);
     }
 
     // Previous (non-sticky-mark-bits) versions reset line and object mark bits here,
@@ -3566,10 +3703,12 @@ public:
     //     mark bits are reset at the *end* of a collection instead of the beginning, so
     //     none of the old data is inspected yet.
 
-    // Increment mark histogram.
-    if (gcglobals.condemned_set.status == condemned_set_status::whole_heap_condemned) {
+    // Increment mark histogram for default subheap.
+    if (this == gcglobals.default_allocator) {
       finfo->num_holes_at_last_full_collection = num_holes_found;
       gcglobals.marked_histogram[num_holes_found] += num_marked_lines;
+      gcglobals.marked_histogram_frames[num_holes_found] += 1;
+      gcglobals.residency_histogram[num_holes_found] += gcglobals.lazy_mapped_frame_liveness[fid];
     }
 
     // Coarse marks must be reset after all frames have been processed.
@@ -3599,8 +3738,8 @@ private:
 
   // Stores the empty spaces that the previous collection
   // identified as being viable candidates for allocation into.
-  std::vector<free_linegroup*> recycled_lines;
-  std::vector<free_linegroup*> recycled_lines_large;
+  std::vector<free_linegroup*> recycled_lines_single;
+  free_linegroup*              recycled_lines_medium;
 
   // The points-into remembered set; each frame in this set needs to have its
   // card table inspected for pointers that actually point here.
@@ -3973,6 +4112,7 @@ void initialize(void* stack_highest_addr) {
   //gcglobals.lazy_mapped_frame15info_associated  = allocate_lazily_zero_mapped<void*>(      size_t(1) << (address_space_prefix_size_log() - 15));
   //
   gcglobals.lazy_mapped_granule_marks           = allocate_lazily_zero_mapped<uint8_t>(lazy_mapped_granule_marks_size()); // byte marks
+  gcglobals.lazy_mapped_frame_liveness          = allocate_lazily_zero_mapped<uint16_t>(     size_t(1) << (address_space_prefix_size_log() - 15));
 
   gcglobals.gc_time_us = 0.0;
   gcglobals.num_gcs_triggered = 0;
@@ -4288,7 +4428,7 @@ FILE* print_timing_stats() {
     fprintf(gclog, "'Num_Closure_Calls': %s\n", s.c_str());
   }
 
-  fprintf(gclog, "'FosterlowerConfig': %s\n", &__foster_fosterlower_config);
+  fprintf(gclog, "'FosterlowerConfig': %s\n", (const char*)&__foster_fosterlower_config);
   fprintf(gclog, "'FosterGCConfig': {'FifoSize': %d, 'DefragReserveFraction: %.2f}\n", USE_FIFO_SIZE, kFosterDefragReserveFraction);
 
   /*
