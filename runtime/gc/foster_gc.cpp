@@ -8,6 +8,7 @@
 #include "libfoster_gc_roots.h"
 #include "foster_globals.h"
 #include "bitmap.h"
+#include "ptr_fifo.h"
 
 #include "build/build_config.h" // from chromium_base
 #include "hdr_histogram.h"
@@ -55,7 +56,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define TRACK_NUM_ALLOC_BYTES         1
 #define TRACK_NUM_REMSET_ROOTS        1
 #define TRACK_NUM_OBJECTS_MARKED      1
-#define TRACK_WRITE_BARRIER_COUNTS    1
+#define TRACK_WRITE_BARRIER_COUNTS    0
 #define TRACK_BYTES_KEPT_ENTRIES      0
 #define TRACK_BYTES_ALLOCATED_ENTRIES 0
 #define TRACK_BYTES_ALLOCATED_PINHOOK 0
@@ -68,12 +69,9 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #include "gc/foster_gc_reconfig-inl.h"
 
 const double kFosterDefragReserveFraction = 0.02;
-const int kFosterGCMaxDepth = 8;
 const ssize_t inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
 
 extern void* foster__typeMapList[];
-
-int64_t gNumRootsScanned = 0;
 
 /////////////////////////////////////////////////////////////////
 
@@ -288,7 +286,7 @@ public:
   virtual void uncondemn() = 0;
   virtual bool is_condemned() = 0;
 
-  virtual uint64_t visit_root(unchecked_ptr* root, const char* slotname) = 0;
+  virtual void visit_root(unchecked_ptr* root, const char* slotname) = 0;
 
   virtual int64_t immix_sweep(clocktimer<false>& phase,
                               clocktimer<false>& gcstart) = 0;
@@ -347,11 +345,12 @@ struct immix_worklist_t {
     void       process(immix_heap* target, immix_common& common);
     bool       empty()           { return roots.empty(); }
     unchecked_ptr* pop_root()  { auto root = roots.back(); roots.pop_back(); return root; }
-    void       add(unchecked_ptr* root) { roots.push_back(root); }
+    void       add_root(unchecked_ptr* root) { __builtin_prefetch(*(void**)root); roots.push_back(root); }
     size_t     size()            { return roots.size(); }
   private:
     size_t                  idx;
     std::vector<unchecked_ptr*> roots;
+    ptr_fifo_2             fifo;
 };
 
 // {{{ Global data used by the GC
@@ -505,6 +504,7 @@ struct GCGlobals {
   uint64_t num_alloc_bytes_in_subheaps;
 
   uint64_t write_barrier_phase0_hits;
+  uint64_t write_barrier_phase0b_hits;
   uint64_t write_barrier_phase1_hits;
   uint64_t write_barrier_phase1g_hits;
 
@@ -879,7 +879,7 @@ bool slot_is_condemned(void* slot, immix_heap* space) {
 // {{{ Function prototype decls
 bool line_for_slot_is_marked(void* slot);
 void inspect_typemap(const typemap* ti);
-uint64_t visitGCRoots(void* start_frame, immix_heap* visitor);
+void visitGCRoots(void* start_frame, immix_heap* visitor);
 void coro_visitGCRoots(foster_bare_coro* coro, immix_heap* visitor);
 const typemap* tryGetTypemap(heap_cell* cell);
 // }}}
@@ -1477,11 +1477,8 @@ void mark_lines_for_slots(void* slot, uint64_t cell_size) {
   }
 }
 
-bool should_opportunistically_evacuate(
-          condemned_set_status condemned_portion,
-          frame15info* f15info,
-          immix_heap* space,
-          heap_cell* obj);
+template <condemned_set_status condemned_portion>
+bool should_opportunistically_evacuate(immix_heap* space, heap_cell* obj);
 
 // This struct contains per-frame state and code shared between
 // regular and line-based immix frames.
@@ -1497,20 +1494,20 @@ struct immix_common {
 
   template <condemned_set_status condemned_portion>
   void* evac_with_map_and_arr(heap_cell* cell, const typemap& map,
-                             heap_array* arr, int64_t cell_size, int depth,
+                             heap_array* arr, int64_t cell_size,
                              immix_space* tospace);
 
   template <condemned_set_status condemned_portion>
   void scan_with_map_and_arr(immix_heap* space,
                              heap_cell* cell, const typemap& map,
-                             heap_array* arr, int depth) {
+                             heap_array* arr) {
     if (map.numOffsets > 0) {
       if (!arr) {
-        scan_with_map<condemned_portion>(space, from_tidy(cell->body_addr()), map, depth);
+        scan_with_map<condemned_portion>(space, from_tidy(cell->body_addr()), map);
       } else { // Skip this loop for int arrays and such.
         int64_t numcells = arr->num_elts();
         for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
-          scan_with_map<condemned_portion>(space, arr->elt_body(cellnum, map.cell_size), map, depth);
+          scan_with_map<condemned_portion>(space, arr->elt_body(cellnum, map.cell_size), map);
         }
       }
     }
@@ -1522,7 +1519,7 @@ struct immix_common {
   }
 
   template <condemned_set_status condemned_portion>
-  void scan_with_map(immix_heap* space, intr* body, const typemap& map, int depth) {
+  void scan_with_map(immix_heap* space, intr* body, const typemap& map) {
     for (int i = 0; i < map.numOffsets; ++i) {
       void** unchecked = (void**) offset(body, map.offsets[i]);
       if (GCLOG_DETAIL > 4) {
@@ -1530,8 +1527,9 @@ struct immix_common {
             *unchecked, unchecked, i, map.numOffsets, map.offsets[i], body);
       }
       if (!non_markable_addr(*unchecked)) {
-        uint64_t ignored =
-          immix_trace<condemned_portion>(space, (unchecked_ptr*) unchecked, depth);
+        immix_worklist.add_root((unchecked_ptr*) unchecked);
+        //uint64_t ignored =
+        //  immix_trace<condemned_portion>(space, (unchecked_ptr*) unchecked);
       }
     }
   }
@@ -1544,10 +1542,7 @@ struct immix_common {
   // Precondition: cell is part of the condemned set.
   // Precondition: cell is not forwarded.
   template <condemned_set_status condemned_portion>
-  void* scan_and_evacuate_to(immix_space* tospace, heap_cell* cell, int depth_remaining) {
-    if (GCLOG_DETAIL > 3) {
-      fprintf(gclog, "scanning (and evacuating) cell %p, tospace %p with remaining depth %d\n", cell, tospace, depth_remaining);
-      fflush(gclog); }
+  void* scan_and_evacuate_to(immix_space* tospace, heap_cell* cell) {
 
     heap_array* arr = NULL;
     const typemap* map = NULL;
@@ -1556,18 +1551,15 @@ struct immix_common {
 
     // Without metadata for the cell, there's not much we can do...
     if (map && gcglobals.typemap_memory.contains((void*) map)) {
-      return evac_with_map_and_arr<condemned_portion>(cell, *map, arr, cell_size,
-                                                depth_remaining - 1, tospace);
+      return evac_with_map_and_arr<condemned_portion>(cell, *map, arr, cell_size, tospace);
     }
     return nullptr;
   }
 
   // Precondition: cell is part of the condemned set and not yet marked.
   template <condemned_set_status condemned_portion>
-  void scan_cell(immix_heap* space, heap_cell* cell, int depth_remaining) {
-    if (GCLOG_DETAIL > 3) {
-      fprintf(gclog, "scanning cell %p for space %p with remaining depth %d\n", cell, space, depth_remaining);
-      fflush(gclog); }
+  void scan_cell(immix_heap* space, heap_cell* cell) {
+    if (GCLOG_DETAIL > 3) { fprintf(gclog, "scanning cell %p for space %p\n", cell, space); fflush(gclog); }
 
     auto frameclass = frame15_classification(cell);
     if (GCLOG_DETAIL > 3) { fprintf(gclog, "frame classification for obj %p in frame %u is %d\n", cell, frame15_id_of(cell), int(frameclass)); }
@@ -1593,18 +1585,15 @@ struct immix_common {
 
     // Without metadata for the cell, there's not much we can do...
     if (map && gcglobals.typemap_memory.contains((void*) map)) {
-      scan_with_map_and_arr<condemned_portion>(space, cell, *map, arr, depth_remaining - 1);
+      scan_with_map_and_arr<condemned_portion>(space, cell, *map, arr);
     }
   }
 
   // Jones/Hosking/Moss refer to this function as "process(fld)".
   // Returns 1 if root was located in a condemned space; 0 otherwise.
+  // Precondition: root points to an unmarked, unforwarded, markable object.
   template <condemned_set_status condemned_portion>
-  uint64_t immix_trace(immix_heap* space, unchecked_ptr* root, int depth_remaining) {
-    if (depth_remaining == 0) {
-      immix_worklist.add(root);
-      return 0;
-    }
+  uint64_t immix_trace(immix_heap* space, unchecked_ptr* root, heap_cell* obj) {
     //       |------------|       obj: |------------|
     // root: |    body    |---\        |  size/meta |
     //       |------------|   |        |------------|
@@ -1612,125 +1601,46 @@ struct immix_common {
     //                        |       ...          ...
     //                        \-*root->|            |
     //                                 |------------|
-    //tidy* tidyn;
-    tori* body = untag(*root);
-    if (!body) return 0;
-
-    auto f15id = frame15_id_of((void*) body);
-    auto f15info = frame15_info_for((void*) body);
-
-    // Look up status of corresponding frame15
-    // Possibilities:
-    //   * Immix block in this space
-    //      - Mark or evacuate based on prev collection's stats
-    //   * Immix block in some other space
-    //      - Ignore, since we can rely on remembered sets
-    //   * Stable (known global or stack data)
-    //      - Trace but don't evacuate
-    //   * Unknown (??)
-    if (classification_for_frame15_id(f15id) == frame15kind::staticdata) {
-      // Do nothing: no need to mark, since static data never points to
-      // dynamically allocated data.
-      if (GCLOG_DETAIL > 3) { fprintf(gclog, "ignoring static data cell %p\n", body); }
-      return 0;
-    }
 
     if ( (condemned_portion == condemned_set_status::single_subheap_condemned
-          && !owned_by(body, space)) ||
+          && !owned_by((tori*)obj->body_addr(), space)) ||
          (condemned_portion == condemned_set_status::per_frame_condemned
-          && !space_is_condemned(body)) )
+          && !space_is_condemned(obj)) )
     {
         // When collecting a subset of the heap, we only look at condemned objects,
         // and ignore objects stored in non-condemned regions.
         // The remembered set is guaranteed to contain all incoming pointers
         // from non-condemned regions.
-        if (GCLOG_DETAIL > 3) { fprintf(gclog, "immix_trace() ignoring non-condemned cell %p in line %d of (%u)\n",
-            body, line_offset_within_f15(body), f15id); }
+        if (GCLOG_DETAIL > 3) {
+          auto f15id = frame15_id_of((void*) obj);
+          fprintf(gclog, "immix_trace() ignoring non-condemned cell %p in line %d of (%u)\n",
+            obj, line_offset_within_f15(obj), f15id); }
         return 0;
     }
 
-    // TODO drop the assumption that body is a tidy pointer.
-    heap_cell* obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(body));
-    if (obj->is_forwarded()) {
-      auto tidyn = (void*) obj->get_forwarded_body();
-      *root = make_unchecked_ptr((tori*) tidyn);
-    } else if (obj_is_marked(obj)) {
-      // Skip marked objects.
-    } else {
-
-    if (should_opportunistically_evacuate(condemned_portion, f15info, space, obj)) {
-      // The Immix paper handles evacuation in (I think) the following way:
-      //  * At the end of each GC cycle, build a histogram of used+avail lines.
-      //    The Immix paper eagerly builds the used histogram and lazily builds
-      //    the other; it's unclear why they can't both be computed eagerly.
-      //  * Keep a _reserve_ of unused frames, not used for allocation.
-      //  * When compacting, use histogram line counts to select _candidates_:
-      //    the (set of) most-fragmented frames from previous collection whose
-      //    used lines would fit (assuming all "new" allocations end up being dead)
-      //    into the reserved frames, plus the assumed-available lines from all
-      //    non-selected frames. Note several factors making this scheme speculative:
-      //      * Some new allocations are likely to not be dead,
-      //        leaving us with more required lines than calculated.
-      //      * Opportunistic evacuation proceeds on-demand as objects happen to be
-      //        traced; we don't proactively generate empty frames by eagerly visiting
-      //        and evacuating every object on the frame.
-      //      * We can only allocate into empty space; this means reserved frames
-      //        or completely-evacuated frames.
-      //  * It's not 100% clear whether Immix triggers collection only when space is
-      //    exhausted or whether it collects early to ensure a reserve of recycled lines.
-      //    Note that even an "exhausted" heap can have available lines due to skippage
-      //    from allocating medium-sized objects.
-      //
-      // Note that proactively evacuating objects would maintain object ordering but
-      // would not make space available sooner, because the rest of the heap needs
-      // to observe the installed forwarding pointers during marking.
-      //
-      // Slight tweak:
-      //   * Don't keep a reserve of unused frames. Allocate into all available frames.
-      //   * When fragmentation is observed, at the end of some collection, choose candidates
-      //     that will fit into the just-made-available recycled lines.
-      //   * Calculate the number of needed lines to accomodate candidate data.
-      //   * Trigger the next collection "early", when the number of available
-      //     (clean + recycled) lines would fall below the number needed for candidates.
-      //   * Evacuate into recycled lines instead of reserved frames.
-      // 
-      // The advantage of this scheme is that it can (I think) sometimes make use of
-      // extra space: when defragmentation is not needed, we can use the "reserve."
-      // The flip side is: what about in tight heaps & evacuating medium objects?
-      // 
-      //
-      // Simplification:
-      //   * Keep a reserve, but don't evacuate into recycled lines.
-      //   * Instead, steal the reserve when defrag is needed, and
-      //     return as much as possible when defrag is done. Even if the defragmented
-      //     frames don't end up entirely clean, most collections should free at least
-      //     ~2% of the heap. If collection freed less than 2% of the heap, and defrag
-      //     is still needed, maybe it's just time to call OOM?
-      //fprintf(gclog, "opportunistically evacuating object %p and updating root %p\n", obj, root);
-      auto tidyn = scan_and_evacuate_to<condemned_portion>((immix_space*)space, obj, depth_remaining);
+    if (should_opportunistically_evacuate<condemned_portion>(space, obj)) {
+      auto tidyn = scan_and_evacuate_to<condemned_portion>((immix_space*)space, obj);
       *root = make_unchecked_ptr((tori*) tidyn);
     } else {
-      scan_cell<condemned_portion>(space, obj, depth_remaining);
-    }
-
+      scan_cell<condemned_portion>(space, obj);
     }
 
     return 1;
   }
 
-  uint64_t visit_root(immix_heap* space, unchecked_ptr* root, const char* slotname) {
+  void visit_root(immix_heap* space, unchecked_ptr* root, const char* slotname) {
     switch (gcglobals.condemned_set.status) {
-    case                            condemned_set_status::single_subheap_condemned:
-      return visit_root_specialized<condemned_set_status::single_subheap_condemned>(space, root, slotname);
-    case                            condemned_set_status::per_frame_condemned:
-      return visit_root_specialized<condemned_set_status::per_frame_condemned>(space, root, slotname);
-    case                            condemned_set_status::whole_heap_condemned:
-      return visit_root_specialized<condemned_set_status::whole_heap_condemned>(space, root, slotname); 
+    case                     condemned_set_status::single_subheap_condemned:
+      visit_root_specialized<condemned_set_status::single_subheap_condemned>(space, root, slotname);
+    case                     condemned_set_status::per_frame_condemned:
+      visit_root_specialized<condemned_set_status::per_frame_condemned>(space, root, slotname);
+    case                     condemned_set_status::whole_heap_condemned:
+      visit_root_specialized<condemned_set_status::whole_heap_condemned>(space, root, slotname);
     }
   }
 
   template <condemned_set_status condemned_portion>
-  uint64_t visit_root_specialized(immix_heap* space, unchecked_ptr* root, const char* slotname) {
+  void visit_root_specialized(immix_heap* space, unchecked_ptr* root, const char* slotname) {
     gc_assert(root != NULL, "someone passed a NULL root addr!");
     if (GCLOG_DETAIL > 1) {
       fprintf(gclog, "\t\tSTACK SLOT %p (in (%u)) contains ptr %p, slot name = %s\n", root, frame15_id_of(root),
@@ -1739,9 +1649,8 @@ struct immix_common {
     }
 
     if (!non_markable_addr(unchecked_ptr_val(*root))) {
-      ++gNumRootsScanned;
-      return immix_trace<condemned_portion>(space, root, kFosterGCMaxDepth);
-    } else return 0;
+      immix_worklist.add_root(root);
+    }
   }
 
   uint64_t process_subheap_remsets(immix_heap* space) {
@@ -2347,8 +2256,8 @@ public:
   virtual void uncondemn() { condemned_flag = false; }
   virtual bool is_condemned() { return condemned_flag; }
 
-  uint64_t visit_root(unchecked_ptr* root, const char* slotname) {
-    return common.visit_root(this, root, slotname);
+  void visit_root(unchecked_ptr* root, const char* slotname) {
+    common.visit_root(this, root, slotname);
   }
 
   virtual bool is_empty() { return used_lines.empty() && laa.empty(); }
@@ -2597,7 +2506,7 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
       */
 
     //ct.start();
-    uint64_t numCondemnedRoots = visitGCRoots(__builtin_frame_address(0), active_space);
+    visitGCRoots(__builtin_frame_address(0), active_space);
     //fprintf(gclog, "num condemned + remset roots: %zu\n", numCondemnedRoots + numRemSetRoots);
     //double trace_ms = ct.elapsed_ms();
 
@@ -2605,10 +2514,7 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     hdr_record_value(gcglobals.hist_gc_rootscan_ticks, __foster_getticks_elapsed(phaseStartTicks, __foster_getticks_end()));
 #endif
 
-    hdr_record_value(gcglobals.hist_gc_stackscan_roots, gNumRootsScanned);
-    gNumRootsScanned = 0;
-
-
+    //hdr_record_value(gcglobals.hist_gc_stackscan_roots, gNumRootsScanned);
 
     foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
     foster_bare_coro*  coro = *coro_slot;
@@ -2645,7 +2551,7 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
               gcglobals.condemned_set.approx_condemned_capacity_in_bytes(active_space)
                 / IMMIX_BYTES_PER_LINE;
 
-    bool hadEmptyRootSet = (numCondemnedRoots + numRemSetRoots + numGenRoots) == 0;
+    bool hadEmptyRootSet = false; // (numCondemnedRoots + numRemSetRoots + numGenRoots) == 0;
     int64_t num_lines_reclaimed = gcglobals.condemned_set.sweep_condemned(active_space, phase, gcstart, hadEmptyRootSet);
     //double sweep_ms = ct.elapsed_ms();
 
@@ -3030,7 +2936,7 @@ public:
         if (processed.count(slot) == 0) {
           processed.insert(slot);
           //fprintf(gclog, "visiting generational remset root %p in slot %p\n", *slot, slot); fflush(gclog);
-          numRoots += common.visit_root(this, (unchecked_ptr*) slot, "generational_remset_root");
+          common.visit_root(this, (unchecked_ptr*) slot, "generational_remset_root");
         }
       }
       generational_remset.clear();
@@ -3080,8 +2986,8 @@ public:
     medium_bumper.base = medium_bumper.bound;
   }
 
-  virtual uint64_t visit_root(unchecked_ptr* root, const char* slotname) {
-    return common.visit_root(this, root, slotname);
+  virtual void visit_root(unchecked_ptr* root, const char* slotname) {
+    common.visit_root(this, root, slotname);
   }
 
   virtual void force_gc_for_debugging_purposes() {
@@ -3654,27 +3560,65 @@ private:
 
 template <condemned_set_status condemned_status>
 void immix_worklist_t::process(immix_heap* target, immix_common& common) {
-  while (!empty()) {
-    unchecked_ptr* root = pop_root();
+  while (true) {
+    unchecked_ptr* root;
+#if 0
+    if (!empty()) {
+      root = pop_root();
+      __builtin_prefetch(*(void**)root);
 
-    if (!non_markable_addr(unchecked_ptr_val(*root))) {
-      common.immix_trace<condemned_status>(target, root, kFosterGCMaxDepth);
+      unchecked_ptr* hopefully_prefetched_by_now = (unchecked_ptr*) fifo.pull_and_push((void*) root);
+      root = hopefully_prefetched_by_now;
+      if (!root) { continue; }
+    } else {
+      root = (unchecked_ptr*) fifo.pull_and_push(nullptr);
+      if (!root) {
+        root = (unchecked_ptr*) fifo.pull_and_push(nullptr);
+      }
+      if (!root) { break; }
+    }
+      /*
+      if (fifo.full()) {
+        unchecked_ptr* hopefully_prefetched_by_now = (unchecked_ptr*) fifo.pull_and_push((void*) root);
+        root = hopefully_prefetched_by_now;
+      } else {
+        fifo.push((void*) root);
+        continue;
+      }
+    } else {
+      if (fifo.empty()) { break; }
+      root = (unchecked_ptr*) fifo.pull();
+    }
+    */
+#else
+    if (empty()) break;
+    root = pop_root();
+#endif
+
+    tori* body = unchecked_ptr_val(*root); // TODO drop the assumption that body is a tidy pointer.
+    heap_cell* obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(body));
+
+    if (obj->is_forwarded()) {
+      *root = make_unchecked_ptr((tori*) obj->get_forwarded_body());
+    } else if (obj_is_marked(obj)) {
+      // Skip marked objects.
+    } else {
+      common.immix_trace<condemned_status>(target, root, obj);
     }
   }
   initialize();
 }
 
-bool should_opportunistically_evacuate(
-          condemned_set_status condemned_portion,
-          frame15info* f15info,
-          immix_heap* space,
-          heap_cell* obj) {
+template <condemned_set_status condemned_portion>
+bool should_opportunistically_evacuate(immix_heap* space, heap_cell* obj) {
+  if (condemned_portion != condemned_set_status::whole_heap_condemned) return false;
+
+  auto f15info = frame15_info_for((void*) obj);
   bool want_to_opportunistically_evacuate =
-              condemned_portion == condemned_set_status::whole_heap_condemned
-          && f15info->frame_classification == frame15kind::immix_smallmedium
-          && gcglobals.evac_threshold > 0
+             gcglobals.evac_threshold > 0
           && space == gcglobals.default_allocator
-          && f15info->num_holes_at_last_full_collection >= gcglobals.evac_threshold;
+          && f15info->num_holes_at_last_full_collection >= gcglobals.evac_threshold
+          && f15info->frame_classification == frame15kind::immix_smallmedium;
 
   if (want_to_opportunistically_evacuate) {
     heap_array* arr; const typemap* map; int64_t cell_size;
@@ -3688,7 +3632,7 @@ bool should_opportunistically_evacuate(
 
 template <condemned_set_status condemned_portion>
 void* immix_common::evac_with_map_and_arr(heap_cell* cell, const typemap& map,
-                            heap_array* arr, int64_t cell_size, int depth,
+                            heap_array* arr, int64_t cell_size,
                             immix_space* tospace) {
   if (map.isCoro == 1) {
     foster_bare_coro* coro = reinterpret_cast<foster_bare_coro*>(cell->body_addr());
@@ -3699,7 +3643,7 @@ void* immix_common::evac_with_map_and_arr(heap_cell* cell, const typemap& map,
   if (!arr) {
     tidy* newbody = tospace->defrag_copy_cell(cell, (typemap*)&map, cell_size);
     if (map.numOffsets > 0) {
-      scan_with_map<condemned_portion>(tospace, from_tidy(newbody), map, depth);
+      scan_with_map<condemned_portion>(tospace, from_tidy(newbody), map);
     }
     return newbody;
   } else {
@@ -3708,7 +3652,7 @@ void* immix_common::evac_with_map_and_arr(heap_cell* cell, const typemap& map,
       int64_t numcells = arr->num_elts();
       for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
         //intr* elt = arr->elt_body(cellnum, map.cell_size);
-        scan_with_map<condemned_portion>(tospace, marr->elt_body(cellnum, map.cell_size), map, depth);
+        scan_with_map<condemned_portion>(tospace, marr->elt_body(cellnum, map.cell_size), map);
       }
     }
     return marr->body_addr();
@@ -3718,7 +3662,7 @@ void* immix_common::evac_with_map_and_arr(heap_cell* cell, const typemap& map,
 #include "foster_gc_backtrace_x86-inl.h"
 
 // {{{ Walks the call stack, calling visitor->visit_root() along the way.
-uint64_t visitGCRoots(void* start_frame, immix_heap* visitor) {
+void visitGCRoots(void* start_frame, immix_heap* visitor) {
   uint64_t condemnedRootsVisited = 0;
   enum { MAX_NUM_RET_ADDRS = 4024 };
   // Garbage collection requires 16+ KB of stack space due to these arrays.
@@ -3813,16 +3757,19 @@ uint64_t visitGCRoots(void* start_frame, immix_heap* visitor) {
       void*  rootaddr = (off <= 0) ? offset(fp, off)
                                    : offset(sp, off);
 
+      if (!non_markable_addr(*(void**)rootaddr)) {
+        immix_worklist.add_root((unchecked_ptr*) rootaddr);
+      }
+/*
       condemnedRootsVisited +=
         visitor->visit_root(static_cast<unchecked_ptr*>(rootaddr),
                             static_cast<const char*>(m));
+                            */
     }
 
     gc_assert(pc->liveCountWithoutMetadata == 0,
                   "TODO: scan pointer w/o metadata");
   }
-
-  return condemnedRootsVisited;
 }
 // }}}
 
@@ -3915,7 +3862,7 @@ void coro_visitGCRoots(foster_bare_coro* coro, immix_heap* visitor) {
   }
 
   fprintf(gclog, "coro_visitGCRoots\n"); fflush(gclog);
-  uint64_t numCondemnedRoots = visitGCRoots(frameptr, visitor);
+  visitGCRoots(frameptr, visitor);
 
   if (GCLOG_DETAIL > 1) {
     fprintf(gclog, "========= scanned coro stack from %p\n", frameptr);
@@ -3995,6 +3942,7 @@ void initialize(void* stack_highest_addr) {
   gcglobals.num_subheaps_created = 0;
   gcglobals.num_subheap_activations = 0;
   gcglobals.write_barrier_phase0_hits = 0;
+  gcglobals.write_barrier_phase0b_hits = 0;
   gcglobals.write_barrier_phase1_hits = 0;
   gcglobals.write_barrier_phase1g_hits = 0;
   gcglobals.num_objects_marked_total = 0;
@@ -4282,9 +4230,12 @@ FILE* print_timing_stats() {
     // Better terminology would be nice. "Fast" means "executed barrier that did not take the subheap slow path."
     //                                   "Slow" means "executed barrier that did     take the subheap slow path."
     //                                   "Gen" could be a fast OR slow execution that took the generational slow path.
-    fprintf(gclog, "'Num_Write_Barriers_Fast': %lu\n", (gcglobals.write_barrier_phase0_hits - gcglobals.write_barrier_phase1_hits));
-    fprintf(gclog, "'Num_Write_Barriers_Slow': %lu\n",  gcglobals.write_barrier_phase1_hits);
+    //fprintf(gclog, "'Num_Write_Barriers_Fast': %lu\n", (gcglobals.write_barrier_phase0_hits - gcglobals.write_barrier_phase1_hits));
+    fprintf(gclog, "'Num_Write_Barriers_Subheap': %lu\n",  gcglobals.write_barrier_phase1_hits);
     fprintf(gclog, "'Num_Write_Barriers_Gen': %lu\n",  gcglobals.write_barrier_phase1g_hits);
+    fprintf(gclog, "'Num_Write_Barriers_Started': %lu\n",  gcglobals.write_barrier_phase0_hits);
+    fprintf(gclog, "'Num_Write_Barriers_NonNull': %lu\n",  gcglobals.write_barrier_phase0b_hits);
+    fprintf(gclog, "'Num_Write_Barriers_Null': %lu\n", gcglobals.write_barrier_phase0_hits - gcglobals.write_barrier_phase0b_hits);
   }
   if (ENABLE_GC_TIMING_TICKS) {
     {
@@ -4506,54 +4457,50 @@ void foster_generational_write_barrier_slowpath(void* val, void* obj, void** slo
   if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1g_hits; }
 }
 
+
 __attribute__((noinline))
 void foster_write_barrier_with_obj_fullpath(void* val, void* obj, void** slot) {
   immix_heap* hv = heap_for_wb(val);
   immix_heap* hs = heap_for_wb(obj);
+
+  // Invariant: hv != hs
+  // Invariant: nv != nullptr
   //if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
   //fprintf(gclog, "write barrier (%zu) writing ptr %p from heap %p into slot %p in heap %p\n",
   //    gcglobals.write_barrier_phase0_hits, val, hv, slot, hs); fflush(gclog);
 
-  if (hv == hs) { return; }
+  //if (hv == hs) { return; }
 
   // Preconditions:
   //   val SHOULD NOT point into the same frame as slot
   //   val SHOULD NOT point into the oldest generation
   // Violations of these preconditions will not produce errors, but will result
   // in remembered sets that are larger than necessary.
-  //
-  // Static data (for which the immix_space* will be null)
-  // must be immutable, so hs will never be null, but hv might be.
-  // If hv is null (meaning static data), we don't need to remember anything,
-  // since statically allocated data will never be deallocated, and can never
-  // point into the program heap (by virtue of its immutability).
-  if (hv) {
+  //if (hv) {
     if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1_hits; }
     if (GCLOG_DETAIL > 3) { fprintf(gclog, "space %p remembering slot %p with inc ptr %p and old pointer %p; slot heap is %p\n", hv, slot, val, *slot, hs); }
     hv->remember_into(slot);
-  }
+  //}
 }
 
 __attribute__((always_inline))
 void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot) /*__attribute((always_inline))*/ {
   *slot = val;
 
-  //if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
-
+  if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
   if (non_markable_addr(val)) { return; }
+  if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0b_hits; }
 
   if (
        (space_id_of_header(heap_cell::for_tidy((tidy*) val)->raw_header())
      == space_id_of_header(heap_cell::for_tidy((tidy*) obj)->raw_header()))) {
-    // Note we can't use line marks (even as an approximation/filter) since
+    // Note we can't use raw line marks (even as an approximation/filter) since
     // large arrays do not have line marks.
-#if 1
+    //if (heap_cell::for_tidy((tidy*)obj)->is_marked_inline())
     if (obj_is_marked(heap_cell::for_tidy((tidy*)obj)))
-    ////if (heap_cell::for_tidy((tidy*)obj)->is_marked_inline())
     {
       foster_generational_write_barrier_slowpath(val, obj, slot);
     }
-#endif
     return;
   }
 
