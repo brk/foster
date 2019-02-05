@@ -396,10 +396,27 @@ namespace  {
   }
 } // namespace
 
+void applyColdCC(const std::string& name, Module* mod) {
+  llvm::Function* write_barrier_slowpath = mod->getFunction(name);
+  if (write_barrier_slowpath) {
+    write_barrier_slowpath->setCallingConv(llvm::CallingConv::Cold);
+    for (auto it : write_barrier_slowpath->users()) {
+      if (auto call = dyn_cast<llvm::CallInst>(it)) {
+        call->setCallingConv(llvm::CallingConv::Cold);
+      }
+    }
+  }
+}
+
 void optimizeModuleAndRunPasses(Module* mod) {
   ScopedTimer timer("llvm.opt");
   legacy::PassManager passes;
   legacy::FunctionPassManager fpasses(mod);
+
+  // Mark our write barrier slowpath with the "cold" calling convention,
+  // to minimize instances of register clobbering on the fast path.
+  applyColdCC("foster_write_barrier_with_obj_fullpath", mod);
+  applyColdCC("foster_write_barrier_generational_slowpath", mod);
 
   { legacy::PassManager passes_first;
     passes_first.add(llvm::createVerifierPass());

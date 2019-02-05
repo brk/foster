@@ -518,7 +518,7 @@ int main(int argc, char** argv) {
     linkTo(std::move(libfoster_bc), "libfoster", *module);
   }
 
-  if (optDumpPostLinkedIR) {
+  if (optDumpPostLinkedIR) { // TODO remove this option
     dumpModuleToFile(module, outdirFile(optOutputName + ".preopt.ll"));
   }
 
