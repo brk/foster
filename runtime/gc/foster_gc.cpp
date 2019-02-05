@@ -311,7 +311,6 @@ public:
   virtual bool is_empty() = 0;
   virtual uint64_t approx_size_in_bytes() = 0;
 
-  virtual void remember_outof(void** slot, void* val) = 0;
   virtual void remember_into(void** slot) = 0;
 
   virtual void* allocate_array(typemap* elt_typeinfo, int64_t n, bool init) = 0;
@@ -494,8 +493,6 @@ struct GCGlobals {
   std::set<frame21*> all_frame21s;
   std::vector<heap_handle<Allocator>*> all_subheap_handles_except_default_allocator;
 
-  std::set<heap_cell*> marked_in_current_gc;
-
   double gc_time_us;
 
   clocktimer<true> init_start;
@@ -533,7 +530,6 @@ struct GCGlobals {
 
   struct hdr_histogram* hist_gc_stackscan_frames;
   struct hdr_histogram* hist_gc_stackscan_roots;
-  struct hdr_histogram* hist_gc_postgc_ticks;
   struct hdr_histogram* hist_gc_pause_micros;
   struct hdr_histogram* hist_gc_pause_ticks;
   struct hdr_histogram* hist_gc_rootscan_ticks;
@@ -890,8 +886,8 @@ bool slot_is_condemned(void* slot, immix_heap* space) {
 // {{{ Function prototype decls
 bool line_for_slot_is_marked(void* slot);
 void inspect_typemap(const typemap* ti);
-void visitGCRoots(void* start_frame, immix_heap* visitor);
-void coro_visitGCRoots(foster_bare_coro* coro, immix_heap* visitor);
+void collect_roots_from_stack(void* start_frame);
+void collect_roots_from_stack_of_coro(foster_bare_coro* coro);
 const typemap* tryGetTypemap(heap_cell* cell);
 // }}}
 
@@ -1508,6 +1504,54 @@ void mark_lines_for_slots(void* slot, uint64_t cell_size) {
 template <condemned_set_status condemned_portion>
 bool should_opportunistically_evacuate(immix_heap* space, heap_cell* obj);
 
+
+template <typename CellThunk>
+void apply_thunk_to_child_slots_of_cell(intr* body, const typemap* map, CellThunk thunk) {
+  for (int i = 0; i < map->numOffsets; ++i) {
+    thunk((intr*) offset(body, map->offsets[i]));
+  }
+}
+
+template <typename CellThunk>
+void for_each_child_slot_with(heap_cell* cell, heap_array* arr, const typemap* map,
+                              int64_t cell_size, CellThunk thunk) {
+  if (!map) { return; }
+
+  if (map->numOffsets == 0) { return; }
+
+  if (!arr) {
+    apply_thunk_to_child_slots_of_cell(from_tidy(cell->body_addr()), map, thunk);
+  //} else if (map->numOffsets == 1 && map->offsets[0] == 0 && map->cell_size == sizeof(void*)) {
+  //  int64_t numcells = arr->num_elts();
+  //  for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
+  //    thunk(arr->elt_body(cellnum, map->cell_size));
+  //  }
+  } else {
+    int64_t numcells = arr->num_elts();
+    for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
+      apply_thunk_to_child_slots_of_cell(arr->elt_body(cellnum, map->cell_size), map, thunk);
+    }
+  }
+
+  if (map->isCoro == 1) {
+    // Coroutines reference stacks which contain embedded references to the heap
+    // that (for performance) are not tracked by write barriers.
+    // TODO fix
+    foster_bare_coro* coro = reinterpret_cast<foster_bare_coro*>(cell->body_addr());
+    collect_roots_from_stack_of_coro(coro);
+    fprintf(gclog, "for_each_child_slot noticed a coro object...\n");
+  }
+}
+
+template <typename CellThunk>
+void for_each_child_slot(heap_cell* cell, CellThunk thunk) {
+  heap_array* arr = NULL;
+  const typemap* map = NULL;
+  int64_t cell_size;
+  get_cell_metadata(cell, arr, map, cell_size);
+  for_each_child_slot_with(cell, arr, map, cell_size, thunk);
+}
+
 // This struct contains per-frame state and code shared between
 // regular and line-based immix frames.
 struct immix_common {
@@ -1520,56 +1564,12 @@ struct immix_common {
   // register pressure, resulting in a net extra instruction in the critical path of allocation.
   uintptr_t prevent_const_prop() { return prevent_constprop; }
 
-  template <condemned_set_status condemned_portion>
-  void* evac_with_map_and_arr(heap_cell* cell, const typemap& map,
+  void* evac_with_map_and_arr(heap_cell* cell, const typemap* map,
                              heap_array* arr, int64_t cell_size,
                              immix_space* tospace);
 
-  template <condemned_set_status condemned_portion>
-  void scan_with_map_and_arr(immix_heap* space,
-                             heap_cell* cell, const typemap& map,
-                             heap_array* arr) {
-    if (map.numOffsets > 0) {
-      if (!arr) {
-        scan_with_map<condemned_portion>(space, from_tidy(cell->body_addr()), map);
-      } else { // Skip this loop for int arrays and such.
-        int64_t numcells = arr->num_elts();
-        for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
-          scan_with_map<condemned_portion>(space, arr->elt_body(cellnum, map.cell_size), map);
-        }
-      }
-    }
-
-    if (map.isCoro == 1) {
-      foster_bare_coro* coro = reinterpret_cast<foster_bare_coro*>(cell->body_addr());
-      coro_visitGCRoots(coro, space);
-    }
-  }
-
-  template <condemned_set_status condemned_portion>
-  void scan_with_map(immix_heap* space, intr* body, const typemap& map) {
-    for (int i = 0; i < map.numOffsets; ++i) {
-      void** unchecked = (void**) offset(body, map.offsets[i]);
-      if (GCLOG_DETAIL > 4) {
-        fprintf(gclog, "scan_with_map scanning pointer %p from slot %p (field %d of %d in at offset %d in object %p)\n",
-            *unchecked, unchecked, i, map.numOffsets, map.offsets[i], body);
-      }
-      if (!non_markable_addr(*unchecked)) {
-        immix_worklist.add_root((unchecked_ptr*) unchecked);
-        //uint64_t ignored =
-        //  immix_trace<condemned_portion>(space, (unchecked_ptr*) unchecked);
-      }
-    }
-  }
-
-  bool is_immix_markable_frame(void* p) {
-    auto k = classification_for_frame15_id(frame15_id_of(p));
-    return (k == frame15kind::immix_smallmedium || k == frame15kind::immix_linebased);
-  }
-
   // Precondition: cell is part of the condemned set.
   // Precondition: cell is not forwarded.
-  template <condemned_set_status condemned_portion>
   void* scan_and_evacuate_to(immix_space* tospace, heap_cell* cell) {
 
     heap_array* arr = NULL;
@@ -1579,13 +1579,12 @@ struct immix_common {
 
     // Without metadata for the cell, there's not much we can do...
     if (map && gcglobals.typemap_memory.contains((void*) map)) {
-      return evac_with_map_and_arr<condemned_portion>(cell, *map, arr, cell_size, tospace);
+      return evac_with_map_and_arr(cell, map, arr, cell_size, tospace);
     }
     return nullptr;
   }
 
   // Precondition: cell is part of the condemned set and not yet marked.
-  template <condemned_set_status condemned_portion>
   void scan_cell(immix_heap* space, heap_cell* cell) {
     if (GCLOG_DETAIL > 3) { fprintf(gclog, "scanning cell %p for space %p\n", cell, space); fflush(gclog); }
 
@@ -1597,24 +1596,23 @@ struct immix_common {
     int64_t cell_size;
     get_cell_metadata(cell, arr, map, cell_size);
 
-    if (GC_ASSERTIONS) { gcglobals.marked_in_current_gc.insert(cell); }
     do_mark_obj(cell);
     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += cell_size; }
 
     if (frameclass == frame15kind::immix_smallmedium
      || frameclass == frame15kind::immix_linebased) {
-        void* slot = (void*) cell;
-        mark_lines_for_slots(slot, cell_size);
-    } else if (frameclass == frame15kind::unknown || frameclass == frame15kind::staticdata) {
+        mark_lines_for_slots((void*) cell, cell_size);
+    } else if (frameclass == frame15kind::unknown) {
       gcglobals.condemned_set.unframed_and_marked.insert(cell);
       // malloc_start/malloc_continue needs no line marks at all.
     }
 
-    // Without metadata for the cell, there's not much we can do...
-    if (map && gcglobals.typemap_memory.contains((void*) map)) {
-      scan_with_map_and_arr<condemned_portion>(space, cell, *map, arr);
-    }
+    for_each_child_slot_with(cell, arr, map, cell_size, [](intr* slot) {
+      if (!non_markable_addr(* (void**)slot)) {
+        immix_worklist.add_root((unchecked_ptr*) slot);
+      }
+    });
   }
 
   // Jones/Hosking/Moss refer to this function as "process(fld)".
@@ -1647,10 +1645,10 @@ struct immix_common {
     }
 
     if (should_opportunistically_evacuate<condemned_portion>(space, obj)) {
-      auto tidyn = scan_and_evacuate_to<condemned_portion>((immix_space*)space, obj);
+      auto tidyn = scan_and_evacuate_to((immix_space*)space, obj);
       *root = make_unchecked_ptr((tori*) tidyn);
     } else {
-      scan_cell<condemned_portion>(space, obj);
+      scan_cell(space, obj);
     }
 
     return 1;
@@ -2327,15 +2325,7 @@ public:
     return num_lines_reclaimed;
   }
 
-
-  virtual void remember_outof(void** slot, void* val) {
-    auto mdb = metadata_block_for_slot((void*) slot);
-    uint8_t* cards = (uint8_t*) mdb->cardmap;
-    cards[ line_offset_within_f21((void*) slot) ] = 1;
-  }
-
   virtual void remember_into(void** slot) {
-    //frames_pointing_here.insert(frame15_id_of((void*) slot));
     incoming_ptr_addrs.insert((tori**) slot);
   }
 
@@ -2534,7 +2524,7 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
       */
 
     //ct.start();
-    visitGCRoots(__builtin_frame_address(0), active_space);
+    collect_roots_from_stack(__builtin_frame_address(0));
     //fprintf(gclog, "num condemned + remset roots: %zu\n", numCondemnedRoots + numRemSetRoots);
     //double trace_ms = ct.elapsed_ms();
 
@@ -2558,24 +2548,17 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
       }
     }
 
-    //ct.start();
     process_worklist(active_space, this);
-    //double worklist_ms = ct.elapsed_ms();
 
     auto deltaRecursiveMarking_us = phase.elapsed_us();
     phase.start();
-#if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
-    phaseStartTicks = __foster_getticks_start();
-#endif
 
-    //ct.start();
     int64_t approx_condemned_space_in_lines =
               gcglobals.condemned_set.approx_condemned_capacity_in_bytes(active_space)
                 / IMMIX_BYTES_PER_LINE;
 
     bool hadEmptyRootSet = false; // (numCondemnedRoots + numRemSetRoots + numGenRoots) == 0;
     int64_t num_lines_reclaimed = gcglobals.condemned_set.sweep_condemned(active_space, phase, hadEmptyRootSet);
-    //double sweep_ms = ct.elapsed_ms();
     double sweep_us = phase.elapsed_us();
 
     uint64_t bytes_live = gcglobals.alloc_bytes_marked_total - bytes_marked_at_start;
@@ -2586,23 +2569,6 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
       gcglobals.last_full_gc_fragmentation_percentage =
         byte_level_fragmentation_percentage;
     }
-
-/*
-    if (!voluntary) {
-      fprintf(gclog, "phase times:\n");
-      fprintf(gclog, "   roots: %.2f ms\n", roots_ms);
-      fprintf(gclog, "   trace: %.2f ms\n", trace_ms);
-      fprintf(gclog, "   worklist: %.2f ms\n", worklist_ms);
-      fprintf(gclog, "   uncondemn: %.2f ms\n", uncondemn_ms);
-      fprintf(gclog, "   sweep: %.2f ms\n", sweep_ms);    
-    }
-    */
-
-    if (GC_ASSERTIONS) { gcglobals.marked_in_current_gc.clear(); }
-
-#if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
-    hdr_record_value(gcglobals.hist_gc_postgc_ticks, __foster_getticks_elapsed(phaseStartTicks, __foster_getticks_end()));
-#endif
 
   if (GCLOG_DETAIL > 0 || ENABLE_GCLOG_ENDGC) {
     if (TRACK_NUM_OBJECTS_MARKED) {
@@ -3169,34 +3135,15 @@ public:
   tidy* defrag_copy_cell(heap_cell* cell, typemap* map, int64_t cell_size) {
     tidy* newbody = helpers::allocate_cell_prechecked(&small_bumper, map, cell_size, common.prevent_const_prop());
     heap_cell* mcell = heap_cell::for_tidy(newbody);
-    memcpy(mcell, cell, map->cell_size);
+    memcpy(mcell, cell, cell_size);
     cell->set_forwarded_body(newbody);
 
-    // We don't need to physically mark the object because it can only be
-    // observed through the installed forwarding address, and the
-    // is-forwarded check subsumes the obj_is_marked check.
     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += cell_size; }
     mark_lines_for_slots(newbody, cell_size);
     do_mark_obj(mcell);
 
     return newbody;
-  }
-
-  heap_array* defrag_copy_array(typemap* map, heap_array* arr, int64_t req_bytes) {
-    bool init = false;
-    tidy* newbody = helpers::allocate_array_prechecked(&small_bumper, map, arr->num_elts(), req_bytes, gcglobals.current_subheap_hash, init);
-    heap_cell* mcell = heap_cell::for_tidy(newbody);
-    heap_array* marr = heap_array::from_heap_cell(mcell);
-    memcpy(marr->elt_body(0, 0), arr->elt_body(0, 0), map->cell_size * arr->num_elts());
-    arr->set_forwarded_body(newbody);
-
-    //do_mark_obj(heap_cell::for_tidy(newbody));
-    if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
-    if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += req_bytes; }
-    mark_lines_for_slots(newbody, req_bytes);
-    do_mark_obj(mcell);
-    return marr;
   }
 
   // Quick benchmark suggests we can use the line-mark map
@@ -3595,12 +3542,6 @@ public:
     return num_available_lines;
   }
 
-  virtual void remember_outof(void** slot, void* val) {
-    auto mdb = metadata_block_for_slot((void*) slot);
-    uint8_t* cards = (uint8_t*) mdb->cardmap;
-    cards[ line_offset_within_f21((void*) slot) ] = 1;
-  }
-
   virtual void remember_into(void** slot) {
     incoming_ptr_addrs.insert((tori**) slot);
   }
@@ -3721,40 +3662,27 @@ bool should_opportunistically_evacuate(immix_heap* space, heap_cell* obj) {
   return false;
 }
 
-template <condemned_set_status condemned_portion>
-void* immix_common::evac_with_map_and_arr(heap_cell* cell, const typemap& map,
+void* immix_common::evac_with_map_and_arr(heap_cell* cell, const typemap* map,
                             heap_array* arr, int64_t cell_size,
                             immix_space* tospace) {
-  if (map.isCoro == 1) {
-    foster_bare_coro* coro = reinterpret_cast<foster_bare_coro*>(cell->body_addr());
-    coro_visitGCRoots(coro, tospace);
-  }
-
-  //fprintf(gclog, "copying %lld cell %p, map np %d, name %s\n", cell_size, cell, map.numEntries, map.name); fflush(gclog);
-  if (!arr) {
-    tidy* newbody = tospace->defrag_copy_cell(cell, (typemap*)&map, cell_size);
-    if (map.numOffsets > 0) {
-      scan_with_map<condemned_portion>(tospace, from_tidy(newbody), map);
-    }
-    return newbody;
-  } else {
-    heap_array* marr = tospace->defrag_copy_array((typemap*)&map, arr, cell_size);
-    if (map.numOffsets > 0) { // Skip this loop for int arrays and such.
-      int64_t numcells = arr->num_elts();
-      for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
-        //intr* elt = arr->elt_body(cellnum, map.cell_size);
-        scan_with_map<condemned_portion>(tospace, marr->elt_body(cellnum, map.cell_size), map);
+  // We have separate functions for allocating arrays vs non-array cells in order
+  // to initialize the number-of-elements field. But here, the field is already
+  // there; all we need to do is copy the whole blob and trace is as usual.
+  tidy* newbody = tospace->defrag_copy_cell(cell, (typemap*)map, cell_size);
+  heap_cell* newcell = heap_cell::for_tidy(newbody);
+  heap_array* newarr = arr ? heap_array::from_heap_cell(newcell) : nullptr;
+  for_each_child_slot_with(newcell, newarr, map, cell_size, [](intr* slot) {
+      if (!non_markable_addr(* (void**)slot)) {
+        immix_worklist.add_root((unchecked_ptr*) slot);
       }
-    }
-    return marr->body_addr();
-  }
+  });
+  return newbody;
 }
 
 #include "foster_gc_backtrace_x86-inl.h"
 
-// {{{ Walks the call stack, calling visitor->visit_root() along the way.
-void visitGCRoots(void* start_frame, immix_heap* visitor) {
-  uint64_t condemnedRootsVisited = 0;
+// {{{ Walks the call stack and inserts roots into immix_worklist.
+void collect_roots_from_stack(void* start_frame) {
   enum { MAX_NUM_RET_ADDRS = 4024 };
   // Garbage collection requires 16+ KB of stack space due to these arrays.
   ret_addr  retaddrs[MAX_NUM_RET_ADDRS];
@@ -3920,8 +3848,7 @@ void coro_dump(foster_bare_coro* coro) {
 extern "C"
 void foster_coro_ensure_self_reference(foster_bare_coro* coro);
 
-// A thin wrapper around visitGCRoots.
-void coro_visitGCRoots(foster_bare_coro* coro, immix_heap* visitor) {
+void collect_roots_from_stack_of_coro(foster_bare_coro* coro) {
   coro_dump(coro);
   if (!coro
    || foster::runtime::coro_status(coro) == FOSTER_CORO_INVALID
@@ -3947,8 +3874,7 @@ void coro_visitGCRoots(foster_bare_coro* coro, immix_heap* visitor) {
         coro, foster::runtime::coro_fn(coro), coro_status_name(coro), frameptr);
   }
 
-  fprintf(gclog, "coro_visitGCRoots\n"); fflush(gclog);
-  visitGCRoots(frameptr, visitor);
+  collect_roots_from_stack(frameptr);
 
   if (GCLOG_DETAIL > 1) {
     fprintf(gclog, "========= scanned coro stack from %p\n", frameptr);
@@ -4041,7 +3967,6 @@ void initialize(void* stack_highest_addr) {
 
   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_frames);
   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_roots);
-  hdr_init(1, 600000000, 2, &gcglobals.hist_gc_postgc_ticks);
   hdr_init(1, 600000000, 3, &gcglobals.hist_gc_pause_micros); // 600M us => 600 seconds => 10 minutes
   hdr_init(1, 600000000, 2, &gcglobals.hist_gc_pause_ticks);
   hdr_init(1, 600000000, 2, &gcglobals.hist_gc_rootscan_ticks); // 600M ticks ~> 10ms (@ 6 GHz...)
@@ -4241,11 +4166,6 @@ FILE* print_timing_stats() {
     }
 
     if (ENABLE_GC_TIMING_TICKS) {
-      fprintf(gclog, "hist_gc_postgc_ticks:\n");
-      foster_hdr_percentiles_print(gcglobals.hist_gc_postgc_ticks, gclog, 4);
-    }
-
-    if (ENABLE_GC_TIMING_TICKS) {
       fprintf(gclog, "gc_pause_ticks:\n");
       foster_hdr_percentiles_print(gcglobals.hist_gc_pause_ticks, gclog, 4);
     }
@@ -4357,6 +4277,13 @@ int cleanup() {
   fclose(gclog); gclog = NULL;
   if (json) fprintf(json, "}\n");
   if (json) fclose(json);
+  hdr_close(gcglobals.hist_gc_stackscan_frames);
+  hdr_close(gcglobals.hist_gc_stackscan_roots);
+  hdr_close(gcglobals.hist_gc_pause_micros);
+  hdr_close(gcglobals.hist_gc_pause_ticks);
+  hdr_close(gcglobals.hist_gc_rootscan_ticks);
+  hdr_close(gcglobals.hist_gc_alloc_array);
+  hdr_close(gcglobals.hist_gc_alloc_large);
   return had_problems ? 99 : 0;
 }
 // }}}
