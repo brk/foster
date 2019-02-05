@@ -45,7 +45,9 @@ struct CodegenPassConfig {
   bool countClosureCalls;
   bool killDeadSlots;
   bool emitLifetimeInfo;
-  bool emitAllGCBarriers;
+  bool useGenBarriers;
+  bool useSubheapBarriers;
+  bool useGenInitBarriers;
   bool disableAllArrayBoundsChecks;
   bool standalone;
 };

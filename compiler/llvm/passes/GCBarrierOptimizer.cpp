@@ -83,6 +83,8 @@ struct GCBarrierOptimizer : public ModulePass {
   //std::map<Function*, std::pair<Function*, CallGraphNode*> > currSubheapClones;
   std::map<Function*, Function*> currSubheapClones;
 
+  Function* gcwrite_fn;
+
   bool mightChangeSubheaps(Function* F) const {
     if (!F) return true;
     if (functionsThatWillNotChangeSubheaps.count(F) == 1) return false;
@@ -91,6 +93,8 @@ struct GCBarrierOptimizer : public ModulePass {
   }
 
   virtual bool doInitialization(Module& M) {
+    gcwrite_fn = M.getFunction("foster_write_barrier_with_obj_generic");
+
     Function* f = M.getFunction("foster_subheap_activate");
     functionsThatMightChangeSubheaps.insert(f);
 
@@ -116,6 +120,7 @@ struct GCBarrierOptimizer : public ModulePass {
     functionsThatWillNotChangeSubheaps.insert(M.getFunction("prim_print_bytes_stdout"));
     functionsThatWillNotChangeSubheaps.insert(M.getFunction("prim_print_bytes_stderr"));
     functionsThatWillNotChangeSubheaps.insert(M.getFunction("print_newline"));
+    functionsThatWillNotChangeSubheaps.insert(M.getFunction("foster_write_barrier_with_obj_generic"));
     if (auto F = M.getFunction("foster__record_closure_call")) {
       functionsThatWillNotChangeSubheaps.insert(F);
     }
@@ -127,7 +132,6 @@ struct GCBarrierOptimizer : public ModulePass {
     allocatorFunctions.insert(M.getFunction("memalloc_cell_32"));
     allocatorFunctions.insert(M.getFunction("memalloc_cell_48"));
     allocatorFunctions.insert(M.getFunction("memalloc_array"));
-
 
     for (auto it = M.begin(); it != M.end(); ++it) {
       ValueToValueMapTy vmap;
@@ -288,7 +292,6 @@ struct GCBarrierOptimizer : public ModulePass {
         if (CallInst* ci = dyn_cast<CallInst>(bare)) {
           Function* calleeOrNull = ci->getCalledFunction();
 
-          {
             auto cloneit = currSubheapClones.find(calleeOrNull);
             if (cloneit != currSubheapClones.end() && cloneit->second/*.second*/ != nullptr) {
               auto clonedFunc = cloneit->second;
@@ -318,7 +321,6 @@ struct GCBarrierOptimizer : public ModulePass {
                 //SCC.ReplaceNode(cgn, cloneit->second.second);
               }
             }
-          }
           
 
           if (mightChangeSubheaps(calleeOrNull)) {
@@ -334,12 +336,12 @@ struct GCBarrierOptimizer : public ModulePass {
           }
 
           // Intrinsics, such as write barriers, are call instructions.
-          if (IntrinsicInst* ii = dyn_cast<IntrinsicInst>(ci)) {
-            if (ii->getIntrinsicID() == llvm::Intrinsic::gcwrite) {
+          if (calleeOrNull == gcwrite_fn) {
+            ConstantInt* needSubheap = dyn_cast<ConstantInt>(ci->getArgOperand(4));
+            if (needSubheap && needSubheap->equalsInt(1)) {
               ++numTotalWriteBarriers;
-
-              Value* ptr  = ii->getArgOperand(0)->stripPointerCasts();
-              Value* slot = ii->getArgOperand(2)->stripPointerCasts();
+              Value* ptr  = ci->getArgOperand(0)->stripPointerCasts();
+              Value* slot = ci->getArgOperand(2)->stripPointerCasts();
               if (auto gep = dyn_cast<GetElementPtrInst>(slot)) {
                 slot = gep->getPointerOperand()->stripPointerCasts();
               }
@@ -359,10 +361,17 @@ struct GCBarrierOptimizer : public ModulePass {
 
               if (ptrInCurrentSubheap && slotInCurrentSubheap) {
                 ++numElidableWriteBarriers;
-                //llvm::outs() << "specializing gcwrite of " << ptr->getName() << " to " << slot->getName() << "\n";
-                auto si = new StoreInst(ii->getArgOperand(0), ii->getArgOperand(2), ii);
-                ii->replaceAllUsesWith(si);
-                markedForDeath.push_back(ii);
+                llvm::outs() << "specializing gcwrite of " << ptr->getName() << " to " << slot->getName() << "\n";
+                //auto si = new StoreInst(ci->getArgOperand(0), ci->getArgOperand(2), ii);
+                auto nci = CallInst::Create(gcwrite_fn, {
+                  ci->getArgOperand(0),
+                  ci->getArgOperand(1),
+                  ci->getArgOperand(2),
+                  ci->getArgOperand(3),
+                  ConstantInt::getSigned(needSubheap->getType(), 0) // disable subheap portion of barrier.
+                 }, "", ci);
+                ci->replaceAllUsesWith(nci);
+                markedForDeath.push_back(ci);
                 NumBarriersElided++;
               } else {
                 NumBarriersPresent++;
