@@ -27,7 +27,7 @@ using foster::EDiag;
 using foster::builder;
 using foster::ParsingContext;
 
-typedef Constant*   Offset;
+typedef uint64_t    Offset;
 typedef std::vector<Offset> OffsetSet;
 
 unsigned kDefaultHeapAlignment = 16;
@@ -46,13 +46,13 @@ bool isGarbageCollectible(const TypeAST* typ, Type* ty) {
 // TODO vector of pointers now supported by LLVM...
 // will we allow vectors of pointers-to-GC-heap? probably unwise.
 
-OffsetSet countPointersInType(const TypeAST* typ, Type* ty) {
+OffsetSet countPointersInType(const TypeAST* typ, Type* ty, Module* mod) {
   ASSERT(ty) << "Can't count pointers in a NULL type!";
 
   OffsetSet rv;
   if (isGarbageCollectible(typ, ty)) {
     // Pointers to functions/labels/other non-sized types do not get GC'd.
-    rv.push_back(builder.getInt64(0));
+    rv.push_back(0);
   }
 
   // unboxed array, struct, union
@@ -70,13 +70,13 @@ OffsetSet countPointersInType(const TypeAST* typ, Type* ty) {
     StructTypeAST* stp = const_cast<StructTypeAST*>(typ->castStructTypeAST());
     ASSERT(stp) << "StructType without corresponding StructTypeAST?!? "
                 << str(typ) << " ~~tag = " << typ->tag;
-
+    auto layout = mod->getDataLayout().getStructLayout(sty);
     for (size_t i = 0; i < sty->getNumElements(); ++i) {
-      Constant* slotOffset = ConstantExpr::getOffsetOf(sty, i);
+      auto slotOffset = layout->getElementOffset(i);
       OffsetSet sub = countPointersInType(stp->getContainedType(i),
-                                            sty->getTypeAtIndex(i));
+                                            sty->getTypeAtIndex(i), mod);
       for (Offset suboffset : sub) {
-        rv.push_back(ConstantExpr::getAdd(suboffset, slotOffset));
+        rv.push_back(suboffset + slotOffset);
       }
     }
   }
@@ -90,11 +90,6 @@ OffsetSet countPointersInType(const TypeAST* typ, Type* ty) {
 
   // all other types do not contain pointers
   return rv;
-}
-
-bool containsGCablePointers(TypeAST* typ, Type* ty) {
-  OffsetSet s = countPointersInType(typ, ty);
-  return !s.empty();
 }
 
 Type* getHeapCellHeaderTy() {
@@ -178,10 +173,26 @@ StructType* getTypeMapType(int numPointers, llvm::Module* mod) {
   typeMapTyFields.push_back(builder.getInt8Ty());    // ctorId
   typeMapTyFields.push_back(builder.getInt8Ty());    // isCoro
   typeMapTyFields.push_back(builder.getInt8Ty());    // isArray
-  typeMapTyFields.push_back(builder.getInt8Ty());    // unused_padding
+  typeMapTyFields.push_back(builder.getInt8Ty());    // ptrMap
   typeMapTyFields.push_back(offsetsTy);              // i32[n]
 
   return StructType::get(builder.getContext(), typeMapTyFields);
+}
+
+uint8_t computePtrMap(llvm::Module* mod, const OffsetSet& pointerOffsets) {
+  unsigned ptrsize = mod->getDataLayout().getPointerSize();
+  uint8_t descriptor = 0;
+  for (auto c : pointerOffsets) {
+    auto ptroff = c / ptrsize;
+    if (ptroff >= 4) {
+      return 128;
+    }
+    descriptor |= (1 << ptroff);
+  }
+  if (descriptor == 1 || descriptor == 3 || descriptor == 7 || descriptor == 0) {
+    return descriptor;
+  }
+  return 128;
 }
 
 // Return a global corresponding to layout of getTypeMapType()
@@ -224,7 +235,7 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
 
   std::vector<Constant*> typeMapOffsets;
   for (auto it : pointerOffsets) {
-    typeMapOffsets.push_back(ConstantExpr::getTruncOrBitCast(it, builder.getInt32Ty()));
+    typeMapOffsets.push_back(builder.getInt32(it));
   }
 
   // TODO fix this
@@ -241,7 +252,7 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
   typeMapFields.push_back(builder.getInt8(ctorId));
   typeMapFields.push_back(builder.getInt8(isCoro  ? 1 : 0));
   typeMapFields.push_back(builder.getInt8(isArray ? 1 : 0));
-  typeMapFields.push_back(builder.getInt8(0)); // unused padding
+  typeMapFields.push_back(builder.getInt8(computePtrMap(mod, pointerOffsets)));
   typeMapFields.push_back(ConstantArray::get(offsetsTy, typeMapOffsets));
 
   typeMapVar->setInitializer(ConstantStruct::get(typeMapTy, typeMapFields));
@@ -267,7 +278,7 @@ GlobalVariable* emitTypeMap(
     EDiag() << "plan to skip index " << skippedIndexVector[i];
   }
   OffsetSet filteredOffsets;
-  OffsetSet pointerOffsets = countPointersInType(typ, ty);
+  OffsetSet pointerOffsets = countPointersInType(typ, ty, mod);
   for(size_t i = 0; i < pointerOffsets.size(); ++i) {
     if (skippedOffsets.count(i) == 0) {
       filteredOffsets.push_back(pointerOffsets[i]);
