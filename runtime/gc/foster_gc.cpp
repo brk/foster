@@ -3065,7 +3065,7 @@ bool is_linemap_clear(frame21* f21) {
 
 class immix_space : public heap {
 public:
-  immix_space() : condemned_flag(false) {
+  immix_space() : condemned_flag(false), recycled_lines_medium(nullptr)  {
     this->next_collection_sticky = !__foster_globals.disable_sticky;
     approx_lines_allocated_since_last_collection = 0;
     if (GCLOG_DETAIL > 2) { fprintf(gclog, "new immix_space %p\n", this); }
