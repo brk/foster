@@ -106,6 +106,8 @@ inline const typemap* typemap_of_header(uint64_t header) {
   return (const typemap*) (header & (0xFFFFFF ^ LOW_HEADER_BITS));
 }
 
+inline bool header_is_young(uint64_t header) { return (header & HEADER_MARK_BITS) == 0; }
+
 inline bool header_is_old(uint64_t header) { return flex_bits_of_header(header) >= 128; }
 inline bool header_is_new(uint64_t header) { return flex_bits_of_header(header)  < 128; }
 
@@ -127,6 +129,8 @@ struct heap_cell {
   int64_t cell_size() { return int64_t(get_meta()); }
 
   uint64_t raw_header() { return header; }
+
+  void mark_not_young() { header |= HEADER_MARK_BITS;  }
 
   // Precondition: not forwarded
   const typemap* get_meta() { return typemap_of_header(raw_header()); }
