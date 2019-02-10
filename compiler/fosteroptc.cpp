@@ -409,8 +409,12 @@ void optimizeModuleAndRunPasses(Module* mod) {
   legacy::FunctionPassManager fpasses(mod);
 
   // Forcibly inline our write barrier now that barrier optimizations have been run.
-  mod->getFunction("foster_write_barrier_with_obj_generic")->removeFnAttr(Attribute::NoInline);
-  mod->getFunction("foster_write_barrier_with_obj_generic")->addFnAttr(Attribute::AlwaysInline);
+  bool wasOptNone = mod->getFunction("foster_write_barrier_with_obj_generic")->hasFnAttribute(Attribute::OptimizeNone);
+  if (!wasOptNone) {
+    // OptNone requires NoInline
+    mod->getFunction("foster_write_barrier_with_obj_generic")->removeFnAttr(Attribute::NoInline);
+    mod->getFunction("foster_write_barrier_with_obj_generic")->addFnAttr(Attribute::AlwaysInline);
+  }
 
   // Mark our write barrier slowpath with the "cold" calling convention,
   // to minimize instances of register clobbering on the fast path.
