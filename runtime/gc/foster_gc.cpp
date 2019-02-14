@@ -44,7 +44,7 @@ extern "C" char* __foster_fosterlower_config;
 #define GCLOG_PRINT_LINE_MARKS 0
 #define ENABLE_LINE_GCLOG 0
 #define ENABLE_GCLOG_PREP 0
-#define ENABLE_GCLOG_ENDGC 1
+#define ENABLE_GCLOG_ENDGC 0
 #define PRINT_STDOUT_ON_GC 0
 #define FOSTER_GC_TRACK_BITMAPS       0
 #define FOSTER_GC_ALLOC_HISTOGRAMS    0
@@ -292,10 +292,6 @@ private:
 };
 
 
-uint32_t fold_64_to_32(uint64_t x) {
-  return uint32_t(x) ^ uint32_t(x >> uint64_t(32));
-}
-
 uint32_t refPattern(const typemap* map) {
   uint32_t rv = 0;
   for (int i = 0; i < map->numOffsets; ++i) {
@@ -315,8 +311,9 @@ public:
   virtual ~heap() {}
 
   bool next_collection_sticky;
+  bool is_linked_to_default_subheap;
 
-  virtual uint32_t hash_for_object_headers() { return fold_64_to_32(uint64_t(this)); }
+  virtual uint32_t hash_for_object_headers();
 
   virtual tidy* tidy_for(tori* t) = 0;
 
@@ -491,11 +488,12 @@ struct condemned_set {
   // Use line marks to reclaim space, then reset linemaps and object marks.
   int64_t sweep_condemned(Allocator* active_space,
                           clocktimer<false>& phase,
-                          bool hadEmptyRootSet);
+                          bool emergency, bool hadEmptyRootSet);
 
-  int64_t approx_condemned_capacity_in_bytes(Allocator* active_space);
+  //int64_t approx_condemned_capacity_in_bytes(Allocator* active_space);
 
-  void prepare_for_collection(Allocator* active_space, bool voluntary, bool sticky, immix_common* common, uint64_t*, uint64_t*);
+  void prepare_for_collection(Allocator* active_space, bool voluntary, bool sticky, bool emergency,
+                              immix_common* common, uint64_t*, uint64_t*);
 };
 
 template<typename Allocator>
@@ -520,7 +518,8 @@ struct GCGlobals {
   std::map<std::pair<const char*, typemap*>, int64_t> alloc_site_counters;
 
   std::set<frame21*> all_frame21s;
-  std::vector<heap_handle<Allocator>*> all_subheap_handles_except_default_allocator;
+  std::vector<heap_handle<Allocator>*> default_linked_subheaps;
+  std::vector<heap_handle<Allocator>*> non_default_linked_subheaps;
 
   double gc_time_us;
 
@@ -528,6 +527,7 @@ struct GCGlobals {
 
   int num_gcs_triggered;
   int num_gcs_triggered_involuntarily;
+  int num_gcs_triggered_nurseryonly;
   int num_big_stackwalks;
   double subheap_ticks;
 
@@ -582,6 +582,16 @@ struct GCGlobals {
 };
 
 GCGlobals<immix_heap> gcglobals;
+
+uint32_t fold_64_to_32(uint64_t x) {
+  return uint32_t(x) ^ uint32_t(x >> uint64_t(32));
+}
+
+uint32_t heap::hash_for_object_headers() {
+  if (this == gcglobals.default_allocator) return 0;
+  return fold_64_to_32(uint64_t(this));
+}
+
 
 void reset_marked_histogram() {
   if (0) {
@@ -1010,9 +1020,10 @@ namespace helpers {
     fprintf(f, "      --foster-heap-MB 64\n");
   }
 
-  void oops_we_died_from_heap_starvation() {
+  void oops_we_died_from_heap_starvation(const char* message) {
     print_heap_starvation_info(gclog);
     print_heap_starvation_info(stderr);
+    fprintf(gclog, "Triggered starvation via %s\n", message); fflush(gclog);
     exit(255); // TODO be more careful if we're allocating from a coro...
   }
 
@@ -1139,8 +1150,9 @@ namespace helpers {
 
   void do_trim_remset(remset_t& incoming_ptr_addrs, immix_heap* space) {
     std::vector<tori**> slots = incoming_ptr_addrs.move_to_vector();
-    //fprintf(gclog, "gc %d: pre-trim remset contains %zu slots in space %p\n", 
-    //  gcglobals.num_gcs_triggered, slots.size(), space);
+    fprintf(gclog, "gc %d: pre-trim remset contains %zu slots in space %p\n", 
+            gcglobals.num_gcs_triggered, slots.size(), space);
+    int newsize = 0;
     for (tori** slot : slots) {
       if (remset_entry_is_externally_or_internally_stale(slot)) {
         // do nothing
@@ -1150,9 +1162,10 @@ namespace helpers {
             */
       } else {
         incoming_ptr_addrs.insert(slot);
+        ++newsize;
       }
     }
-    //fprintf(gclog, "gc %d: post-trim remset contains %d slots\n", gcglobals.num_gcs_triggered, incoming_ptr_addrs.size());
+    fprintf(gclog, "gc %d: post-trim remset contains %d slots\n", gcglobals.num_gcs_triggered, newsize);
   }
 
 } // namespace helpers
@@ -1295,6 +1308,7 @@ private:
 public:
   ssize_t get_frame15s_left() { return frame15s_left; }
   double  get_relative_size() { return double(frame15s_left)/double(full_heap_frame15_count); }
+  double  full_heap_line_count() { return double(full_heap_frame15_count * IMMIX_LINES_PER_FRAME15); }
   bool empty() { return frame15s_left == 0; }
 
   // Precondition: !empty()
@@ -1903,7 +1917,7 @@ struct immix_common {
   }
 
   // Returns true if we should immediately retry GC (e.g. to switch to full-heap non-sticky collection).
-  bool common_gc(immix_heap* active_space, bool voluntary);
+  bool common_gc(immix_heap* active_space, bool voluntary, bool emergency);
 };
 
 class immix_frame_tracking {
@@ -2339,8 +2353,9 @@ private:
   bool condemned_flag;
 
 public:
-  immix_line_space() : condemned_flag(false) {
+  immix_line_space(bool is_linked) : condemned_flag(false) {
     this->next_collection_sticky = !__foster_globals.disable_sticky;
+    this->is_linked_to_default_subheap = is_linked;
     if (GCLOG_DETAIL > 2) { fprintf(gclog, "new immix_line_space %p\n", this); }
   }
 
@@ -2368,13 +2383,13 @@ public:
       {
         condemned_set_status_manager tmp(condemned_set_status::whole_heap_condemned);
         if (GCLOG_DETAIL > 2) { fprintf(gclog, "get_new_(line)frame triggering immix gc\n"); }
-        if (common.common_gc(this, false)) {
-            common.common_gc(this, false);
+        if (common.common_gc(this, false, secondtry)) {
+            common.common_gc(this, false, true);
         }
       }
 
       if (secondtry) {
-        helpers::oops_we_died_from_heap_starvation();
+        helpers::oops_we_died_from_heap_starvation("line_frame_15::get_new_frame()");
       } else return get_new_frame(true);
     }
 
@@ -2427,7 +2442,7 @@ public:
 
   virtual void force_gc_for_debugging_purposes() {
     if (GCLOG_DETAIL > 2) { fprintf(gclog, "force_gc_for_debugging_purposes triggering line gc\n"); }
-    common.common_gc(this, true);
+    common.common_gc(this, true, false);
   }
 
   virtual uint64_t prepare_for_collection(bool) {
@@ -2623,11 +2638,12 @@ void immix_line_allocator::ensure_sufficient_lines(immix_line_space* owner, int6
 void process_worklist(immix_heap* active_space, immix_common* common);
 void do_compactify_via_granule_marks(immix_space* default_subheap);
 
-bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
+bool immix_common::common_gc(immix_heap* active_space, bool voluntary, bool emergency) {
     gcglobals.num_gcs_triggered += 1;
     if (!voluntary) { gcglobals.num_gcs_triggered_involuntarily++; }
     if (PRINT_STDOUT_ON_GC) { fprintf(stdout, "                        start GC #%d\n", gcglobals.num_gcs_triggered); fflush(stdout); }
-    { fprintf(gclog, "                        start GC #%d; space %p; voluntary? %d; sticky? %d\n", gcglobals.num_gcs_triggered, active_space, voluntary, active_space->next_collection_sticky); }
+    { fprintf(gclog, "                        start GC #%d; space %p; voluntary? %d; sticky? %d; emergency? %d\n",
+          gcglobals.num_gcs_triggered, active_space, voluntary, active_space->next_collection_sticky, emergency); }
 
     clocktimer<false> gcstart; gcstart.start();
     clocktimer<false> phase;
@@ -2642,6 +2658,8 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     bool isWholeHeapGC = gcglobals.condemned_set.status == condemned_set_status::whole_heap_condemned;
     bool was_sticky_collection = active_space->next_collection_sticky;
     bool unstick_next_coll = false;
+
+    if (was_sticky_collection) { gcglobals.num_gcs_triggered_nurseryonly++; }
 
     bool should_compact = isWholeHeapGC
                       && (gcglobals.last_full_gc_compaction_headroom_estimate
@@ -2687,10 +2705,13 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     phase.start();
     uint64_t numGenRoots = 0;
     uint64_t numRemSetRoots = 0;
-    gcglobals.condemned_set.prepare_for_collection(active_space, voluntary, was_sticky_collection, this, &numGenRoots, &numRemSetRoots);
+    gcglobals.condemned_set.prepare_for_collection(active_space, voluntary, was_sticky_collection, emergency, this, &numGenRoots, &numRemSetRoots);
     auto markResettingAndRemsetCollection_us = phase.elapsed_us();
 
-    fprintf(gclog, "# generational roots: %zu; # subheap roots: %zu (sticky=%d)\n", numGenRoots, numRemSetRoots, was_sticky_collection);
+    if (GCLOG_DETAIL > 0) {
+      fprintf(gclog, "# generational roots: %zu; # subheap roots: %zu (sticky=%d)\n", numGenRoots, numRemSetRoots, was_sticky_collection);
+    }
+    
 
     phase.start();
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
@@ -2744,7 +2765,7 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
       }
     }
 
-    fprintf(gclog, "THRESHOLD IS %d\n", gcglobals.evac_threshold);
+    //fprintf(gclog, "THRESHOLD IS %d\n", gcglobals.evac_threshold);
 
     process_worklist(active_space, this);
 
@@ -2758,12 +2779,14 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
 
     phase.start();
 
+/*
     int64_t approx_condemned_space_in_lines =
               gcglobals.condemned_set.approx_condemned_capacity_in_bytes(active_space)
                 / IMMIX_BYTES_PER_LINE;
+                */
 
     bool hadEmptyRootSet = false; // (numCondemnedRoots + numRemSetRoots + numGenRoots) == 0;
-    int64_t num_lines_reclaimed = gcglobals.condemned_set.sweep_condemned(active_space, phase, hadEmptyRootSet);
+    int64_t num_lines_reclaimed = gcglobals.condemned_set.sweep_condemned(active_space, phase, emergency, hadEmptyRootSet);
     double sweep_us = phase.elapsed_us();
 
     auto bytes_marked = gcglobals.alloc_bytes_marked_total - bytes_marked_at_start;
@@ -2779,8 +2802,10 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     gcglobals.last_full_gc_compaction_headroom_estimate
         = reclamation_headroom_factor;
 
-    fprintf(gclog, "Estimated gains from compaction: %zd lines (vs %zd; %.1fx)\n",
-        estimated_reclaimed_lines_from_compaction, num_lines_reclaimed, reclamation_headroom_factor);
+    if (GCLOG_DETAIL > 0) {
+      fprintf(gclog, "Estimated gains from compaction: %zd lines (vs %zd; %.1fx)\n",
+          estimated_reclaimed_lines_from_compaction, num_lines_reclaimed, reclamation_headroom_factor);
+    }
 
     double byte_level_fragmentation_percentage =
       ((double(line_footprint_in_bytes) / double(bytes_marked)) - 1.0) * 100.0;
@@ -2804,20 +2829,21 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
           s_bytes_live.c_str(), s_bytes_alloc.c_str(),
               (double(bytes_alloc) / double(bytes_marked)) * 100.0,
           s_bytes_used.c_str());
-        fprintf(gclog, "%.1f%% of %zd condemned lines are live\n",
-          ((double(gcglobals.lines_live_at_whole_heap_gc) / double(approx_condemned_space_in_lines)) * 100.0),
-          approx_condemned_space_in_lines);
+
+        //fprintf(gclog, "%.1f%% of %zd condemned lines are live\n",
+        //  ((double(gcglobals.lines_live_at_whole_heap_gc) / double(approx_condemned_space_in_lines)) * 100.0),
+        //  approx_condemned_space_in_lines);
       } else {
-        fprintf(gclog, "%zu bytes live in %zu line bytes; %f%% overhead; %f%% of %zd condemned lines are live\n",
-          bytes_marked, line_footprint_in_bytes,
-          byte_level_fragmentation_percentage,
-          ((double(gcglobals.lines_live_at_whole_heap_gc) / double(approx_condemned_space_in_lines)) * 100.0),
-          approx_condemned_space_in_lines);
+        //fprintf(gclog, "%zu bytes live in %zu line bytes; %f%% overhead; %f%% of %zd condemned lines are live\n",
+        //  bytes_marked, line_footprint_in_bytes,
+        //  byte_level_fragmentation_percentage,
+        //  ((double(gcglobals.lines_live_at_whole_heap_gc) / double(approx_condemned_space_in_lines)) * 100.0),
+        //  approx_condemned_space_in_lines);
       }
     }
   }
 
-#if ((GCLOG_DETAIL > 1) || ENABLE_GCLOG_ENDGC) || 1
+#if ((GCLOG_DETAIL > 1) || ENABLE_GCLOG_ENDGC)
 #   if TRACK_NUM_OBJECTS_MARKED
       fprintf(gclog, "\t%zu objects marked in this GC cycle, %zu marked overall\n",
               gcglobals.num_objects_marked_total - num_marked_at_start,
@@ -2884,10 +2910,11 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
       // We're close to running out of room. If we're REALLY close, trigger a non-sticky collection to reclaim more.
 
       int64_t defrag_headroom_lines = num_assigned_defrag_lines();
+      bool need_immediate_recollection = num_lines_reclaimed <= (defrag_headroom_lines / 4);
       // Our "nursery" is full; need a full-heap collection to reset it.
       // Question is, do we trigger an immediate collection or not?
       //  Current heuristic: immediately collect if we didn't reclaim enough to fill the headroom.
-      bool need_immediate_recollection = num_lines_reclaimed <= (defrag_headroom_lines / 4);
+      
       if (need_immediate_recollection) {
         // Raise the yield threshold so we make it less likely to trigger a double collection.
         gcglobals.yield_percentage_threshold += 5.0;
@@ -2899,8 +2926,25 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
           fprintf(gclog, "Adjusted the sticky yield threshold to %.1f\n", gcglobals.yield_percentage_threshold);
         }
       }
+
+      fprintf(gclog, "Sticky->nonsticky, need immediate recollection? %d\n", need_immediate_recollection);
       return need_immediate_recollection;
     }
+
+    if (isWholeHeapGC) {
+      // Be unsatisfied if we reclaim less than 1% of the heap in a (mostly-)full-heap
+      // collection.
+      auto fraction_reclaimed = double(num_lines_reclaimed) /
+                                global_frame15_allocator.full_heap_line_count();
+      fprintf(gclog, "whole heap GC reclaimed %.1f%%\n", 100.0 * fraction_reclaimed);
+      bool need_immediate_reclamation = fraction_reclaimed <= 0.01;
+      if (need_immediate_reclamation) {
+        active_space->next_collection_sticky = false;
+      }
+      return need_immediate_reclamation;
+    }
+
+    // Voluntary collections should never trigger a bigger collection.
     return false;
   }
 
@@ -2908,6 +2952,7 @@ template<typename Allocator>
 void condemned_set<Allocator>::prepare_for_collection(Allocator* active_space,
                                                       bool voluntary,
                                                       bool was_sticky,
+                                                      bool emergency,
                                                       immix_common* common,
                                                       uint64_t* numGenRoots,
                                                       uint64_t* numRemSetRoots) {
@@ -2927,8 +2972,13 @@ void condemned_set<Allocator>::prepare_for_collection(Allocator* active_space,
 
     case condemned_set_status::whole_heap_condemned: {
       *numGenRoots += gcglobals.default_allocator->prepare_for_collection(was_sticky);
-      for (auto handle : gcglobals.all_subheap_handles_except_default_allocator) {
+      for (auto handle : gcglobals.default_linked_subheaps) {
         *numGenRoots += handle->body->prepare_for_collection(was_sticky);
+      }
+      if (emergency) {
+        for (auto handle : gcglobals.non_default_linked_subheaps) {
+          *numGenRoots += handle->body->prepare_for_collection(was_sticky);
+        }
       }
       break;
     }
@@ -2947,6 +2997,7 @@ void condemned_set<Allocator>::prepare_for_collection(Allocator* active_space,
   }
 }
 
+/*
 template<typename Allocator>
 int64_t condemned_set<Allocator>::approx_condemned_capacity_in_bytes(Allocator* active_space) {
     int64_t rv = 0;
@@ -2970,11 +3021,12 @@ int64_t condemned_set<Allocator>::approx_condemned_capacity_in_bytes(Allocator* 
     }
   }
   return rv;
-  }
+ }
+  */
 
 template<typename Allocator>
 int64_t condemned_set<Allocator>::sweep_condemned(Allocator* active_space,
-             clocktimer<false>& phase, bool hadEmptyRootSet) {
+             clocktimer<false>& phase, bool emergency, bool hadEmptyRootSet) {
   int64_t num_lines_reclaimed = 0;
   std::vector<heap_handle<immix_heap>*> subheap_handles;
 
@@ -3000,7 +3052,13 @@ int64_t condemned_set<Allocator>::sweep_condemned(Allocator* active_space,
     }
 
     case condemned_set_status::whole_heap_condemned: {
-      subheap_handles.swap(gcglobals.all_subheap_handles_except_default_allocator);
+      subheap_handles.swap(gcglobals.default_linked_subheaps);
+      if (emergency) {
+        for (auto h : gcglobals.non_default_linked_subheaps) {
+          subheap_handles.push_back(h);
+        }
+        gcglobals.non_default_linked_subheaps.clear();
+      }
 
       if (GC_ASSERTIONS) {
         std::set<immix_heap*> subheaps;
@@ -3016,14 +3074,17 @@ int64_t condemned_set<Allocator>::sweep_condemned(Allocator* active_space,
       //   * Slot B becomes dead.
       //      (keep in mind B's space doesn't know what other spaces have B in their remsets)
       //   * Whole-heap GC leaves A unmarked, because whole-heap GCs ignore remsets,
-      //     and B was (one of) the last supporters of A.
+      //     and B was (in this scenario) the last object referring to A.
       //   * Allocation in A puts an arbitrary bit pattern in B's referent
       //     (especially the header/typemap)
       //   * Single-subheap GC of A follows the remset entry for B and goes off the rails.
+      clocktimer<false> remset_trimming;
+      remset_trimming.start();
       gcglobals.default_allocator->trim_remset();
       for (auto handle : subheap_handles) {
         handle->body->trim_remset();
       }
+      fprintf(gclog, "Remset trimming: %.1f us\n", remset_trimming.elapsed_us());
 
       num_lines_reclaimed += gcglobals.default_allocator->immix_sweep(phase);
       for (auto handle : subheap_handles) {
@@ -3049,7 +3110,11 @@ int64_t condemned_set<Allocator>::sweep_condemned(Allocator* active_space,
       //fprintf(gclog, "DELETING SPACE %p\n", space);
       //delete space;
     } else {
-      gcglobals.all_subheap_handles_except_default_allocator.push_back(handle);
+      if (space->is_linked_to_default_subheap) {
+        gcglobals.default_linked_subheaps.push_back(handle);
+      } else {
+        gcglobals.non_default_linked_subheaps.push_back(handle);
+      }
     }
   }
 
@@ -3152,8 +3217,9 @@ bool is_linemap_clear(frame21* f21) {
 
 class immix_space : public heap {
 public:
-  immix_space() : condemned_flag(false), recycled_lines_medium(nullptr)  {
+  immix_space(bool is_linked) : condemned_flag(false), recycled_lines_medium(nullptr)  {
     this->next_collection_sticky = !__foster_globals.disable_sticky;
+    this->is_linked_to_default_subheap = is_linked;
     approx_lines_allocated_since_last_collection = 0;
     if (GCLOG_DETAIL > 2) { fprintf(gclog, "new immix_space %p\n", this); }
   }
@@ -3224,7 +3290,7 @@ public:
 
   virtual void force_gc_for_debugging_purposes() {
     if (GCLOG_DETAIL > 2) { fprintf(gclog, "force_gc_for_debugging_purposes triggering immix gc\n"); }
-    common.common_gc(this, true);
+    common.common_gc(this, true, false);
   }
 
   // {{{ Prechecked allocation functions
@@ -3447,13 +3513,13 @@ public:
     // that can easily lead to nearly-doubled wasted work.
     {
       condemned_set_status_manager tmp(condemned_set_status::whole_heap_condemned);
-      if (common.common_gc(this, false)) {
-          common.common_gc(this, false);
+      if (common.common_gc(this, false, false)) {
+          common.common_gc(this, false, true);
       }
     }
 
     if (!try_establish_alloc_precondition<true>(&small_bumper, cell_size)) {
-      helpers::oops_we_died_from_heap_starvation(); return NULL;
+      helpers::oops_we_died_from_heap_starvation("allocate_cell_slowpath"); return NULL;
     }
 
     //fprintf(gclog, "gc collection freed space for cell, now have %lld\n", curr->free_size());
@@ -3500,9 +3566,9 @@ public:
       if (true || GCLOG_DETAIL > 2) { fprintf(gclog, "allocate_array_into_bumper needing %zd bytes triggering immix gc\n", req_bytes); }
       {
         condemned_set_status_manager tmp(condemned_set_status::whole_heap_condemned);
-        if (common.common_gc(this, false)) {
+        if (common.common_gc(this, false, false)) {
             fprintf(gclog, "allocate_array_into_bumper: running emergency GC...\n");
-            common.common_gc(this, false);
+            common.common_gc(this, false, true);
         }
       }
 
@@ -3520,7 +3586,7 @@ public:
           g = g->next;
         }
         fprintf(gclog, "Unable to allocate array of %zd bytes; have %d recycled medium lines in aggregate.\n", req_bytes, recycled_lines_left);
-        helpers::oops_we_died_from_heap_starvation(); return NULL; }
+        helpers::oops_we_died_from_heap_starvation("allocate_array_into_bumper"); return NULL; }
     }
   }
 
@@ -3576,8 +3642,10 @@ public:
   virtual remset_t& get_incoming_ptr_addrs() { return incoming_ptr_addrs; }
 
   virtual int64_t immix_sweep(clocktimer<false>& phase) {
-    fprintf(gclog, "Tracking %zd logical frame15s at start of sweep.\n",
-      tracking.logical_frame15s());
+    if (GCLOG_DETAIL > 0) {
+      fprintf(gclog, "Tracking %zd logical frame15s at start of sweep.\n",
+        tracking.logical_frame15s());
+    }
 
     // The current block will probably get marked recycled;
     // rather than trying to stop it, we just accept it and reset the base ptr
@@ -3638,7 +3706,7 @@ public:
                                       && (yield_rate > 0.02);
     }
 
-#if ((GCLOG_DETAIL > 1) && ENABLE_GCLOG_ENDGC) || 1
+#if ((GCLOG_DETAIL > 1) && ENABLE_GCLOG_ENDGC)
       { auto s = foster::humanize_s(nursery_ratio * double(lines_tracked * IMMIX_BYTES_PER_LINE), "B");
       fprintf(gclog, "Allocated into %zd lines ('nursery' was %.1f%% = %s of %zd total)\n", lines_allocated, 100.0 * nursery_ratio, s.c_str(), lines_tracked);
       }
@@ -4461,7 +4529,7 @@ void initialize(void* stack_highest_addr) {
   pages_boot();
 
   global_frame15_allocator.set_heap_size(gSEMISPACE_SIZE());
-  gcglobals.allocator = new immix_space();
+  gcglobals.allocator = new immix_space(true);
   gcglobals.default_allocator = gcglobals.allocator;
   gcglobals.allocator_handle = nullptr;
   gcglobals.current_subheap_hash = gcglobals.allocator->hash_for_object_headers();
@@ -4485,6 +4553,7 @@ void initialize(void* stack_highest_addr) {
   gcglobals.gc_time_us = 0.0;
   gcglobals.num_gcs_triggered = 0;
   gcglobals.num_gcs_triggered_involuntarily = 0;
+  gcglobals.num_gcs_triggered_nurseryonly = 0;
   gcglobals.num_big_stackwalks = 0;
   gcglobals.subheap_ticks = 0.0;
   gcglobals.num_allocations = 0;
@@ -4737,6 +4806,7 @@ FILE* print_timing_stats() {
   fprintf(gclog, "'Num_Big_Stackwalks': %d\n", gcglobals.num_big_stackwalks);
   fprintf(gclog, "'Num_GCs_Triggered': %d\n", gcglobals.num_gcs_triggered);
   fprintf(gclog, "'Num_GCs_Involuntary': %d\n", gcglobals.num_gcs_triggered_involuntarily);
+  fprintf(gclog, "'Num_GCs_NurseryOnly': %d\n", gcglobals.num_gcs_triggered_nurseryonly);
   {
     auto s = foster::humanize_s(double(gcglobals.num_subheaps_created), "");
     fprintf(gclog, "'Num_Subheaps_Created': %s\n", s.c_str());
@@ -5028,9 +5098,17 @@ void foster_generational_write_barrier_slowpath(void* val, void* obj, void** slo
 }
 
 __attribute__((noinline))
-void foster_write_barrier_with_obj_fullpath(void* val, void* obj, void** slot) {
-  immix_heap* hv = heap_for_wb(val);
+void foster_write_barrier_with_obj_fullpath(void* val, void* obj, void** slot, bool into_default) {
   immix_heap* hs = heap_for_wb(obj);
+  // If we have a pointer being created from subheap X into the default subheap,
+  // and X is linked to the default subheap, we need not record the pointer,
+  // because every time we collect the default, we will also collect X.
+  if (into_default && hs->is_linked_to_default_subheap) {
+    return;
+  }
+  
+  immix_heap* hv = heap_for_wb(val);
+  
   // Invariant: hv != hs
   // Invariant: hv != nullptr
   // Preconditions:
@@ -5039,11 +5117,10 @@ void foster_write_barrier_with_obj_fullpath(void* val, void* obj, void** slot) {
   // Violations of these preconditions will not produce errors, but will result
   // in remembered sets that are larger than necessary.
   if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1_hits; }
-  if (true || GCLOG_DETAIL > 3) { fprintf(gclog, "space %p remembering slot %p with inc ptr %p and old pointer %p; slot heap is %p\n", hv, slot, val, *slot, hs); }
+  if (GCLOG_DETAIL > 3) { fprintf(gclog, "space %p remembering slot %p with inc ptr %p and old pointer %p; slot heap is %p\n", hv, slot, val, *slot, hs); }
   hv->remember_into(slot);
 }
 
-// TODO implement and test per-instance customized barriers.
 __attribute__((noinline)) // this attribute will be removed once the barrier optimizer runs.
 void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot, uint8_t gen, uint8_t subheap) {
   *slot = val;
@@ -5062,7 +5139,7 @@ void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot, ui
       foster_generational_write_barrier_slowpath(val, obj, slot);
     }
   } else if (subheap) {
-    foster_write_barrier_with_obj_fullpath(val, obj, slot);
+    foster_write_barrier_with_obj_fullpath(val, obj, slot, space_id_of_header(val_header) == 0);
   }
 }
 
@@ -5074,25 +5151,35 @@ void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot, ui
 // constructors).
 void* foster_subheap_create_raw() {
   ++gcglobals.num_subheaps_created;
-  immix_space* subheap = new immix_space();
+  bool is_linked = true;
+  immix_space* subheap = new immix_space(is_linked);
   void* alloc = malloc(sizeof(heap_handle<immix_space>));
   heap_handle<immix_heap>* h = (heap_handle<immix_heap>*) realigned_for_heap_handle(alloc);
   h->header           = 32;
   h->unaligned_malloc = alloc;
   h->body             = subheap;
-  gcglobals.all_subheap_handles_except_default_allocator.push_back(h);
+  if (is_linked) {
+    gcglobals.default_linked_subheaps.push_back(h);
+  } else {
+    gcglobals.non_default_linked_subheaps.push_back(h);
+  }
   return h->as_tidy();
 }
 
 void* foster_subheap_create_small_raw() {
   ++gcglobals.num_subheaps_created;
-  immix_line_space* subheap = new immix_line_space();
+  bool is_linked = false;
+  immix_line_space* subheap = new immix_line_space(is_linked);
   void* alloc = malloc(sizeof(heap_handle<heap>));
   heap_handle<heap>* h = (heap_handle<heap>*) realigned_for_heap_handle(alloc);
   h->header           = 32;
   h->unaligned_malloc = alloc;
   h->body             = subheap;
-  gcglobals.all_subheap_handles_except_default_allocator.push_back(h);
+  if (is_linked) {
+    gcglobals.default_linked_subheaps.push_back(h);
+  } else {
+    gcglobals.non_default_linked_subheaps.push_back(h);
+  }
   return h->as_tidy();
 }
 
