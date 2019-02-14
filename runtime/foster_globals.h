@@ -32,6 +32,7 @@ struct FosterGlobals {
 
   bool                   disable_sticky;
   double                 sticky_base_threshold;
+  double                 compaction_threshold;
 };
 
 extern FosterGlobals __foster_globals;

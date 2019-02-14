@@ -69,7 +69,7 @@ extern "C" char* __foster_fosterlower_config;
 #define USE_FIFO_SIZE 0
 #define DEBUG_INITIALIZE_ALLOCATIONS  0 // Initialize even when the middle end doesn't think it's necessary
 #define ELIDE_INITIALIZE_ALLOCATIONS  0 // Unsafe: ignore requests to initialize allocated memory.
-#define MEMSET_FREED_MEMORY           GC_ASSERTIONS
+#define MEMSET_FREED_MEMORY           0 || GC_ASSERTIONS
 // This included file may un/re-define these parameters, providing
 // a way of easily overriding-without-overwriting the defaults.
 #include "gc/foster_gc_reconfig-inl.h"
@@ -108,6 +108,10 @@ extern void* foster__typeMapList[];
 #define IMMIX_GRANULES_PER_LINE (IMMIX_BYTES_PER_LINE / 16)
 #define IMMIX_GRANULES_PER_BLOCK (128 * IMMIX_GRANULES_PER_LINE)
 #define IMMIX_ACTIVE_F15_PER_F21 (IMMIX_F15_PER_F21 - 1)
+
+// A "sliver" is 1024 bytes (2^10) which happens to be 64 granules.
+#define IMMIX_SLIVER_SIZE_LOG 10
+// 8 bytes per sliver is less than 1% space overhead.
 
 static_assert(IMMIX_GRANULES_PER_LINE == 16,    "documenting expected values");
 static_assert(IMMIX_GRANULES_PER_BLOCK == 2048, "documenting expected values");
@@ -211,6 +215,10 @@ class frame21;
 frame15* frame15_for_frame15_id(frame15_id f15) {
   return (frame15*)(uintptr_t(f15) << 15);
 }
+
+uint64_t sliver_id_of(void* addr) { return uint64_t(uintptr_t(addr) >> IMMIX_SLIVER_SIZE_LOG); }
+void*    sliver_addr(uint64_t s) { return (void*) (s << IMMIX_SLIVER_SIZE_LOG); }
+uint64_t frame15_id_to_sliver(frame15_id x) { return sliver_id_of(frame15_for_frame15_id(x)); }
 
 // The pointer itself is the base pointer of the equivalent memory_range.
 struct free_linegroup {
@@ -377,6 +385,7 @@ struct immix_worklist_t {
     void       initialize()      { roots.clear(); }
     template <condemned_set_status condemned_status>
     void       process(immix_heap* target, immix_common& common);
+    void       process_for_compaction();
     bool       empty()           { return roots.empty(); }
     unchecked_ptr* pop_root()  { auto root = roots.back(); roots.pop_back(); return root; }
     void       add_root(unchecked_ptr* root) { __builtin_prefetch(*(void**)root); roots.push_back(root); }
@@ -402,7 +411,7 @@ struct frame15info {
   frame15kind      frame_classification;
   uint8_t          num_available_lines_at_last_collection; // TODO these two fields are mutually exclusively used...
   uint8_t          num_holes_at_last_full_collection;
-  uint8_t pad0;
+  uint8_t          compactable;
 };
 
 // We track "available" rather than "marked" lines because it's more natural
@@ -548,6 +557,7 @@ struct GCGlobals {
 
   uint8_t*          lazy_mapped_granule_marks;
   uint16_t*         lazy_mapped_frame_liveness;
+  uint64_t*         lazy_mapped_sliver_offsets;
 
   struct hdr_histogram* hist_gc_stackscan_frames;
   struct hdr_histogram* hist_gc_stackscan_roots;
@@ -562,6 +572,8 @@ struct GCGlobals {
 
   double yield_percentage_threshold;
 
+  double last_full_gc_compaction_headroom_estimate;
+
   double last_full_gc_fragmentation_percentage;
   int evac_threshold;
   int64_t marked_histogram[128];
@@ -572,7 +584,7 @@ struct GCGlobals {
 GCGlobals<immix_heap> gcglobals;
 
 void reset_marked_histogram() {
-  {
+  if (0) {
     int64_t sum_x = 0;
     int64_t sum_f = 0;
     int64_t sum_u = 0;
@@ -677,7 +689,7 @@ void clear_linemap(uint8_t* linemap) {
   memset(linemap, 0, IMMIX_LINES_PER_BLOCK);
 }
 
-void clear_frame15(frame15* f15) { memset(f15, 0xDD, 1 << 15); }
+void clear_frame15(frame15* f15) { memset(f15, 0xDD, 1 << 15); fprintf(gclog, "cleared frame15 %p (%u)\n", f15, frame15_id_of(f15)); }
 void clear_frame21(frame21* f21) { memset(f21, 0xDD, 1 << 21); }
 void do_clear_line_frame15(immix_line_frame15* f);
 
@@ -715,12 +727,35 @@ inline bool obj_is_marked(heap_cell* obj) {
   // Young objects aren't marked, but generally we only take shortcuts for
   // marked objects, not unmarked ones, so checking the young bit is pointless.
   uint8_t* markbyte = &gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)];
-  return *markbyte == 1;
+  return *markbyte != 0;
 }
 inline bool arr_is_marked(heap_array* obj) { return obj_is_marked((heap_cell*)obj); }
 
 frame15kind frame15_classification(void* addr);
 immix_heap* heap_for(void* val);
+
+// Roughly 3% degredation to incorporate size bits..
+inline void do_mark_obj_of_size(heap_cell* obj, int64_t cell_size) {
+  obj->mark_not_young();
+  if (GCLOG_DETAIL > 3) { fprintf(gclog, "setting granule bit  for object %p in frame %u\n", obj, frame15_id_of(obj)); }
+  uintptr_t g0 = global_granule_for(obj);
+  int64_t size_in_granules = cell_size / 16;
+  //fprintf(gclog, "setting granule bits (%zd) for size-%zd object %p in frame %u with header %zx\n", size_in_granules, cell_size, obj, frame15_id_of(obj), obj->raw_header());
+  if (size_in_granules < 128) {
+      gcglobals.lazy_mapped_granule_marks[g0] = uint8_t(size_in_granules) + 128;
+  } else {
+    auto g = g0;
+    uint8_t flag = 0;
+    while (size_in_granules >= 127) {
+      gcglobals.lazy_mapped_granule_marks[g] = 127;
+      ++g;
+      size_in_granules -= 127;
+    }
+      gcglobals.lazy_mapped_granule_marks[g] = size_in_granules;
+      // high bit set for initial byte
+      gcglobals.lazy_mapped_granule_marks[g0] += 128;
+  }
+}
 
 inline void do_mark_obj(heap_cell* obj) {
   obj->mark_not_young();
@@ -748,7 +783,7 @@ void clear_object_mark_bits_for_frame15(void* f15, int startline, int numlines) 
 }
 
 
-bool line_is_marked(  int line, uint8_t* linemap) { return linemap[line] == 1; }
+bool line_is_marked(  int line, uint8_t* linemap) { return linemap[line] != 0; }
 bool line_is_unmarked(int line, uint8_t* linemap) { return linemap[line] == 0; }
 void do_mark_line(  int line, uint8_t* linemap) { linemap[line] = 1; }
 void do_unmark_line(int line, uint8_t* linemap) { linemap[line] = 0; }
@@ -1420,6 +1455,23 @@ uint8_t* linemap_for_frame15_id(frame15_id fid) {
   return &mdb->linemap[frame15_id_within_f21(fid)][0];
 }
 
+uint8_t count_marked_lines_for_frame15(frame15* f15, uint8_t* linemap_for_frame);
+
+void display_linemap_for_frame15_id(frame15_id fid) {
+  uint8_t* linemap = linemap_for_frame15_id(fid);
+  fprintf(gclog, "frame %u: ", fid);
+  for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap[i] ? 'd' : '_'); }
+
+  int byte_residency_out_of_32 = int((double(gcglobals.lazy_mapped_frame_liveness[fid]) / 32768.0) * 32.0);
+  int num_marked_lines = count_marked_lines_for_frame15(frame15_for_frame15_id(fid), linemap);
+  int line_residency_out_of_32 = num_marked_lines / 4;
+  fprintf(gclog, "  |");
+  for (int i = 31; i >= 0; --i) {
+    fprintf(gclog, (i < byte_residency_out_of_32) ? "-" :
+                  ((i < line_residency_out_of_32) ? "=" : " ")); }
+  fprintf(gclog, "|");
+  fprintf(gclog, "\n");
+}
 
 uint8_t* get_frame_map(frame21_15_metadata_block* mdb) {
   return &mdb->linemap[0][0];
@@ -1714,7 +1766,7 @@ struct immix_common {
     int64_t cell_size;
     get_cell_metadata(cell, arr, map, cell_size);
 
-    do_mark_obj(cell);
+    do_mark_obj_of_size(cell, cell_size);
     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += cell_size; }
 
@@ -1875,6 +1927,11 @@ public:
   size_t frame15s_in_reserve_clean() { return clean_frame15s.size() + (clean_frame21s.size() * IMMIX_ACTIVE_F15_PER_F21); }
   size_t count_clean_frame15s() { return clean_frame15s.size(); }
   size_t count_clean_frame21s() { return clean_frame21s.size(); }
+
+  void copy_frame15_ids(std::vector<frame15_id>& ids) {
+    ids.reserve(uncoalesced_frame15s.size());
+    for (auto f15 : uncoalesced_frame15s) { ids.push_back(frame15_id_of(f15)); }
+  }
 
   void note_clean_frame15(frame15* f15) { clean_frame15s.push_back(f15); }
   void note_clean_frame21(frame21* f21) { clean_frame21s.push_back(f21); }
@@ -2564,6 +2621,7 @@ void immix_line_allocator::ensure_sufficient_lines(immix_line_space* owner, int6
 }
 
 void process_worklist(immix_heap* active_space, immix_common* common);
+void do_compactify_via_granule_marks(immix_space* default_subheap);
 
 bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     gcglobals.num_gcs_triggered += 1;
@@ -2584,6 +2642,10 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     bool isWholeHeapGC = gcglobals.condemned_set.status == condemned_set_status::whole_heap_condemned;
     bool was_sticky_collection = active_space->next_collection_sticky;
     bool unstick_next_coll = false;
+
+    bool should_compact = isWholeHeapGC
+                      && (gcglobals.last_full_gc_compaction_headroom_estimate
+                          >= __foster_globals.compaction_threshold);
 
     if (isWholeHeapGC) {
       if (was_sticky_collection && (num_avail_defrag_lines() < (num_assigned_defrag_lines() / 2))) {
@@ -2609,6 +2671,14 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
       } else {
         // Disable evacuation because there isn't much fragmentation to eliminate.
         gcglobals.evac_threshold = 0;
+      }
+
+      if (should_compact) {
+        gcglobals.evac_threshold = 0; // Make sure we don't evacuate; not much point in duplicating work!
+        if (was_sticky_collection) {
+          fprintf(gclog, "disabling sticky collection (and evacuation) because we want to compact.\n");
+          was_sticky_collection = false;
+        }
       }
     }
 
@@ -2674,9 +2744,18 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
       }
     }
 
+    fprintf(gclog, "THRESHOLD IS %d\n", gcglobals.evac_threshold);
+
     process_worklist(active_space, this);
 
     auto deltaRecursiveMarking_us = phase.elapsed_us();
+
+    if (isWholeHeapGC && should_compact) {
+      phase.start();
+      do_compactify_via_granule_marks((immix_space*) gcglobals.default_allocator);
+      fprintf(gclog, "Compaction took %.1f us\n", phase.elapsed_us());
+    }
+
     phase.start();
 
     int64_t approx_condemned_space_in_lines =
@@ -2687,10 +2766,24 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     int64_t num_lines_reclaimed = gcglobals.condemned_set.sweep_condemned(active_space, phase, hadEmptyRootSet);
     double sweep_us = phase.elapsed_us();
 
-    uint64_t bytes_live = gcglobals.alloc_bytes_marked_total - bytes_marked_at_start;
-    uint64_t bytes_used = gcglobals.lines_live_at_whole_heap_gc * uint64_t(IMMIX_BYTES_PER_LINE);
+    auto bytes_marked = gcglobals.alloc_bytes_marked_total - bytes_marked_at_start;
+    //uint64_t bytes_used = gcglobals.lines_live_at_whole_heap_gc * uint64_t(IMMIX_BYTES_PER_LINE);
+    auto line_footprint = gcglobals.lines_live_at_whole_heap_gc;
+    auto line_footprint_in_bytes = line_footprint * IMMIX_BYTES_PER_LINE;
+    auto gains_from_perfect_compaction = (line_footprint_in_bytes - bytes_marked) / IMMIX_BYTES_PER_LINE;
+    auto estimated_reclaimed_lines_from_compaction =
+          int64_t(double(gains_from_perfect_compaction) * 0.85);
+    double reclamation_headroom_factor =
+          double(estimated_reclaimed_lines_from_compaction) / double(num_lines_reclaimed);
+
+    gcglobals.last_full_gc_compaction_headroom_estimate
+        = reclamation_headroom_factor;
+
+    fprintf(gclog, "Estimated gains from compaction: %zd lines (vs %zd; %.1fx)\n",
+        estimated_reclaimed_lines_from_compaction, num_lines_reclaimed, reclamation_headroom_factor);
+
     double byte_level_fragmentation_percentage =
-      ((double(bytes_used) / double(bytes_live)) - 1.0) * 100.0;
+      ((double(line_footprint_in_bytes) / double(bytes_marked)) - 1.0) * 100.0;
     if (isWholeHeapGC) {
       gcglobals.last_full_gc_fragmentation_percentage =
         byte_level_fragmentation_percentage;
@@ -2700,23 +2793,23 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     if (TRACK_NUM_OBJECTS_MARKED) {
       if (isWholeHeapGC) {
         gcglobals.max_bytes_live_at_whole_heap_gc =
-          std::max(gcglobals.max_bytes_live_at_whole_heap_gc, bytes_live);
+          std::max(gcglobals.max_bytes_live_at_whole_heap_gc, bytes_marked);
       }
       if (was_sticky_collection) {
         auto bytes_alloc = g_approx_lines_allocated_since_last_collection * IMMIX_BYTES_PER_LINE;
-        auto s_bytes_live  = foster::humanize_s(bytes_live, "");
+        auto s_bytes_live  = foster::humanize_s(bytes_marked, "");
         auto s_bytes_alloc = foster::humanize_s(bytes_alloc, "");
-        auto s_bytes_used  = foster::humanize_s(bytes_used, "");
+        auto s_bytes_used  = foster::humanize_s(line_footprint_in_bytes, "");
         fprintf(gclog, "%s bytes live / %s line bytes allocated = %f%% overhead (%s bytes used); ",
           s_bytes_live.c_str(), s_bytes_alloc.c_str(),
-              (double(bytes_alloc) / double(bytes_live)) * 100.0,
+              (double(bytes_alloc) / double(bytes_marked)) * 100.0,
           s_bytes_used.c_str());
         fprintf(gclog, "%.1f%% of %zd condemned lines are live\n",
           ((double(gcglobals.lines_live_at_whole_heap_gc) / double(approx_condemned_space_in_lines)) * 100.0),
           approx_condemned_space_in_lines);
       } else {
         fprintf(gclog, "%zu bytes live in %zu line bytes; %f%% overhead; %f%% of %zd condemned lines are live\n",
-          bytes_live, bytes_used,
+          bytes_marked, line_footprint_in_bytes,
           byte_level_fragmentation_percentage,
           ((double(gcglobals.lines_live_at_whole_heap_gc) / double(approx_condemned_space_in_lines)) * 100.0),
           approx_condemned_space_in_lines);
@@ -2724,18 +2817,12 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     }
   }
 
-#if ((GCLOG_DETAIL > 1) || ENABLE_GCLOG_ENDGC)
+#if ((GCLOG_DETAIL > 1) || ENABLE_GCLOG_ENDGC) || 1
 #   if TRACK_NUM_OBJECTS_MARKED
-      if (isWholeHeapGC) {
-        fprintf(gclog, "\t%zu objects marked in this GC cycle, %zu marked overall; %zu bytes live\n",
-                gcglobals.num_objects_marked_total - num_marked_at_start,
-                gcglobals.num_objects_marked_total,
-                bytes_live);
-      }
+      fprintf(gclog, "\t%zu objects marked in this GC cycle, %zu marked overall\n",
+              gcglobals.num_objects_marked_total - num_marked_at_start,
+              gcglobals.num_objects_marked_total);
 #   endif
-      if (TRACK_NUM_REMSET_ROOTS && !isWholeHeapGC && false) {
-        fprintf(gclog, "\t%lu objects identified in remset\n", numRemSetRoots);
-      }
     if (isWholeHeapGC) {
       if (ENABLE_GC_TIMING) {
         double delta_us = gcstart.elapsed_us();
@@ -3301,7 +3388,8 @@ public:
     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += cell_size; }
     mark_lines_for_slots(newbody, cell_size);
-    do_mark_obj(mcell);
+    //do_mark_obj(mcell);
+    do_mark_obj_of_size(mcell, cell_size);
 
     return newbody;
   }
@@ -3471,6 +3559,19 @@ public:
            + laa.approx_size_in_bytes();
   }
 
+  int64_t tally_line_footprint_in_bytes() {
+    int64_t rv = 0;
+    tracking.iter_frame15_void([&rv] (frame15* f15) {
+      uint8_t* linemap = linemap_for_frame15_id(frame15_id_of(f15));
+      uint8_t count = count_marked_lines_for_frame15(f15, linemap);
+      rv += count;
+
+      auto finfo = frame15_info_for(f15);
+      finfo->num_available_lines_at_last_collection = (IMMIX_LINES_PER_BLOCK - count);
+    });
+    return rv;
+  }
+
   virtual void trim_remset() { helpers::do_trim_remset(incoming_ptr_addrs, this); }
   virtual remset_t& get_incoming_ptr_addrs() { return incoming_ptr_addrs; }
 
@@ -3494,6 +3595,7 @@ public:
 
     clocktimer<false> insp_ct; insp_ct.start();
     tracking.iter_frame15( [&](frame15* f15) {
+      //display_linemap_for_frame15_id(frame15_id_of(f15));
       int reclaimed = this->inspect_frame15_postgc(frame15_id_of(f15), f15);
       num_lines_reclaimed += reclaimed;
       return reclaimed;
@@ -3683,7 +3785,8 @@ public:
       free_linegroup* g = (free_linegroup*) offset(f15,   leftmost_unmarked_line      * IMMIX_BYTES_PER_LINE);
       g->bound =                            offset(f15, (rightmost_unmarked_line + 1) * IMMIX_BYTES_PER_LINE);
 
-      if (MEMSET_FREED_MEMORY) { memset(offset(g, 16), 0xdd, distance(g, g->bound) - 16); }
+      if (MEMSET_FREED_MEMORY) { memset(offset(g, 16), 0xda, distance(g, g->bound) - 16);
+        fprintf(gclog, "cleared lines from %p to %p in frame %u\n", g, g->bound, frame15_id_of(g)); }
 
       int num_lines_in_group = (rightmost_unmarked_line - leftmost_unmarked_line) + 1;
       if (num_lines_in_group == 1) {
@@ -3726,6 +3829,10 @@ public:
     return num_available_lines;
   }
 
+  void copy_frame15_ids(std::vector<frame15_id>& ids) {
+    return tracking.copy_frame15_ids(ids);
+  }
+
   virtual void remember_into(void** slot) {
     incoming_ptr_addrs.insert((tori**) slot);
   }
@@ -3762,6 +3869,255 @@ private:
   bool condemned_flag;
   // immix_space_end
 };
+
+
+// TODO improve via lookup table of bitmap?
+// 1 byte = 8 bits = 8 granules = 128 bytes
+//         64 bits            => 1024 bytes = 1 sliver
+// frame15 => 256 bytes == 32 slivers
+uint64_t byte_offset_in_sliver(void* addr) {
+  uintptr_t ga = global_granule_for(addr);
+  uintptr_t gb = global_granule_for(sliver_addr(sliver_id_of(addr)));
+  uint64_t sum = 0;
+  // This loop can execute up to 2048 iterations -- 1024 on average...
+  for (auto i = gb; i < ga; ++i) { sum += gcglobals.lazy_mapped_granule_marks[i] & 0x7F; }
+  return sum * 16;
+}
+
+uint64_t sum_sliver_live_bytes(uint64_t sliver) {
+  uintptr_t gb = global_granule_for(sliver_addr(sliver));
+  uintptr_t gn = global_granule_for(sliver_addr(sliver + 1));
+  uint64_t sum = 0;
+  /*
+  fprintf(gclog, "granules for fid %u: ", fid);
+  for (auto i = gb; i < gn; ++i) {
+    if ((i % 64) == 0) {
+      fprintf(gclog, "\n                     ");
+    }
+    auto g = gcglobals.lazy_mapped_granule_marks[i];
+    if (g & 0x80) {
+      fprintf(gclog, ">%x", g & 0x7F);
+    } else {
+      fprintf(gclog, " %x", g & 0x7F);
+    }
+  }
+  fprintf(gclog, "\n");
+  */
+  for (auto i = gb; i < gn; ++i) { sum += gcglobals.lazy_mapped_granule_marks[i] & 0x7F; }
+  //fprintf(gclog, "\n");
+  return sum * 16;
+}
+
+uint64_t starting_addr(frame15_id fid) { return uint64_t(realigned_for_allocation(frame15_for_frame15_id(fid))); }
+
+void compute_sliver_offsets(std::vector<frame15_id>& ids) {
+  auto curr_id = 0;
+  auto prev_sliver = frame15_id_to_sliver( ids[curr_id] );
+  gcglobals.lazy_mapped_sliver_offsets[ prev_sliver ] = starting_addr( ids[curr_id] );
+
+  uint64_t summed_bytes = 0;
+
+  // fprintf(gclog, "computing block offsets for logical blocks 1-%zd\n", ids.size());
+  for (auto i = 0; i < ids.size(); ++i) {
+    auto base_sliver = frame15_id_to_sliver( ids[i] );
+    for (int sliver = 0; sliver < 32; ++sliver) {
+      if (i == 0 && sliver == 0) continue;
+
+      auto prev_offset = gcglobals.lazy_mapped_sliver_offsets[ prev_sliver ];
+      auto delta_bytes =                sum_sliver_live_bytes( prev_sliver );
+      summed_bytes += delta_bytes;
+      auto new_offset = prev_offset + delta_bytes;
+      // fprintf(gclog, "prev_offset: %zx; delta: %zu; new offset: %zx; frame_ids %u vs %u\n",
+      //     prev_offset, delta_bytes, new_offset,
+      //     frame15_id_of((void*) prev_offset),
+      //     frame15_id_of((void*) new_offset));
+      // Make sure we don't inadvertently create a frame-crossing object during compaction.
+      if (frame15_id_of((void*) prev_offset) != frame15_id_of((void*) new_offset)) {
+        ++curr_id;
+        auto new_prev_offset = starting_addr( ids[curr_id] );
+        gcglobals.lazy_mapped_sliver_offsets[ prev_sliver ] = new_prev_offset;
+        new_offset = new_prev_offset + delta_bytes;
+        // fprintf(gclog, "avoiding frame-crossing offset by jumping ahead to id %zd\n", curr_id);
+        // fprintf(gclog, "  prev offset updated to %zx; new offset now %zx\n", new_prev_offset, new_offset);
+      }
+      prev_sliver = base_sliver + sliver;
+      gcglobals.lazy_mapped_sliver_offsets[ prev_sliver ] = new_offset;
+    }
+  }
+  // // Forcibly make sure the last frame doesn't cross a boundary.
+  // fprintf(gclog, "last frame offset (for %u = %p) was %zx...\n",
+  //   ids[ids.size() - 1], frame15_for_frame15_id(ids[ids.size() - 1]),
+  //   gcglobals.lazy_mapped_sliver_offsets[ ids[ids.size() - 1] ]
+  //   );
+  ++curr_id;
+  if (curr_id < ids.size()) {
+    gcglobals.lazy_mapped_sliver_offsets[ prev_sliver ] = starting_addr( ids[curr_id] );
+  }
+  // fprintf(gclog, "last frame offset (for %u = %p) updated %zx\n",
+  //   ids[ids.size() - 1], frame15_for_frame15_id(ids[ids.size() - 1]),
+  //   gcglobals.lazy_mapped_sliver_offsets[ ids[ids.size() - 1] ]
+  //   );
+
+  // fprintf(gclog, "summed bytes   : %zd\n", summed_bytes);
+  // fprintf(gclog, "compacted bytes: %zd\n", (curr_id * (1 << 15)));
+}
+
+heap_cell* compute_forwarding_addr(heap_cell* old) {
+  if (!frame15_info_for_frame15_id(frame15_id_of(old))->compactable) { return nullptr; }
+
+  uint64_t base = gcglobals.lazy_mapped_sliver_offsets[ sliver_id_of(old) ];
+  uint64_t offset = byte_offset_in_sliver(old);
+  // fprintf(gclog, "forwarding addr was base %zx + offset %6zu (%6zx) for ptr %p\n", base, offset, offset, old);
+  return (heap_cell*) (base + offset);
+}
+
+bool should_skip_compaction_for_frame15_id(frame15_id fid) {
+  int byte_residency_in_lines  = int((double(gcglobals.lazy_mapped_frame_liveness[fid]) / 32768.0) * 128.0);
+  if (byte_residency_in_lines > 104) return true; // too much data to move (~90% full)
+  if (byte_residency_in_lines <  16) return false; // always move small amounts of data to reclaim whole frames.
+
+  // finfo metadata set by earlier tally.
+  auto finfo = frame15_info_for_frame15_id(fid);
+  int num_marked_lines = IMMIX_LINES_PER_FRAME15 - finfo->num_available_lines_at_last_collection;
+  int lines_freed_by_compaction = num_marked_lines - byte_residency_in_lines;
+  if (double(lines_freed_by_compaction) < (0.2 * double(byte_residency_in_lines))) {
+    return true; // skip compaction if we free up too few lines.
+  }
+  return false;
+
+#if 0
+  // Line counts are recorded in sweeping, but we haven't swept yet,
+  // and line counts from previous sweeps are too stale to be useful.
+  uint8_t* linemap = linemap_for_frame15_id(fid);
+  int num_marked_lines = count_marked_lines_for_frame15(frame15_for_frame15_id(fid), linemap);
+  int lines_freed_by_compaction = num_marked_lines - byte_residency_in_lines;
+  bool skip_compaction = byte_residency_in_lines == 0 // too little data to bother with; can reuse exisiting lines
+                      ||  byte_residency_in_lines > 100      // too much data to move?
+                      || ((double(lines_freed_by_compaction) * 1.4) < double(byte_residency_in_lines)) // too little payoff...
+                      ;
+  return skip_compaction;
+#endif
+}
+
+void immix_worklist_t::process_for_compaction() {
+  while (!empty()) {
+    unchecked_ptr* root = pop_root();
+    tori* body = unchecked_ptr_val(*root);
+    heap_cell* obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(body));
+    if (heap_cell* fwded = compute_forwarding_addr(obj)) {
+      *root = make_unchecked_ptr((tori*) fwded->body_addr());
+    }
+  }
+  initialize();
+}
+
+void do_compactify_via_granule_marks(immix_space* default_subheap) {
+  clocktimer<false> ct; ct.start();
+  std::vector<frame15_id> all_ids;
+  default_subheap->copy_frame15_ids(all_ids);
+
+  // Compute up-to-date count of available lines for each frame, stored in per-frame metadata.
+  default_subheap->tally_line_footprint_in_bytes();
+
+  //gfx::timsort(ids.begin(), ids.end());
+  std::sort(all_ids.begin(), all_ids.end());
+  // We now have a virtualized list of frame ids, in address order.
+  fprintf(gclog, "do_compactify: acquiring sorted frames: %.1f us\n", ct.elapsed_us());
+
+  std::vector<frame15_id> selected_ids;
+  selected_ids.reserve(all_ids.size());
+  for (auto fid : all_ids) {
+    bool do_skip = should_skip_compaction_for_frame15_id(fid);
+    if (!do_skip) {
+      selected_ids.push_back(fid);
+    }
+    frame15_info_for_frame15_id(fid)->compactable = !do_skip;
+  }
+
+  ct.start();
+  compute_sliver_offsets(selected_ids);
+  fprintf(gclog, "do_compactify: computing new forwarding addresses: %.1f us\n", ct.elapsed_us()); fflush(gclog);
+
+  ct.start();
+  // Update references and relocate.
+  for (auto fid : all_ids) {
+    auto f15 = frame15_for_frame15_id(fid);
+    bool compacting = frame15_info_for_frame15_id(fid)->compactable;
+
+    if (compacting) {
+      auto mdb = metadata_block_for_frame15_id(fid);
+      uint8_t* linemap = &mdb->linemap[0][0];
+      uint8_t* linemarks = &linemap[line_offset_within_f21(f15)];
+      memset(linemarks, 0, IMMIX_LINES_PER_FRAME15);
+    }
+
+    heap_cell* base = (heap_cell*) realigned_for_allocation(f15);
+    uint8_t* marks = &gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)];
+    for (int i = 0; i < 2048; ++i) {
+      auto mark = marks[i];
+      if (mark & 0x80) {
+        // object start
+        heap_cell* cell = (heap_cell*) offset(base, 16 * i);
+
+        //fprintf(gclog, "examining cell %p with header %zx; fwded? %d\n", cell, cell->raw_header(), cell->is_forwarded()); fflush(gclog);
+
+        heap_array* arr = NULL;
+        const typemap* map = NULL;
+        int64_t cell_size;
+        get_cell_metadata(cell, arr, map, cell_size);
+
+        for_each_child_slot_with(cell, arr, map, cell_size, [](intr* slot) {
+            void* ptr = *(void**)slot;
+            if (!non_markable_addr(ptr)) {
+              if (heap_cell* obj = compute_forwarding_addr(heap_cell::for_tidy((tidy*) ptr))) {
+                *(tidy**)slot = (tidy*) obj->body_addr();
+              }
+            }
+        });
+
+        if (!compacting) {
+          // skip!
+        } else if (heap_cell* dest = compute_forwarding_addr(cell)) {
+          //fprintf(gclog, "sliding cell of size %zd (mark %x) from %p (header %zx) to new dest %p\n",
+          //         cell_size, mark & 0x7F, cell, cell->raw_header(), dest);
+          memmove(dest, cell, cell_size);
+          mark_lines_for_slots(dest, cell_size);
+        }
+      }
+    }
+  }
+  fprintf(gclog, "do_compactify: updating heap references: %.1f us\n", ct.elapsed_us());
+  ct.start();
+
+  fprintf(gclog, "Collecting roots from stack in do_compactify().\n");
+  collect_roots_from_stack(__builtin_frame_address(0));
+  fprintf(gclog, "Done Collecting roots from stack in do_compactify().\n");
+  immix_worklist.process_for_compaction();
+
+  fprintf(gclog, "do_compactify: updating stack references: %.1f us\n", ct.elapsed_us());
+
+  {
+    // Current coro slot must be updated manually.
+    // TODO probably a better solution is to just bite the bullet and adopt per-object pinning...
+    foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
+    foster_bare_coro*  coro = *coro_slot;
+    heap_cell* coro_cell = heap_cell::for_tidy((tidy*) coro);
+    if (auto fwded = compute_forwarding_addr(coro_cell)) {
+      *coro_slot = (foster_bare_coro*) fwded->body_addr();
+    }
+  }
+
+  for (auto fid : all_ids) {
+    auto f15 = frame15_for_frame15_id(fid);
+    //display_linemap_for_frame15_id(fid);
+    clear_object_mark_bits_for_frame15(f15);
+    frame15_info_for_frame15_id(fid)->compactable = false;
+  }
+
+  fprintf(gclog, "... done clearing object mark bits; prepared to sweep...\n");
+
+  default_subheap->next_collection_sticky = false;
+}
 
 void process_worklist(immix_heap* active_space, immix_common* common) {
   switch (gcglobals.condemned_set.status) {
@@ -3828,12 +4184,12 @@ void immix_worklist_t::process(immix_heap* target, immix_common& common) {
 template <condemned_set_status condemned_portion>
 bool should_opportunistically_evacuate(immix_heap* space, heap_cell* obj) {
   if (condemned_portion != condemned_set_status::whole_heap_condemned) return false;
+  if (gcglobals.evac_threshold == 0) return false;
+  if (space != gcglobals.default_allocator) return false;
 
   auto f15info = frame15_info_for((void*) obj);
   bool want_to_opportunistically_evacuate =
-             gcglobals.evac_threshold > 0
-          && space == gcglobals.default_allocator
-          && f15info->num_holes_at_last_full_collection >= gcglobals.evac_threshold
+             f15info->num_holes_at_last_full_collection >= gcglobals.evac_threshold
           && f15info->frame_classification == frame15kind::immix_smallmedium;
 
   if (want_to_opportunistically_evacuate) {
@@ -4124,6 +4480,7 @@ void initialize(void* stack_highest_addr) {
   //
   gcglobals.lazy_mapped_granule_marks           = allocate_lazily_zero_mapped<uint8_t>(lazy_mapped_granule_marks_size()); // byte marks
   gcglobals.lazy_mapped_frame_liveness          = allocate_lazily_zero_mapped<uint16_t>(     size_t(1) << (address_space_prefix_size_log() - 15));
+  gcglobals.lazy_mapped_sliver_offsets          = allocate_lazily_zero_mapped<uint64_t>(     size_t(1) << (address_space_prefix_size_log() - IMMIX_SLIVER_SIZE_LOG));
 
   gcglobals.gc_time_us = 0.0;
   gcglobals.num_gcs_triggered = 0;
@@ -4148,6 +4505,7 @@ void initialize(void* stack_highest_addr) {
   gcglobals.evac_candidates_found = 0;
   gcglobals.evac_threshold = 0;
   gcglobals.yield_percentage_threshold = __foster_globals.sticky_base_threshold;
+  gcglobals.last_full_gc_compaction_headroom_estimate = 0.0;
   gcglobals.last_full_gc_fragmentation_percentage = 0.0;
 
   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_frames);
@@ -4674,14 +5032,14 @@ void foster_write_barrier_with_obj_fullpath(void* val, void* obj, void** slot) {
   immix_heap* hv = heap_for_wb(val);
   immix_heap* hs = heap_for_wb(obj);
   // Invariant: hv != hs
-  // Invariant: nv != nullptr
+  // Invariant: hv != nullptr
   // Preconditions:
   //   val SHOULD NOT point into the same frame as slot
   //   val SHOULD NOT point into the oldest generation
   // Violations of these preconditions will not produce errors, but will result
   // in remembered sets that are larger than necessary.
   if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1_hits; }
-  if (GCLOG_DETAIL > 3) { fprintf(gclog, "space %p remembering slot %p with inc ptr %p and old pointer %p; slot heap is %p\n", hv, slot, val, *slot, hs); }
+  if (true || GCLOG_DETAIL > 3) { fprintf(gclog, "space %p remembering slot %p with inc ptr %p and old pointer %p; slot heap is %p\n", hv, slot, val, *slot, hs); }
   hv->remember_into(slot);
 }
 
