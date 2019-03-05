@@ -1,4 +1,5 @@
 snafuinclude Bytes "bytes";
+snafuinclude Bitwise "bitwise";
 snafuinclude Prelude "prelude";
 snafuinclude RAB "resizable-array-builder";
 
@@ -397,3 +398,70 @@ tryReadCBOR_Other = { inp => offset => additional =>
   cborUpdateOffset offset additional;
   v
 };
+
+
+type case CborStack
+  of $CborStackRetVal
+  of $CborStackArr (Array CBOR) (Ref Int32) CborStack
+  ;
+
+tryReadCBOR_NR :: { Array Int8 => Ref Int64 => CBOR };
+tryReadCBOR_NR = { inp => offset =>
+
+  REC process = { stack => val =>
+    case stack
+      of $CborStackRetVal -> val
+      of $CborStackArr arr r s ->
+        idx = r^;
+        val >^ arr[idx];
+        next = idx +Int32 1;
+        if arrayLength32 arr ==Int32 next
+          then process s (CBOR_Array arr)
+          else next >^ r;
+               readNext stack;
+        end
+    end
+  };
+
+  REC readNext = { stack =>
+
+    headerbyte = inp[offset^];
+    (offset^ +Int64 1) >^ offset;
+
+    majortype     = bitfield-len-Int8 headerbyte 5 3;
+    additional    = bitfield-len-Int8 headerbyte 0 5;
+
+    if majortype ==Int8 4
+      then  // array
+
+                len = tryReadCBOR_IntV inp offset additional;
+                if len ==Int64 0
+                  then
+                    val = CBOR_ArrayEmpty;
+                    process stack val;
+                  else
+                    arr = allocDArray:[CBOR] (trunc_i64_to_i32 len);
+                    readNext (CborStackArr arr (prim ref 0) stack)
+                end
+
+      else
+        val =
+            case majortype
+              of 0 -> tryReadCBOR_UInt   inp offset additional
+              of 1 -> tryReadCBOR_NInt   inp offset additional
+              of 2 -> tryReadCBOR_BS     inp offset additional
+              of 3 -> tryReadCBOR_Text   inp offset additional
+              //of 4 -> // array
+              of 5 -> tryReadCBOR_Map    inp offset
+              of 6 -> tryReadCBOR_Tag    inp offset
+              of 7 -> tryReadCBOR_Other  inp offset additional
+              of _ -> prim kill-entire-process "tryReadCBOR saw unknown major type"
+            end;
+        process stack val;
+    end
+
+  };
+
+  readNext CborStackRetVal
+};
+
