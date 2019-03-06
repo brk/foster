@@ -49,6 +49,7 @@ struct CodegenPassConfig {
   bool useSubheapBarriers;
   bool useGenInitBarriers;
   bool disableAllArrayBoundsChecks;
+  bool disableInliningOnAllFosterFunctions;
   bool standalone;
 };
 
