@@ -178,7 +178,9 @@ void CodegenPass::markFosterFunction(Function* f) {
 
   // We must not inline foster__main, which is marked with our gc,
   // into its caller, which is a gc-less function!
-  if (f->getName() == kFosterMain || f->getName().find("noinline_llvm_") == 0) {
+  if (this->config.disableInliningOnAllFosterFunctions
+      || f->getName() == kFosterMain
+      || f->getName().find("noinline_llvm_") == 0) {
     f->addFnAttr(llvm::Attribute::NoInline);
   }
 }
