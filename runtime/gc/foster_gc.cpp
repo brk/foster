@@ -41,10 +41,12 @@ extern "C" char* __foster_fosterlower_config;
 // These are defined as compile-time constants so that the compiler
 // can do effective dead-code elimination. If we were JIT compiling
 // the GC we could (re-)specialize these config vars at runtime...
-#define GCLOG_DETAIL 1
+#define ENABLE_OPPORTUNISTIC_EVACUATION 0
+#define GCLOG_DETAIL 0
 #define GCLOG_PRINT_LINE_MARKS 0
 #define GCLOG_PRINT_LINE_HISTO 0
 #define GCLOG_PRINT_USED_GROUPS 0
+#define GCLOG_MUTATOR_UTILIZATION 0
 #define ENABLE_GCLOG_PREP 0
 #define ENABLE_GCLOG_ENDGC 1
 #define PRINT_STDOUT_ON_GC 0
@@ -1413,8 +1415,10 @@ public:
           mb.c_str(), frame15s_left, fb.c_str(), frame15s_left * IMMIX_LINES_PER_FRAME15);
 
     // At 10M, 1% + 4 == 4 + 4 = 2%; at 1000M, 1% + 4 = 400 + 4 = 1.01%
-    auto num_defrag_reserved_frames =// 0;
-            int(double(frame15s_left) * kFosterDefragReserveFraction) + 4;// + 6;
+    auto num_defrag_reserved_frames =
+          ENABLE_OPPORTUNISTIC_EVACUATION
+            ? int(double(frame15s_left) * kFosterDefragReserveFraction) + 4 // + 6;
+            : 0;
 
     frame15s_left -= num_defrag_reserved_frames;
 
@@ -1726,7 +1730,7 @@ void mark_lines_for_slots(void* slot, uint64_t cell_size) {
   //if (MARK_FRAME21S) { mark_frame21_for_slot(slot); }
   //if (MARK_FRAME21S_OOL) { mark_frame21_ool_for_slot(slot); }
 
-  if (/*gcglobals.num_gcs_triggered < 2 ||*/ GCLOG_DETAIL > 3) { fprintf(gclog, "marking lines %lu - %lu for slot %p of size %zd; first @ %p in frame %u\n", firstoff, lastoff, slot, cell_size, &linemap[firstoff], frame15_id_of(slot)); }
+  if (/*gcglobals.num_gcs_triggered < 2 ||*/ GCLOG_DETAIL > 3) { fprintf(gclog, "marking lines %d - %d for slot %p of size %zd; first @ %p in frame %u\n", firstoff, lastoff, slot, cell_size, &linemap[firstoff], frame15_id_of(slot)); }
 
   linemap[firstoff] = 1;
   // Exact marking for small objects
@@ -1890,7 +1894,8 @@ struct immix_common {
     //                        \-*root->|            |
     //                                 |------------|
 
-    if (should_opportunistically_evacuate<condemned_portion>(obj)) {
+    if (ENABLE_OPPORTUNISTIC_EVACUATION &&
+        should_opportunistically_evacuate<condemned_portion>(obj)) {
       auto tidyn = scan_and_evacuate_to((immix_space*)gcglobals.default_allocator, obj);
       *root = make_unchecked_ptr((tori*) tidyn);
     } else {
@@ -2301,6 +2306,15 @@ bool immix_common::common_gc(bool voluntary, bool emergency) {
           line_footprint_in_bytes, bytes_marked);
     }
 
+    /*
+    fprintf(gclog, "xGC %d bytesmarked: %zd linesleft:gg %zd linefootprint: %zd bytesleft: %zd bytefootprint: %zd\n",
+      gcglobals.num_gcs_triggered, bytes_marked,
+      int64_t(global_space_allocator.full_heap_line_count()) - line_footprint,
+      line_footprint,
+      (int64_t(global_space_allocator.full_heap_line_count()) - line_footprint) * IMMIX_BYTES_PER_LINE,
+      (line_footprint) * IMMIX_BYTES_PER_LINE);
+      */
+
   if (GCLOG_DETAIL > 0 || ENABLE_GCLOG_ENDGC) {
     if (TRACK_NUM_OBJECTS_MARKED) {
       if (!voluntary) {
@@ -2328,6 +2342,13 @@ bool immix_common::common_gc(bool voluntary, bool emergency) {
         //  approx_condemned_space_in_lines);
       }
     }
+  }
+
+  if (ENABLE_GC_TIMING && GCLOG_MUTATOR_UTILIZATION) {
+    auto ems = gcstart.elapsed_ms();
+    auto now = gcglobals.init_start.elapsed_s();
+    fprintf(gclog, "MUTUTIL %f %f\n", // pause duration in ms, pause start time in s
+                    ems, now - (ems / 1000.0));
   }
 
 #if ((GCLOG_DETAIL > 1) || ENABLE_GCLOG_ENDGC)
@@ -3125,16 +3146,18 @@ public:
         fprintf(gclog, "Leaving used marks alone for compactable frame %u\n", frame15_id_of(g.base));
       }
     } else {
-      if (GCLOG_PRINT_LINE_MARKS) {
+      if (GCLOG_PRINT_LINE_MARKS && GCLOG_DETAIL > 0) {
         fprintf(gclog, "Copying line->used for non-compactable frame %u\n", frame15_id_of(g.base));
       }
       // Selectively copy to used map in preparation for allocation.
       memcpy(&usedmap[g.startline()], &linemap[g.startline()], g.count);
 
-      if (GCLOG_PRINT_LINE_MARKS) {
+      if (GCLOG_PRINT_USED_GROUPS) {
         display_used_linegroup_linemap(&g, linemap, this);
-        display_usedmap_for_frame15_id(frame15_id_of(g.base));
       }
+      //if (GCLOG_PRINT_LINE_MARKS) {
+      //  display_usedmap_for_frame15_id(frame15_id_of(g.base));
+      //}
     }
 
     // Invariant: usedmap[x] for x in g is nonzero iff line x is used.
@@ -4673,7 +4696,7 @@ void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot, ui
 // constructors).
 void* foster_subheap_create_raw() {
   ++gcglobals.num_subheaps_created;
-  bool is_linked = true;
+  bool is_linked = false;// true;
   immix_space* subheap = new immix_space(is_linked);
   void* alloc = malloc(sizeof(heap_handle<immix_space>));
   heap_handle<immix_heap>* h = (heap_handle<immix_heap>*) realigned_for_heap_handle(alloc);
