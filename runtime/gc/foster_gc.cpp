@@ -194,6 +194,8 @@ public:
   }
 };
 
+struct freelist { freelist* next; };
+
 
 // On a 64-bit machine, physical address space will only be 48 bits usually.
 // If we use 47 of those bits, we can drop the low-order 15 bits and be left
@@ -206,6 +208,9 @@ frame21_id frame21_id_of(void* p) { return frame21_id(uintptr_t(p) >> 21); }
 
 uintptr_t low_n_bits(uintptr_t val, uintptr_t n) { return val & ((1 << n) - 1); }
 
+uintptr_t line_offset_within_heap(void* slot) {
+  return uintptr_t(slot) >> 8;
+}
 uintptr_t line_offset_within_f21(void* slot) {
   return low_n_bits(uintptr_t(slot) >> 8, 21 - 8);
 }
@@ -303,17 +308,30 @@ struct remset_t {
     return slots;
   }
 
+  std::vector<tori**> copy_to_vector() {
+    consolidate();
+    std::vector<tori**> slots(dhs.begin(), dhs.end());
+    dhs.clear();
+    return slots;
+  }
+
   void clear() { dhs.clear(); buffer.clear(); }
 private:
   std::vector<tori**> buffer;
   google::dense_hash_set<tori**> dhs;
 };
 
+typedef uint16_t line_stamp_t;
+line_stamp_t get_current_line_stamp(void* slot);
+
 struct remset_with_obj_t {
-  remset_with_obj_t() { dhm.set_empty_key(nullptr); }
+  remset_with_obj_t() {
+    dhm.set_empty_key(nullptr);
+    dhm.set_deleted_key((tori**) 1);
+  }
 
   void insert(tori** slot, tidy* obj) {
-    buffer.push_back(std::make_pair(slot, obj));
+    buffer.push_back(std::make_pair(slot, std::make_pair(obj, get_current_line_stamp(obj))));
     if (buffer.size() == 100) {
       consolidate();
     }
@@ -321,7 +339,7 @@ struct remset_with_obj_t {
 
   void update(tori** old_slot, tori** new_slot, tidy* new_obj) {
     dhm.erase(old_slot);
-    dhm[new_slot] = new_obj;
+    dhm[new_slot] = std::make_pair(new_obj, get_current_line_stamp(new_obj));
   }
 
   void consolidate() {
@@ -333,18 +351,18 @@ struct remset_with_obj_t {
 
   ssize_t size() { consolidate(); return dhm.size(); }
 
-  std::vector<std::pair<tori**, tidy*> >
+  std::vector<std::pair<tori**, std::pair<tidy*, line_stamp_t> > >
             copy_to_vector() {
     consolidate();
-    std::vector<std::pair<tori**, tidy*> > slots;
+    std::vector<std::pair<tori**, std::pair<tidy*, line_stamp_t> > > slots;
     for (auto p : dhm) { slots.push_back(p); }
     return slots;
   }
 
   void clear() { dhm.clear(); buffer.clear(); }
 private:
-  std::vector<std::pair<tori**, tidy*> > buffer;
-  google::dense_hash_map<tori**, tidy*> dhm;
+  std::vector<std::pair<tori**,  std::pair<tidy*, line_stamp_t> > > buffer;
+  google::dense_hash_map<tori**, std::pair<tidy*, line_stamp_t> > dhm;
 };
 
 uint32_t refPattern(const typemap* map) {
@@ -594,6 +612,8 @@ struct GCGlobals {
 
   uint64_t max_bytes_live_at_whole_heap_gc;
 
+  void**            lazy_mapped_markable_handles;
+
   frame15info*      lazy_mapped_frame15info;
   uint8_t*          lazy_mapped_coarse_marks;
 
@@ -601,6 +621,7 @@ struct GCGlobals {
   uint16_t*         lazy_mapped_frame_liveness;
   uint64_t*         lazy_mapped_sliver_offsets;
 
+  line_stamp_t*     lazy_mapped_line_stamps;
   uint8_t*          lazy_mapped_line_marks;
   // With sticky mark bits, subheaps, and lazy sweeping,
   // line marks are too overloaded. With lazy sweeping,
@@ -655,6 +676,12 @@ uint32_t heap::hash_for_object_headers() {
   return fold_64_to_32(uint64_t(this));
 }
 
+line_stamp_t get_current_line_stamp(void* slot) {
+  return gcglobals.lazy_mapped_line_stamps[line_offset_within_heap(slot)];
+}
+void set_current_line_stamp(void* slot, line_stamp_t v) {
+  gcglobals.lazy_mapped_line_stamps[line_offset_within_heap(slot)] = v;
+}
 
 void reset_marked_histogram() {
   if (GCLOG_PRINT_LINE_HISTO) {
@@ -1057,20 +1084,46 @@ bool space_is_condemned(heap_cell* obj) {
 }
 */
 
-bool cell_is_condemned(heap_cell* obj) {
-  return heap_for_header(obj->raw_header())->is_condemned();
+bool per_frame_cell_is_condemned(heap_cell* obj) {
+  //fprintf(gclog, "cell_is_condemned? obj: %p ", obj); fflush(gclog);
+  //fprintf(gclog, "with header %zx", obj->raw_header());  fflush(gclog);
+  auto rv = heap_for_header(obj->raw_header())->is_condemned();
+  //fprintf(gclog, " ----> %d\n", rv); fflush(gclog);
+  return rv;
+}
+
+bool is_condemned_for_default_and_linked(immix_space* space);
+
+bool obj_is_condemned_d(tidy* obj, condemned_set_status condemned_portion) {
+  if (condemned_portion == condemned_set_status::whole_heap_condemned) {
+    return true;
+  }
+
+  immix_heap* space = heap_for_tidy(obj);
+
+  if (condemned_portion == condemned_set_status::default_and_linked) {
+    //fprintf(gclog, "obj_is_condemned: active space is %p; obj space is %p; eqq %d\n",
+    //    space, heap_for_tidy(obj), space == heap_for_tidy(obj));
+    return is_condemned_for_default_and_linked((immix_space*) space);
+  } else {
+    return space->is_condemned();
+  }
 }
 
 template<condemned_set_status condemned_portion>
-bool obj_is_condemned(tidy* obj, immix_heap* space) {
+bool obj_is_condemned(tidy* obj) {
   if (condemned_portion == condemned_set_status::whole_heap_condemned) {
     return true;
-  } else if (condemned_portion == condemned_set_status::default_and_linked) {
-    fprintf(gclog, "obj_is_condemned: active space is %p; obj space is %p; eqq %d\n",
-        space, heap_for_tidy(obj), space == heap_for_tidy(obj));
-    return space->is_condemned() && tidy_owned_by(obj, space);
+  }
+  
+  immix_heap* space = heap_for_tidy(obj);
+  if (condemned_portion == condemned_set_status::default_and_linked) {
+    //fprintf(gclog, "obj_is_condemned: active space is %p; obj space is %p; eqq %d\n",
+    //    space, heap_for_tidy(obj), space == heap_for_tidy(obj));
+
+    return is_condemned_for_default_and_linked((immix_space*) space);
   } else {
-    return space->is_condemned() && tidy_owned_by(obj, space);
+    return space->is_condemned();
   }
 }
 
@@ -1240,7 +1293,7 @@ namespace helpers {
 #endif
 
   void do_trim_remset(remset_with_obj_t& incoming_ptr_addrs, immix_heap* space) {
-    std::vector<std::pair<tori**, tidy*> > slots = incoming_ptr_addrs.copy_to_vector();
+    auto slots = incoming_ptr_addrs.copy_to_vector();
     incoming_ptr_addrs.clear();
 
     if (GCLOG_DETAIL > 1) {
@@ -1249,15 +1302,47 @@ namespace helpers {
     }
     int newsize = 0;
     for (auto p : slots) {
+      auto slot = p.first;
+      auto cell = heap_cell::for_tidy(p.second.first);
+      if (0) {
+        fprintf(gclog, "gc %d: maybe trim remset entry in space %p: slot %p in cell %p; src heap %p; cellstamp %d vs %d; slotstamp %d; srccell marked? %d; tgt marked? %d\n",
+            gcglobals.num_gcs_triggered, space, slot, cell, heap_for_tidy(cell->body_addr()),
+            int(p.second.second),
+            int(get_current_line_stamp(cell)),
+            int(get_current_line_stamp(slot)),
+            obj_is_marked(cell),
+            obj_is_marked(heap_cell::for_tidy((tidy*) *slot))
+            ); fflush(gclog);
+      }
+
+      bool definitely_stale = get_current_line_stamp(cell) != p.second.second;
+
       //if (remset_entry_is_externally_or_internally_stale(p.first)) {
-      if (!obj_is_marked(heap_cell::for_tidy(p.second))) {
+      // The source for this entry may or may not be condemned.
+      // If we find a remset entry coming from an unmarked object in a condemned slot,
+      // we can drop the entry: it's stale.
+      if (definitely_stale
+        //|| (!obj_is_marked(cell) && heap_for_tidy(cell->body_addr())->is_condemned())) {
+          || (!obj_is_marked(cell) && obj_is_condemned_d(cell->body_addr(), gcglobals.condemned_set.status))) {
+        //|| heap_for_header(cell->raw_header()) != space
+        //|| classification_for_frame15_id(frame15_id_of(*slot)) != frame15kind::immix_smallmedium) {
         // do nothing
-        /*
-        fprintf(gclog, "gc %d: dropping stale remset entry holding %p in space %p for slot %p\n",
-            gcglobals.num_gcs_triggered, *slot, space, slot);
-            */
+        
+        if (0) {
+        fprintf(gclog, "gc %d: dropping stale remset entry holding %p in space %p for slot %p in cell %p; mark=%d, tgtmark=%d, hdr=%zx; def-stale? %d\n",
+            gcglobals.num_gcs_triggered, *slot, space, slot, cell,
+            int(obj_is_marked(cell)),
+            obj_is_marked(heap_cell::for_tidy((tidy*) *slot)),
+            cell->raw_header(),
+            definitely_stale
+            );
+        }
       } else {
-        incoming_ptr_addrs.insert(p.first, p.second);
+        /*
+        fprintf(gclog, "gc %d: re-adding remset entry holding %p in space %p for slot %p in cell %p\n",
+            gcglobals.num_gcs_triggered, slot, space, slot, cell);
+            */
+        incoming_ptr_addrs.insert(slot, cell->body_addr());
         ++newsize;
       }
     }
@@ -1269,8 +1354,10 @@ namespace helpers {
   void visit_root(unchecked_ptr* root, const char* slotname) {
     gc_assert(root != NULL, "someone passed a NULL root addr!");
     if (/*gcglobals.num_gcs_triggered < 3 ||*/ GCLOG_DETAIL > 1) {
-      fprintf(gclog, "\t\tSTACK SLOT slot %s holds %p\n",
+      fprintf(gclog, "\t\tgc %d: STACK SLOT slot %s (%p) holds %p\n",
+                        gcglobals.num_gcs_triggered,
                         (slotname ? slotname : "<unknown slot>"),
+                        root,
                         unchecked_ptr_val(*root)
                         );
       /*
@@ -1392,7 +1479,7 @@ public:
     int64_t num_lines_left_to_give = lines_reclaimed / 4; // at most...
     //fprintf(gclog, "Reclaimed %zd lines, willing to give at most %zd for defrag reserve.\n", lines_reclaimed,  num_lines_left_to_give);
     while (num_lines_left_to_give > 0 && !defrag_reserve.full()) {
-      auto fg = grab_free_linegroup<true>(1);
+      auto fg = grab_free_linegroup<true>(1, IMMIX_LINES_PER_FRAME15);
       // Invariant: slots marked used.
       if (fg) {
         num_lines_left_to_give -= linegroup_size_in_lines(fg);
@@ -1440,13 +1527,31 @@ public:
     }
 
     for (int i = 0; i < num_defrag_reserved_frames; ++i) {
-      defrag_reserve.give_lines(grab_free_linegroup<false>(IMMIX_LINES_PER_FRAME15));
+      defrag_reserve.give_lines(grab_free_linegroup<false>(IMMIX_LINES_PER_FRAME15, IMMIX_LINES_PER_FRAME15));
     }
     defrag_reserve.freeze_target_line_count();
   }
 
+  //           [                                 |     excess       ]
+  // g: *----- ^                             rv: ^                  ^
+  // g->bound:------------------------------------------------------+
+  free_linegroup* trim_linegroup(free_linegroup* g, int size,
+                                 int num_lines_needed, int max_lines_wanted) {
+    // Return a tombstone if no excess to trim.
+    if (num_lines_needed > max_lines_wanted) return nullptr;
+    int excess_lines = size - max_lines_wanted;
+    if (excess_lines <= 0) {
+      return nullptr;
+    }
+
+    free_linegroup* rv = (free_linegroup*) offset(g->bound, -excess_lines * IMMIX_BYTES_PER_LINE);
+    rv->bound = g->bound;
+    g->bound = rv;
+    return rv;
+  }
+
   template<bool small>
-  free_linegroup* grab_free_linegroup(size_t num_lines) {
+  free_linegroup* grab_free_linegroup(size_t num_lines, size_t max_lines_wanted) {
     int big_limit = 0;
 
     while (true) {
@@ -1469,8 +1574,9 @@ public:
       for (int i = biggers.size() - 1; i >= big_limit; i--) {
         auto g = biggers[i];
         if (!g) continue;
-        if (linegroup_size_in_lines(g) >= num_lines) {
-          biggers[i] = nullptr;
+        auto size = linegroup_size_in_lines(g);
+        if (size >= num_lines) {
+          biggers[i] = trim_linegroup(g, size, num_lines, max_lines_wanted);
           //fprintf(gclog, "marking to-be-allocated span of %zd bytes at %p - %p\n", distance(g, g->bound), g, g->bound);
           //fflush(gclog);
           mark_slots_used(g, distance(g, g->bound)); // mark until cleared
@@ -1691,6 +1797,8 @@ int64_t large_array_allocator::approx_size_in_bytes() {
 void mark_slot_used(void* slot) {
   uint8_t* linemap = line_used_for_frame15_id(frame15_id_of(slot));
   do_mark_line(line_offset_within_f15(slot), linemap);
+
+  set_current_line_stamp(slot, line_stamp_t(gcglobals.num_gcs_triggered & 0xFFFF));
 }
 
 void mark_slots_used(void* slot, uint64_t cell_size) {
@@ -1698,11 +1806,19 @@ void mark_slots_used(void* slot, uint64_t cell_size) {
   void* lastslot = offset(slot, cell_size - 8);
   auto firstoff = line_offset_within_f15(slot);
   auto lastoff  = line_offset_within_f15(lastslot);
+
+  auto stamp = line_stamp_t(gcglobals.num_gcs_triggered & 0xFFFF);
+
   if (firstoff == lastoff) {
-                   linemap[firstoff] = 1;
+    linemap[firstoff] = 1;
+    set_current_line_stamp(slot, stamp);
   } else {
     //fprintf(gclog, "marking slots %d to %d (ptrs %p to %p) used...\n", firstoff, lastoff, slot, lastslot); fflush(gclog);
-    memset(&linemap[firstoff], 1, (lastoff - firstoff) + 1);
+    auto slotsused = (lastoff - firstoff) + 1; // +1 because we want an inclusive count.
+    memset(&linemap[firstoff], 1, slotsused + 1);
+    for (int i = 0 ; i < slotsused; ++i) {
+      set_current_line_stamp(offset(slot, i * IMMIX_BYTES_PER_LINE), stamp);
+    }
   }
 }
 
@@ -1730,7 +1846,11 @@ void mark_lines_for_slots(void* slot, uint64_t cell_size) {
   //if (MARK_FRAME21S) { mark_frame21_for_slot(slot); }
   //if (MARK_FRAME21S_OOL) { mark_frame21_ool_for_slot(slot); }
 
-  if (/*gcglobals.num_gcs_triggered < 2 ||*/ GCLOG_DETAIL > 3) { fprintf(gclog, "marking lines %d - %d for slot %p of size %zd; first @ %p in frame %u\n", firstoff, lastoff, slot, cell_size, &linemap[firstoff], frame15_id_of(slot)); }
+  if (/*gcglobals.num_gcs_triggered < 2 ||*/ GCLOG_DETAIL > 3) {
+    fprintf(gclog, "gc %d: marking lines %d - %d for slot %p of size %zd; first @ %p in line %d of frame %u\n",
+      gcglobals.num_gcs_triggered,
+      firstoff, lastoff, slot, cell_size, &linemap[firstoff],
+      line_offset_within_f15(slot), frame15_id_of(slot)); }
 
   linemap[firstoff] = 1;
   // Exact marking for small objects
@@ -1859,8 +1979,15 @@ struct immix_common {
     }
 #endif
 
-    for_each_child_slot_with(cell, arr, map, cell_size, [](intr* slot) {
+    for_each_child_slot_with(cell, arr, map, cell_size, [cell](intr* slot) {
       if (!non_markable_addr(* (void**)slot)) {
+        if (0) {
+        fprintf(gclog, "gc %d: adding to worklist slot %p of cell %p holding ptr %p\n",
+                        gcglobals.num_gcs_triggered,
+                        slot,
+                        cell,
+                        * (void**)slot);
+        }
         immix_worklist.add_root((unchecked_ptr*) slot);
       }
     });
@@ -1920,36 +2047,88 @@ struct immix_common {
   uint64_t process_remset(immix_heap* space) {
     remset_with_obj_t& incoming_ptr_addrs = space->get_incoming_ptr_addrs();
     uint64_t numRemSetRoots = 0;
+    //fprintf(gclog, "copying incoming ptrs to vector for space %p (linked? %d)\n", space, space->is_linked_to_default_subheap); fflush(gclog);
 
-    std::vector<std::pair<tori**, tidy*> > slots = incoming_ptr_addrs.copy_to_vector();
+    auto slots = incoming_ptr_addrs.copy_to_vector();
 
+    //fprintf(gclog, "starting with %zd slots\n", slots.size()); fflush(gclog);
+    int n = 0;
     for (auto p : slots) {
       tori** src_slot = p.first;
+      tidy*  src_obj  = p.second.first;
+      uint16_t orig_stamp = p.second.second;
+
+      if (0) {
+        fprintf(gclog, "gc %d: examining remsetx slot %d of space %p; src slot is %p; obj is %p ;; holding %p; rss %d vs cos %d (css %d)\n",
+          gcglobals.num_gcs_triggered, n, space, src_slot, src_obj, *src_slot,
+          orig_stamp, get_current_line_stamp(src_obj), get_current_line_stamp(src_slot)
+          ); ++n;  fflush(gclog);
+      }
+
+      bool header_definitely_stale = get_current_line_stamp(src_obj) != orig_stamp;
+
+      if (header_definitely_stale) {
+        //fprintf(gclog, "INFO: definitely stale entry for src slot %p\n", src_slot);
+        continue;
+      }
+
       // We can ignore the remembered set root if the source is also getting collected.
       // TODO fix
-      if (obj_is_condemned<condemned_portion>(p.second, space)) {
+      if (obj_is_condemned<condemned_portion>(src_obj)) {
         if (GCLOG_DETAIL > 3) {
           fprintf(gclog, "space %p skipping ptr %p, from remset, in co-condemned slot %p\n", space, *src_slot, src_slot);
         }
         continue;
       }
 
+      // TODO ptr can be arbitrary garbage! We can't assume it's tidy or even interior...
       tori* ptr = *src_slot;
+      //fprintf(gclog, "  slot contains %p\n", ptr);
+
+      auto cell = heap_cell::for_tidy((tidy*)ptr);
+ 
       // Otherwise, we must check whether the source slot was modified;
       // if so, it might not point into our space (or might point to a
       // non-condemned portion of our space).
-      if (obj_is_condemned<condemned_portion>((tidy*) ptr, space)) {
+      if ((classification_for_frame15_id(frame15_id_of(*src_slot)) == frame15kind::immix_smallmedium)
+        && heap_for_header(cell->raw_header()) == space
+        && obj_is_condemned<condemned_portion>((tidy*) ptr)) {
+        uint64_t rawheader = heap_cell::for_tidy(assume_tori_is_tidy(untag(make_unchecked_ptr(ptr))))->raw_header();
         const typemap* purported_typemap = heap_cell::for_tidy(assume_tori_is_tidy(untag(make_unchecked_ptr(ptr))))->get_meta();
         if (gcglobals.typemap_memory.contains((void*) purported_typemap)) {
           if (TRACK_NUM_REMSET_ROOTS) { numRemSetRoots++; }
-          //fprintf(gclog, "space %p examining remset ptr %p in slot %p with typemap %p\n", space, *loc, loc, purported_typemap); fflush(gclog);
+
+          if (0) {
+            fprintf(gclog, "gc %d: space %p visiting root slot with ptr %p: slot %p with raw header %zx; src obj header is %zx\n",
+              gcglobals.num_gcs_triggered,
+              space, ptr, src_slot, rawheader,
+              heap_cell::for_tidy(src_obj)->raw_header()); fflush(gclog);
+          }
+
           helpers::visit_root((unchecked_ptr*) src_slot, "remembered_set_root");
         } else {
-          fprintf(gclog, "space %p skipping remset bad-typemap ptr %p in slot %p\n", space, ptr, src_slot);
+          fprintf(gclog, "gc %d: space %p skipping remset bad-typemap ptr %p in slot %p\n",
+              gcglobals.num_gcs_triggered,
+              space, ptr, src_slot);
         }
       } else {
         if (GCLOG_DETAIL > 3) {
-          fprintf(gclog, "space %p skipping remset non-condemned ptr %p in slot %p\n", space, ptr, src_slot);
+          if (classification_for_frame15_id(frame15_id_of(*src_slot)) == frame15kind::immix_smallmedium) {
+            fprintf(gclog, "gc %d: space %p skipping remset non-condemned ptr %p in slot %p with hdr %zx, cond %d\n",
+                gcglobals.num_gcs_triggered,
+                space, ptr, src_slot,
+                cell->raw_header(),
+                obj_is_condemned<condemned_portion>((tidy*) ptr)
+                );
+          } else {
+            // can't derf ptr
+            fprintf(gclog, "gc %d: space %p skipping remset non-condemned ptr %p in slot %p\n",
+                gcglobals.num_gcs_triggered,
+                space, ptr, src_slot
+                //cell->raw_header());
+                //obj_is_condemned<condemned_portion>((tidy*) ptr)
+                );
+          }
         }
       }
     }
@@ -2119,7 +2298,6 @@ bool immix_common::common_gc(bool voluntary, bool emergency) {
 #if DEBUG_VERIFY_MARK_BITS
     g_marked_this_cycle.clear();
 #endif
-    //if (GCLOG_PRINT_LINE_MARKS) { global_space_allocator.display_heap_linemaps(); }
 
     g_approx_lines_allocated_since_last_collection = 0;
     auto num_marked_at_start   = gcglobals.num_objects_marked_total;
@@ -2134,12 +2312,20 @@ bool immix_common::common_gc(bool voluntary, bool emergency) {
     if (is_sticky_collection) { gcglobals.num_gcs_triggered_nurseryonly++; }
     bool unstick_next_coll = false;
 
+
+    if (GCLOG_PRINT_LINE_MARKS) {
+      if (is_sticky_collection) {
+        fprintf(gclog, "Sticky collection starting with the following marks:\n");
+        global_space_allocator.display_heap_linemaps();
+      }
+    }
+
     gcglobals.num_gcs_triggered += 1;
     if (!voluntary) { gcglobals.num_gcs_triggered_involuntarily++; }
     if (PRINT_STDOUT_ON_GC) { fprintf(stdout, "                        start GC #%d\n", gcglobals.num_gcs_triggered); fflush(stdout); }
     if (ENABLE_GCLOG_ENDGC) { fprintf( gclog, "                        start GC #%d; voluntary? %d; sticky? %d; compact? %d; emergency? %d; typ %d\n",
           gcglobals.num_gcs_triggered, voluntary, is_sticky_collection, should_compact, emergency,
-          (int) gcglobals.condemned_set.status); }
+          (int) gcglobals.condemned_set.status); fflush(gclog); }
 
     clocktimer<false> gcstart; gcstart.start();
     clocktimer<false> phase;
@@ -2284,7 +2470,7 @@ bool immix_common::common_gc(bool voluntary, bool emergency) {
       gcglobals.last_full_gc_compaction_headroom_estimate
           = reclamation_headroom_factor;
 
-      if (GCLOG_DETAIL > 0) {
+      if (!voluntary || GCLOG_DETAIL > 0) {
         fprintf(gclog, "Estimated gains from compaction: %zd lines (vs %zd; %.1fx)\n",
           estimated_reclaimed_lines_from_compaction, num_lines_reclaimed, reclamation_headroom_factor);
       }
@@ -2468,6 +2654,9 @@ void condemned_set<Allocator>::prepare_for_collection(bool voluntary,
       for (auto space : spaces) {
         *numGenRoots += space->prepare_for_collection(was_sticky);
       }
+      for (auto space : spaces) {
+        *numRemSetRoots += common->process_subheap_remsets(space);
+      }
       break;
     }
 
@@ -2482,15 +2671,17 @@ void condemned_set<Allocator>::prepare_for_collection(bool voluntary,
           *numGenRoots += handle->body->prepare_for_collection(was_sticky);
         }
       }
-      break;
-    }
-  }
 
-  if (voluntary) {
-    if (this->status == condemned_set_status::per_frame_condemned) {
-      for (auto space : gcglobals.condemned_set.spaces) {
-        *numRemSetRoots += common->process_subheap_remsets(space);
+      if (emergency || this->status == condemned_set_status::whole_heap_condemned) {
+        // Full-heap collection; no need to process remsets.
+        fprintf(gclog, "WARN: not processing remsets for full-heap collection...\n");
+      } else {
+        *numRemSetRoots += common->process_subheap_remsets(gcglobals.default_allocator);
+        for (auto handle : gcglobals.default_linked_subheaps) {
+          *numRemSetRoots += common->process_subheap_remsets(handle->body);
+        }
       }
+      break;
     }
   }
 }
@@ -2506,10 +2697,17 @@ int64_t condemned_set<Allocator>::sweep_condemned(
     case condemned_set_status::per_frame_condemned: {
       // Whole-heap collections ignore the condemned set, and single-subheap
       // collections by definition have an implicit condemned set.
+
+      //fprintf(gclog, "Collection type: PerFrameCondemned; emerg %d; # subheaps: %zd\n", emergency, spaces.size() + 1);
+      
+      for (auto space : spaces) {
+        space->trim_remset();
+      }
+
       for (auto space : spaces) {
         space->uncondemn();
       }
-      
+
       for (auto space : spaces) {
         num_lines_reclaimed += space->immix_sweep(phase, num_lines_tracked, num_groups_tracked);
       }
@@ -2532,13 +2730,21 @@ int64_t condemned_set<Allocator>::sweep_condemned(
         gcglobals.non_default_linked_subheaps.clear();
       }
 
+      if (this->status == condemned_set_status::default_and_linked) {
+        fprintf(gclog, "Collection type: DefaultAndLinked; emerg %d; # subheaps: %zd\n", emergency, gcglobals.condemned_set.non_default_handles.size() + 1);
+      }
+
+      if (this->status == condemned_set_status::whole_heap_condemned) {
+        fprintf(gclog, "Collection type: WholeHeapCondemned; emerg %d; # subheaps: %zd\n", emergency, gcglobals.condemned_set.non_default_handles.size() + 1);
+      }
+
       // Before we clear line marks, remove any stale remset entries.
       // If we don't do this, the following bad thing can happen:
       //   * Object A stored in slot B, so A's space records slot B in its remset.
       //   * Slot B becomes dead.
       //      (keep in mind B's space doesn't know what other spaces have B in their remsets)
       //   * Whole-heap GC (or any other configuration with A and B co-condemned)
-      //                   leaves A unmarked, because whole-heap GCs ignore remsets,
+      //                   leaves A unmarked, because co-condemned spaces ignore remsets,
       //                   and B was (in this scenario) the last object referring to A.
       //   * So object A and slot B are both dead, but slot B is still recorded in A's remset
       //                                                    (and still points to A).
@@ -2574,9 +2780,12 @@ int64_t condemned_set<Allocator>::sweep_condemned(
     // within it become inaccessible.
     heap_cell* handle_cell = handle->as_cell();
     auto space = handle->body;
-    if (cell_is_condemned(handle_cell) && (!obj_is_marked(handle_cell)) && space->is_empty()) {
-      fprintf(gclog, "DELETING SPACE %p\n", space);
+    if (obj_is_condemned_d(handle_cell->body_addr(), gcglobals.condemned_set.status)
+            && (!obj_is_marked(handle_cell)) && space->is_empty()) {
+      fprintf(gclog, "DELETING SPACE %p because handle cell %p was condemned and unmarked; markable? %d\n",
+          space, handle_cell, !non_markable_addr(handle_cell));
       //delete space;
+      //free_markable_handle(handle);
     } else {
       if (space->is_linked_to_default_subheap) {
         gcglobals.default_linked_subheaps.push_back(handle);
@@ -2589,7 +2798,7 @@ int64_t condemned_set<Allocator>::sweep_condemned(
 
   // Handles (and other unframed allocations) must be unmarked too.
   for (auto c : unframed_and_marked) {
-    fprintf(gclog, "Unmarking unframed object %p\n", c);
+    //fprintf(gclog, "Unmarking unframed object %p\n", c);
     do_unmark_granule(c);
   }
   unframed_and_marked.clear();
@@ -2650,8 +2859,9 @@ bool is_linemap_clear(frame21* f21) {
 
 class immix_space : public heap {
 public:
-  immix_space(bool is_linked) : condemned_flag(false) {
+  immix_space(bool is_linked, int lines_at_a_time) : condemned_flag(false) {
     this->is_linked_to_default_subheap = is_linked;
+    this->lines_at_a_time = lines_at_a_time;
     approx_lines_allocated_since_last_collection = 0;
     if (GCLOG_DETAIL > 2) { fprintf(gclog, "new immix_space %p\n", this); }
   }
@@ -2662,8 +2872,11 @@ public:
 
   virtual uint64_t prepare_for_collection(bool sticky) {
     if (ENABLE_GCLOG_PREP) { fprintf(gclog, "GCPREP space %p for collection; sticky: %d\n", this, sticky); }
-    if (sticky) {
-      std::vector<tori**> roots = generational_remset.move_to_vector();
+    // Default-linked subheaps cannot be sticky---if they could, then pointers into
+    // the default subheap could be missed due to objects in the DLS not getting traced.
+    if (sticky && !this->is_linked_to_default_subheap) {
+      std::vector<tori**> roots = generational_remset.copy_to_vector();
+      fprintf(gclog, "visiting %zd generational remset roots for space %p\n", roots.size(), this);
       // Process generational remset.
       // We must be careful not to process the same root more than once;
       // otherwise, we might evacuate the same object multiple times.
@@ -2750,7 +2963,8 @@ public:
 
     // Round up, not down.
     auto lines_needed = small ? 1 : ((cell_size + (IMMIX_BYTES_PER_LINE - 1)) / IMMIX_BYTES_PER_LINE);
-    free_linegroup* g = global_space_allocator.grab_free_linegroup<small>(lines_needed);
+    free_linegroup* g = global_space_allocator.grab_free_linegroup<small>(lines_needed, lines_at_a_time);
+    //if (lines_at_a_time < IMMIX_LINES_PER_FRAME15) { lines_at_a_time *= 2; }
     if (!g) return false;
 
     install_free_group(*bumper, g);
@@ -2758,9 +2972,13 @@ public:
     tracking.add_free_group(g);
 
     if (ENABLE_GCLOG_PREP) {
-      fprintf(gclog, "Prepared allocatable block: %d lines at %p\n", linegroup_size_in_lines(g), g);
-      display_linemap_for_frame15_id(frame15_id_of(g));
-      display_usedmap_for_frame15_id(frame15_id_of(g));
+      fprintf(gclog, "after gc %d: Prepared allocatable block: %d lines at %p  (%d in %u) for space %p\n",
+          gcglobals.num_gcs_triggered,
+          linegroup_size_in_lines(g), g,
+          line_offset_within_f15(g),
+          frame15_id_of(g), this);
+      //display_linemap_for_frame15_id(frame15_id_of(g));
+      //display_usedmap_for_frame15_id(frame15_id_of(g));
     }
 
     if (g_in_non_default_subheap) {
@@ -2932,7 +3150,7 @@ public:
     if (try_establish_alloc_precondition<small>(bumper, req_bytes)) {
       return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, gcglobals.current_subheap_hash, init);
     } else {
-      if (true || GCLOG_DETAIL > 2) { fprintf(gclog, "allocate_array_into_bumper needing %zd bytes triggering immix gc\n", req_bytes); }
+      if (GCLOG_DETAIL > 2) { fprintf(gclog, "allocate_array_into_bumper needing %zd bytes triggering immix gc\n", req_bytes); }
       fprintf(gclog, "bumper size before GC: %zd\n", bumper->size());
       {
         condemned_set_status_manager tmp(condemned_set_status::default_and_linked);
@@ -3178,12 +3396,15 @@ public:
         }
       } else {
         if (GCLOG_DETAIL > 2) {
-          fprintf(gclog, "INFO: clearing line %d of frame %u @ %p; space=%p\n",
+          fprintf(gclog, "gc %d: INFO: clearing line %d of frame %u @ %p; space=%p\n",
+              gcglobals.num_gcs_triggered,
             line_offset_within_f15(offset(g.base, i * IMMIX_BYTES_PER_LINE)),
             frame15_id_of(offset(g.base, i * IMMIX_BYTES_PER_LINE)),
             offset(g.base, i * IMMIX_BYTES_PER_LINE), this);
         }
-        if (MEMSET_FREED_MEMORY) { memset(offset(g.base, i * IMMIX_BYTES_PER_LINE), 0xdf, IMMIX_BYTES_PER_LINE); }
+        if (MEMSET_FREED_MEMORY) {
+          memset(offset(g.base, i * IMMIX_BYTES_PER_LINE), 0xdf, IMMIX_BYTES_PER_LINE);
+        }
         // Nothing to do!
         #if 0
         if (was_free) { // continue free group
@@ -3342,9 +3563,15 @@ private:
 
   uint64_t approx_lines_allocated_since_last_collection;
   bool condemned_flag;
+  uint8_t lines_at_a_time;
   // immix_space_end
 };
 
+bool is_condemned_for_default_and_linked(immix_space* space) {
+  if (space->is_linked_to_default_subheap) return true;
+  if (space == gcglobals.default_allocator) return true;
+  return false;
+}
 
 // TODO improve via lookup table of bitmap?
 // 1 byte = 8 bits = 8 granules = 128 bytes
@@ -3490,7 +3717,7 @@ void update_pointer_if_compacted(tidy** slot) {
 
 void update_pointers_in_remset_of(immix_heap* space) {
   auto remset = space->get_incoming_ptr_addrs();
-  std::vector<std::pair<tori**, tidy*> > pairs = remset.copy_to_vector();
+  auto pairs = remset.copy_to_vector();
   fprintf(gclog, "Remset size is %zd for space %p\n", pairs.size(), space);
   for (auto p : pairs) {
     auto val = *p.first;
@@ -3502,15 +3729,16 @@ void update_pointers_in_remset_of(immix_heap* space) {
 
 void update_slots_in_remset_of(immix_heap* space) {
   auto remset = space->get_incoming_ptr_addrs();
-  std::vector<std::pair<tori**, tidy*> > pairs = remset.copy_to_vector();
+  auto pairs = remset.copy_to_vector();
   fprintf(gclog, "Remset size is %zd for space %p\n", pairs.size(), space);
   for (auto p : pairs) {
     tori** old_slot = p.first;
-    tidy*  old_obj  = p.second;
+    tidy*  old_obj  = p.second.first;
     if (!non_kosher_addr(old_slot) && is_in_default_subheap(old_obj)) {
       if (heap_cell* cell = compute_forwarding_addr(heap_cell::for_tidy(old_obj))) {
         auto new_obj  = cell->body_addr();
         auto new_slot = (tori**) offset(new_obj, distance(old_obj, old_slot));
+        fprintf(gclog, "Updating remset from old slot %p to new slot %p with object %p\n", old_slot, new_slot, new_obj);
         remset.update(old_slot, new_slot, new_obj);
       }
     }
@@ -3623,7 +3851,7 @@ void do_compactify_via_granule_marks(immix_space* default_subheap,
           // compactable frames do the inverse (because the line map determines what gets cleared).
           mark_slots_used(dest, cell_size);
 
-          // Can't reset granule mark for old cell becuause it would interfere with byte_offset_in_sliver().
+          // Can't reset granule mark for old cell because it would interfere with byte_offset_in_sliver().
           //do_mark_obj_of_size(dest, cell_size);
           gcglobals.lazy_mapped_frame_liveness[frame15_id_of(cell)] -= uint16_t(cell_size);
           gcglobals.lazy_mapped_frame_liveness[frame15_id_of(dest)] += uint16_t(cell_size);
@@ -3752,19 +3980,28 @@ void immix_worklist_t::process(immix_common& common) {
     }
     */
 #else
-    if (empty()) break;
+    if (empty()) {
+      //fprintf(gclog, "gc %d: marking stack empty\n", gcglobals.num_gcs_triggered);
+      break;
+    }
     root = pop_root();
 #endif
 
     tori* body = unchecked_ptr_val(*root); // TODO drop the assumption that body is a tidy pointer.
     heap_cell* obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(body));
 
-    //fprintf(gclog, "root %p contains object %p with header %zx\n", root, obj, obj->raw_header());
-    //fflush(gclog);
-
+    if (0) {
+      fprintf(gclog, "gc %d: root %p contains object %p (line %d of frame %u)\n", // with header %zx\n",
+          gcglobals.num_gcs_triggered,
+          root, obj,
+          line_offset_within_f15(root),
+                  frame15_id_of(root)
+          //, obj->raw_header()
+          );
+    }
 
     if ( (condemned_status == condemned_set_status::per_frame_condemned
-          && !cell_is_condemned(obj)) )
+          && !per_frame_cell_is_condemned(obj)) )
     {
         // When collecting a subset of the heap, we only look at condemned objects,
         // and ignore objects stored in non-condemned regions.
@@ -3778,7 +4015,7 @@ void immix_worklist_t::process(immix_common& common) {
     }
 
     if (obj->is_forwarded()) {
-      //fprintf(gclog, "worklist.process: root=%p, body = %p, obj = %p, header=%zx\n", root, body, obj, obj->raw_header()); fflush(gclog);
+      // fprintf(gclog, "worklist.process: root=%p, body = %p, obj = %p, header=%zx\n", root, body, obj, obj->raw_header()); fflush(gclog);
       *root = make_unchecked_ptr((tori*) obj->get_forwarded_body());
     } else if (obj_is_marked(obj)) {
 #if DEBUG_VERIFY_MARK_BITS
@@ -3787,6 +4024,7 @@ void immix_worklist_t::process(immix_common& common) {
       }
 #endif
       // Skip marked objects.
+      //fprintf(gclog, "gc %d: skipping marked object cell %p\n", gcglobals.num_gcs_triggered, obj);
     } else {
 #if DEBUG_VERIFY_MARK_BITS
       g_marked_this_cycle.insert(obj);
@@ -4082,6 +4320,10 @@ void initialize(void* stack_highest_addr) {
 
   pages_boot();
 
+  gcglobals.lazy_mapped_markable_handles        = (void**) allocate_lazily_zero_mapped<heap_handle<immix_space> >(1 << 20);
+  // First entry reserved for free list.
+  (*gcglobals.lazy_mapped_markable_handles) = offset(gcglobals.lazy_mapped_markable_handles, sizeof(heap_handle<immix_heap>));
+
   gcglobals.lazy_mapped_frame15info             = allocate_lazily_zero_mapped<frame15info>(     size_t(1) << (address_space_prefix_size_log() - 15));
   gcglobals.lazy_mapped_coarse_marks            = allocate_lazily_zero_mapped<uint8_t>(         size_t(1) << (address_space_prefix_size_log() - COARSE_MARK_LOG));
   //gcglobals.lazy_mapped_coarse_condemned        = allocate_lazily_zero_mapped<condemned_status>(size_t(1) << (address_space_prefix_size_log() - COARSE_MARK_LOG));
@@ -4090,12 +4332,13 @@ void initialize(void* stack_highest_addr) {
   gcglobals.lazy_mapped_granule_marks           = allocate_lazily_zero_mapped<uint8_t>(lazy_mapped_granule_marks_size()); // byte marks
   gcglobals.lazy_mapped_frame_liveness          = allocate_lazily_zero_mapped<uint16_t>(     size_t(1) << (address_space_prefix_size_log() - 15));
   gcglobals.lazy_mapped_sliver_offsets          = allocate_lazily_zero_mapped<uint64_t>(     size_t(1) << (address_space_prefix_size_log() - IMMIX_SLIVER_SIZE_LOG));
+  gcglobals.lazy_mapped_line_stamps             = allocate_lazily_zero_mapped<uint16_t>(     size_t(1) << (address_space_prefix_size_log() - IMMIX_LINE_SIZE_LOG));
   gcglobals.lazy_mapped_line_marks              = allocate_lazily_zero_mapped<uint8_t>(      size_t(1) << (address_space_prefix_size_log() - IMMIX_LINE_SIZE_LOG));
   gcglobals.lazy_mapped_line_used               = allocate_lazily_zero_mapped<uint8_t>(      size_t(1) << (address_space_prefix_size_log() - IMMIX_LINE_SIZE_LOG));
 
 
   global_space_allocator.set_heap_size(gSEMISPACE_SIZE());
-  gcglobals.allocator = new immix_space(true);
+  gcglobals.allocator = new immix_space(true, 128);
   gcglobals.default_allocator = gcglobals.allocator;
   gcglobals.allocator_handle = nullptr;
   gcglobals.current_subheap_hash = gcglobals.allocator->hash_for_object_headers();
@@ -4660,7 +4903,8 @@ void foster_write_barrier_with_obj_fullpath(void* val, void* obj, void** slot, b
   // Invariant: hv != hs
   // Invariant: hv != nullptr
   if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1_hits; }
-  if (true || GCLOG_DETAIL > 3) { fprintf(gclog, "space %p remembering slot %p with inc ptr %p and old pointer %p; slot heap is %p\n", hv, slot, val, *slot, hs); }
+  if (GCLOG_DETAIL > 3) { fprintf(gclog, "post gc %d: space %p remembering slot %p of obj %p with inc ptr %p; slot heap is %p; slot badge %d\n",
+      gcglobals.num_gcs_triggered, hv, slot, obj, val, hs, int(get_current_line_stamp(obj))); }
   hv->remember_into(slot, obj);
 }
 
@@ -4688,17 +4932,23 @@ void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot, ui
   }
 }
 
-// We need a degree of separation between the possibly-moving
-// traced immix heap, which does not currently support finalizers/destructors,
-// and the fact that immix_space is a C++ object with a non-trivial "dtor".
-// There's also an issue of alignment: pointers in the immix heap ought to be
-// aligned (though I guess it's not strictly necessary for types without any
-// constructors).
-void* foster_subheap_create_raw() {
+// Malloc can return low addresses, but it's convenient to use low addresses
+// for un-markable data: static objects, null-ish constants, etc.
+void* malloc_markable_handle() {
+  //return malloc(sizeof(heap_handle<immix_space>));
+
+  freelist* entry = (freelist*) *(gcglobals.lazy_mapped_markable_handles);
+  freelist* next = entry->next;
+  if (!next) { next = (freelist*) offset(entry, sizeof(heap_handle<immix_heap>)); }
+  *(gcglobals.lazy_mapped_markable_handles) = next;
+  return entry;
+}
+
+void* foster_subheap_create_linkedp(bool is_linked) {
   ++gcglobals.num_subheaps_created;
-  bool is_linked = false;// true;
-  immix_space* subheap = new immix_space(is_linked);
-  void* alloc = malloc(sizeof(heap_handle<immix_space>));
+  bool lines_at_a_time = 1;
+  immix_space* subheap = new immix_space(is_linked, lines_at_a_time);
+  void* alloc = malloc_markable_handle();
   heap_handle<immix_heap>* h = (heap_handle<immix_heap>*) realigned_for_heap_handle(alloc);
   h->header           = 32;
   h->unaligned_malloc = alloc;
@@ -4711,8 +4961,20 @@ void* foster_subheap_create_raw() {
   return h->as_tidy();
 }
 
+// We need a degree of separation between the possibly-moving
+// traced immix heap, which does not currently support finalizers/destructors,
+// and the fact that immix_space is a C++ object with a non-trivial "dtor".
+// There's also an issue of alignment: pointers in the immix heap ought to be
+// aligned (though I guess it's not strictly necessary for types without any
+// constructors).
+void* foster_subheap_create_raw() {
+  //return foster_subheap_create_linkedp(false);
+  return foster_subheap_create_linkedp(true);
+}
+
 void* foster_subheap_create_small_raw() {
-  return nullptr;
+  return foster_subheap_create_linkedp(true);
+  //return foster_subheap_create_linkedp(false);
 }
 
 void* foster_subheap_activate_raw(void* generic_subheap) {
@@ -4742,6 +5004,7 @@ void* foster_subheap_activate_raw(void* generic_subheap) {
 }
 
 void foster_subheap_condemn_raw(void* generic_subheap) {
+  //return;
   heap_handle<immix_heap>* handle = heap_handle<immix_heap>::for_tidy((tidy*) generic_subheap);
   auto subheap = handle->body;
   //fprintf(gclog, "condemning subheap %p\n", subheap);
@@ -4752,6 +5015,7 @@ void foster_subheap_condemn_raw(void* generic_subheap) {
 }
 
 void foster_subheap_collect_raw(void* generic_subheap) {
+  //return;
   foster_subheap_condemn_raw(generic_subheap);
 
   heap_handle<immix_heap>* handle = heap_handle<immix_heap>::for_tidy((tidy*) generic_subheap);
