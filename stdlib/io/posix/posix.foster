@@ -90,7 +90,7 @@ write_bytes_to_fd :: { Int64 => Bytes => Int64 };
 write_bytes_to_fd = { fd => bytes =>
   wstatus = (prim ref 0);
   bytesFoldlFragments bytes { arr => off => fin => nwritten =>
-    nwrote = foster_posix_write_bytes fd arr 0 (arrayLength arr) wstatus;
+    nwrote = foster_posix_write_bytes fd arr off (fin -Int64 off) wstatus;
     case wstatus^
       of 0 -> nwrote +Int64 nwritten
       of 1 -> prim kill-entire-process "write_bytes_to_fd returned MORE";
