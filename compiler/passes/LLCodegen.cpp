@@ -1082,7 +1082,7 @@ llvm::Value* LLStore::codegen(CodegenPass* pass) {
     return emitGCWrite(pass, val, slot, slot, pass->config.useGenBarriers,
                                               pass->config.useSubheapBarriers);
   } else {
-    return emitGCWriteOrStore(pass, val, slot, slot, false, false, WriteKnownNonGC);
+    return emitStore(pass, val, slot, slot, false, false, WriteKnownNonGC);
   }
 }
 
