@@ -551,7 +551,7 @@ std::string fosterizedNameChars(std::string nm) {
 std::string fosterizedName(const std::string& name) {
   if (name == "to" || name == "do" || name == "type" || name == "case"
     || name == "of" || name == "as" || name == "then" || name == "end"
-    || name == "in" || name == "effect" || name == "handle") {
+    || name == "in" || name == "effect" || name == "handle" || name == "let") {
     return name + "_";
   }
   if (name.empty()) {
@@ -2019,7 +2019,7 @@ public:
     llvm::outs() << " } {\n";
       visitStmt(stmt->getBody(), StmtContext);
       // If the body wasn't a compound, we'll be missing a semicolon...
-      if (extra) { llvm::outs() << "\n"; visitStmt(extra, StmtContext); }
+      if (extra) { llvm::outs() << ";\n"; visitStmt(extra, StmtContext); }
 
       llvm::outs() << ";\n()";
     llvm::outs() << "}";
@@ -3085,7 +3085,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       visitStmt(ls->getSubStmt(), ctx);
     } else if (const ReturnStmt* rs = dyn_cast<ReturnStmt>(stmt)) {
       if (rs->getRetValue()) {
-        visitStmt(rs->getRetValue(), ctx);
+        visitStmt(rs->getRetValue(), ExprContext);
       } else {
         llvm::outs() << "(retstmt = (); retstmt)";
       }
@@ -3161,8 +3161,17 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         llvm::outs() << (clit->getValue() ? "True" : "False");
       } else {
         if (isprint(clit->getValue())) {
-          llvm::outs() << "('" << llvm::format("%c", clit->getValue()) << "' as " 
+          if (clit->getValue() == '\'') {
+            llvm::outs() << "(\"'\" as "
                        << tyName(clit->getType().getTypePtr()) << ")";
+          } else if (clit->getValue() == '\\') {
+            llvm::outs() << "('\\\\' as "
+                       << tyName(clit->getType().getTypePtr()) << ")";
+          } else {
+            llvm::outs() << "('" << llvm::format("%c", clit->getValue()) << "' as " 
+                       << tyName(clit->getType().getTypePtr()) << ")";
+          }
+          
         } else {
           llvm::outs() << clit->getValue();
           llvm::outs() << " /*'\\x" << llvm::format("%02x", clit->getValue()) << "'*/ ";
