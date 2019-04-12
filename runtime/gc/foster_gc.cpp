@@ -50,7 +50,6 @@ extern "C" char* __foster_fosterlower_config;
 #define ENABLE_GCLOG_PREP 0
 #define ENABLE_GCLOG_ENDGC 1
 #define PRINT_STDOUT_ON_GC 0
-#define FOSTER_GC_TRACK_BITMAPS       0
 #define FOSTER_GC_ALLOC_HISTOGRAMS    0
 #define FOSTER_GC_TIME_HISTOGRAMS     1 // Adds ~300 cycles per collection
 #define FOSTER_GC_EFFIC_HISTOGRAMS    0
@@ -1150,13 +1149,6 @@ namespace helpers {
     if (TRACK_NUM_ALLOC_BYTES && g_in_non_default_subheap) {
       gcglobals.num_alloc_bytes_in_subheaps += total_bytes; }
 
-    if (FOSTER_GC_TRACK_BITMAPS) {
-      //size_t granule = granule_for(tori_of_tidy(allot->body_addr()));
-      //obj_start.set_bit(granule);
-      //obj_limit.set_bit(granule + num_granules(total_bytes));
-    }
-
-
     if (GC_ASSERTIONS && line_for_slot_is_marked(allot)) {
       fprintf(gclog, "INVARIANT VIOLATED: allocating array on a pre-marked line?!?\n");
       exit(4);
@@ -1205,11 +1197,6 @@ namespace helpers {
       gcglobals.num_alloc_bytes_in_subheaps += cell_size; }
     if (FOSTER_GC_ALLOC_HISTOGRAMS) { allocate_cell_prechecked_histogram((int) cell_size); }
     allot->set_header(map, space_id);
-
-    if (FOSTER_GC_TRACK_BITMAPS) {
-      //size_t granule = granule_for(tori_of_tidy(allot->body_addr()));
-      //obj_start.set_bit(granule);
-    }
 
     if (GC_ASSERTIONS && line_for_slot_is_marked(allot)) {
       fprintf(gclog, "INVARIANT VIOLATED: allocating cell (%p) on a pre-marked line?!?\n", allot);
