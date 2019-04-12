@@ -379,6 +379,7 @@ uint32_t refPattern(const typemap* map) {
   return rv;
 }
 
+/*
 class heap {
 public:
   virtual ~heap() {}
@@ -417,9 +418,9 @@ public:
   virtual void* allocate_cell_48(typemap* typeinfo) = 0;
 };
 
-#define immix_heap heap
+#define immix_space heap
+*/
 
-struct immix_common;
 struct immix_space;
 
 /* We can collect the heap at three granularities:
@@ -437,7 +438,7 @@ enum class condemned_set_status : uint8_t {
 struct immix_worklist_t {
     void       initialize()      { roots.clear(); }
     template <condemned_set_status condemned_status>
-    void       process(immix_common& common);
+    void       process();
     void       process_for_compaction();
     bool       empty()           { return roots.empty(); }
     unchecked_ptr* pop_root()  { auto root = roots.back(); roots.pop_back(); return root; }
@@ -481,7 +482,7 @@ void gc_assert(bool cond, const char* msg);
 struct immix_malloc_frame15info {
   // Since allocs are min 8K, this will be guaranteed to have size at most 4.
   heap_array*      contained[MAX_ARR_OBJ_PER_FRAME15];
-  immix_heap*      parents[MAX_ARR_OBJ_PER_FRAME15];
+  immix_space*      parents[MAX_ARR_OBJ_PER_FRAME15];
   uint8_t          condemned[MAX_ARR_OBJ_PER_FRAME15];
 
   void remove(heap_array* arr) {
@@ -495,7 +496,7 @@ struct immix_malloc_frame15info {
     }
   }
 
-  void add(heap_array* arr, immix_heap* parent) {
+  void add(heap_array* arr, immix_space* parent) {
     for (int i = 0; i < arraysize(condemned); ++i) {
       if (contained[i] == nullptr) {
         contained[i] = arr;
@@ -554,7 +555,7 @@ struct condemned_set {
   int64_t lines_live;
 
   void prepare_for_collection(bool voluntary, bool sticky, bool emergency,
-                              immix_common* common, uint64_t*, uint64_t*);
+                              uint64_t*, uint64_t*);
 };
 
 template<typename Allocator>
@@ -564,7 +565,7 @@ struct GCGlobals {
 
   // Invariant: null pointer when allocator == default_allocator,
   // otherwise a heap_handle to the current allocator.
-  heap_handle<immix_heap>* allocator_handle;
+  heap_handle<immix_space>* allocator_handle;
 
   uint32_t current_subheap_hash;
 
@@ -662,18 +663,13 @@ struct GCGlobals {
   int64_t residency_histogram[128];
 };
 
-GCGlobals<immix_heap> gcglobals;
+GCGlobals<immix_space> gcglobals;
 
 bool g_in_non_default_subheap = false;
 int64_t g_bytes_marked = 0;
 
 uint32_t fold_64_to_32(uint64_t x) {
   return uint32_t(x) ^ uint32_t(x >> uint64_t(32));
-}
-
-uint32_t heap::hash_for_object_headers() {
-  if (this == gcglobals.default_allocator) return 0;
-  return fold_64_to_32(uint64_t(this));
 }
 
 line_stamp_t get_current_line_stamp(void* slot) {
@@ -918,7 +914,7 @@ struct large_array_allocator {
                        int64_t  num_elts,
                        int64_t  total_bytes,
                        bool     init,
-                       immix_heap* parent) {
+                       immix_space* parent) {
     void* base = malloc(total_bytes + 8);
     heap_array* allot = align_as_array(base);
 
@@ -947,7 +943,7 @@ struct large_array_allocator {
     return allot->body_addr();
   }
 
-  void toggle_framekinds_for(heap_array* allot, void* last, immix_heap* parent) {
+  void toggle_framekinds_for(heap_array* allot, void* last, immix_space* parent) {
     frame15_id b = frame15_id_of(allot);
     frame15_id e = frame15_id_of(last);
 
@@ -964,7 +960,7 @@ struct large_array_allocator {
     }
   }
 
-  void set_framekind_malloc(frame15_id b, heap_array* allot, immix_heap* parent) {
+  void set_framekind_malloc(frame15_id b, heap_array* allot, immix_space* parent) {
     if (classification_for_frame15_id(b) != frame15kind::immix_malloc_start) {
       set_classification_for_frame15_id(b, frame15kind::immix_malloc_start);
       // Potential race condition in multithreaded code
@@ -1057,17 +1053,17 @@ bool is_in_default_subheap(tidy* val) {
   return space_id == 0;
 }
 
-immix_heap* heap_for_header(uint64_t header) {
+immix_space* heap_for_header(uint64_t header) {
   uint32_t space_id = space_id_of_header(header);
   if (space_id == 0) return gcglobals.default_allocator;
-  return (immix_heap*) uintptr_t(space_id);
+  return (immix_space*) uintptr_t(space_id);
 }
 
-immix_heap* heap_for_tidy(tidy* val) {
+immix_space* heap_for_tidy(tidy* val) {
   return heap_for_header(heap_cell::for_tidy(val)->raw_header());
 }
 
-bool tidy_owned_by(tidy* t, immix_heap* space) {
+bool tidy_owned_by(tidy* t, immix_space* space) {
   if (non_markable_addr(t)) {
     return false;
   }
@@ -1077,17 +1073,13 @@ bool tidy_owned_by(tidy* t, immix_heap* space) {
 
 tidy* assume_tori_is_tidy(tori* p) { return (tidy*) p; }
 
-/*
-bool space_is_condemned(heap_cell* obj) {
-  auto space = heap_for_tidy(obj->body_addr());
-  return space && space->is_condemned();
-}
-*/
+bool space_is_condemned(immix_space* space);
+remset_with_obj_t& space_incoming_ptr_addrs(immix_space* space);
 
 bool per_frame_cell_is_condemned(heap_cell* obj) {
   //fprintf(gclog, "cell_is_condemned? obj: %p ", obj); fflush(gclog);
   //fprintf(gclog, "with header %zx", obj->raw_header());  fflush(gclog);
-  auto rv = heap_for_header(obj->raw_header())->is_condemned();
+  auto rv = space_is_condemned(heap_for_header(obj->raw_header()));
   //fprintf(gclog, " ----> %d\n", rv); fflush(gclog);
   return rv;
 }
@@ -1099,14 +1091,14 @@ bool obj_is_condemned_d(tidy* obj, condemned_set_status condemned_portion) {
     return true;
   }
 
-  immix_heap* space = heap_for_tidy(obj);
+  immix_space* space = heap_for_tidy(obj);
 
   if (condemned_portion == condemned_set_status::default_and_linked) {
     //fprintf(gclog, "obj_is_condemned: active space is %p; obj space is %p; eqq %d\n",
     //    space, heap_for_tidy(obj), space == heap_for_tidy(obj));
     return is_condemned_for_default_and_linked((immix_space*) space);
   } else {
-    return space->is_condemned();
+    return space_is_condemned(space);
   }
 }
 
@@ -1116,14 +1108,14 @@ bool obj_is_condemned(tidy* obj) {
     return true;
   }
   
-  immix_heap* space = heap_for_tidy(obj);
+  immix_space* space = heap_for_tidy(obj);
   if (condemned_portion == condemned_set_status::default_and_linked) {
     //fprintf(gclog, "obj_is_condemned: active space is %p; obj space is %p; eqq %d\n",
     //    space, heap_for_tidy(obj), space == heap_for_tidy(obj));
 
     return is_condemned_for_default_and_linked((immix_space*) space);
   } else {
-    return space->is_condemned();
+    return space_is_condemned(space);
   }
 }
 
@@ -1292,7 +1284,7 @@ namespace helpers {
   }
 #endif
 
-  void do_trim_remset(remset_with_obj_t& incoming_ptr_addrs, immix_heap* space) {
+  void do_trim_remset(remset_with_obj_t& incoming_ptr_addrs, immix_space* space) {
     auto slots = incoming_ptr_addrs.copy_to_vector();
     incoming_ptr_addrs.clear();
 
@@ -1933,15 +1925,7 @@ void for_each_child_slot(heap_cell* cell, CellThunk thunk) {
 
 // This struct contains per-frame state and code shared between
 // regular and line-based immix frames.
-struct immix_common {
-
-  uintptr_t prevent_constprop;
-
-  immix_common() : prevent_constprop(0) {}
-
-  // As of LLVM 5.0, passing a constant (or nothing at all) actually ends up increasing (!)
-  // register pressure, resulting in a net extra instruction in the critical path of allocation.
-  uintptr_t prevent_const_prop() { return prevent_constprop; }
+namespace immix_common {
 
   void* evac_with_map_and_arr(heap_cell* cell, const typemap* map,
                              heap_array* arr, int64_t cell_size,
@@ -2030,22 +2014,9 @@ struct immix_common {
     }
   }
 
-  uint64_t process_subheap_remsets(immix_heap* space) {
-    // To boost tracing efficiency, pre-compile different variants of the tracing code
-    // (using templates) specialized to what portion of the heap is being traced.
-    switch (gcglobals.condemned_set.status) {
-    case                    condemned_set_status::per_frame_condemned:
-      return process_remset<condemned_set_status::per_frame_condemned>(space);
-    case                    condemned_set_status::whole_heap_condemned:
-      return process_remset<condemned_set_status::whole_heap_condemned>(space);
-    case                    condemned_set_status::default_and_linked:
-      return process_remset<condemned_set_status::default_and_linked>(space);
-    }
-  }
-
   template <condemned_set_status condemned_portion>
-  uint64_t process_remset(immix_heap* space) {
-    remset_with_obj_t& incoming_ptr_addrs = space->get_incoming_ptr_addrs();
+  uint64_t process_remset(immix_space* space) {
+    remset_with_obj_t& incoming_ptr_addrs = space_incoming_ptr_addrs(space);
     uint64_t numRemSetRoots = 0;
     //fprintf(gclog, "copying incoming ptrs to vector for space %p (linked? %d)\n", space, space->is_linked_to_default_subheap); fflush(gclog);
 
@@ -2133,6 +2104,19 @@ struct immix_common {
       }
     }
     return numRemSetRoots;
+  }
+
+  uint64_t process_subheap_remsets(immix_space* space) {
+    // To boost tracing efficiency, pre-compile different variants of the tracing code
+    // (using templates) specialized to what portion of the heap is being traced.
+    switch (gcglobals.condemned_set.status) {
+    case                    condemned_set_status::per_frame_condemned:
+      return process_remset<condemned_set_status::per_frame_condemned>(space);
+    case                    condemned_set_status::whole_heap_condemned:
+      return process_remset<condemned_set_status::whole_heap_condemned>(space);
+    case                    condemned_set_status::default_and_linked:
+      return process_remset<condemned_set_status::default_and_linked>(space);
+    }
   }
 
   // Returns true if we should immediately retry GC (e.g. to switch to full-heap non-sticky collection).
@@ -2289,7 +2273,7 @@ void append_linegroup(std::vector<used_linegroup>& lines, used_linegroup u) {
 std::set<heap_cell*> g_marked_this_cycle;
 #endif
 
-void process_worklist(immix_common* common);
+void process_worklist();
 void do_compactify_via_granule_marks(immix_space* default_subheap,
                                      std::vector<frame15_id>& all_ids,
                                      std::vector<used_linegroup>& shared_lines);
@@ -2380,7 +2364,7 @@ bool immix_common::common_gc(bool voluntary, bool emergency) {
     phase.start();
     uint64_t numGenRoots = 0;
     uint64_t numRemSetRoots = 0;
-    gcglobals.condemned_set.prepare_for_collection(voluntary, is_sticky_collection, emergency, this, &numGenRoots, &numRemSetRoots);
+    gcglobals.condemned_set.prepare_for_collection(voluntary, is_sticky_collection, emergency, &numGenRoots, &numRemSetRoots);
     auto markResettingAndRemsetCollection_us = phase.elapsed_us();
 
     if (GCLOG_DETAIL > 0) {
@@ -2417,7 +2401,7 @@ bool immix_common::common_gc(bool voluntary, bool emergency) {
 
     if (GCLOG_DETAIL > 1) { fprintf(gclog, "    THRESHOLD IS %d\n", gcglobals.evac_threshold); }
 
-    process_worklist(this);
+    process_worklist();
 
     auto deltaRecursiveMarking_us = phase.elapsed_us();
 
@@ -2641,171 +2625,6 @@ bool immix_common::common_gc(bool voluntary, bool emergency) {
     return false;
   }
 
-template<typename Allocator>
-void condemned_set<Allocator>::prepare_for_collection(bool voluntary,
-                                                      bool was_sticky,
-                                                      bool emergency,
-                                                      immix_common* common,
-                                                      uint64_t* numGenRoots,
-                                                      uint64_t* numRemSetRoots) {
-
-  switch (this->status) {
-    case condemned_set_status::per_frame_condemned: {
-      for (auto space : spaces) {
-        *numGenRoots += space->prepare_for_collection(was_sticky);
-      }
-      for (auto space : spaces) {
-        *numRemSetRoots += common->process_subheap_remsets(space);
-      }
-      break;
-    }
-
-    case condemned_set_status::default_and_linked:
-    case condemned_set_status::whole_heap_condemned: {
-      *numGenRoots += gcglobals.default_allocator->prepare_for_collection(was_sticky);
-      for (auto handle : gcglobals.default_linked_subheaps) {
-        *numGenRoots += handle->body->prepare_for_collection(was_sticky);
-      }
-      if (emergency) {
-        for (auto handle : gcglobals.non_default_linked_subheaps) {
-          *numGenRoots += handle->body->prepare_for_collection(was_sticky);
-        }
-      }
-
-      if (emergency || this->status == condemned_set_status::whole_heap_condemned) {
-        // Full-heap collection; no need to process remsets.
-        fprintf(gclog, "WARN: not processing remsets for full-heap collection...\n");
-      } else {
-        *numRemSetRoots += common->process_subheap_remsets(gcglobals.default_allocator);
-        for (auto handle : gcglobals.default_linked_subheaps) {
-          *numRemSetRoots += common->process_subheap_remsets(handle->body);
-        }
-      }
-      break;
-    }
-  }
-}
-
-template<typename Allocator>
-int64_t condemned_set<Allocator>::sweep_condemned(
-             clocktimer<false>& phase, bool emergency, bool hadEmptyRootSet,
-             int64_t* num_lines_tracked, int64_t* num_groups_tracked) {
-  int64_t num_lines_reclaimed = 0;
-  //std::vector<heap_handle<immix_heap>*> subheap_handles;
-
-  switch (this->status) {
-    case condemned_set_status::per_frame_condemned: {
-      // Whole-heap collections ignore the condemned set, and single-subheap
-      // collections by definition have an implicit condemned set.
-
-      //fprintf(gclog, "Collection type: PerFrameCondemned; emerg %d; # subheaps: %zd\n", emergency, spaces.size() + 1);
-      
-      for (auto space : spaces) {
-        space->trim_remset();
-      }
-
-      for (auto space : spaces) {
-        space->uncondemn();
-      }
-
-      for (auto space : spaces) {
-        num_lines_reclaimed += space->immix_sweep(phase, num_lines_tracked, num_groups_tracked);
-      }
-      spaces.clear();
-      //status = condemned_set_status::single_subheap_condemned;
-      break;
-    }
-
-    case condemned_set_status::default_and_linked:
-    case condemned_set_status::whole_heap_condemned: {
-      if (GCLOG_DETAIL > 0) {
-        fprintf(gclog, "Default linked subheap count: %zd\n", gcglobals.default_linked_subheaps.size());
-      }
-      gcglobals.condemned_set.non_default_handles.swap(gcglobals.default_linked_subheaps);
-
-      if (emergency) {
-        for (auto h : gcglobals.non_default_linked_subheaps) {
-          gcglobals.condemned_set.non_default_handles.push_back(h);
-        }
-        gcglobals.non_default_linked_subheaps.clear();
-      }
-
-      if (this->status == condemned_set_status::default_and_linked) {
-        fprintf(gclog, "Collection type: DefaultAndLinked; emerg %d; # subheaps: %zd\n", emergency, gcglobals.condemned_set.non_default_handles.size() + 1);
-      }
-
-      if (this->status == condemned_set_status::whole_heap_condemned) {
-        fprintf(gclog, "Collection type: WholeHeapCondemned; emerg %d; # subheaps: %zd\n", emergency, gcglobals.condemned_set.non_default_handles.size() + 1);
-      }
-
-      // Before we clear line marks, remove any stale remset entries.
-      // If we don't do this, the following bad thing can happen:
-      //   * Object A stored in slot B, so A's space records slot B in its remset.
-      //   * Slot B becomes dead.
-      //      (keep in mind B's space doesn't know what other spaces have B in their remsets)
-      //   * Whole-heap GC (or any other configuration with A and B co-condemned)
-      //                   leaves A unmarked, because co-condemned spaces ignore remsets,
-      //                   and B was (in this scenario) the last object referring to A.
-      //   * So object A and slot B are both dead, but slot B is still recorded in A's remset
-      //                                                    (and still points to A).
-      //   * Allocation in A puts an arbitrary bit pattern in B's referent
-      //     (especially the header/typemap)
-      //   * Single-subheap GC of A follows the remset entry for B and goes off the rails.
-      //clocktimer<false> remset_trimming;
-      //remset_trimming.start();
-      gcglobals.default_allocator->trim_remset();
-      for (auto handle : gcglobals.condemned_set.non_default_handles) {
-        handle->body->trim_remset();
-      }
-      //fprintf(gclog, "Remset trimming: %.1f us\n", remset_trimming.elapsed_us());
-
-      for (auto handle : gcglobals.condemned_set.non_default_handles) {
-        num_lines_reclaimed += handle->body->immix_sweep(phase, num_lines_tracked, num_groups_tracked);
-      }
-      // Sweep the default space last so that we maximize the number
-      // of unshared frames available.
-      num_lines_reclaimed += gcglobals.default_allocator->immix_sweep(phase, num_lines_tracked, num_groups_tracked);
-
-      break;
-    }
-  }
-
-  // Invariant: default_linked_subheaps and non_default_linked_subheaps are both empty.
-
-  // Subheap deallocation effectively only happens for whole-heap collections.
-  for (auto handle : gcglobals.condemned_set.non_default_handles) {
-    // A space should be deallocated only if it is: condemned, inaccessible (meaning unmarked),
-    // and empty. A marked space, empty or not, might be activated in the future.
-    // A non-empty unmarked space won't be activated, but it's not dead until the objects
-    // within it become inaccessible.
-    heap_cell* handle_cell = handle->as_cell();
-    auto space = handle->body;
-    if (obj_is_condemned_d(handle_cell->body_addr(), gcglobals.condemned_set.status)
-            && (!obj_is_marked(handle_cell)) && space->is_empty()) {
-      fprintf(gclog, "DELETING SPACE %p because handle cell %p was condemned and unmarked; markable? %d\n",
-          space, handle_cell, !non_markable_addr(handle_cell));
-      //delete space;
-      //free_markable_handle(handle);
-    } else {
-      if (space->is_linked_to_default_subheap) {
-        gcglobals.default_linked_subheaps.push_back(handle);
-      } else {
-        gcglobals.non_default_linked_subheaps.push_back(handle);
-      }
-    }
-  }
-  gcglobals.condemned_set.non_default_handles.clear();
-
-  // Handles (and other unframed allocations) must be unmarked too.
-  for (auto c : unframed_and_marked) {
-    //fprintf(gclog, "Unmarking unframed object %p\n", c);
-    do_unmark_granule(c);
-  }
-  unframed_and_marked.clear();
-
-  return num_lines_reclaimed;
-}
-
 // }}}
 
 // Invariant: IMMIX_LINES_PER_BLOCK <= 256
@@ -2857,7 +2676,7 @@ bool is_linemap_clear(frame21* f21) {
 #endif
 
 
-class immix_space : public heap {
+class immix_space {
 public:
   immix_space(bool is_linked, int lines_at_a_time) : condemned_flag(false) {
     this->is_linked_to_default_subheap = is_linked;
@@ -2929,7 +2748,7 @@ public:
 
   virtual void force_gc_for_debugging_purposes() {
     if (GCLOG_DETAIL > 2) { fprintf(gclog, "force_gc_for_debugging_purposes triggering immix gc\n"); }
-    common.common_gc(true, false);
+    immix_common::common_gc(true, false);
   }
 
   // {{{ Prechecked allocation functions
@@ -3040,7 +2859,7 @@ public:
   }
 
   tidy* defrag_copy_cell(heap_cell* cell, typemap* map, int64_t cell_size) {
-    tidy* newbody = helpers::allocate_cell_prechecked(&small_bumper, map, cell_size, common.prevent_const_prop());
+    tidy* newbody = helpers::allocate_cell_prechecked(&small_bumper, map, cell_size, space_id_of_header(cell->raw_header()));
     heap_cell* mcell = heap_cell::for_tidy(newbody);
     //fprintf(gclog, "defrag copying cell %p to %p\n", cell, mcell);
     memcpy(mcell, cell, cell_size);
@@ -3099,9 +2918,9 @@ public:
     // that can easily lead to nearly-doubled wasted work.
     {
       condemned_set_status_manager tmp(condemned_set_status::default_and_linked);
-      if (common.common_gc(false, false)) {
+      if (immix_common::common_gc(false, false)) {
           condemned_set_status_manager tmp(condemned_set_status::whole_heap_condemned);
-          common.common_gc(false, true);
+          immix_common::common_gc(false, true);
       }
     }
 
@@ -3153,11 +2972,12 @@ public:
       if (GCLOG_DETAIL > 2) { fprintf(gclog, "allocate_array_into_bumper needing %zd bytes triggering immix gc\n", req_bytes); }
       fprintf(gclog, "bumper size before GC: %zd\n", bumper->size());
       {
-        condemned_set_status_manager tmp(condemned_set_status::default_and_linked);
-        if (common.common_gc(false, false)) {
+        //condemned_set_status_manager tmp(condemned_set_status::default_and_linked);
+        condemned_set_status_manager tmp(condemned_set_status::whole_heap_condemned);
+        if (immix_common::common_gc(false, true)) {
             condemned_set_status_manager tmp(condemned_set_status::whole_heap_condemned);
             fprintf(gclog, "allocate_array_into_bumper: running emergency GC...\n");
-            common.common_gc(false, true);
+            immix_common::common_gc(false, true);
         }
       }
 
@@ -3248,7 +3068,7 @@ public:
       for (auto ug : shared_lines) { tracking.note_used_group(ug); }
 
       for (auto hh : gcglobals.condemned_set.non_default_handles) {
-        immix_heap* subheap = hh->body;
+        immix_space* subheap = hh->body;
         ((immix_space*)subheap)->tracking.iter_used_lines_void([&shared_lines](used_linegroup g) {
           //fprintf(gclog, "Adding %d shared lines from non-default subheap.\n", g.count);
           shared_lines.push_back(g);
@@ -3529,7 +3349,12 @@ public:
   }
 #endif
 
-  virtual void remember_into(void** slot, void* obj) {
+  uint32_t hash_for_object_headers() {
+    if (this == gcglobals.default_allocator) return 0;
+    return fold_64_to_32(uint64_t(this));
+  }
+
+  void remember_into(void** slot, void* obj) {
     //fprintf(gclog, "space %p remembering external object %p with slot %p\n", this, obj, slot); fflush(gclog);
     incoming_ptr_addrs.insert((tori**) slot, (tidy*) obj);
   }
@@ -3539,7 +3364,7 @@ public:
   }
 
 public:
-  immix_common common;
+  bool is_linked_to_default_subheap;
 
 private:
   // These bumpers point into particular frame15s.
@@ -3571,6 +3396,172 @@ bool is_condemned_for_default_and_linked(immix_space* space) {
   if (space->is_linked_to_default_subheap) return true;
   if (space == gcglobals.default_allocator) return true;
   return false;
+}
+
+
+
+template<typename Allocator>
+void condemned_set<Allocator>::prepare_for_collection(bool voluntary,
+                                                      bool was_sticky,
+                                                      bool emergency,
+                                                      uint64_t* numGenRoots,
+                                                      uint64_t* numRemSetRoots) {
+
+  switch (this->status) {
+    case condemned_set_status::per_frame_condemned: {
+      for (auto space : spaces) {
+        *numGenRoots += space->prepare_for_collection(was_sticky);
+      }
+      for (auto space : spaces) {
+        *numRemSetRoots += immix_common::process_subheap_remsets(space);
+      }
+      break;
+    }
+
+    case condemned_set_status::default_and_linked:
+    case condemned_set_status::whole_heap_condemned: {
+      *numGenRoots += gcglobals.default_allocator->prepare_for_collection(was_sticky);
+      for (auto handle : gcglobals.default_linked_subheaps) {
+        *numGenRoots += handle->body->prepare_for_collection(was_sticky);
+      }
+      if (emergency) {
+        for (auto handle : gcglobals.non_default_linked_subheaps) {
+          *numGenRoots += handle->body->prepare_for_collection(was_sticky);
+        }
+      }
+
+      if (emergency || this->status == condemned_set_status::whole_heap_condemned) {
+        // Full-heap collection; no need to process remsets.
+        fprintf(gclog, "WARN: not processing remsets for full-heap collection...\n");
+      } else {
+        *numRemSetRoots += immix_common::process_subheap_remsets(gcglobals.default_allocator);
+        for (auto handle : gcglobals.default_linked_subheaps) {
+          *numRemSetRoots += immix_common::process_subheap_remsets(handle->body);
+        }
+      }
+      break;
+    }
+  }
+}
+
+template<typename Allocator>
+int64_t condemned_set<Allocator>::sweep_condemned(
+             clocktimer<false>& phase, bool emergency, bool hadEmptyRootSet,
+             int64_t* num_lines_tracked, int64_t* num_groups_tracked) {
+  int64_t num_lines_reclaimed = 0;
+  //std::vector<heap_handle<immix_space>*> subheap_handles;
+
+  switch (this->status) {
+    case condemned_set_status::per_frame_condemned: {
+      // Whole-heap collections ignore the condemned set, and single-subheap
+      // collections by definition have an implicit condemned set.
+
+      //fprintf(gclog, "Collection type: PerFrameCondemned; emerg %d; # subheaps: %zd\n", emergency, spaces.size() + 1);
+      
+      for (auto space : spaces) {
+        space->trim_remset();
+      }
+
+      for (auto space : spaces) {
+        space->uncondemn();
+      }
+
+      for (auto space : spaces) {
+        num_lines_reclaimed += space->immix_sweep(phase, num_lines_tracked, num_groups_tracked);
+      }
+      spaces.clear();
+      //status = condemned_set_status::single_subheap_condemned;
+      break;
+    }
+
+    case condemned_set_status::default_and_linked:
+    case condemned_set_status::whole_heap_condemned: {
+      if (GCLOG_DETAIL > 0) {
+        fprintf(gclog, "Default linked subheap count: %zd\n", gcglobals.default_linked_subheaps.size());
+      }
+      gcglobals.condemned_set.non_default_handles.swap(gcglobals.default_linked_subheaps);
+
+      if (emergency) {
+        for (auto h : gcglobals.non_default_linked_subheaps) {
+          gcglobals.condemned_set.non_default_handles.push_back(h);
+        }
+        gcglobals.non_default_linked_subheaps.clear();
+      }
+
+      if (this->status == condemned_set_status::default_and_linked) {
+        fprintf(gclog, "Collection type: DefaultAndLinked; emerg %d; # subheaps: %zd\n", emergency, gcglobals.condemned_set.non_default_handles.size() + 1);
+      }
+
+      if (this->status == condemned_set_status::whole_heap_condemned) {
+        fprintf(gclog, "Collection type: WholeHeapCondemned; emerg %d; # subheaps: %zd\n", emergency, gcglobals.condemned_set.non_default_handles.size() + 1);
+      }
+
+      // Before we clear line marks, remove any stale remset entries.
+      // If we don't do this, the following bad thing can happen:
+      //   * Object A stored in slot B, so A's space records slot B in its remset.
+      //   * Slot B becomes dead.
+      //      (keep in mind B's space doesn't know what other spaces have B in their remsets)
+      //   * Whole-heap GC (or any other configuration with A and B co-condemned)
+      //                   leaves A unmarked, because co-condemned spaces ignore remsets,
+      //                   and B was (in this scenario) the last object referring to A.
+      //   * So object A and slot B are both dead, but slot B is still recorded in A's remset
+      //                                                    (and still points to A).
+      //   * Allocation in A puts an arbitrary bit pattern in B's referent
+      //     (especially the header/typemap)
+      //   * Single-subheap GC of A follows the remset entry for B and goes off the rails.
+      //clocktimer<false> remset_trimming;
+      //remset_trimming.start();
+      gcglobals.default_allocator->trim_remset();
+      for (auto handle : gcglobals.condemned_set.non_default_handles) {
+        handle->body->trim_remset();
+      }
+      //fprintf(gclog, "Remset trimming: %.1f us\n", remset_trimming.elapsed_us());
+
+      for (auto handle : gcglobals.condemned_set.non_default_handles) {
+        num_lines_reclaimed += handle->body->immix_sweep(phase, num_lines_tracked, num_groups_tracked);
+      }
+      // Sweep the default space last so that we maximize the number
+      // of unshared frames available.
+      num_lines_reclaimed += gcglobals.default_allocator->immix_sweep(phase, num_lines_tracked, num_groups_tracked);
+
+      break;
+    }
+  }
+
+  // Invariant: default_linked_subheaps and non_default_linked_subheaps are both empty.
+
+  // Subheap deallocation effectively only happens for whole-heap collections.
+  for (auto handle : gcglobals.condemned_set.non_default_handles) {
+    // A space should be deallocated only if it is: condemned, inaccessible (meaning unmarked),
+    // and empty. A marked space, empty or not, might be activated in the future.
+    // A non-empty unmarked space won't be activated, but it's not dead until the objects
+    // within it become inaccessible.
+    heap_cell* handle_cell = handle->as_cell();
+    auto space = handle->body;
+    if (obj_is_condemned_d(handle_cell->body_addr(), gcglobals.condemned_set.status)
+            && (!obj_is_marked(handle_cell)) && space->is_empty()) {
+      fprintf(gclog, "DELETING SPACE %p because handle cell %p was condemned and unmarked; markable? %d\n",
+          space, handle_cell, !non_markable_addr(handle_cell));
+      //delete space;
+      //free_markable_handle(handle);
+    } else {
+      if (space->is_linked_to_default_subheap) {
+        gcglobals.default_linked_subheaps.push_back(handle);
+      } else {
+        gcglobals.non_default_linked_subheaps.push_back(handle);
+      }
+    }
+  }
+  gcglobals.condemned_set.non_default_handles.clear();
+
+  // Handles (and other unframed allocations) must be unmarked too.
+  for (auto c : unframed_and_marked) {
+    //fprintf(gclog, "Unmarking unframed object %p\n", c);
+    do_unmark_granule(c);
+  }
+  unframed_and_marked.clear();
+
+  return num_lines_reclaimed;
 }
 
 // TODO improve via lookup table of bitmap?
@@ -3715,8 +3706,8 @@ void update_pointer_if_compacted(tidy** slot) {
   }
 }
 
-void update_pointers_in_remset_of(immix_heap* space) {
-  auto remset = space->get_incoming_ptr_addrs();
+void update_pointers_in_remset_of(immix_space* space) {
+  auto remset = space_incoming_ptr_addrs(space);
   auto pairs = remset.copy_to_vector();
   fprintf(gclog, "Remset size is %zd for space %p\n", pairs.size(), space);
   for (auto p : pairs) {
@@ -3727,8 +3718,8 @@ void update_pointers_in_remset_of(immix_heap* space) {
   }
 }
 
-void update_slots_in_remset_of(immix_heap* space) {
-  auto remset = space->get_incoming_ptr_addrs();
+void update_slots_in_remset_of(immix_space* space) {
+  auto remset = space_incoming_ptr_addrs(space);
   auto pairs = remset.copy_to_vector();
   fprintf(gclog, "Remset size is %zd for space %p\n", pairs.size(), space);
   for (auto p : pairs) {
@@ -3935,20 +3926,20 @@ void do_compactify_via_granule_marks(immix_space* default_subheap,
   gcglobals.next_collection_sticky = false;
 }
 
-void process_worklist(immix_common* common) {
+void process_worklist() {
   if (GCLOG_DETAIL > 0) { fprintf(gclog, "Before processing, immix worklist contained %zd roots\n", immix_worklist.size()); }
   switch (gcglobals.condemned_set.status) {
     case condemned_set_status::per_frame_condemned:
-      immix_worklist.process<condemned_set_status::per_frame_condemned>(*common); break;
+      immix_worklist.process<condemned_set_status::per_frame_condemned>(); break;
     case condemned_set_status::whole_heap_condemned:
-      immix_worklist.process<condemned_set_status::whole_heap_condemned>(*common); break;
+      immix_worklist.process<condemned_set_status::whole_heap_condemned>(); break;
     case condemned_set_status::default_and_linked:
-      immix_worklist.process<condemned_set_status::default_and_linked>(*common); break;
+      immix_worklist.process<condemned_set_status::default_and_linked>(); break;
   }
 }
 
 template <condemned_set_status condemned_status>
-void immix_worklist_t::process(immix_common& common) {
+void immix_worklist_t::process() {
   while (true) {
     unchecked_ptr* root;
 #if USE_FIFO_SIZE > 0
@@ -4029,7 +4020,7 @@ void immix_worklist_t::process(immix_common& common) {
 #if DEBUG_VERIFY_MARK_BITS
       g_marked_this_cycle.insert(obj);
 #endif
-      common.immix_trace<condemned_status>(root, obj);
+      immix_common::immix_trace<condemned_status>(root, obj);
     }
   }
   initialize();
@@ -4057,6 +4048,14 @@ bool should_opportunistically_evacuate(heap_cell* obj) {
     }
   }
   return false;
+}
+
+bool space_is_condemned(immix_space* space) {
+  return space->is_condemned();
+}
+
+remset_with_obj_t& space_incoming_ptr_addrs(immix_space* space) {
+  return space->get_incoming_ptr_addrs();
 }
 
 void* immix_common::evac_with_map_and_arr(heap_cell* cell, const typemap* map,
@@ -4322,7 +4321,7 @@ void initialize(void* stack_highest_addr) {
 
   gcglobals.lazy_mapped_markable_handles        = (void**) allocate_lazily_zero_mapped<heap_handle<immix_space> >(1 << 20);
   // First entry reserved for free list.
-  (*gcglobals.lazy_mapped_markable_handles) = offset(gcglobals.lazy_mapped_markable_handles, sizeof(heap_handle<immix_heap>));
+  (*gcglobals.lazy_mapped_markable_handles) = offset(gcglobals.lazy_mapped_markable_handles, sizeof(heap_handle<immix_space>));
 
   gcglobals.lazy_mapped_frame15info             = allocate_lazily_zero_mapped<frame15info>(     size_t(1) << (address_space_prefix_size_log() - 15));
   gcglobals.lazy_mapped_coarse_marks            = allocate_lazily_zero_mapped<uint8_t>(         size_t(1) << (address_space_prefix_size_log() - COARSE_MARK_LOG));
@@ -4881,7 +4880,7 @@ void foster_generational_write_barrier_slowpath(void* val, void* obj, void** slo
   if (obj_is_marked(heap_cell::for_tidy((tidy*)val))) {
     return; // Don't bother recording old-to-old pointers.
   }
-  immix_heap* hs = heap_for_tidy( (tidy*) obj);
+  immix_space* hs = heap_for_tidy( (tidy*) obj);
   //fprintf(gclog, "gen barr slowpath: val=%p, obj=%p, space: %p\n", val, obj, hs); fflush(gclog);
   ((immix_space*)hs)->remember_generational(obj, slot); // TODO fix this assumption
   if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1g_hits; }
@@ -4889,7 +4888,7 @@ void foster_generational_write_barrier_slowpath(void* val, void* obj, void** slo
 
 __attribute__((noinline))
 void foster_write_barrier_with_obj_fullpath(void* val, void* obj, void** slot, bool into_default) {
-  immix_heap* hs = heap_for_tidy((tidy*) obj);
+  immix_space* hs = heap_for_tidy((tidy*) obj);
   // If we have a pointer being created from subheap X into the default subheap,
   // and X is linked to the default subheap, we need not record the pointer,
   // because every time we collect the default, we will also collect X.
@@ -4897,7 +4896,7 @@ void foster_write_barrier_with_obj_fullpath(void* val, void* obj, void** slot, b
    return;
   }
 
-  immix_heap* hv = heap_for_tidy((tidy*) val);
+  immix_space* hv = heap_for_tidy((tidy*) val);
   //fprintf(gclog, "val %p (header %zx) heap: %p\n", val, heap_cell::for_tidy((tidy*)val)->raw_header(), hv); fflush(gclog);
 
   // Invariant: hv != hs
@@ -4939,7 +4938,7 @@ void* malloc_markable_handle() {
 
   freelist* entry = (freelist*) *(gcglobals.lazy_mapped_markable_handles);
   freelist* next = entry->next;
-  if (!next) { next = (freelist*) offset(entry, sizeof(heap_handle<immix_heap>)); }
+  if (!next) { next = (freelist*) offset(entry, sizeof(heap_handle<immix_space>)); }
   *(gcglobals.lazy_mapped_markable_handles) = next;
   return entry;
 }
@@ -4949,7 +4948,7 @@ void* foster_subheap_create_linkedp(bool is_linked) {
   bool lines_at_a_time = 1;
   immix_space* subheap = new immix_space(is_linked, lines_at_a_time);
   void* alloc = malloc_markable_handle();
-  heap_handle<immix_heap>* h = (heap_handle<immix_heap>*) realigned_for_heap_handle(alloc);
+  heap_handle<immix_space>* h = (heap_handle<immix_space>*) realigned_for_heap_handle(alloc);
   h->header           = 32;
   h->unaligned_malloc = alloc;
   h->body             = subheap;
@@ -4983,14 +4982,14 @@ void* foster_subheap_activate_raw(void* generic_subheap) {
   //      a subheap that is created, installed, and then silently dropped
   //      without explicitly being destroyed.
   //fprintf(gclog, "subheap_activate: generic %p\n", generic_subheap); fflush(gclog);
-  heap_handle<immix_heap>* handle = heap_handle<immix_heap>::for_tidy((tidy*) generic_subheap);
+  heap_handle<immix_space>* handle = heap_handle<immix_space>::for_tidy((tidy*) generic_subheap);
   // Clang appears to assume handle is non-null; handle will be null if generic_subheap is
   // the tidy pointer for the null heap cell.
-  immix_heap* subheap = (uintptr_t(generic_subheap) <= FOSTER_GC_DEFAULT_ALIGNMENT)
+  immix_space* subheap = (uintptr_t(generic_subheap) <= FOSTER_GC_DEFAULT_ALIGNMENT)
                           ? gcglobals.default_allocator
                           : handle->body;
   //fprintf(gclog, "subheap_activate: subheap %p)\n", subheap); fflush(gclog);
-  heap_handle<immix_heap>* prev = gcglobals.allocator_handle;
+  heap_handle<immix_space>* prev = gcglobals.allocator_handle;
   //fprintf(gclog, "subheap_activate(generic %p, handle %p, subheap %p, prev %p)\n", generic_subheap, handle, subheap, prev);
   gcglobals.allocator = subheap;
   gcglobals.allocator_handle = handle;
@@ -5005,7 +5004,7 @@ void* foster_subheap_activate_raw(void* generic_subheap) {
 
 void foster_subheap_condemn_raw(void* generic_subheap) {
   //return;
-  heap_handle<immix_heap>* handle = heap_handle<immix_heap>::for_tidy((tidy*) generic_subheap);
+  heap_handle<immix_space>* handle = heap_handle<immix_space>::for_tidy((tidy*) generic_subheap);
   auto subheap = handle->body;
   //fprintf(gclog, "condemning subheap %p\n", subheap);
   subheap->condemn();
@@ -5018,7 +5017,7 @@ void foster_subheap_collect_raw(void* generic_subheap) {
   //return;
   foster_subheap_condemn_raw(generic_subheap);
 
-  heap_handle<immix_heap>* handle = heap_handle<immix_heap>::for_tidy((tidy*) generic_subheap);
+  heap_handle<immix_space>* handle = heap_handle<immix_space>::for_tidy((tidy*) generic_subheap);
   auto subheap = handle->body;
   //fprintf(gclog, "collecting subheap %p\n", subheap);
   subheap->force_gc_for_debugging_purposes();
