@@ -419,11 +419,14 @@ void memcpy_i8_to_from_at_len(foster_bytes* to, foster_bytes* from,
   // so the truncation from int64_t to uint32_t is OK.
   foster__assert(uint32_t(from->cap) >= req_at,
                  "memcpy_i8_to_from_at_len can't copy negative # of bytes!");
-  foster__assert(to != from, "memcpy_i8_to_at_from_len: arrays must not be aliased");
   int32_t from_rem = uint32_t(from->cap) - req_at;
   req_len =      (std::min)(req_len, uint32_t(to->cap));
   uint32_t len = (std::min)(uint32_t(from_rem), req_len);
-  memcpy(to->bytes, from->bytes + req_at, len);
+  if (to != from) {
+    memcpy(to->bytes, from->bytes + req_at, len);
+  } else {
+    memmove(to->bytes, from->bytes + req_at, len);
+  }
 }
 
 // to[req_at..whatever] = from[0..req_len]
@@ -434,11 +437,14 @@ void memcpy_i8_to_at_from_len(foster_bytes* to,   uint32_t req_at,
   // so the truncation from int64_t to uint32_t is OK.
   foster__assert(uint32_t(to->cap) >= req_at,
                              "memcpy_i8_to_from_at_len can't copy negative # of bytes!");
-  foster__assert(to != from, "memcpy_i8_to_at_from_len: arrays must not be aliased");
   int32_t to_rem = uint32_t(to->cap) - req_at;
   req_len =      (std::min)(req_len, uint32_t(from->cap));
   uint32_t len = (std::min)(uint32_t(to_rem), req_len);
-  memcpy(to->bytes + req_at, from->bytes, len);
+  if (to != from) {
+    memcpy(to->bytes + req_at, from->bytes, len);
+  } else {
+    memmove(to->bytes + req_at, from->bytes, len);
+  }
 }
 
 // to[to_at..to_at+req_len] = from[from_at..from_at+req_len]
@@ -449,14 +455,17 @@ int8_t memcpy_i8_to_at_from_at_len(foster_bytes* to,   int64_t   to_at,
                                    int64_t req_len) {
   foster__assert((from->cap >= from_at) && (to->cap >= to_at),
                              "memcpy_i8_to_at_from_at_len can't copy negative # of bytes!");
-  foster__assert(to != from, "memcpy_i8_to_at_from_at_len: arrays must not be aliased");
   // guaranteed to be non-negative due to assertion invariant
   int64_t   to_rem = to->cap   - to_at;
   int64_t from_rem = from->cap - from_at;
   int64_t len = min3(to_rem, from_rem, req_len);
   size_t  len_sz = len;
   foster__assert(len >= 0 && int64_t(len_sz) == len, "memcpy_i8_to_from_at_len can't copy that many bytes on this platform!");
-  memcpy(to->bytes + to_at, from->bytes + from_at, len_sz);
+  if (to != from) {
+    memcpy(to->bytes + to_at, from->bytes + from_at, len_sz);
+  } else {
+    memmove(to->bytes + to_at, from->bytes + from_at, len_sz);
+  }
   return (len == req_len) ? 0 : 1;
 }
 
