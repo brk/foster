@@ -40,7 +40,7 @@ main = {
     subheapL = foster_subheap_create !;
     subheap = foster_subheap_create !;
 
-    foster_subheap_activate subheap;
+    prev = foster_subheap_activate subheap;
 
     c = checkX (make 0 stretchN);
     io "stretch tree" stretchN c;
@@ -48,27 +48,28 @@ main = {
     foster_subheap_collect subheap;
     //foster_subheap_shrink subheap;
 
-    foster_subheap_activate subheapL;
+    ignored = foster_subheap_activate subheapL;
 
     long    = make 0 maxN;
 
-    foster_subheap_activate subheap;
-
-    REC sumT = { d => i => t =>
-      if i ==Int32 0
-        then t
-        else
-          a = checkX (make i d);
-          b = checkX (make (0 -Int32 i) d);
-          ans = a +Int32 b +Int32 t;
-          sumT d (i -Int32 1) ans
-      end
-    };
+    ignored = foster_subheap_activate subheap;
 
     REC depth = { mn => mx =>
+      REC sumT = { d => i => t =>
+        if i ==Int32 0
+          then t
+          else
+            a = checkX (make i d);
+            b = checkX (make (0 -Int32 i) d);
+            ans = a +Int32 b +Int32 t;
+            sumT d (i -Int32 1) ans
+        end
+      };
+
       if mn <=SInt32 mx then
         n = bit ((mx -Int32 mn) +Int32 (minN !));
         i = sumT mn n 0;
+        print_text "collecting subheap...";
             foster_subheap_collect subheap;
         m = 2 *Int32 n;
         iot m "\t trees" mn i;
