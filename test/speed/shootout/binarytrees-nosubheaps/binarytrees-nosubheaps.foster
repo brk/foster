@@ -64,18 +64,19 @@ main = {
 
     long    = make 0 maxN;
 
-    REC sumT = { d => i => t =>
-      if i ==Int32 0
-        then t
-        else
-          a = checkX (make i d);
-          b = checkX (make (0 -Int32 i) d);
-          ans = a +Int32 b +Int32 t;
-          sumT d (i -Int32 1) ans
-      end
-    };
-
     REC depth = { mn => mx =>
+
+      REC sumT = { d => i => t =>
+        if i ==Int32 0
+          then t
+          else
+            a = checkX (make i d);
+            b = checkX (make (0 -Int32 i) d);
+            ans = a +Int32 b +Int32 t;
+            sumT d (i -Int32 1) ans
+        end
+      };
+
       if mn <=SInt32 mx then
         n = bit ((mx -Int32 mn) +Int32 (minN !));
         i = sumT mn n 0;
