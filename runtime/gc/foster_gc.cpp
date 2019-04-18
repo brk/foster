@@ -48,7 +48,7 @@ extern "C" char* __foster_fosterlower_config;
 #define GCLOG_PRINT_USED_GROUPS 0
 #define GCLOG_MUTATOR_UTILIZATION 0
 #define ENABLE_GCLOG_PREP 0
-#define ENABLE_GCLOG_ENDGC 1
+#define ENABLE_GCLOG_ENDGC 0
 #define PRINT_STDOUT_ON_GC 0
 #define FOSTER_GC_ALLOC_HISTOGRAMS    0
 #define FOSTER_GC_TIME_HISTOGRAMS     1 // Adds ~300 cycles per collection
@@ -1421,6 +1421,7 @@ private:
   std::vector<free_linegroup*> biggers;
 
 public:
+  size_t num_cached_groups() { return singles.size() + biggers.size(); }
   void reuse_big_linegroup(free_linegroup* fg) { biggers.push_back(fg); }
   void reuse_linegroup(free_linegroup* fg) {
     if (linegroup_size_in_lines(fg) == 1) {
@@ -1430,11 +1431,14 @@ public:
     }
   }
   size_t get_curr_frame_idx() { return curr_frame15; }
-  void reset_used_marks() {
+  void reset_allocator_cache() {
+    fprintf(gclog, "resetting available line cache...\n");
     curr_frame15 = 0;
     singles.clear();
     biggers.clear();
-  
+  }
+  void reset_used_marks() {
+    fprintf(gclog, "resetting used marks\n");
     // note: must be called *before* collection, not after!
     for (auto f15id : frame15s) {
       uint8_t* usedmap = line_used_for_frame15_id(f15id);
@@ -2333,7 +2337,12 @@ bool immix_common::common_gc(bool voluntary, bool emergency) {
 
     // Make sure no line groups persist between collections.
     if (gcglobals.condemned_set.status == condemned_set_status::whole_heap_condemned) {
+      global_space_allocator.reset_allocator_cache();
       global_space_allocator.reset_used_marks();
+    }
+
+    if (should_compact) {
+      global_space_allocator.reset_allocator_cache();
     }
 
     if (!voluntary) {
@@ -2712,7 +2721,10 @@ public:
     if (ENABLE_GCLOG_PREP) { fprintf(gclog, "GCPREP space %p for collection; sticky: %d\n", this, sticky); }
     // Default-linked subheaps cannot be sticky---if they could, then pointers into
     // the default subheap could be missed due to objects in the DLS not getting traced.
-    if (sticky && !this->is_linked_to_default_subheap) {
+    bool is_eligible = this == gcglobals.default_allocator
+                    || !this->is_linked_to_default_subheap;
+    bool should_use_generational_roots = sticky && is_eligible;
+    if (should_use_generational_roots) {
       std::vector<tori**> roots = generational_remset.copy_to_vector();
       fprintf(gclog, "visiting %zd generational remset roots for space %p\n", roots.size(), this);
       // Process generational remset.
@@ -2724,6 +2736,8 @@ public:
       }
       return roots.size();
     } else {
+      // If we're not doing a sticky collection, we want to clear prior marks,
+      // and also discard the remembered set, since our "nursery" will be promoted.
       clear_line_and_object_mark_bits();
       generational_remset.clear();
       return 0;
@@ -3060,8 +3074,13 @@ public:
     //// TODO how/when do we sweep arrays from "other" subheaps for full-heap collections?
     laa.sweep_arrays();
 
+    bool did_compact = false;
+
     if (this == gcglobals.default_allocator && g_should_compact /*compact_this_subheap*/) {
       clocktimer<false> ct_compact; ct_compact.start();
+
+      //fprintf(gclog, "Collecting line groups for compaction.\n");
+
       // We can use the shared_lines count to determine which frames have
       // live data belonging only to us; these are the *target* candidates
       // for compaction.
@@ -3100,12 +3119,13 @@ public:
       // to see if we could do so easily in the future.
       do_compactify_via_granule_marks(this, unshared, shared_lines);
       fprintf(gclog, "Compaction took %.1f us\n", phase.elapsed_us()); fflush(gclog);
+      did_compact = true;
     }
 
     clocktimer<false> insp_ct; insp_ct.start();
     std::set<frame15_id> compactable_frames;
     tracking.iter_used_lines_taking_ownership([&](used_linegroup g) {
-      int reclaimed = this->inspect_lines_postgc(g, compactable_frames);
+      int reclaimed = this->inspect_lines_postgc(g, compactable_frames, did_compact);
       num_lines_reclaimed += reclaimed;
     });
     auto inspectFrame15Time_us = insp_ct.elapsed_us();
@@ -3182,7 +3202,8 @@ public:
   }
 
   // Returns the number of reclaimed lines from the line group.
-  int inspect_lines_postgc(used_linegroup& g, std::set<frame15_id>& compactable_frames) {
+  int inspect_lines_postgc(used_linegroup& g, std::set<frame15_id>& compactable_frames,
+                           bool did_compact) {
     // Iterate through the lines, collecting groups of used lines.
     // Free line groups need not be explicitly constructed; they will
     // be reconstructed on demand by the global allocator.
@@ -3201,34 +3222,36 @@ public:
     auto finfo = frame15_info_for_frame15_id(frame15_id_of(g.base));
     if (finfo->compactable) {
       compactable_frames.insert(frame15_id_of(g.base));
-      if (GCLOG_PRINT_LINE_MARKS) {
-        fprintf(gclog, "Leaving used marks alone for compactable frame %u\n", frame15_id_of(g.base));
-      }
+      // if (GCLOG_PRINT_LINE_MARKS) {
+      //   fprintf(gclog, "Leaving used marks alone for compactable frame %u\n", frame15_id_of(g.base));
+      // }
     } else {
-      if (GCLOG_PRINT_LINE_MARKS && GCLOG_DETAIL > 0) {
-        fprintf(gclog, "Copying line->used for non-compactable frame %u\n", frame15_id_of(g.base));
-      }
+      // if (GCLOG_PRINT_LINE_MARKS && GCLOG_DETAIL > 0) {
+      //   fprintf(gclog, "Copying line->used for non-compactable frame %u\n", frame15_id_of(g.base));
+      // }
       // Selectively copy to used map in preparation for allocation.
       memcpy(&usedmap[g.startline()], &linemap[g.startline()], g.count);
 
       if (GCLOG_PRINT_USED_GROUPS) {
         display_used_linegroup_linemap(&g, linemap, this);
       }
-      //if (GCLOG_PRINT_LINE_MARKS) {
-      //  display_usedmap_for_frame15_id(frame15_id_of(g.base));
-      //}
+    }
+
+    if (GCLOG_PRINT_LINE_MARKS) {
+      display_usedmap_for_frame15_id(frame15_id_of(g.base));
     }
 
     // Invariant: usedmap[x] for x in g is nonzero iff line x is used.
 
     free_linegroup* fg = nullptr;
     for (int i = 0; i < g.count; ++i) {
-      bool is_marked = line_is_marked(g.startline() + i, linemap);
+      bool is_marked = line_is_marked(g.startline() + i,
+                          did_compact ? usedmap : linemap);
       if (is_marked) {
         ++num_marked_lines;
 
         if (was_free) { // start new used group
-          if (fg) { // finalize previous free group
+          if (fg && !did_compact) { // finalize previous free group
             if (linegroup_size_in_lines(fg) >= 16) {
               // Immediately reuse large line groups; this balances fragmentation
               // from coalescing with locality for high-frequency reclamation.
@@ -3287,7 +3310,7 @@ public:
       was_free = !is_marked;
     }
 
-    if (fg) {
+    if (fg && !did_compact) {
       if (linegroup_size_in_lines(fg) >= 16) {
         // Immediately reuse large line groups; this balances fragmentation
         // from coalescing with locality for high-frequency reclamation.
@@ -3428,6 +3451,7 @@ public:
     if (free_linegroup* g = b.trim_trailing_lines()) {
       n = linegroup_size_in_lines(g);
       if (n > 0) {
+        fprintf(gclog, "trimming group %d by %d lines\n", b.group, n);
         approx_lines_allocated_since_last_collection -= n;
         tracking.trim_ith_group_by(b.group, n);
         global_space_allocator.reuse_linegroup(g);
