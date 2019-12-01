@@ -1,0 +1,5 @@
+type case Datatype
+  of $Constructor1 Int32 // comment1a
+                   Int8 // comment1b
+  of $Constructor2 () // comment2
+  ;
