@@ -1,0 +1,380 @@
+# HG changeset patch
+# User Ben Karel <eschew@gmail.com>
+# Date 1536948542 14400
+#      Fri Sep 14 14:09:02 2018 -0400
+# Node ID f0b4fd4688175b3f34a2dd9a46e841e45d3ffd6d
+# Parent  d20ebbd30fe23d0a6cd7046ff59051c3c681afb0
+Use a single allocation for closures, vs separatating closure pairs & envs.
+
+diff --git a/compiler/fosterlower.cpp b/compiler/fosterlower.cpp
+--- a/compiler/fosterlower.cpp
++++ b/compiler/fosterlower.cpp
+@@ -480,8 +480,10 @@
+ 
+     foster::ParsingContext::insertType("Foster$GenericCoro",
+       RefTypeAST::get(getSplitCoroTyp(getUnitType())));
+-    foster::ParsingContext::insertType("Foster$GenericClosureEnvPtr",
+-                                      getGenericClosureEnvType());
++    foster::ParsingContext::insertType("Foster$GenericClosure",
++                                      getGenericClosureType());
++    foster::ParsingContext::insertType("Foster$GenericClosureFnPtr",
++                                       getGenericClosureFnType());
+   }
+   //================================================================
+ 
+diff --git a/compiler/include/foster/parse/FosterTypeAST.h b/compiler/include/foster/parse/FosterTypeAST.h
+--- a/compiler/include/foster/parse/FosterTypeAST.h
++++ b/compiler/include/foster/parse/FosterTypeAST.h
+@@ -33,7 +33,8 @@
+ 
+ std::string str(const TypeAST* type);
+ 
+-TypeAST* getGenericClosureEnvType();
++TypeAST* getGenericClosureType();
++TypeAST* getGenericClosureFnType();
+ RefTypeAST* getUnitType();
+ 
+ class TypeAST {
+diff --git a/compiler/me/src/Foster/CloConv.hs b/compiler/me/src/Foster/CloConv.hs
+--- a/compiler/me/src/Foster/CloConv.hs
++++ b/compiler/me/src/Foster/CloConv.hs
+@@ -368,17 +368,17 @@
+ 
+     let varsOfClosure = closedOverVarsOfKnFn
+     
+-    let envId  = snd (case Map.lookup self_id infoMap of
++    let cloId  = snd (case Map.lookup self_id infoMap of
+                              Just id -> id
+                              Nothing -> error $ "CloConv.hs: did not find info for " ++ show self_id)
+     -- Note that this env var has a precise type! The other's is missing.
+-    let envVar = TypedId (TupleType $ map tidType varsOfClosure) envId
++    let cloVar = TypedId (TupleType $ fakeCloFnType : map tidType varsOfClosure) cloId
+ 
+     -- Note that this will also rewrite recursive calls in nested functions,
+     -- which changes the set of closed-over variables for the nested function
+     -- (from outer fn to outer env).
+-    let transformedFn = makeEnvPassingExplicit envVar fn
+-    newproc          <- closureConvertFn transformedFn envVar varsOfClosure
++    let transformedFn = makeEnvPassingExplicit cloVar fn
++    newproc          <- closureConvertFn transformedFn cloVar varsOfClosure
+     let procid        = TypedId (procType newproc) (procIdent newproc)
+     return $
+     {-
+@@ -388,7 +388,7 @@
+                               <$> text "then becomes " <$> indent 8 (pretty newproc)) $ -}
+       if T.pack "mustbecont_" `T.isInfixOf` identPrefix self_id
+         then error $ "Failed to contify " ++ show self_id
+-        else Closure procid (llv envVar) (map llv varsOfClosure)
++        else Closure procid (llv cloVar) (procid : map llv varsOfClosure)
+                             (AllocationSource (show procid ++ ":")
+                                               (rangeOf $ procAnnot newproc))
+   where
+@@ -420,44 +420,48 @@
+              -- trace ("nonGlobalVars for " ++ show self_id ++ " is " ++ show nonGlobalVars ++ "\n" ++ show (pretty fn))
+                 nonGlobalVars
+ 
++    fakeCloFnType = TyApp (TyCon "Foster$GenericClosureFnPtr") []
++
+     fakeCloVar id = TypedId fakeCloEnvType id
+-                      where fakeCloEnvType = TyApp (TyCon "Foster$GenericClosureEnvPtr") []
++                      where fakeCloEnvType = TyApp (TyCon "Foster$GenericClosure") []
+ 
+     -- This is where the magic happens: given a function and its free variables,
+-    -- we create a procedure which also takes an extra (strongly-typed) env ptr
++    -- we create a procedure which also takes an extra (strongly-typed) closure
+     -- argument. The new body does case analysis to bind the free variable names
+     -- to the contents of the slots of the environment.
+     closureConvertFn :: CFFn -> MoVar -> [MoVar] -> ILM CCProc
+-    closureConvertFn f envVar varsOfClosure = do
++    closureConvertFn f cloVar varsOfClosure = do
+         -- If the body has x and y free, the closure converted body should be
+-        --     case env of (x, y, ...) -> body end
++        --     case env of (_, x, y, ...) -> body end
+         newbody <- do
+             let BasicBlockGraph bodyentry rk oldbodygraph = fnBody f
+-            let cfcase = CFCase envVar [
+-                           (CaseArm (PR_Tuple norange t (map patVar varsOfClosure))
++            let norange  = MissingSourceRange ""
++                wildcard = PR_Atom (P_Wildcard norange fakeCloFnType)
++                cfcase = CFCase cloVar [
++                           (CaseArm (PR_Tuple norange t (wildcard : map patVar varsOfClosure))
+                                     (fst bodyentry)
+                                     Nothing
+                                     varsOfClosure
+                                     norange) ]
+-                        where t        = tidType envVar
++                        where t        = tidType cloVar
+                               patVar a = PR_Atom $ P_Variable norange a
+-                              norange  = MissingSourceRange ""
+             -- We change the entry block of the new body (versus the old).
+             lab <- freshLabel
+-            let bid = ((".env.caseof", lab), [envVar])
++            let bid = ((".env.caseof", lab), [cloVar])
+             let caseblock = mkFirst (ILabel bid) <*>
+                             mkMiddles []         <*>
+                             mkLast (ILast cfcase)
+             closureConvertBlocks $
+                BasicBlockGraph bid rk (caseblock |*><*| oldbodygraph)
+ 
+-        ilmPutProc $ closureConvertedProc (envVar:(fnVars f)) f newbody
++        ilmPutProc $ closureConvertedProc (cloVar:(fnVars f)) f newbody
+ 
+     mapBasicBlock f (BasicBlockGraph entry rk bg) = BasicBlockGraph entry rk (f bg)
+ 
+     -- Making environment passing explicit simply means rewriting calls
+-    -- of closure variables from   v(args...)   ==>   v_proc(v_env, args...).
+-    makeEnvPassingExplicit envVar fn =
++    -- of known functions from   v(args...)   ==>   v_proc(v_clo, args...).
++    makeEnvPassingExplicit cloVar fn = fn
++    {-
+       let mapBlock :: forall e x. Graph' Block Insn e x -> Graph' Block Insn e x
+           mapBlock g = mapGraphBlocks (mapBlock' go) g in
+       fn { fnBody = mapBasicBlock mapBlock (fnBody fn) }
+@@ -467,11 +471,13 @@
+             ILabel   {}      -> insn
+             ILetVal x (ILCall t v vs) ->
+               case Map.lookup (tidIdent v) infoMap of
++                -- Calls to unknown functions are handled separately, e.g. in LLVM codegen.
+                 Nothing -> insn
++
+                 -- The only really interesting case: call to let-bound function!
+                 Just (proc_var, envid) ->
+-                  let env = if envid == tidIdent envVar
+-                              then envVar
++                  let env = if envid == tidIdent cloVar
++                              then cloVar
+                               else fakeCloVar envid in
+                   ILetVal x $ ILCall t (mkGlobal proc_var) (env:vs) -- Call proc with env as first arg.
+                   -- We don't know the env type here, since we don't
+@@ -479,8 +485,9 @@
+                   -- This works because (A) we never type check ILExprs, and
+                   -- (B) the LLVM codegen doesn't check the type field in this case.
+             ILetVal  {}      -> insn
+-            ILetFuns ids fns -> ILetFuns ids $ map (makeEnvPassingExplicit envVar) fns
++            ILetFuns ids fns -> ILetFuns ids $ map (makeEnvPassingExplicit cloVar) fns
+             ILast {} -> insn
++-}
+ 
+ --------------------------------------------------------------------
+ 
+diff --git a/compiler/me/src/Foster/ILExpr.hs b/compiler/me/src/Foster/ILExpr.hs
+--- a/compiler/me/src/Foster/ILExpr.hs
++++ b/compiler/me/src/Foster/ILExpr.hs
+@@ -222,10 +222,8 @@
+     --          REC     c1 = Closure env=e1 proc=p1 captures=[c1]
+     --                  c2 = Closure env=e2 proc=p2 captures=[c1,e1]
+     -- to::
+-    --          LET e1     = ALLOC [typeOf c1]
+-    --          LET e2     = ALLOC [typeOf c1, typeOf e1.gen]
+-    --          LET c1     = ALLOC [procTy p1, typeOf e1.gen]
+-    --          LET c2     = ALLOC [procTy p2, typeOf e2.gen]
++    --          LET c1     = ALLOC [procTy p1, typeOf c1]
++    --          LET c2     = ALLOC [procTy p2, typeOf c1, typeOf c2]
+     --          LET e1.gen = BITCAST e1 to i8* // wait until all allocations are
+     --          LET e2.gen = BITCAST e2 to i8* // done so bitcasts aren't stale.
+     --          TUPLESTORE [p1, e1.gen] to c1
+diff --git a/compiler/parse/FosterTypeAST.cpp b/compiler/parse/FosterTypeAST.cpp
+--- a/compiler/parse/FosterTypeAST.cpp
++++ b/compiler/parse/FosterTypeAST.cpp
+@@ -26,16 +26,15 @@
+ llvm::Type* foster_generic_split_coro_ty = NULL;
+ TypeAST* foster_generic_coro_ast  = NULL;
+ 
+-TypeAST* getGenericClosureEnvType() { return RefTypeAST::get(TypeAST::i(8)); }
++TypeAST* getGenericClosureType() { return RefTypeAST::get(TypeAST::i(444)); }
++
++// TODO figure out what fails when we replace 8 with, say, 555.
++TypeAST* getGenericClosureFnType() { return RefTypeAST::get(TypeAST::i(8)); }
+ RefTypeAST* getUnitType() {
+   std::vector<TypeAST*> argTypes;
+   return RefTypeAST::get(StructTypeAST::get(argTypes));
+ }
+ 
+-llvm::Type* llvmIntType(int n) {
+-  return llvm::IntegerType::get(fosterLLVMContext, n);
+-}
+-
+ /////////////////////////////////////////////////////////////////////
+ 
+ //virtual
+@@ -43,7 +42,8 @@
+ 
+ TypeAST* TypeAST::i(int n) {
+   std::stringstream ss; ss << "i" << n;
+-  return PrimitiveTypeAST::get(ss.str(), llvmIntType(n));
++  return PrimitiveTypeAST::get(ss.str(),
++      llvm::IntegerType::get(fosterLLVMContext, n));
+ }
+ 
+ ////////////////////////////////////////////////////////////////////
+diff --git a/compiler/passes/Codegen/Codegen-typemaps.cpp b/compiler/passes/Codegen/Codegen-typemaps.cpp
+--- a/compiler/passes/Codegen/Codegen-typemaps.cpp
++++ b/compiler/passes/Codegen/Codegen-typemaps.cpp
+@@ -387,10 +387,11 @@
+   return false;
+ }
+ 
++/*
+ // Checks that ty == { ___ (i8*, ...)*, i8* }
+ bool isGenericClosureType(const llvm::Type* ty) {
+   using foster::builder;
+-  llvm::Type* env = getGenericClosureEnvType()->getLLVMType();
++  llvm::Type* env = getGenericClosureType()->getLLVMType();
+   if (const llvm::StructType* sty= llvm::dyn_cast<const llvm::StructType>(ty)) {
+     if (!isValidClosureType(sty)) return false;
+     if (sty->getContainedType(1) != env) return false;
+@@ -404,6 +405,7 @@
+   }
+   return false;
+ }
++*/
+ 
+ llvm::GlobalVariable* CodegenPass::getTypeMapForType(TypeAST* typ,
+                                         CtorRepr ctorRepr,
+@@ -420,10 +422,10 @@
+     gv = emitTypeMap(typ, ty, ParsingContext::freshName("gcatom"), arrayStatus,
+                      ctorRepr, mod, std::vector<int>());
+     // emitTypeMap also sticks gv in typeMapForType
+-  } else if (isGenericClosureType(ty)) {
++  }/* else if (isGenericClosureType(ty)) {
+     gv = emitTypeMap(typ, ty, ParsingContext::freshName("genericClosure"), arrayStatus,
+                      ctorRepr, mod, std::vector<int>());
+-  }
++  }*/
+ 
+   if (!gv) {
+     EDiag() << "No type map for type " << str(ty) << "\nMaybe you need to call registerStructType()?\n";
+diff --git a/compiler/passes/LLCodegen.cpp b/compiler/passes/LLCodegen.cpp
+--- a/compiler/passes/LLCodegen.cpp
++++ b/compiler/passes/LLCodegen.cpp
+@@ -353,7 +353,7 @@
+     }
+ 
+     //maybeEmitCallToLogPtrRead(pass, gep);
+-    return emitNonVolatileLoad(gep, gep->getName() + "_ld");
++    return emitNonVolatileLoad(gep, msg);
+   } else if (llvm::isa<llvm::StructType>(compositeType)) {
+     return builder.CreateExtractValue(compositeValue, indexValue, (msg + "subexv").c_str());
+   } else if (llvm::isa<llvm::VectorType>(compositeType)) {
+@@ -587,7 +587,6 @@
+     auto Ffunc = pass->mod->getFunction(procs[i]->getCName() + ".proc");
+     ASSERT(Ffunc) << "Couldn't find a closure wrapper for " << procs[i]->getCName();
+     cell_vals.push_back(Ffunc);
+-    cell_vals.push_back(getNullOrZero(builder.getInt8PtrTy()));
+     auto const_cell = llvm::ConstantStruct::getAnon(cell_vals);
+ 
+     std::string cloname = procs[i]->getCName();
+@@ -664,7 +663,7 @@
+                            std::string symbolName, CodegenPass* pass) {
+     auto FT = F->getFunctionType();
+     std::vector<llvm::Type*> argTys;
+-    argTys.push_back(builder.getInt8PtrTy());
++    argTys.push_back(getGenericClosureType()->getLLVMType());
+     for (size_t i = 0; i < FT->getNumParams(); ++i) { argTys.push_back(FT->getParamType(i)); }
+     auto FfuncT = llvm::FunctionType::get(FT->getReturnType(), argTys, false);
+     std::string funcSymbolName = symbolName + ".proc";
+@@ -1752,9 +1751,10 @@
+   // This is a an artifact produced by the mutual recursion
+   // of the environments of mutually recursive closures.
+   if (  argV->getType() != expectedType
+-    &&  argV->getType() == getGenericClosureEnvType()->getLLVMType()) {
++    &&  argV->getType() == getGenericClosureType()->getLLVMType()) {
+     DDiag() << "emitting bitcast gen2spec (exp: " << str(expectedType)
+             << "); (actual: " << str(argV->getType()) << ")";
++    llvm::outs() << "fn arg coercsion to " << str(expectedType) << "\n";
+     argV = emitBitcast(argV, expectedType, "gen2spec");
+   }
+ 
+@@ -1763,6 +1763,7 @@
+       && matchesExceptForUnknownPointers(argV->getType(), expectedType)) {
+     // Example: matched { i64, [0 x i8] }* to %struct.foster_bytes* in call to prim_print_bytes_stdout
+     //DDiag() << "matched " << str(argV->getType()) << " to " << str(expectedType) << " in call to " << FV->getName();
++    llvm::outs() << "fn arg coercsion to " << str(expectedType) << "\n";
+     argV = emitBitcast(argV, expectedType, "spec2gen");
+   }
+ 
+@@ -1778,19 +1779,22 @@
+ 
+ llvm::Type* getClosureType(llvm::Type* retTy, const std::vector<Value*>& nonEnvArgs) {
+   std::vector<llvm::Type*> argTys;
+-  argTys.push_back(builder.getInt8PtrTy());
++  argTys.push_back(getGenericClosureType()->getLLVMType());
+   for (auto arg : nonEnvArgs) { argTys.push_back(arg->getType()); }
+-  return getHeapPtrTo(
+-            llvm::StructType::get(foster::fosterLLVMContext,
+-              { rawPtrTo(llvm::FunctionType::get(retTy, argTys, false)),
+-                builder.getInt8PtrTy() })
+-            );
++
++  std::vector<llvm::Type*> envTys;
++  //envTys.push_back(getGenericClosureFnType()->getLLVMType());
++  envTys.push_back(rawPtrTo(llvm::FunctionType::get(retTy, argTys, false)));
++  for (auto arg : nonEnvArgs) { envTys.push_back(arg->getType()); }
++
++  return getHeapPtrTo(llvm::StructType::get(foster::fosterLLVMContext, envTys));
+ }
+ 
+ llvm::Value* LLCall::codegen(CodegenPass* pass) {
+   ASSERT(base != NULL) << "unable to codegen call due to null base";
+-  Value* FV = base->codegenCallee(pass);
+-  ASSERT(FV) << "unable to codegen call due to missing value for base";
++  Value* callee = base->codegenCallee(pass);
++  Value* FV = nullptr;
++  ASSERT(callee) << "unable to codegen call due to missing value for base";
+ 
+   llvm::FunctionType* FT = NULL;
+   std::vector<Value*> valArgs;
+@@ -1804,13 +1808,15 @@
+     nonEnvArgs.push_back(arg->codegen(pass));
+   }
+ 
+-  if (Function* F = llvm::dyn_cast<Function>(FV)) {
++  if (Function* F = llvm::dyn_cast<Function>(callee)) {
+     // Call to top level function
+     callingConv = F->getCallingConv();
++    FV = callee;
+     FT = F->getFunctionType();
+-  } else if (isFunctionPointerTy(FV->getType())) {
++  } else if (isFunctionPointerTy(callee->getType())) {
++    FV = callee;
+     FT = dyn_cast<llvm::FunctionType>(slotType(FV));
+-  } else {
++  } else { // Closure value
+     if (!isPointerToStruct(FV->getType())) {
+       // We can end up in this situation (trying to call a value that
+       // has an unknown/generic type) because inlining does not "push through"
+@@ -1819,14 +1825,13 @@
+     }
+ 
+     ASSERT(isPointerToStruct(FV->getType()));
+-    // Load code and env pointers from closure...
+-    llvm::Value* envPtr =
+-        getElementFromComposite(pass, FV, 1, "getCloEnv");
+-    FV = getElementFromComposite(pass, FV, 0, "getCloCode", true);
++    // Pass closure pointer as first parameter to function.
++    valArgs.push_back(emitBitcast(callee, getGenericClosureFnType()->getLLVMType()));
++
++    // Load code pointer from closure.
++    FV = getElementFromComposite(pass, callee, 0, "getCloCode");
+ 
+     FT = dyn_cast<llvm::FunctionType>(slotType(FV));
+-    // Pass env pointer as first parameter to function.
+-    valArgs.push_back(envPtr);
+     fromClosure = true;
+   }
+ 
+@@ -1850,6 +1855,14 @@
+ 
+   // Give the instruction a name, if we can...
+ 
++/*
++  llvm::errs() << "LLCall: FV ( " << FV->getName() << " ) :: " << str(FV->getType()) << "\n";  
++  llvm::errs() << "LLCall:   callee = " << str(callee) << "\n";
++  for (llvm::Value* arg : valArgs) {
++    llvm::errs() << "    ====** " << str(arg) << "\n";
++  }
++  */
++
+   auto callInst = builder.CreateCall(FV, llvm::makeArrayRef(valArgs));
+   callInst->setCallingConv(callingConv);
+   trySetName(callInst, "calltmp");
