@@ -1,0 +1,33 @@
+main = {
+  acc = (prim ref 0);
+  a = (10, (30, 2));
+  b = (10, (40, 1));
+  c = (20, (0, 30));
+  d = (20, (30, 3));
+  e = (1, (0, 0));
+  REC loop = { n =>
+    if n >SInt32 0 then
+      (acc^ +Int32 noinline_llvm_test a) >^ acc;
+      (acc^ +Int32 noinline_llvm_test b) >^ acc;
+      (acc^ +Int32 noinline_llvm_test c) >^ acc;
+      (acc^ +Int32 noinline_llvm_test d) >^ acc;
+      (acc^ +Int32 noinline_llvm_test e) >^ acc;
+      loop (n -Int32 1)
+    end
+  };
+  loop 16`000`000;
+
+  expect_i32 1968000000;
+  print_i32 acc^;
+};
+
+
+noinline_llvm_test = { tup =>
+  case tup
+    of (10, (30, x)) -> x +Int32 11
+    of (10, (40, x)) -> x +Int32 22
+    of (20, (x, 30)) -> x +Int32 33
+    of (20, (_,  x)) -> x +Int32 44
+    of (a,  qq     ) -> a +Int32 6
+  end
+};

@@ -1,0 +1,37 @@
+snafuinclude Bench "bench/measure";
+snafuinclude Prelude "prelude";
+
+type case Tree
+  of $Lf
+  of $Br Int32 Tree Tree
+  ;
+
+mktree = { n =>
+  if n ==Int32 0
+    then Lf
+    else t = mktree (n -Int32 1);
+         Br n t t
+  end
+};
+
+search = { p => t =>
+    case t
+      of $Lf -> False
+      of $Br x t1 t2 ->
+        { p x } `oror` {
+              { search { y => { y ==Int32 x } `oror` { p y } } t1 }
+              `oror`
+              { search { y => { y ==Int32 x } `oror` { p y } } t2 }
+        }
+    end
+};
+
+reynolds2 = {
+  search { x => False } (mktree 24)
+};
+
+main = {
+  let (t, _) = elapsed-time { reynolds2 ! };
+  ts = foster_fmttime_secs t;
+  print_text ts;
+};
