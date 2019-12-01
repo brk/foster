@@ -83,9 +83,9 @@ run-minicache-subheaps-common = { b => n => k => c => subheaps =>
       s = subheaps[idx];
       foster_subheap_collect s;
       prev = foster_subheap_activate s;
-      newnode = make-entry n idx;
-      (Some newnode) >^ c[idx];
-      //_ignored = foster_subheap_activate prev;
+        newnode = make-entry n idx;
+        (Some newnode) >^ c[idx];
+      _ignored = foster_subheap_activate prev;
 
 /*
       if idx >SInt32 1 then

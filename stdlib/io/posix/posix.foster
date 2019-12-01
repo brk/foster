@@ -7,8 +7,8 @@ snafuinclude Bytes "bytes";
 
 foster_stdin_read_bytes :: { Array Int8 => Ref Int32 => Int64 } @ { proc = true };
 
-//                             (fd)      (bytes)     (offset)  (len)    (status)    (#rd/wr)
-foster_posix_read_bytes  :: { Int64 => Array Int8 => Int64 =>          Ref Int32 => Int64 } @ { proc = true };
+//                             (fd)     (bytes)     (offset) (len/pad) (status)    (#rd/wr)
+foster_posix_read_bytes  :: { Int64 => Array Int8 => Int64 => Int64 => Ref Int32 => Int64 } @ { proc = true };
 foster_posix_write_bytes :: { Int64 => Array Int8 => Int64 => Int64 => Ref Int32 => Int64 } @ { proc = true };
 
 foster_posix_write_bytes_to_file ::

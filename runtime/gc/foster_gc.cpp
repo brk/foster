@@ -63,6 +63,7 @@ extern "C" char* __foster_fosterlower_config;
 #define TRACK_NUM_ALLOC_BYTES         1
 #define TRACK_NUM_REMSET_ROOTS        1
 #define TRACK_NUM_OBJECTS_MARKED      1
+#define TRACK_NUM_ROOTS_CONSIDERED    1
 #define TRACK_WRITE_BARRIER_COUNTS    1
 #define TRACK_BYTES_KEPT_ENTRIES      0
 #define TRACK_BYTES_ALLOCATED_ENTRIES 0
@@ -550,6 +551,7 @@ struct GCGlobals {
   bool logall;
 
   std::map<std::pair<const char*, typemap*>, int64_t> alloc_site_counters;
+  std::map<void*, std::pair<const char*, const char*> > alloc_site_locs;
 
   std::set<frame21*> all_frame21s;
   std::vector<heap_handle<Allocator>*> default_linked_subheaps;
@@ -570,6 +572,7 @@ struct GCGlobals {
   uint64_t num_alloc_bytes;
   uint64_t num_subheaps_created;
   uint64_t num_subheap_activations;
+  uint64_t num_roots_considered;
 
   uint64_t num_closure_calls;
 
@@ -1404,7 +1407,7 @@ int num_assigned_defrag_lines() { return defrag_reserve.reserved_lines_target; }
 void display_linemap_for_frame15_id(frame15_id fid);
 void display_usedmap_for_frame15_id(frame15_id fid);
 void mark_slot_used(void* slot);
-void mark_slots_used(void* slot, uint64_t cell_size);
+void mark_slots_used(void* slot, int64_t cell_size);
 void incr_slot_stamp(void* slot);
 void incr_slot_stamps(void* slot, uint64_t cell_size);
 
@@ -1422,8 +1425,12 @@ private:
 
 public:
   size_t num_cached_groups() { return singles.size() + biggers.size(); }
-  void reuse_big_linegroup(free_linegroup* fg) { biggers.push_back(fg); }
+  void reuse_big_linegroup(free_linegroup* fg) {
+    // fprintf(gclog, "reusing bigger linegroup %p of size %d\n",
+    //   fg, linegroup_size_in_lines(fg));
+    biggers.push_back(fg); }
   void reuse_linegroup(free_linegroup* fg) {
+    // fprintf(gclog, "reusing linegroup @ %p of size %d\n", fg, linegroup_size_in_lines(fg));
     if (linegroup_size_in_lines(fg) == 1) {
       singles.push_back(fg);
     } else {
@@ -1432,13 +1439,13 @@ public:
   }
   size_t get_curr_frame_idx() { return curr_frame15; }
   void reset_allocator_cache() {
-    fprintf(gclog, "resetting available line cache...\n");
+    // fprintf(gclog, "resetting available line cache...\n");
     curr_frame15 = 0;
     singles.clear();
     biggers.clear();
   }
   void reset_used_marks() {
-    fprintf(gclog, "resetting used marks\n");
+    // fprintf(gclog, "resetting used marks\n");
     // note: must be called *before* collection, not after!
     for (auto f15id : frame15s) {
       uint8_t* usedmap = line_used_for_frame15_id(f15id);
@@ -1534,6 +1541,9 @@ public:
           //fprintf(gclog, "marking single allocated line (size %zd) at %p\n", distance(g, g->bound), g);
           mark_slot_used(g); // mark until cleared during collection
           //clear_object_mark_bits_for_group(g);
+          if (linegroup_size_in_lines(g) != 1) {
+            fprintf(gclog, "OOPS singleton linegroup %p had non-1 size\n", g);
+          }
           return g;
         }
       }
@@ -1552,9 +1562,14 @@ public:
 
         //biggers[i] = trim_linegroup(g, size, num_lines, max_lines_wanted);
         
+          if (size > IMMIX_LINES_PER_FRAME15) {
+            fprintf(gclog, "OOPS bigger linegroup %p was oversized of size %d\n", g, size);
+          }
+
         // TODO trim on switch, not on allocation.
         if (size >= num_lines) {
           biggers[i] = nullptr;
+          // fprintf(gclog, "grab_free_linegroup marking slots used from %p to %p stored at %p\n", g, g->bound, &g->bound);
           mark_slots_used(g, distance(g, g->bound)); // mark until cleared
           //clear_object_mark_bits_for_group(g);
           return g;
@@ -1802,11 +1817,14 @@ void incr_slot_stamps(void* slot, uint64_t cell_size) {
   }
 }
 
-void mark_slots_used(void* slot, uint64_t cell_size) {
+void mark_slots_used(void* slot, int64_t cell_size) {
   uint8_t* linemap = line_used_for_frame15_id(frame15_id_of(slot));
   void* lastslot = offset(slot, cell_size - 8);
   auto firstoff = line_offset_within_f15(slot);
   auto lastoff  = line_offset_within_f15(lastslot);
+
+  // fprintf(gclog, "mark_slots_used: %p;; cell size %zd;; num slots %zu\n", slot, cell_size, (lastoff - firstoff) + 1);
+  // fflush(gclog);
 
   auto stamp = line_stamp_t(gcglobals.num_gcs_triggered & 0xFFFF);
 
@@ -1816,10 +1834,15 @@ void mark_slots_used(void* slot, uint64_t cell_size) {
   } else {
     //fprintf(gclog, "marking slots %d to %d (ptrs %p to %p) used...\n", firstoff, lastoff, slot, lastslot); fflush(gclog);
     auto slotsused = (lastoff - firstoff) + 1; // +1 because we want an inclusive count.
-    memset(&linemap[firstoff], 1, slotsused + 1);
-    for (int i = 0 ; i < slotsused; ++i) {
-      set_current_line_stamp(offset(slot, i * IMMIX_BYTES_PER_LINE), stamp);
+    if (slotsused <= IMMIX_LINES_PER_FRAME15) {
+      memset(&linemap[firstoff], 1, slotsused + 1);
+      for (int i = 0 ; i < slotsused; ++i) {
+        set_current_line_stamp(offset(slot, i * IMMIX_BYTES_PER_LINE), stamp);
+      }
+    } else {
+      fprintf(gclog, "OOPS tried to mark too many slots at once!\n");
     }
+    
   }
 }
 
@@ -1972,6 +1995,14 @@ namespace immix_common {
     }
 #endif
 
+    if (gcglobals.num_gcs_triggered < 1000 &&
+        gcglobals.condemned_set.status == condemned_set_status::per_frame_condemned) {
+      auto it = gcglobals.alloc_site_locs.find(cell->body_addr());
+      if (it != gcglobals.alloc_site_locs.end()) {
+        fprintf(gclog, "body srcloc: %s ;; typedesc: %s\n", it->second.first, it->second.second);
+      }
+    }
+
     for_each_child_slot_with(cell, arr, map, cell_size, [cell](intr* slot) {
       if (!non_markable_addr(* (void**)slot)) {
         if (0) {
@@ -2044,6 +2075,8 @@ namespace immix_common {
           orig_stamp, get_current_line_stamp(src_obj), get_current_line_stamp(src_slot)
           ); ++n;  fflush(gclog);
       }
+
+      if (TRACK_NUM_ROOTS_CONSIDERED) { ++gcglobals.num_roots_considered; }
 
       bool header_definitely_stale = get_current_line_stamp(src_obj) != orig_stamp;
 
@@ -2148,11 +2181,14 @@ public:
     bumper.bound = fg->bound;
     bumper.group = used_lines.size() - 1;
   }
-  void note_used_group(used_linegroup g) { used_lines.push_back(g); lines_tracked += g.count; }
+  void note_used_group(used_linegroup g) {
+    // fprintf(gclog, "noting used group of size %d\n", g.count);
+    used_lines.push_back(g); lines_tracked += g.count; }
 
   // Precondition: n > 0.
-  void trim_ith_group_by(int i, int n) {
-    used_lines[i].count -= n; lines_tracked -= n; 
+  void trim_ith_group_by(int i, int n_lines) {
+    used_lines[i].count -= n_lines; lines_tracked -= n_lines;
+    // fprintf(gclog, "count[%d] after -= %d is now %d\n", i, n_lines, used_lines[i].count);
   }
 
   template<typename WasUncleanThunk>
@@ -2730,6 +2766,7 @@ public:
       // Process generational remset.
       // We must be careful not to process the same root more than once;
       // otherwise, we might evacuate the same object multiple times.
+      if (TRACK_NUM_ROOTS_CONSIDERED) { gcglobals.num_roots_considered += roots.size(); }
       for (auto slot : roots) {
         //fprintf(gclog, "visiting generational remset root %p in slot %p\n", *slot, slot); fflush(gclog);
         helpers::visit_root((unchecked_ptr*) slot, "generational_remset_root");
@@ -2818,11 +2855,12 @@ public:
     free_linegroup* g = global_space_allocator.grab_free_linegroup<small>(lines_needed, 128);
     //if (lines_at_a_time < IMMIX_LINES_PER_FRAME15) { lines_at_a_time *= 2; }
     if (!g) {
-      fprintf(gclog, "grab_free_linegroup(for %zd bytes = %d lines) returned null\n", cell_size, lines_needed);
+      // fprintf(gclog, "grab_free_linegroup(for %zd bytes = %d lines) returned null\n", cell_size, lines_needed);
       return false;
     }
 
     approx_lines_allocated_since_last_collection += linegroup_size_in_lines(g);
+    // fprintf(gclog, "try_prep_allocable_block installing free group of size %d\n", linegroup_size_in_lines(g));
     tracking.add_and_install_free_group(g, *bumper);
 
     if (ENABLE_GCLOG_PREP) {
@@ -3244,6 +3282,10 @@ public:
     // Invariant: usedmap[x] for x in g is nonzero iff line x is used.
 
     free_linegroup* fg = nullptr;
+    // fprintf(gclog, "g.count is %d\n", g.count);
+    if (g.count > IMMIX_LINES_PER_FRAME15) {
+      fprintf(gclog, "OOPS: watch *%p\n", &g.count);
+    }
     for (int i = 0; i < g.count; ++i) {
       bool is_marked = line_is_marked(g.startline() + i,
                           did_compact ? usedmap : linemap);
@@ -3451,7 +3493,7 @@ public:
     if (free_linegroup* g = b.trim_trailing_lines()) {
       n = linegroup_size_in_lines(g);
       if (n > 0) {
-        fprintf(gclog, "trimming group %d by %d lines\n", b.group, n);
+        //fprintf(gclog, "trimming group %d by %d lines\n", b.group, n);
         approx_lines_allocated_since_last_collection -= n;
         tracking.trim_ith_group_by(b.group, n);
         global_space_allocator.reuse_linegroup(g);
@@ -3858,6 +3900,7 @@ void do_compactify_via_granule_marks(immix_space* default_subheap,
     fprintf(gclog, "   marked/footprint: %.1f\n", marked_over_footprint);
   }
 
+
   //gfx::timsort(ids.begin(), ids.end());
   std::sort(all_ids.begin(), all_ids.end());//, sort_linegroup_by_base);
   // We now have a virtualized list of frame ids, in address order.
@@ -3885,6 +3928,11 @@ void do_compactify_via_granule_marks(immix_space* default_subheap,
   compute_sliver_offsets(selected_ids);
   fprintf(gclog, "do_compactify: computing new forwarding addresses: %.1f us\n", ct.elapsed_us()); fflush(gclog);
 
+  // Compaction can slide into previously unused lines, so
+  // make sure there's no potential for unfortunate aliasing.
+  default_subheap->relinquish_unused_capacity();
+  global_space_allocator.reset_allocator_cache();
+  
   int64_t examined_bytes = 0;
 
   ct.start();
@@ -4272,6 +4320,7 @@ void collect_roots_from_stack(void* start_frame) {
     const void* const* ms = pc->getMetadataStart();
     const int32_t    * lo = pc->getLiveOffsetWithMetaStart();
     int32_t frameSize = pc->frameSize;
+    if (TRACK_NUM_ROOTS_CONSIDERED) { gcglobals.num_roots_considered += pc->liveCountWithMetadata; }
     for (int a = 0; a < pc->liveCountWithMetadata; ++a) {
       int32_t     off = lo[a];
       const void*   m = ms[a];
@@ -4466,6 +4515,7 @@ void initialize(void* stack_highest_addr) {
   gcglobals.num_alloc_bytes_in_subheaps = 0;
   gcglobals.num_subheaps_created = 0;
   gcglobals.num_subheap_activations = 0;
+  gcglobals.num_roots_considered = 0;
   gcglobals.write_barrier_phase0_hits = 0;
   gcglobals.write_barrier_phase0b_hits = 0;
   gcglobals.write_barrier_phase1_hits = 0;
@@ -4645,6 +4695,7 @@ int foster_hdr_percentiles_print(
     return rc;
 }
 
+int nrecorded = 0;
 FILE* print_timing_stats() {
   auto total_elapsed = gcglobals.init_start.elapsed_s();
   auto gc_elapsed = gcglobals.gc_time_us / 1e6;
@@ -4755,6 +4806,9 @@ FILE* print_timing_stats() {
     fprintf(gclog, "'Num_Write_Barriers_NonNull': %lu\n",  gcglobals.write_barrier_phase0b_hits);
     fprintf(gclog, "'Num_Write_Barriers_Null': %lu\n", gcglobals.write_barrier_phase0_hits - gcglobals.write_barrier_phase0b_hits);
   }
+  if (TRACK_NUM_ROOTS_CONSIDERED) {
+    fprintf(gclog, "'Num_Roots_Considered': %lu\n",  gcglobals.num_roots_considered);
+  }
   if (ENABLE_GC_TIMING_TICKS) {
     {
       auto s = foster::humanize_s(gcglobals.subheap_ticks, "");
@@ -4793,8 +4847,15 @@ FILE* print_timing_stats() {
   }
   */
 
-  //fprintf(gclog, "sizeof immix_space: %lu\n", sizeof(immix_space));
+  fprintf(gclog, "sizeof immix_space: %lu\n", sizeof(immix_space));
+  fprintf(gclog, "sizeof bump_allocator: %lu\n", sizeof(bump_allocator));
+  fprintf(gclog, "sizeof large_array_allocator: %lu\n", sizeof(large_array_allocator));
+  fprintf(gclog, "sizeof immix_space_tracking: %lu\n", sizeof(immix_space_tracking));
+  fprintf(gclog, "sizeof remset_with_obj_t: %lu\n", sizeof(remset_with_obj_t));
+  fprintf(gclog, "sizeof remset_t: %lu\n", sizeof(remset_t));
   //fprintf(gclog, "sizeof immix_line_space: %lu\n", sizeof(immix_line_space));
+
+  fprintf(gclog, "# recorded allocs: %d\n", nrecorded);
 
   gclog_time("Elapsed_runtime", total_elapsed, json);
   if (ENABLE_GC_TIMING) {
@@ -4972,8 +5033,13 @@ void* memalloc_array(typemap* typeinfo, int64_t n, int8_t init) {
   return gcglobals.allocator->allocate_array(typeinfo, n, (bool) init);
 }
 
-void record_memalloc_cell(typemap* typeinfo, const char* srclines) {
-  gcglobals.alloc_site_counters[std::make_pair(srclines, typeinfo)]++;
+void record_memalloc_cell(void* cell, typemap* typeinfo, const char* srcloc, const char* typedesc) {
+  nrecorded++;
+  if (gcglobals.num_gcs_triggered < 10) {
+    fprintf(gclog, "recorded memalloc cell %p with typeinfo %p and and srcloc %s and typedesc %s\n", cell, typeinfo, srcloc, typedesc);
+  }
+  gcglobals.alloc_site_counters[std::make_pair(typedesc, typeinfo)]++;
+  gcglobals.alloc_site_locs[cell] = std::make_pair(srcloc, typedesc);
 }
 // }}}
 
