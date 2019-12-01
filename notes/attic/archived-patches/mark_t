@@ -1,0 +1,568 @@
+# HG changeset patch
+# Parent  7d4d37338c452dbd8bff4bdf60d035cd0ee25d03
+Use a newtype to disambiguate integers from mark bit values.
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -53,8 +53,8 @@
+ #define MARK_OBJECT_WITH_BITS         0
+ #define UNSAFE_ASSUME_F21_UNMARKED    false
+ #define TRACK_NUM_ALLOCATIONS         1
+-#define TRACK_NUM_ALLOC_BYTES         1
+-#define TRACK_NUM_REMSET_ROOTS        1
++#define TRACK_NUM_ALLOC_BYTES         0
++#define TRACK_NUM_REMSET_ROOTS        0
+ #define TRACK_NUM_OBJECTS_MARKED      1
+ #define TRACK_WRITE_BARRIER_COUNTS    1
+ #define TRACK_BYTES_KEPT_ENTRIES      0
+@@ -498,6 +498,7 @@
+   uint8_t*          lazy_mapped_coarse_marks;
+ 
+   uint8_t*          lazy_mapped_granule_marks;
++  uint8_t*          lazy_mapped_frame_mark_pattern;
+ 
+   struct hdr_histogram* hist_gc_stackscan_frames;
+   struct hdr_histogram* hist_gc_stackscan_roots;
+@@ -572,7 +573,7 @@
+ 
+ frame21* frame21_of_id(frame21_id x) { return (frame21*) (uintptr_t(x) << 21); }
+ 
+-void clear_linemap(uint8_t* linemap) {
++void clear_linemap(mark_t* linemap) {
+   memset(linemap, 0, IMMIX_LINES_PER_BLOCK);
+ }
+ 
+@@ -610,60 +611,69 @@
+   gcglobals.lazy_mapped_frame15info[fid].associated = v;
+ }
+ 
+-inline bool obj_is_marked(heap_cell* obj) {
++inline bool obj_is_marked_with(heap_cell* obj, mark_t value) {
+   if (MARK_OBJECT_WITH_BITS) {
+-    return bitmap::get_bit(global_granule_for(obj), gcglobals.lazy_mapped_granule_marks) == 1;
++    return bitmap::get_bit(global_granule_for(obj), gcglobals.lazy_mapped_granule_marks) == value.val;
+   } else {
+     uint8_t* markbyte = &gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)];
+-    return *markbyte == 1;
++    return *markbyte == value.val;
+   }
+ }
++inline bool obj_is_marked(heap_cell* obj) { return obj_is_marked_with(obj, make_mark_t(1)); }
+ inline bool arr_is_marked(heap_array* obj) { return obj_is_marked((heap_cell*)obj); }
+ 
++inline bool obj_in_space_is_marked(immix_heap* space, heap_cell* obj) {
++  return obj_is_marked(obj);
++}
++
+ frame15kind frame15_classification(void* addr);
+ immix_heap* heap_for(void* val);
+ 
+-inline void do_mark_obj(heap_cell* obj) {
++inline void do_mark_obj_with(void* obj, mark_t value) {
+   if (GCLOG_DETAIL > 3) { fprintf(gclog, "setting granule bit  for object %p in frame %u\n", obj, frame15_id_of(obj)); }
+   if (MARK_OBJECT_WITH_BITS) {
+-    bitmap::set_bit_to(global_granule_for(obj), 1, gcglobals.lazy_mapped_granule_marks);
++    bitmap::set_bit_to(global_granule_for(obj), value.val, gcglobals.lazy_mapped_granule_marks);
+   } else {
+-    gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)] = 1;
++    gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)] = value.val;
+   }
+ }
+ 
+-inline void do_unmark_granule(void* obj) {
++inline void do_mark_obj(heap_cell* obj) { do_mark_obj_with(obj, make_mark_t(1)); }
++inline void do_unmark_granule(void* obj) { do_mark_obj_with(obj, make_mark_t(0)); }
++
++void set_object_mark_bits_for_frame15(void* f15, mark_t value) {
++  if (GCLOG_DETAIL > 2) { fprintf(gclog, "clearing granule bits for frame %p (%u)\n", f15, frame15_id_of(f15)); }
+   if (MARK_OBJECT_WITH_BITS) {
+-    bitmap::set_bit_to(global_granule_for(obj), 0, gcglobals.lazy_mapped_granule_marks);
++    memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(f15) / 8], value.val, IMMIX_GRANULES_PER_BLOCK / 8);
+   } else {
+-    gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)] = 0;
++    memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)], value.val, IMMIX_GRANULES_PER_BLOCK);
+   }
+ }
+ 
+-void clear_object_mark_bits_for_frame15(void* f15) {
+-  if (GCLOG_DETAIL > 2) { fprintf(gclog, "clearing granule bits for frame %p (%u)\n", f15, frame15_id_of(f15)); }
+-  if (MARK_OBJECT_WITH_BITS) {
+-    memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(f15) / 8], 0, IMMIX_GRANULES_PER_BLOCK / 8);
+-  } else {
+-    memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)], 0, IMMIX_GRANULES_PER_BLOCK);
+-  }
+-}
+-
+-void clear_object_mark_bits_for_frame15(void* f15, int startline, int numlines) {
++void clear_object_mark_bits_for_frame15(void* f15) { set_object_mark_bits_for_frame15(f15, make_mark_t(0)); }
++
++void set_object_mark_bits_for_frame15(void* f15, int startline, int numlines, mark_t value) {
+   uintptr_t granule = global_granule_for(offset(f15, startline * IMMIX_BYTES_PER_LINE));
+   if (GCLOG_DETAIL > 2) { fprintf(gclog, "clearing granule bits for %d lines starting at %d in frame %p (%u), granule %zu\n", numlines, startline, f15, frame15_id_of(f15), granule); }
+   if (MARK_OBJECT_WITH_BITS) {
+-    memset(&gcglobals.lazy_mapped_granule_marks[granule / 8], 0, (numlines * IMMIX_GRANULES_PER_LINE) / 8);
++    memset(&gcglobals.lazy_mapped_granule_marks[granule / 8], value.val, (numlines * IMMIX_GRANULES_PER_LINE) / 8);
+   } else {
+-    memset(&gcglobals.lazy_mapped_granule_marks[granule],     0, (numlines * IMMIX_GRANULES_PER_LINE));
++    memset(&gcglobals.lazy_mapped_granule_marks[granule],     value.val, (numlines * IMMIX_GRANULES_PER_LINE));
+   }
+ }
+-
+-
+-bool line_is_marked(  int line, uint8_t* linemap) { return linemap[line] == 1; }
+-bool line_is_unmarked(int line, uint8_t* linemap) { return linemap[line] == 0; }
+-void do_mark_line(  int line, uint8_t* linemap) { linemap[line] = 1; }
+-void do_unmark_line(int line, uint8_t* linemap) { linemap[line] = 0; }
++void clear_object_mark_bits_for_frame15(void* f15, int startline, int numlines) {
++  set_object_mark_bits_for_frame15(f15, startline, numlines, make_mark_t(0));
++}
++
++
++bool line_is_marked_with(  int line, mark_t* linemap, mark_t value) { return linemap[line].val == value.val; }
++bool line_is_marked(  int line, mark_t* linemap) { return line_is_marked_with(line, linemap, make_mark_t(1)); }
++//bool line_is_unmarked(int line, mark_t* linemap) { return line_is_marked_with(line, linemap, 0); }
++bool line_is_unmarked(int line, mark_t* linemap) { return !line_is_marked_with(line, linemap, make_mark_t(1)); }
++
++void do_mark_line_with(int line, mark_t* linemap, mark_t value) { linemap[line].val = value.val; }
++void do_mark_line(  int line, mark_t* linemap) { do_mark_line_with(line, linemap, make_mark_t(1)); }
++void do_unmark_line(int line, mark_t* linemap) { do_mark_line_with(line, linemap, make_mark_t(0)); }
+ 
+ //static_assert(sizeof(frame15info) == 16, "expect frame15info to be two words");
+ 
+@@ -695,7 +705,7 @@
+     if (GC_ASSERTIONS) { gc_assert(frame15_id_of(allot) == frame15_id_of(allot->body_addr()), "large array: metadata and body address on different frames!"); }
+     if (DEBUG_INITIALIZE_ALLOCATIONS ||
+       (init && !ELIDE_INITIALIZE_ALLOCATIONS)) { memset((void*) base, 0x00, total_bytes + 8); }
+-    allot->set_header(arr_elt_map, gcglobals.current_subheap_hash);
++    allot->set_header(arr_elt_map, 0);
+     allot->set_num_elts(num_elts);
+     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
+     if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
+@@ -1217,7 +1227,7 @@
+              // TODO intrusive linked list of frames?
+     };
+     // 8 KB for 256-byte lines
+-    uint8_t linemap[IMMIX_F15_PER_F21][IMMIX_LINES_PER_BLOCK]; // # bytes needed for 256-byte lines
++    mark_t linemap[IMMIX_F15_PER_F21][IMMIX_LINES_PER_BLOCK]; // # bytes needed for 256-byte lines
+   };
+ 
+   // 16 KB: 64 * (32 KB / 16 B) = 64 * 2 K bits = 64 * 256 B = 16 KB
+@@ -1258,25 +1268,25 @@
+ }
+ 
+ 
+-uint8_t* linemap_for_frame15_id(frame15_id fid) {
++mark_t* linemap_for_frame15_id(frame15_id fid) {
+   auto mdb = metadata_block_for_frame15_id(fid);
+   return &mdb->linemap[frame15_id_within_f21(fid)][0];
+ }
+ 
+ 
+-uint8_t* get_frame_map(frame21_15_metadata_block* mdb) {
++mark_t* get_frame_map(frame21_15_metadata_block* mdb) {
+   return &mdb->linemap[0][0];
+ }
+ 
+-void mark_frame15_for_slot_with(void* slot, uint8_t value) {
+-  uint8_t* framemap = get_frame_map(metadata_block_for_slot(slot));
++void mark_frame15_for_slot_with(void* slot, mark_t value) {
++  mark_t* framemap = get_frame_map(metadata_block_for_slot(slot));
+   framemap[frame15_id_within_f21(frame15_id_of(slot))] = value;
+ }
+ 
+-void   mark_frame15_for_slot(void* slot) { mark_frame15_for_slot_with(slot, 1); }
++void   mark_frame15_for_slot(void* slot) { mark_frame15_for_slot_with(slot, make_mark_t(1)); }
+ void   mark_frame21_for_slot(void* slot) {
+-  uint8_t* framemap = get_frame_map(metadata_block_for_slot(slot));
+-  framemap[0] = 1;
++  mark_t* framemap = get_frame_map(metadata_block_for_slot(slot));
++  framemap[0] = make_mark_t(1);
+ }
+ void   mark_frame21_ool_for_slot(void* slot) {
+   gcglobals.lazy_mapped_coarse_marks[frameX_id_of(slot, COARSE_MARK_LOG)] = 1;
+@@ -1286,7 +1296,7 @@
+   gcglobals.lazy_mapped_coarse_marks[frameX_id_of(slot, COARSE_MARK_LOG)] = 0;
+ }
+ 
+-void unmark_frame15(frame15* f15) { mark_frame15_for_slot_with(f15, 0); }
++void unmark_frame15(frame15* f15) { mark_frame15_for_slot_with(f15, make_mark_t(0)); }
+ void unmark_frame21(frame21* f21) { clear_linemap(get_frame_map(metadata_block_for_frame21(f21))); }
+ 
+ bool frame15_is_marked(frame15* f15) {
+@@ -1295,8 +1305,8 @@
+     return false;
+   }
+   if (MARK_FRAME21S) {
+-    uint8_t* framemap = get_frame_map(metadata_block_for_slot(f15));
+-    if (framemap[0] == 0) { return false; }
++    mark_t* framemap = get_frame_map(metadata_block_for_slot(f15));
++    if (framemap[0].val == make_mark_t(0).val) { return false; }
+   }
+ 
+   return true;
+@@ -1308,10 +1318,10 @@
+   if (MARK_FRAME21S_OOL) {
+     return gcglobals.lazy_mapped_coarse_marks[frameX_id_of(f21, COARSE_MARK_LOG)] == 1;
+   } else if (MARK_FRAME21S) {
+-    uint8_t* framemap = get_frame_map(metadata_block_for_frame21(f21));
+-    return framemap[0] == 1;
++    mark_t* framemap = get_frame_map(metadata_block_for_frame21(f21));
++    return framemap[0].val == make_mark_t(1).val;
+   } else if (false) { // marking frame15s
+-    uint8_t* framemap = get_frame_map(metadata_block_for_frame21(f21));
++    mark_t* framemap = get_frame_map(metadata_block_for_frame21(f21));
+     uint64_t* fm64 = (uint64_t*) framemap;
+     uint64_t frame_bits = (fm64[0] | fm64[1])
+                         | (fm64[2] | fm64[3])
+@@ -1322,7 +1332,7 @@
+ }
+ 
+ void used_linegroup::clear_line_and_object_mark_bits() {
+-  uint8_t* linemap = linemap_for_frame15_id(associated_frame15_id());
++  mark_t* linemap = linemap_for_frame15_id(associated_frame15_id());
+   auto lineframe = associated_lineframe();
+ 
+   gc_assert(startline() != endline(), "used linegroup had same start and end line...?");
+@@ -1363,7 +1373,7 @@
+       arr = heap_array::from_heap_cell(cell);
+     }
+   }
+-  
++
+   // {{{
+   if (!map) {
+     cell_size = cell->cell_size();
+@@ -1405,14 +1415,14 @@
+ 
+ void mark_line_for_slot(void* slot) {
+   auto mdb = metadata_block_for_frame15_id(frame15_id_of(slot));
+-  uint8_t* linemap = &mdb->linemap[0][0];
++  mark_t* linemap = &mdb->linemap[0][0];
+   do_mark_line(line_offset_within_f21(slot), linemap);
+ }
+ 
+ // Precondition: slot is located in a markable frame.
+ bool line_for_slot_is_marked(void* slot) {
+   auto mdb = metadata_block_for_frame15_id(frame15_id_of(slot));
+-  uint8_t* linemap = &mdb->linemap[0][0];
++  mark_t* linemap = &mdb->linemap[0][0];
+   return line_is_marked(line_offset_within_f21(slot), linemap);
+ }
+ 
+@@ -1420,7 +1430,7 @@
+ // therefore slot and lastslot guaranteed to be in the same frame.
+ void mark_lines_for_slots(void* slot, uint64_t cell_size) {
+   auto mdb = metadata_block_for_frame15_id(frame15_id_of(slot));
+-  uint8_t* linemap = &mdb->linemap[0][0];
++  mark_t* linemap = &mdb->linemap[0][0];
+ 
+   void* lastslot = offset(slot, cell_size);
+ 
+@@ -1432,9 +1442,9 @@
+ 
+   if (GCLOG_DETAIL > 3) { fprintf(gclog, "marking lines %lu - %lu for slot %p of size %zd\n", firstoff, lastoff, slot, cell_size); }
+ 
+-  linemap[firstoff] = 1;
++  linemap[firstoff] = make_mark_t(1);
+   // Exact marking for small objects
+-  linemap[lastoff] = 1;
++  linemap[lastoff] = make_mark_t(1);
+ 
+   // Interestingly, this gets *slower* if we remove the line above!
+   // Why? Without it, Clang is smart enough to recognize a memset-like loop,
+@@ -1443,7 +1453,7 @@
+ 
+   // Mark intermediate lines if necessary.
+   while (++firstoff < lastoff) {
+-    linemap[firstoff] = 1;
++    linemap[firstoff] = make_mark_t(1);
+   }
+ }
+ 
+@@ -1457,13 +1467,7 @@
+ // regular and line-based immix frames.
+ struct immix_common {
+ 
+-  uintptr_t prevent_constprop;
+-
+-  immix_common() : prevent_constprop(0) {}
+-
+-  // As of LLVM 5.0, passing a constant (or nothing at all) actually ends up increasing (!)
+-  // register pressure, resulting in a net extra instruction in the critical path of allocation.
+-  uintptr_t prevent_const_prop() { return prevent_constprop; }
++  immix_common() {}
+ 
+   template <condemned_set_status condemned_portion>
+   void* evac_with_map_and_arr(heap_cell* cell, const typemap& map,
+@@ -1535,7 +1539,7 @@
+     if (GCLOG_DETAIL > 3) {
+       fprintf(gclog, "scanning cell %p for space %p with remaining depth %d\n", cell, space, depth_remaining);
+       fflush(gclog); }
+-    if (obj_is_marked(cell)) {
++    if (obj_in_space_is_marked(space, cell)) {
+       if (GC_ASSERTIONS) {
+         if (gcglobals.marked_in_current_gc.count(cell) == 0) {
+           fprintf(gclog, "GC INVARIANT VIOLATED: cell %p, of frame %u, appears marked before actually being marked!\n", cell, frame15_id_of(cell));
+@@ -2094,18 +2098,18 @@
+ 
+   void* line_allocate_array(immix_line_space* owner, typemap* elt_typeinfo, int64_t n, int64_t req_bytes, bool init) {
+     ensure_sufficient_lines(owner, req_bytes);
+-    return helpers::allocate_array_prechecked(&current_frame->line_bumper, elt_typeinfo, n, req_bytes, gcglobals.current_subheap_hash, init);
++    return helpers::allocate_array_prechecked(&current_frame->line_bumper, elt_typeinfo, n, req_bytes, 0, init);
+   }
+ 
+   void* line_allocate_cell(immix_line_space* owner, int64_t cell_size, typemap* typeinfo) {
+     ensure_sufficient_lines(owner, cell_size);
+-    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, gcglobals.current_subheap_hash);
++    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, 0);
+   }
+ 
+   template <uint64_t cell_size>
+   void* line_allocate_cell_N(immix_line_space* owner, typemap* typeinfo) {
+     ensure_sufficient_lines(owner, cell_size);
+-    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, gcglobals.current_subheap_hash);
++    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, 0);
+   }
+ 
+   bool owns(immix_line_frame15* f) { return f == current_frame; }
+@@ -2332,7 +2336,7 @@
+       int startline = usedgroup.startline();
+       int endline   = usedgroup.endline();
+ 
+-      uint8_t* linemap = linemap_for_frame15_id(usedgroup.associated_frame15_id());
++      mark_t* linemap = linemap_for_frame15_id(usedgroup.associated_frame15_id());
+ 
+       //fprintf(gclog, "immix_sweep processing group from lines %d to %d for frame (%u)\n",
+       //  startline, endline, frame15_id_of(usedgroup.base));
+@@ -2341,7 +2345,7 @@
+       // we append one line at a time, in order, and let the helper do the merging.
+       for (int i = startline; i < endline; ++i) {
+         //fprintf(gclog, "looking at linemap entry %d for (%u)\n", i, usedgroup.associated_frame15_id());
+-        if (linemap[i]) {
++        if (linemap[i].val == make_mark_t(1).val) {
+           //fprintf(gclog, "immix_sweep for %p: line %d marked\n", usedgroup.base, i);
+           append_linegroup(used_lines, usedgroup.singleton(i - startline));
+         } else {
+@@ -2362,7 +2366,6 @@
+   }
+ 
+   virtual void remember_into(void** slot) {
+-    //frames_pointing_here.insert(frame15_id_of((void*) slot));
+     incoming_ptr_addrs.insert((tori**) slot);
+   }
+ 
+@@ -2504,6 +2507,8 @@
+       } else {
+         gcglobals.evac_threshold = 0;
+       }
++
++      fprintf(gclog, "last full fragmentation percentage: %f; evac threshold: %d\n", gcglobals.last_full_gc_fragmentation_percentage, gcglobals.evac_threshold);
+     }
+ 
+     global_immix_line_allocator.realign_and_split_line_bumper();
+@@ -2742,6 +2747,29 @@
+       //   * Allocation in A puts an arbitrary bit pattern in B's referent
+       //     (especially the header/typemap)
+       //   * Single-subheap GC of A follows the remset entry for B and goes off the rails.
++      //
++      // TODO with evacuation, what about the following case:
++      //   * Object X stored in slot Y, so X's space records slot Y in its remset.
++      //   * The object containing slot Y is evacuated; Y is unmarked and becomes dead.
++      //      Assuming evacuation does not apply write barriers, X's remset now ignores the
++      //      updated copy of Y.
++      //   * Allocation in Y's space puts an arbitrary bit pattern in slot Y ('s metadata).
++      //   * Single-subheap GC of X follows the old remset entry for Y and goes off the rails.
++      //    Here, the best fix is probably to leverage our Immix machinery and pin remembered lines.
++      //      In Darko's setting, pinning is not an option so remset machinery must be fancier.
++      //    (This case due/thanks to p. 37 of Darko's dissertation).
++      //
++      // TODO interesting future work would be to devise a scheme for mapping subheap operations
++      // from source code to a Merlin-style GC trace. Probably not too hard if we can regenerate
++      // the trace from a modified VM (note the VM doesn't need to implement subheap operations,
++      // merely record their location in the trace). There is an issue of granularity: traces are
++      // often relatively coarse, whereas subheaps rely quite heaviliy on very precise timing.
++      //
++      // TODO perhaps Darko's "demise points" graphs could help identify opportunities for subheaps?
++      //
++      // TODO p. 292 of Darko notes that more frequent collections are sometimes faster.
++      // TODO Tree-Replace-Binary and Tree-Replace-Random benchmarks are bad for generational,
++      //        good for older-first... how about ImmixRC??
+       gcglobals.default_allocator->trim_remset();
+       for (auto handle : subheap_handles) {
+         handle->body->trim_remset();
+@@ -2786,26 +2814,26 @@
+ 
+ // Invariant: IMMIX_LINES_PER_BLOCK <= 256
+ // Invariant: marked lines have value 1, unmarked are 0.
+-uint8_t count_marked_lines_for_frame15(frame15* f15, uint8_t* linemap_for_frame) {
++uint8_t count_marked_lines_for_frame15(frame15* f15, mark_t* linemap_for_frame) {
+   uint8_t count = 0; // Note: Clang compiles this to straight-line code using vector ops.
+   if (frame15_is_marked(f15)) { // TODO-X
+-    for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { count += linemap_for_frame[i]; }
++    for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { count += (linemap_for_frame[i].val == make_mark_t(1).val) ? 1 : 0; }
+   }
+   return count;
+ }
+ 
+-bool no_marked_lines_for_frame15(uint8_t* linemap_for_frame) {
++bool no_marked_lines_for_frame15(mark_t* linemap_for_frame) {
+   uint64_t* linemap64 = (uint64_t*) linemap_for_frame;
+   uint64_t bits = 0; // Note: Clang compiles this to straight-line code using "or"s.
+   for (int i = 0; i < (IMMIX_LINES_PER_BLOCK / sizeof(*linemap64)); ++i) { bits |= linemap64[i]; }
+   return bits == 0;
+ }
+ 
+-uint8_t count_holes_in_linemap_for_frame15(uint8_t* linemap_for_frame) {
++uint8_t count_holes_in_linemap_for_frame15(mark_t* linemap_for_frame) {
+   uint8_t numTransitions = 0;
+-  uint8_t currentState = linemap_for_frame[0];
++  mark_t currentState = linemap_for_frame[0];
+   for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) {
+-    if (linemap_for_frame[i] != currentState) {
++    if (linemap_for_frame[i].val != currentState.val) {
+       ++numTransitions;
+       currentState = linemap_for_frame[i];
+     }
+@@ -2813,13 +2841,13 @@
+ 
+   // ddddddddddd : 0 holes, 0 transitions
+   // ___________ : 1 hole,  0 transitions
+-  if (numTransitions == 0) return 1 - currentState; // _ = 0 = unmarked = hole
++  if (numTransitions == 0) return 1 - currentState.val; // _ = 0 = unmarked = hole
+ 
+   // ddd________ : 1 hole,  1 transition
+   // ddd_____ddd : 1 hole,  2 transitions
+   // ____ddd____ : 2 holes, 2 transitions
+   // ____ddd__dd : 2 holes, 3 transitions
+-  return numTransitions - (currentState == 1);
++  return numTransitions - (currentState.val == make_mark_t(1).val);
+ }
+ 
+ 
+@@ -2827,7 +2855,7 @@
+ bool is_linemap15_clear(frame15* f15) {
+   if (!frame15_is_marked(f15)) return true;
+ 
+-  uint8_t* linemap = linemap_for_frame15_id(frame15_id_of(f15));
++  mark_t* linemap = linemap_for_frame15_id(frame15_id_of(f15));
+   return no_marked_lines_for_frame15(linemap);
+ }
+ 
+@@ -2912,11 +2940,11 @@
+   // {{{ Prechecked allocation functions
+   template <int N>
+   tidy* allocate_cell_prechecked_N(const typemap* map) {
+-    return helpers::allocate_cell_prechecked(&small_bumper, map, N, gcglobals.current_subheap_hash);
++    return helpers::allocate_cell_prechecked(&small_bumper, map, N, 0);
+   }
+ 
+   tidy* allocate_cell_prechecked(const typemap* map) {
+-    return helpers::allocate_cell_prechecked(&small_bumper, map, map->cell_size, gcglobals.current_subheap_hash);
++    return helpers::allocate_cell_prechecked(&small_bumper, map, map->cell_size, 0);
+   }
+   // }}}
+ 
+@@ -3025,7 +3053,7 @@
+       gcglobals.evac_threshold = 0;
+       return false;
+     }
+-    
++
+     tracking.add_frame15(f);
+     set_parent_for_frame(this, f);
+     small_bumper.base  = realigned_for_allocation(f);
+@@ -3034,7 +3062,7 @@
+   }
+ 
+   tidy* defrag_copy_cell(heap_cell* cell, typemap* map, int64_t cell_size) {
+-    tidy* newbody = helpers::allocate_cell_prechecked(&small_bumper, map, cell_size, common.prevent_const_prop());
++    tidy* newbody = helpers::allocate_cell_prechecked(&small_bumper, map, cell_size, this->hash_for_object_headers());
+     heap_cell* mcell = heap_cell::for_tidy(newbody);
+     memcpy(mcell, cell, map->cell_size);
+     cell->set_forwarded_body(newbody);
+@@ -3051,7 +3079,7 @@
+ 
+   heap_array* defrag_copy_array(typemap* map, heap_array* arr, int64_t req_bytes) {
+     bool init = false;
+-    tidy* newbody = helpers::allocate_array_prechecked(&small_bumper, map, arr->num_elts(), req_bytes, gcglobals.current_subheap_hash, init);
++    tidy* newbody = helpers::allocate_array_prechecked(&small_bumper, map, arr->num_elts(), req_bytes, 0, init);
+     heap_array* marr = heap_array::from_heap_cell(heap_cell::for_tidy(newbody));
+     memcpy(marr->elt_body(0, 0), arr->elt_body(0, 0), map->cell_size * arr->num_elts());
+     arr->set_forwarded_body(newbody);
+@@ -3157,7 +3185,7 @@
+ 
+   void* allocate_array_into_bumper(bump_allocator* bumper, typemap* elt_typeinfo, int64_t n, int64_t req_bytes, bool init) {
+     if (try_establish_alloc_precondition(bumper, req_bytes)) {
+-      return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, init, gcglobals.current_subheap_hash);
++      return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, init, 0);
+     } else {
+       if (GCLOG_DETAIL > 2) { fprintf(gclog, "allocate_array_into_bumper triggering immix gc\n"); }
+       {
+@@ -3168,7 +3196,7 @@
+       if (try_establish_alloc_precondition(bumper, req_bytes)) {
+         //fprintf(gclog, "gc collection freed space for array, now have %lld\n", curr->free_size());
+         //fflush(gclog);
+-        return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, init, gcglobals.current_subheap_hash);
++        return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, init, 0);
+       } else { helpers::oops_we_died_from_heap_starvation(); return NULL; }
+     }
+   }
+@@ -3318,13 +3346,13 @@
+ 
+   bool inspect_frame15_postgc(frame15_id fid, frame15* f15) {
+     // TODO-X benchmark impact of using frame15_is_marked
+-    uint8_t* linemap = linemap_for_frame15_id(fid);
++    mark_t* linemap = linemap_for_frame15_id(fid);
+     int num_marked_lines = count_marked_lines_for_frame15(f15, linemap);
+     gcglobals.lines_live_at_whole_heap_gc += num_marked_lines;
+     
+     if (GCLOG_DETAIL > 2) {
+       fprintf(gclog, "frame %u: ", fid);
+-      for(int i = 0;i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", (linemap[i] == 0) ? '_' : 'd'); }
++      for(int i = 0;i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", (linemap[i].val == make_mark_t(0).val) ? '_' : 'd'); }
+       fprintf(gclog, "\n");
+     }
+ 
+@@ -3774,6 +3802,7 @@
+   //gcglobals.lazy_mapped_frame15info_associated  = allocate_lazily_zero_mapped<void*>(      size_t(1) << (address_space_prefix_size_log() - 15));
+   //
+   gcglobals.lazy_mapped_granule_marks           = allocate_lazily_zero_mapped<uint8_t>(lazy_mapped_granule_marks_size()); // byte marks
++  gcglobals.lazy_mapped_frame_mark_pattern      = allocate_lazily_zero_mapped<uint8_t>(         size_t(1) << (address_space_prefix_size_log() - 15)); // 4 GB, lazily mapped
+ 
+   gcglobals.gc_time_us = 0.0;
+   gcglobals.num_gcs_triggered = 0;
+@@ -4086,6 +4115,10 @@
+     auto s = foster::humanize_s(gcglobals.num_closure_calls, "");
+     fprintf(gclog, "'Num_Closure_Calls': %s\n", s.c_str());
+   }
++  {
++    auto s = foster::humanize_s(gcglobals.num_objects_marked_total, "");
++    fprintf(gclog, "'Num_Objs_Marked': %s\n", s.c_str());
++  }
+ 
+   //fprintf(gclog, "sizeof immix_space: %lu\n", sizeof(immix_space));
+   //fprintf(gclog, "sizeof immix_line_space: %lu\n", sizeof(immix_line_space));
+diff --git a/runtime/gc/foster_gc_utils.h b/runtime/gc/foster_gc_utils.h
+--- a/runtime/gc/foster_gc_utils.h
++++ b/runtime/gc/foster_gc_utils.h
+@@ -73,6 +73,8 @@
+   return val == ((val >> n) << n);
+ }
+ 
++NEWTYPE(mark_t, uint8_t);
++
+ // 4-byte alignment required for typeinfo structs.
+ const uint64_t HEADER_MARK_BITS = 0x01; // 0b000..00001
+ const uint64_t FORWARDED_BIT    = 0x02; // 0b000..00010
+diff --git a/scripts/fosterc b/scripts/fosterc
+--- a/scripts/fosterc
++++ b/scripts/fosterc
+@@ -21,5 +21,5 @@
+ echo ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} --cxxpath $(cxxpath) $@ $MAYBE_OUT
+ ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} --cxxpath $(cxxpath) $@ $MAYBE_OUT
+ 
+-rm -f meGCstats.txt
+-rm -rf ${TMPDIR} $1.postopt.ll $1.preopt.ll
++#rm -f meGCstats.txt
++#rm -rf ${TMPDIR} $1.postopt.ll $1.preopt.ll

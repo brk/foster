@@ -1,0 +1,359 @@
+# HG changeset patch
+# Parent  b568778a31e804de4b7e19f44c9cb79f2bea1c1c
+Snapshot v1.
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -38,7 +38,7 @@
+ #define GCLOG_DETAIL 0
+ #define ENABLE_LINE_GCLOG 0
+ #define ENABLE_GCLOG_PREP 0
+-#define ENABLE_GCLOG_ENDGC 1
++#define ENABLE_GCLOG_ENDGC 0
+ #define PRINT_STDOUT_ON_GC 0
+ #define FOSTER_GC_TRACK_BITMAPS       0
+ #define FOSTER_GC_ALLOC_HISTOGRAMS    0
+@@ -613,15 +613,8 @@
+ void set_associated_for_frame15_id(frame15_id fid, void* v) {
+   gcglobals.lazy_mapped_frame15info[fid].associated = v;
+ }
+-frame15kind frame15_classification(void* addr);
+ 
+ inline uint8_t get_obj_mark_value(void* obj) {
+-  /*
+-  if (frame15_classification(obj) != frame15kind::unknown) {
+-    return heap_cell::for_tidy((tidy*) obj)->mark_value();
+-  }
+-  */
+-
+   if (MARK_OBJECT_WITH_BITS) {
+     return bitmap::get_bit(global_granule_for(obj), gcglobals.lazy_mapped_granule_marks);
+   } else {
+@@ -633,16 +626,10 @@
+   return get_obj_mark_value(obj) == value.val;
+ }
+ 
++frame15kind frame15_classification(void* addr);
+ immix_heap* heap_for(void* val);
+ 
+ inline void do_mark_obj_with(void* obj, mark_t value) {
+-  /*
+-  if (frame15_classification(obj) != frame15kind::unknown) {
+-    heap_cell::for_tidy((tidy*) obj)->set_mark_value(value);
+-    return;
+-  }
+-  */
+-
+   if (GCLOG_DETAIL > 3) { fprintf(gclog, "setting granule bit  for object %p in frame %u\n", obj, frame15_id_of(obj)); }
+   if (MARK_OBJECT_WITH_BITS) {
+     bitmap::set_bit_to(global_granule_for(obj), value.val, gcglobals.lazy_mapped_granule_marks);
+@@ -655,7 +642,6 @@
+   do_mark_obj_with(obj, invert_mark(make_mark_t(get_obj_mark_value(obj))));
+ }
+ 
+-#if 1
+ void set_object_mark_bits_for_frame15(void* f15, mark_t value) {
+   if (GCLOG_DETAIL > 2) { fprintf(gclog, "clearing granule bits for frame %p (%u)\n", f15, frame15_id_of(f15)); }
+   if (MARK_OBJECT_WITH_BITS) {
+@@ -664,7 +650,6 @@
+     memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)], value.val, IMMIX_GRANULES_PER_BLOCK);
+   }
+ }
+-#endif
+ 
+ void set_object_mark_bits_for_frame15(void* f15, int startline, int numlines, mark_t value) {
+   uintptr_t granule = global_granule_for(offset(f15, startline * IMMIX_BYTES_PER_LINE));
+@@ -676,8 +661,9 @@
+   }
+ }
+ 
+-bool line_is_marked_with(int line, mark_t* linemap, mark_t value) { return linemap[line].val == value.val; }
+-void do_mark_line_with(  int line, mark_t* linemap, mark_t value) {        linemap[line].val  = value.val; }
++bool line_is_marked_with(  int line, mark_t* linemap, mark_t value) { return linemap[line].val == value.val; }
++
++void do_mark_line_with(int line, mark_t* linemap, mark_t value) { linemap[line].val = value.val; }
+ 
+ //static_assert(sizeof(frame15info) == 16, "expect frame15info to be two words");
+ 
+@@ -705,12 +691,11 @@
+                        immix_heap* parent) {
+     void* base = malloc(total_bytes + 8);
+     heap_array* allot = align_as_array(base);
+-    //do_mark_obj_with(allot, invert_mark(parent->active_mark));
+ 
+     if (GC_ASSERTIONS) { gc_assert(frame15_id_of(allot) == frame15_id_of(allot->body_addr()), "large array: metadata and body address on different frames!"); }
+     if (DEBUG_INITIALIZE_ALLOCATIONS ||
+       (init && !ELIDE_INITIALIZE_ALLOCATIONS)) { memset((void*) base, 0x00, total_bytes + 8); }
+-    allot->set_header(arr_elt_map, 0); // TODO
++    allot->set_header(arr_elt_map, 0);
+     allot->set_num_elts(num_elts);
+     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
+     if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
+@@ -905,10 +890,8 @@
+                                   int64_t  num_elts,
+                                   int64_t  total_bytes,
+                                   uint32_t space_id,
+-                                  bool     init,
+-                                  mark_t   m) {
++                                  bool     init) {
+     heap_array* allot = static_cast<heap_array*>(bumper->prechecked_alloc_noinit(total_bytes));
+-    //do_mark_obj_with(allot, m);
+ 
+     if (GC_ASSERTIONS) { gc_assert(frame15_id_of(allot) == frame15_id_of(allot->body_addr()), "pre array: metadata and body address on different frames!"); }
+     if (DEBUG_INITIALIZE_ALLOCATIONS ||
+@@ -955,10 +938,8 @@
+   tidy* allocate_cell_prechecked(bump_allocator* bumper,
+                                  const typemap* map,
+                                  int64_t  cell_size,
+-                                 mark_t   m,
+                                  uint32_t space_id) {
+     heap_cell* allot = static_cast<heap_cell*>(bumper->prechecked_alloc(cell_size));
+-    //do_mark_obj_with(allot, m);
+ 
+     if (GC_ASSERTIONS) { gc_assert(frame15_id_of(allot) == frame15_id_of(allot->body_addr()), "cell prechecked: metadata and body address on different frames!"); }
+     //if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(map->cell_size); }
+@@ -990,7 +971,7 @@
+   }
+ 
+   bool remset_entry_is_externally_stale(tori** slot) {
+-    return !line_for_slot_is_marked_with(slot, make_mark_t(1));
++    return !line_for_slot_is_marked_with(slot, heap_for(slot)->active_mark);
+   }
+ 
+   bool remset_entry_is_internally_stale(tori** slot) {
+@@ -1006,7 +987,6 @@
+            line_for_slot_is_marked(cell), obj_is_marked(cell)); fflush(gclog);
+            */
+     if (!obj_is_marked_with(cell, heap_for(cell)->active_mark)) { return true; }
+-    //if (!obj_is_marked_with(cell, make_mark_t(1))) { return true; }
+     // TODO check to make sure that the space ownership hasn't changed?
+     return false;
+   }
+@@ -1558,7 +1538,6 @@
+       fprintf(gclog, "scanning cell %p for space %p with remaining depth %d\n", cell, space, depth_remaining);
+       fflush(gclog); }
+     if (obj_is_marked_with(cell, space->active_mark)) {
+-    //if (obj_is_marked_with(cell, make_mark_t(1))) {
+       if (GC_ASSERTIONS) {
+         if (gcglobals.marked_in_current_gc.count(cell) == 0) {
+           fprintf(gclog, "GC INVARIANT VIOLATED: cell %p, of frame %u, appears marked before actually being marked!\n", cell, frame15_id_of(cell));
+@@ -1590,14 +1569,13 @@
+ 
+     if (GC_ASSERTIONS) { gcglobals.marked_in_current_gc.insert(cell); }
+     do_mark_obj_with(cell, space->active_mark);
+-    //do_mark_obj_with(cell, make_mark_t(1));
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += cell_size; }
+ 
+     if (frameclass == frame15kind::immix_smallmedium
+      || frameclass == frame15kind::immix_linebased) {
+         void* slot = (void*) cell;
+-        mark_lines_for_slots_with(slot, cell_size, make_mark_t(1));
++        mark_lines_for_slots_with(slot, cell_size, space->active_mark);
+     } else if (frameclass == frame15kind::unknown || frameclass == frame15kind::staticdata) {
+       gcglobals.condemned_set.unframed_and_marked.insert(cell);
+     }
+@@ -2120,19 +2098,18 @@
+ 
+   void* line_allocate_array(immix_line_space* owner, typemap* elt_typeinfo, int64_t n, int64_t req_bytes, bool init) {
+     ensure_sufficient_lines(owner, req_bytes);
+-    return helpers::allocate_array_prechecked(&current_frame->line_bumper, elt_typeinfo, n, req_bytes, 0, init,
+-                                              invert_mark(((immix_heap*)owner)->active_mark));
++    return helpers::allocate_array_prechecked(&current_frame->line_bumper, elt_typeinfo, n, req_bytes, 0, init);
+   }
+ 
+   void* line_allocate_cell(immix_line_space* owner, int64_t cell_size, typemap* typeinfo) {
+     ensure_sufficient_lines(owner, cell_size);
+-    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, invert_mark(((immix_heap*)owner)->active_mark), 0);
++    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, 0);
+   }
+ 
+   template <uint64_t cell_size>
+   void* line_allocate_cell_N(immix_line_space* owner, typemap* typeinfo) {
+     ensure_sufficient_lines(owner, cell_size);
+-    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, invert_mark(((immix_heap*)owner)->active_mark), 0);
++    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, 0);
+   }
+ 
+   bool owns(immix_line_frame15* f) { return f == current_frame; }
+@@ -2371,7 +2348,7 @@
+       // we append one line at a time, in order, and let the helper do the merging.
+       for (int i = startline; i < endline; ++i) {
+         //fprintf(gclog, "looking at linemap entry %d for (%u)\n", i, usedgroup.associated_frame15_id());
+-        if (linemap[i].val == 1) {
++        if (linemap[i].val == this->active_mark.val) {
+           //fprintf(gclog, "immix_sweep for %p: line %d marked\n", usedgroup.base, i);
+           append_linegroup(used_lines, usedgroup.singleton(i - startline));
+         } else {
+@@ -2841,10 +2818,10 @@
+ 
+ // Invariant: IMMIX_LINES_PER_BLOCK <= 256
+ // Invariant: marked lines have value 1, unmarked are 0.
+-uint8_t count_marked_lines_for_frame15(frame15* f15, mark_t* linemap_for_frame) {
++uint8_t count_marked_lines_for_frame15(frame15* f15, mark_t* linemap_for_frame, mark_t active_mark) {
+   uint8_t count = 0; // Note: Clang compiles this to straight-line code using vector ops.
+   if (frame15_is_marked(f15)) { // TODO-X
+-    for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { count += linemap_for_frame[i].val; }
++    for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { count += (linemap_for_frame[i].val == active_mark.val) ? 1 : 0; }
+   }
+   return count;
+ }
+@@ -2978,11 +2955,11 @@
+   // {{{ Prechecked allocation functions
+   template <int N>
+   tidy* allocate_cell_prechecked_N(const typemap* map) {
+-    return helpers::allocate_cell_prechecked(&small_bumper, map, N, invert_mark(this->active_mark), 0);
++    return helpers::allocate_cell_prechecked(&small_bumper, map, N, 0);
+   }
+ 
+   tidy* allocate_cell_prechecked(const typemap* map) {
+-    return helpers::allocate_cell_prechecked(&small_bumper, map, map->cell_size, invert_mark(this->active_mark), 0);
++    return helpers::allocate_cell_prechecked(&small_bumper, map, map->cell_size, 0);
+   }
+   // }}}
+ 
+@@ -3084,7 +3061,7 @@
+ 
+   bool can_alloc_for_defrag(int64_t needed_bytes) {
+     if (small_bumper.size() >= needed_bytes) return true;
+-
++    
+     frame15* f = global_frame15_allocator.try_get_frame15_for_defrag();
+     if (!f) {
+       // Make sure we short-circuit further attempts to defrag.
+@@ -3100,8 +3077,7 @@
+   }
+ 
+   tidy* defrag_copy_cell(heap_cell* cell, typemap* map, int64_t cell_size) {
+-    tidy* newbody = helpers::allocate_cell_prechecked(&small_bumper, map, cell_size,
+-                                invert_mark(this->active_mark), this->hash_for_object_headers());
++    tidy* newbody = helpers::allocate_cell_prechecked(&small_bumper, map, cell_size, this->hash_for_object_headers());
+     heap_cell* mcell = heap_cell::for_tidy(newbody);
+     memcpy(mcell, cell, map->cell_size);
+     cell->set_forwarded_body(newbody);
+@@ -3111,14 +3087,14 @@
+     // is-forwarded check subsumes the obj_is_marked check.
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += cell_size; }
+-    mark_lines_for_slots_with(newbody, cell_size, make_mark_t(1));
++    mark_lines_for_slots_with(newbody, cell_size, this->active_mark);
+ 
+     return newbody;
+   }
+ 
+   heap_array* defrag_copy_array(typemap* map, heap_array* arr, int64_t req_bytes) {
+     bool init = false;
+-    tidy* newbody = helpers::allocate_array_prechecked(&small_bumper, map, arr->num_elts(), req_bytes, 0, init, invert_mark(this->active_mark));
++    tidy* newbody = helpers::allocate_array_prechecked(&small_bumper, map, arr->num_elts(), req_bytes, 0, init);
+     heap_array* marr = heap_array::from_heap_cell(heap_cell::for_tidy(newbody));
+     memcpy(marr->elt_body(0, 0), arr->elt_body(0, 0), map->cell_size * arr->num_elts());
+     arr->set_forwarded_body(newbody);
+@@ -3126,7 +3102,7 @@
+     //do_mark_obj(heap_cell::for_tidy(newbody));
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += req_bytes; }
+-    mark_lines_for_slots_with(newbody, req_bytes, make_mark_t(1));
++    mark_lines_for_slots_with(newbody, req_bytes, this->active_mark);
+     return marr;
+   }
+ 
+@@ -3224,7 +3200,7 @@
+ 
+   void* allocate_array_into_bumper(bump_allocator* bumper, typemap* elt_typeinfo, int64_t n, int64_t req_bytes, bool init) {
+     if (try_establish_alloc_precondition(bumper, req_bytes)) {
+-      return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, init, 0, invert_mark(this->active_mark));
++      return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, init, 0);
+     } else {
+       if (GCLOG_DETAIL > 2) { fprintf(gclog, "allocate_array_into_bumper triggering immix gc\n"); }
+       {
+@@ -3235,7 +3211,7 @@
+       if (try_establish_alloc_precondition(bumper, req_bytes)) {
+         //fprintf(gclog, "gc collection freed space for array, now have %lld\n", curr->free_size());
+         //fflush(gclog);
+-        return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, init, 0, invert_mark(this->active_mark));
++        return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, init, 0);
+       } else { helpers::oops_we_died_from_heap_starvation(); return NULL; }
+     }
+   }
+@@ -3304,9 +3280,6 @@
+     });
+     auto inspectFrame21Time_us = insp_ct.elapsed_us();
+ 
+-    //mark_t flipped = invert_mark(this->active_mark);
+-    //this->active_mark = flipped;
+-
+     auto deltaPostMarkingCleanup_us = phase.elapsed_us();
+ 
+ 
+@@ -3386,13 +3359,12 @@
+     }
+   }
+ 
+-  // Called via common_gc -> sweep_condemned -> immix_sweep
+   bool inspect_frame15_postgc(frame15_id fid, frame15* f15) {
+     // TODO-X benchmark impact of using frame15_is_marked
+     mark_t* linemap = linemap_for_frame15_id(fid);
+-    int num_marked_lines = count_marked_lines_for_frame15(f15, linemap);
++    int num_marked_lines = count_marked_lines_for_frame15(f15, linemap, this->active_mark);
+     gcglobals.lines_live_at_whole_heap_gc += num_marked_lines;
+-
++    
+     //if (GCLOG_DETAIL > 2) {
+     //  fprintf(gclog, "frame %u: ", fid);
+     //  for(int i = 0;i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", (linemap[i].val == make_mark_t(0).val) ? '_' : 'd'); }
+@@ -3420,11 +3392,11 @@
+     while (num_lines_to_process > 0) {
+       // At least one available line means this loop will terminate before cursor == 0
+       // Precondition: cursor is marked
+-      while (line_is_marked_with(cursor - 1, linemap, make_mark_t(1))) --cursor;
++      while (line_is_marked_with(cursor - 1, linemap, this->active_mark)) --cursor;
+       // Postcondition: cursor is marked; cursor - 1 is unmarked.
+       int rightmost_unmarked_line = --cursor;
+ 
+-      while (cursor >= 0 && !line_is_marked_with(cursor, linemap, make_mark_t(1))) --cursor;
++      while (cursor >= 0 && !line_is_marked_with(cursor, linemap, this->active_mark)) --cursor;
+       // Postcondition: line_is_marked(cursor), line_is_unmarked(cursor + 1), cursor >= -1
+       int leftmost_unmarked_line = cursor + 1;
+ 
+@@ -3456,8 +3428,9 @@
+     // Clear line and object mark bits.
+ 
+     int64_t t0 = __foster_getticks_start();
+-    memset(linemap, 0, IMMIX_LINES_PER_BLOCK);
+-    set_object_mark_bits_for_frame15(f15, invert_mark(this->active_mark));
++    mark_t flipped = invert_mark(this->active_mark);
++    memset(linemap, flipped.val, IMMIX_LINES_PER_BLOCK);
++    set_object_mark_bits_for_frame15(f15, flipped);
+     int64_t t1 = __foster_getticks_end();
+     gcglobals.resetting_ticks += __foster_getticks_elapsed(t0, t1);
+ 
+diff --git a/runtime/gc/foster_gc_utils.h b/runtime/gc/foster_gc_utils.h
+--- a/runtime/gc/foster_gc_utils.h
++++ b/runtime/gc/foster_gc_utils.h
+@@ -92,12 +92,12 @@
+ // Cell header layout:
+ //   [  space id (32 bits)  | RC (flex) (8 bits) | typemap* (24 bits) ]
+ //                                                                   ^
+-//            (when fwd unset)                          fwd bit
++//            (when fwd unset)                          fwd & mark bits
+ //
+ // U [        fwd ptr (64 bits, 8+ byte aligned)   when fwd bit set * ]
+ //
+ // Mark and forwarded bits are only set during collection;
+-// the mutator doesn't see them. Mark bits are stored out-of-line.
++// the mutator doesn't see them.
+ 
+ inline uint32_t space_id_of_header(uint64_t header) { return uint32_t(header >> uint64_t(32)); }
+ inline uint8_t  flex_bits_of_header(uint64_t header) { return uint8_t(header >> uint64_t(24)); }
+@@ -128,10 +128,6 @@
+     header = build_header(data, space_id);
+   }
+ 
+-  uint8_t mark_value() { return uint8_t(header & HEADER_MARK_BITS); }
+-  void set_mark_value(mark_t value) { header |= value.val; }
+-
+-
+   bool is_forwarded() { return (header & FORWARDED_BIT) != 0; }
+   void set_forwarded_body(tidy* newbody) {
+     header = HEAP_CELL_HEADER_TYPE(newbody) | FORWARDED_BIT;

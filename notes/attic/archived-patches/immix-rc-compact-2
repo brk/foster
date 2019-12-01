@@ -1,0 +1,353 @@
+# HG changeset patch
+# Parent  1a8db7d7b52bf1b95293da54b16c575d62f7fc11
+Make sure to update current coro slot when compacting.
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -1705,6 +1705,7 @@
+     // that (for performance) are not tracked by write barriers.
+     // TODO fix
+     foster_bare_coro* coro = reinterpret_cast<foster_bare_coro*>(cell->body_addr());
++    fprintf(gclog, "collecting roots from coro stack...\n");
+     collect_roots_from_stack_of_coro(coro);
+     fprintf(gclog, "for_each_child_slot noticed a coro object...\n");
+   }
+@@ -1783,6 +1784,7 @@
+ 
+     for_each_child_slot_with(cell, arr, map, cell_size, [](intr* slot) {
+       if (!non_markable_addr(* (void**)slot)) {
++        //fprintf(gclog, "adding field slot %p to worklist\n", slot);
+         immix_worklist.add_root((unchecked_ptr*) slot);
+       }
+     });
+@@ -1849,6 +1851,7 @@
+     }
+ 
+     if (!non_markable_addr(unchecked_ptr_val(*root))) {
++      fprintf(gclog, "adding root slot %p to worklist\n", root);
+       immix_worklist.add_root(root);
+     }
+   }
+@@ -2640,8 +2643,9 @@
+     default: return '+';
+   }
+ }
++uint8_t count_marked_lines_for_frame15(frame15* f15, uint8_t* linemap_for_frame);
+ 
+ void show_linemap_for_frame15(frame15_id fid) {
+   uint8_t* linemap = linemap_for_frame15_id(fid);
+   fprintf(gclog, "frame %u: ", fid);
+   for(int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap_code(linemap[i])); }
+@@ -2643,8 +2647,17 @@
+ 
+ void show_linemap_for_frame15(frame15_id fid) {
+   uint8_t* linemap = linemap_for_frame15_id(fid);
+   fprintf(gclog, "frame %u: ", fid);
+   for(int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap_code(linemap[i])); }
++
++  fprintf(gclog, "  |");
++  int byte_residency_out_of_32 = int((double(gcglobals.lazy_mapped_frame_liveness[fid]) / 32768.0) * 32.0);
++  int num_marked_lines = count_marked_lines_for_frame15(frame15_for_frame15_id(fid), linemap);
++  int line_residency_out_of_32 = num_marked_lines / 4;
++  for (int i = 31; i >= 0; --i) {
++    fprintf(gclog, (i < byte_residency_out_of_32) ? "-" :
++                  ((i < line_residency_out_of_32) ? "=" : " ")); }
++  fprintf(gclog, "|");
+   fprintf(gclog, "\n");
+ }
+ 
+@@ -2702,6 +2715,8 @@
+         // Sticky immix evacuates old and new objects from examined frames based on
+         // liveness collected from previous marking passes; in contrast, in RC mode
+         // we can only move _new_ objects.
++        //fprintf(gclog, "trying OE for cell %p\n", cell);
++        //fprintf(gclog, "            header %zx\n", cell->raw_header());
+         if (auto newcell = try_opportunistic_evacuation_rc(cell)) {
+           // Old cell has been forwarded by evacuation.
+           *slot = (void*) newcell->body_addr(); // Update source with new object location.
+@@ -2749,6 +2764,7 @@
+     // Increment the root set's counts.
+     for (auto rootslot : immix_worklist.roots) {
+       if (is_rc_able(untag(*rootslot))) {
++        //fprintf(gclog, "incrementing the contents (%p) of root slot %p\n", *(void**)rootslot, rootslot);
+         rc_increment((void**)rootslot);
+       }
+     }
+@@ -2760,6 +2776,7 @@
+       auto slot = gcglobals.arrbuf.back(); gcglobals.arrbuf.pop_back();
+       ++modbuf_entries_processed;
+       if (is_rc_able(*slot)) {
++        //fprintf(gclog, "incrementing the contents (%p) of arrbuf slot %p\n", *slot, slot);
+         rc_increment( slot);
+       }
+     }
+@@ -2767,5 +2784,6 @@
+     while (!gcglobals.incbuf.empty()) {
+       auto cell = gcglobals.incbuf.back(); gcglobals.incbuf.pop_back();
+       ++modbuf_entries_processed;
++         //fprintf(gclog, "incrementing the fields of cell %p\n", cell);
+       for_each_child_slot(cell, [](intr* slot) {
+         if (is_rc_able(* (void**)slot)) {
+@@ -2770,5 +2788,6 @@
+       for_each_child_slot(cell, [](intr* slot) {
+         if (is_rc_able(* (void**)slot)) {
++          //fprintf(gclog, "incrementing the contents (%p) of incbuf'd field %p\n", *(void**)slot, slot);
+           rc_increment(  (void**)slot);
+         }
+       });
+@@ -2838,7 +2857,7 @@
+   uintptr_t ga = global_granule_for(addr);
+   uintptr_t gb = global_granule_for(sliver_addr(sliver_id_of(addr)));
+   uint64_t sum = 0;
+-  // This loop can execute up to 2048 iterations -- 1024 on average...
++  // This loop can execute up to 64 iterations -- 32 on average...
+   for (auto i = gb; i < ga; ++i) { sum += gcglobals.lazy_mapped_granule_marks[i] & 0x7F; }
+   return sum * 16;
+ }
+@@ -2932,7 +2951,7 @@
+ 
+ void do_compactify_via_granule_marks(immix_space* default_subheap);
+ 
+-void do_cycle_collection(immix_heap* active_space, clocktimer<false>& phase, clocktimer<false>& gcstart,
++int64_t do_cycle_collection(immix_heap* active_space, clocktimer<false>& phase, clocktimer<false>& gcstart,
+                          bool should_compact, immix_common* common) {
+   // Because we're tracing and will re-establish object RC values, we need not process inc/decs.
+   // However, we do need to unset the logged bit from logged objects.
+@@ -2968,6 +2987,7 @@
+   fprintf(gclog, "Cycle collection: %.1f us to reset marks; %.1f us to trace the heap; %.1f us to sweep\n",
+       resettingMarkBits_us, deltaRecursiveMarking_us, sweep_us);
+   fprintf(gclog, "       %.1f us total   (%.1f ns/line) [compact? %d]\n", total_us, (total_us * 1000.0) / double(num_lines_reclaimed), should_compact);
++  return num_lines_reclaimed;
+ }
+ 
+ template <condemned_set_status condemned_status>
+@@ -3136,5 +3156,5 @@
+       //gcglobals.evac_disabled = false;
+       bool should_compact = gcglobals.last_full_gc_fragmentation_percentage > 0.0 &&
+                             gcglobals.last_full_gc_fragmentation_percentage <= 55.0;
+-      do_cycle_collection(active_space, phase, gcstart, should_compact, this);
++      auto num_lines_reclaimed = do_cycle_collection(active_space, phase, gcstart, should_compact, this);
+       auto bytes_marked = gcglobals.alloc_bytes_marked_total - bytes_marked_at_start;
+@@ -3140,3 +3160,5 @@
+       auto bytes_marked = gcglobals.alloc_bytes_marked_total - bytes_marked_at_start;
+-      fprintf(gclog, "occupancy: %.1f%% (%zd bytes marked)\n",
++      auto bytes_used = global_frame15_allocator.heap_size_in_bytes() -
++                        (num_lines_reclaimed * IMMIX_BYTES_PER_LINE);
++      fprintf(gclog, "occupancy: %.1f%% at start; now %.1f%% (%zd bytes marked / %zd used)\n",
+                 100.0 * (double(bytes_marked) / double(global_frame15_allocator.heap_size_in_bytes())),
+@@ -3142,5 +3164,6 @@
+                 100.0 * (double(bytes_marked) / double(global_frame15_allocator.heap_size_in_bytes())),
+-                bytes_marked);
++                100.0 * (double(bytes_marked) / double(bytes_used)),
++                bytes_marked, bytes_used);
+       gcglobals.last_full_gc_fragmentation_percentage = 100.0 * (double(bytes_marked) / double(global_frame15_allocator.heap_size_in_bytes()));
+       gcglobals.evac_disabled = false;
+     }
+@@ -4324,6 +4347,10 @@
+   // We now have a virtualized list of frame ids, in address order.
+   fprintf(gclog, "do_compactify: acquiring sorted frames: %.1f us\n", ct.elapsed_us());
+ 
++  for (auto fid : ids) {
++    show_linemap_for_frame15(fid);
++  }
++
+   ct.start();
+   int64_t curr_id = compute_sliver_offsets(ids);
+   fprintf(gclog, "do_compactify: computing new forwarding addresses: %.1f us\n", ct.elapsed_us()); fflush(gclog);
+@@ -4331,4 +4358,7 @@
+   ct.start();
+   // Update references and relocate.
+   for (auto fid : ids) {
++    auto mdb = metadata_block_for_frame15_id(fid);
++    uint8_t* linemap = &mdb->linemap[0][0];
++
+     auto f15 = frame15_for_frame15_id(fid);
+@@ -4334,4 +4364,7 @@
+     auto f15 = frame15_for_frame15_id(fid);
++    uint8_t* linemarks = &linemap[line_offset_within_f21(f15)];
++    memset(linemarks, 0, IMMIX_LINES_PER_FRAME15);
++
+     heap_cell* base = (heap_cell*) realigned_for_allocation(f15);
+     uint8_t* marks = &gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)];
+     for (int i = 0; i < 2048; ++i) {
+@@ -4352,5 +4385,6 @@
+                *(tidy**)slot = (tidy*) obj->body_addr();
+             }
+         });
++
+         heap_cell* dest = compute_forwarding_addr(cell);
+         // fprintf(gclog, "sliding cell of size %zd (mark %x) from %p (meta %p) to new dest %p\n",
+@@ -4355,5 +4389,5 @@
+         heap_cell* dest = compute_forwarding_addr(cell);
+         // fprintf(gclog, "sliding cell of size %zd (mark %x) from %p (meta %p) to new dest %p\n",
+-        //        cell_size, mark & 0x7F, cell, cell->get_meta(), dest);
++        //        cell_size, mark & 0x7F, cell, cell->get_meta(), dest); fflush(gclog);
+         memcpy(dest, cell, cell_size);
+         delta_line_counts(dest, cell_size, 1);
+@@ -4358,5 +4392,20 @@
+         memcpy(dest, cell, cell_size);
+         delta_line_counts(dest, cell_size, 1);
++/*
++        if (map->isCoro) {
++          fprintf(gclog, "coro found!\n");
++          fprintf(gclog, "   cell: %p\n", cell);
++          fprintf(gclog, " header: %zx\n", cell->raw_header());
++          foster_bare_coro* coro = (foster_bare_coro*) cell->body_addr();
++          fprintf(gclog, "     fn: %p\n", coro->fn);
++          fprintf(gclog, "    env: %p\n", coro->env);
++          fprintf(gclog, "  indir: %p\n", coro->indirect_self);
++          fprintf(gclog, "     sp: %p\n", coro->ctx.sp);
++          if (coro->indirect_self) {
++          fprintf(gclog, " *indir: %p\n", *coro->indirect_self);
++          }
++        }
++*/
+       }
+     }
+   }
+@@ -4396,6 +4445,14 @@
+ 
+   fprintf(gclog, "do_compactify: updating stack references: %.1f us\n", ct.elapsed_us());
+ 
++  {
++    // Current coro slot must be updated manually.
++    // TODO probably a better solution is to just bite the bullet and adopt per-object pinning...
++    foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
++    foster_bare_coro*  coro = *coro_slot;
++    heap_cell* coro_cell = heap_cell::for_tidy((tidy*) coro);
++    *coro_slot = (foster_bare_coro*) compute_forwarding_addr(coro_cell)->body_addr();
++  }
+ #if 0
+   ct.start();
+   // Relocate
+@@ -4426,5 +4483,4 @@
+   fprintf(gclog, "do_compactify: relocating objects: %.1f us\n", ct.elapsed_us());
+ #endif
+ 
+-/*
+   ct.start();
+@@ -4430,8 +4486,8 @@
+   ct.start();
+-  // Update line mark bits
++  // Clear all object mark bits.
+   int frames_freed = 0;
+   fprintf(gclog, "curr_id is %zd\n", curr_id);
+   std::set<frame15_id> uniq_ids(ids.begin(), ids.end());
+   fprintf(gclog, "ids.size: %zd; uniq size: %zd\n", ids.size(), uniq_ids.size());
+   for (unsigned i = 0; i < ids.size(); ++i) {
+     auto fid = ids[i];
+@@ -4432,10 +4488,7 @@
+   int frames_freed = 0;
+   fprintf(gclog, "curr_id is %zd\n", curr_id);
+   std::set<frame15_id> uniq_ids(ids.begin(), ids.end());
+   fprintf(gclog, "ids.size: %zd; uniq size: %zd\n", ids.size(), uniq_ids.size());
+   for (unsigned i = 0; i < ids.size(); ++i) {
+     auto fid = ids[i];
+-    auto mdb = metadata_block_for_frame15_id(fid);
+-    uint8_t* linemap = &mdb->linemap[0][0];
+-
+     auto f15 = frame15_for_frame15_id(fid);
+@@ -4441,17 +4494,4 @@
+     auto f15 = frame15_for_frame15_id(fid);
+-    uint8_t* marks = &linemap[line_offset_within_f21(f15)];
+-    if (i < curr_id) {
+-      fprintf(gclog, "setting marks for frame %d (=%u == %p)\n", i, fid, f15);
+-      memset(marks, 1, IMMIX_LINES_PER_FRAME15);
+-    } else if (i > curr_id) {
+-      fprintf(gclog, "clearing marks for frame %d (=%u == %p)\n", i, fid, f15);
+-      memset(marks, 0, IMMIX_LINES_PER_FRAME15);
+-      ++frames_freed;
+-    } else {
+-      fprintf(gclog, "setting marks for frame %d (=%u)\n", i, fid);
+-      memset(marks, 1, IMMIX_LINES_PER_FRAME15);
+-    }
+-
+     clear_object_mark_bits_for_frame15(f15);
+   }
+ 
+@@ -4455,6 +4495,5 @@
+     clear_object_mark_bits_for_frame15(f15);
+   }
+ 
+-  // TODO clear object mark bits!
+   fprintf(gclog, "should be freeing %d of %zd frames...\n", frames_freed, ids.size());
+   fprintf(gclog, "do_compactify: updating mark bits: %.1f us\n", ct.elapsed_us());
+@@ -4459,7 +4498,13 @@
+   fprintf(gclog, "should be freeing %d of %zd frames...\n", frames_freed, ids.size());
+   fprintf(gclog, "do_compactify: updating mark bits: %.1f us\n", ct.elapsed_us());
+-*/
+-
++
++  for (auto fid : ids) {
++    show_linemap_for_frame15(fid);
++  }
++
++  // TODO have separate granule byte maps and bit maps;
++  // generate bit maps from byte maps?
++  // Or just raw copy to a separate array... hmm...
+ 
+   /*
+   ct.start();
+@@ -4571,6 +4616,7 @@
+   heap_array* newarr = arr ? heap_array::from_heap_cell(newcell) : nullptr;
+   for_each_child_slot_with(newcell, newarr, map, cell_size, [](intr* slot) {
+       if (!non_markable_addr(* (void**)slot)) {
++        fprintf(gclog, "adding evacuated field %p to worklist\n", slot);
+         immix_worklist.add_root((unchecked_ptr*) slot);
+       }
+   });
+@@ -4675,6 +4721,7 @@
+                                    : offset(sp, off);
+ 
+       if (!non_markable_addr(*(void**)rootaddr)) { // TODO filter rcable?
++        //fprintf(gclog, "collecting root slot %p with metadata %s\n", rootaddr, (const char*) m);
+         immix_worklist.add_root((unchecked_ptr*) rootaddr);
+       }
+     }
+@@ -5377,6 +5424,7 @@
+   return ((immix_heap**)val)[-2];
+ }
+ 
++/*
+ __attribute__((noinline))
+ void foster_generational_write_barrier_slowpath(void* val, void* obj, void** slot) {
+   if (obj_is_marked(heap_cell::for_tidy((tidy*)val))) {
+@@ -5386,6 +5434,7 @@
+   ((immix_space*)hs)->remember_generational(obj, slot); // TODO fix this assumption
+   if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1g_hits; }
+ }
++*/
+ 
+ __attribute__((noinline))
+ void foster_write_barrier_with_obj_fullpath(void* val, void* obj, void** slot) {
+diff --git a/runtime/libfoster_coro.cpp b/runtime/libfoster_coro.cpp
+--- a/runtime/libfoster_coro.cpp
++++ b/runtime/libfoster_coro.cpp
+@@ -80,4 +80,7 @@
+   }
+   //fprintf(stderr, "allocating a coro stack of size %ld (0x%lx): %p\n", ssize, ssize, sinfo.sptr);
+   //memset(sinfo.sptr, 0xEE, ssize); // for debugging only
++
++  // Note: arg is a pointer to a GC-allocated cell
++  // (see emitCoroCreateFn in Codegen-coro.cpp).
+   foster_bare_coro* coro = (foster_bare_coro*) arg;
+@@ -83,4 +86,6 @@
+   foster_bare_coro* coro = (foster_bare_coro*) arg;
++  // The indirect_self field is an off-heap slot that the GC updates
++  // if it moves the coro object.
+   coro->indirect_self = (foster_bare_coro**) malloc(sizeof(coro));
+   foster_coro_ensure_self_reference(coro);
+   libcoro__coro_create(&coro->ctx, corofn, coro->indirect_self,
+diff --git a/runtime/libfoster_gc_roots.h b/runtime/libfoster_gc_roots.h
+--- a/runtime/libfoster_gc_roots.h
++++ b/runtime/libfoster_gc_roots.h
+@@ -14,6 +14,8 @@
+ 
+ // Keep synchronized with foster_generic_coro_ast defined in fosterlower.cpp
+ // and the offsets in Codegen-coro.cpp
++// In Codegen-typemaps.cpp, emitCoroTypeMap ensures that only the |env| and
++// |parent| fields are traced by the collector.
+ struct foster_bare_coro {
+   coro_context ctx;
+   CoroProc fn;

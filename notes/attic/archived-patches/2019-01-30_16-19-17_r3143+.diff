@@ -1,0 +1,180 @@
+# HG changeset patch
+# Parent  bce25253cf21dda40215953ff2b0162e594b5f03
+Improve RC Immix compaction by working at finer granularity.
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -109,6 +109,11 @@
+ #define IMMIX_GRANULES_PER_BLOCK (128 * IMMIX_GRANULES_PER_LINE)
+ #define IMMIX_ACTIVE_F15_PER_F21 (IMMIX_F15_PER_F21 - 1)
+ 
++// A "sliver" is 1024 bytes (2^10), which happens to be 64 granules;
++// thus, a granule-level bitmap for a sliver fits in a machine word.
++#define IMMIX_SLIVER_SIZE_LOG 10
++// 8 bytes per sliver is less than 1% space overhead.
++
+ static_assert(IMMIX_GRANULES_PER_LINE == 16,    "documenting expected values");
+ static_assert(IMMIX_GRANULES_PER_BLOCK == 2048, "documenting expected values");
+ 
+@@ -212,6 +217,10 @@
+   return (frame15*)(uintptr_t(f15) << 15);
+ }
+ 
++uint64_t sliver_id_of(void* p) { return uint64_t(uintptr_t(p) >> IMMIX_SLIVER_SIZE_LOG); }
++void*    sliver_addr(uint64_t sliver) { return (void*) (sliver << IMMIX_SLIVER_SIZE_LOG); }
++uint64_t frame15_id_to_sliver(frame15_id x) { return sliver_id_of(frame15_for_frame15_id(x)); }
++
+ // The pointer itself is the base pointer of the equivalent memory_range.
+ struct free_linegroup {
+   void*           bound;
+@@ -556,6 +565,7 @@
+ 
+   uint8_t*          lazy_mapped_granule_marks;
+   uint16_t*         lazy_mapped_frame_liveness;
++  uint64_t*         lazy_mapped_sliver_offsets;
+ 
+   struct hdr_histogram* hist_gc_stackscan_frames;
+   struct hdr_histogram* hist_gc_stackscan_roots;
+@@ -2793,20 +2803,20 @@
+ 
+ // TODO improve via lookup table of bitmap?
+ // 1 byte = 8 bits = 8 granules = 128 bytes
+-//         64 bits            => 1024 bytes = 1 chunk
+-// frame15 => 256 bytes == 32 chunks
+-uint64_t byte_offset_in_block(void* addr) {
++//         64 bits            => 1024 bytes = 1 sliver
++// frame15 => 256 bytes == 32 slivers
++uint64_t byte_offset_in_sliver(void* addr) {
+   uintptr_t ga = global_granule_for(addr);
+-  uintptr_t gb = global_granule_for(frame15_for_frame15_id(frame15_id_of(addr)));
++  uintptr_t gb = global_granule_for(sliver_addr(sliver_id_of(addr)));
+   uint64_t sum = 0;
+   // This loop can execute up to 2048 iterations -- 1024 on average...
+   for (auto i = gb; i < ga; ++i) { sum += gcglobals.lazy_mapped_granule_marks[i] & 0x7F; }
+   return sum * 16;
+ }
+ 
+-uint64_t sum_live_bytes(frame15_id fid) {
+-  uintptr_t gb = global_granule_for(frame15_for_frame15_id(fid));
+-  uintptr_t gn = global_granule_for(frame15_for_frame15_id(fid + 1));
++uint64_t sum_sliver_live_bytes(uint64_t sliver) {
++  uintptr_t gb = global_granule_for(sliver_addr(sliver));
++  uintptr_t gn = global_granule_for(sliver_addr(sliver + 1));
+   uint64_t sum = 0;
+   /*
+   fprintf(gclog, "granules for fid %u: ", fid);
+@@ -2828,32 +2838,43 @@
+   return sum * 16;
+ }
+ 
+-int64_t compute_block_offsets(std::vector<frame15_id>& ids) {
+-  gcglobals.lazy_mapped_frame_offsets[ ids[0] ] = uint64_t(realigned_for_allocation(frame15_for_frame15_id(ids[0])));
+-
++uint64_t starting_addr(frame15_id fid) {
++  return uint64_t(realigned_for_allocation(frame15_for_frame15_id(fid)));
++}
++int64_t compute_sliver_offsets(std::vector<frame15_id>& ids) {
+   auto curr_id = 0;
++  auto prev_sliver = frame15_id_to_sliver(ids[curr_id]);
++  gcglobals.lazy_mapped_sliver_offsets[ prev_sliver ] = starting_addr( ids[curr_id] );
++
+   uint64_t summed_bytes = 0;
+ 
+   // fprintf(gclog, "computing block offsets for logical blocks 1-%zd\n", ids.size());
+-  for (auto i = 1; i < ids.size(); ++i) {
+-    auto prev_offset = gcglobals.lazy_mapped_frame_offsets[ ids[i - 1] ];
+-    auto delta_bytes =                      sum_live_bytes( ids[i - 1] );
+-    summed_bytes += delta_bytes;
+-    auto new_offset = prev_offset + delta_bytes;
+-    // fprintf(gclog, "prev_offset: %zx; delta: %zu; new offset: %zx; frame_ids %u vs %u\n",
+-    //     prev_offset, delta_bytes, new_offset,
+-    //     frame15_id_of((void*) prev_offset),
+-    //     frame15_id_of((void*) new_offset));
+-    // Make sure we don't inadvertently create a frame-crossing object during compaction.
+-    if (frame15_id_of((void*) prev_offset) != frame15_id_of((void*) new_offset)) {
+-      ++curr_id;
+-      auto new_prev_offset = uint64_t(realigned_for_allocation(frame15_for_frame15_id( ids[curr_id] )));
+-      gcglobals.lazy_mapped_frame_offsets[ ids[i - 1] ] = new_prev_offset;
+-      new_offset = new_prev_offset + delta_bytes;
+-      // fprintf(gclog, "avoiding frame-crossing offset by jumping ahead to id %zd\n", curr_id);
+-      // fprintf(gclog, "  prev offset updated to %zx; new offset now %zx\n", new_prev_offset, new_offset);
++  for (auto i = 0; i < ids.size(); ++i) {
++    auto base_sliver = frame15_id_to_sliver(ids[i]);
++    for (int sliver = 0; sliver < 32; ++sliver) {
++      if (i == 0 && sliver == 0) continue;
++
++      auto prev_offset = gcglobals.lazy_mapped_sliver_offsets[ prev_sliver ];
++      auto delta_bytes =                sum_sliver_live_bytes( prev_sliver );
++      summed_bytes += delta_bytes;
++      auto new_offset = prev_offset + delta_bytes;
++      // fprintf(gclog, "prev_offset[%d:%d]: %zx; delta: %zu; new offset: %zx; frame_ids %u vs %u for sliver (%zd + %d = %zd)\n",
++      //     i, sliver, prev_offset, delta_bytes, new_offset,
++      //     frame15_id_of((void*) prev_offset),
++      //     frame15_id_of((void*) new_offset),
++      //     base_sliver, sliver, (base_sliver + sliver));
++      // Make sure we don't inadvertently create a frame-crossing object during compaction.
++      if (frame15_id_of((void*) prev_offset) != frame15_id_of((void*) new_offset)) {
++        ++curr_id;
++        auto new_prev_offset = starting_addr( ids[curr_id] );
++        gcglobals.lazy_mapped_sliver_offsets[ prev_sliver ] = new_prev_offset;
++        new_offset = new_prev_offset + delta_bytes;
++        // fprintf(gclog, "avoiding frame-crossing offset by jumping ahead to id %zd\n", curr_id);
++        // fprintf(gclog, "  prev offset updated to %zx; new offset now %zx\n", new_prev_offset, new_offset);
++      }
++      prev_sliver = base_sliver + sliver;
++      gcglobals.lazy_mapped_sliver_offsets[ prev_sliver ] = new_offset;
+     }
+-    gcglobals.lazy_mapped_frame_offsets[ ids[i] ] = new_offset;
+   }
+   // // Forcibly make sure the last frame doesn't cross a boundary.
+   // fprintf(gclog, "last frame offset (for %u = %p) was %zx...\n",
+@@ -2861,8 +2882,7 @@
+   //   gcglobals.lazy_mapped_frame_offsets[ ids[ids.size() - 1] ]
+   //   );
+   ++curr_id;
+-  gcglobals.lazy_mapped_frame_offsets[ ids[ids.size() - 1] ] = 
+-        uint64_t(realigned_for_allocation(frame15_for_frame15_id( ids[curr_id] )));
++  gcglobals.lazy_mapped_sliver_offsets[ prev_sliver ] = starting_addr( ids[curr_id] );
+   // fprintf(gclog, "last frame offset (for %u = %p) updated %zx\n",
+   //   ids[ids.size() - 1], frame15_for_frame15_id(ids[ids.size() - 1]),
+   //   gcglobals.lazy_mapped_frame_offsets[ ids[ids.size() - 1] ]
+@@ -2875,9 +2895,9 @@
+ }
+ 
+ heap_cell* compute_forwarding_addr(heap_cell* old) {
+-  uint64_t base = gcglobals.lazy_mapped_frame_offsets[ frame15_id_of(old) ];
+-  uint64_t offset = byte_offset_in_block(old);
+-  // fprintf(gclog, "forwarding addr was base %zx + offset %6zu (%6zx) for ptr %p\n", base, offset, offset, old);
++  uint64_t base = gcglobals.lazy_mapped_sliver_offsets[ sliver_id_of(old) ];
++  uint64_t offset = byte_offset_in_sliver(old);
++  // fprintf(gclog, "forwarding addr was base %zx + offset %6zu (%6zx) for ptr %p in sliver %zd\n", base, offset, offset, old, sliver_id_of(old));
+   return (heap_cell*) (base + offset);
+ }
+ 
+@@ -4276,7 +4296,7 @@
+   fprintf(gclog, "do_compactify: acquiring sorted frames: %.1f us\n", ct.elapsed_us());
+ 
+   ct.start();
+-  int64_t curr_id = compute_block_offsets(ids);
++  int64_t curr_id = compute_sliver_offsets(ids);
+   fprintf(gclog, "do_compactify: computing new forwarding addresses: %.1f us\n", ct.elapsed_us()); fflush(gclog);
+ 
+   ct.start();
+@@ -4304,7 +4324,7 @@
+             }
+         });
+         heap_cell* dest = compute_forwarding_addr(cell);
+-        //fprintf(gclog, "sliding cell of size %zd (mark %x) from %p (meta %p) to new dest %p\n",
++        // fprintf(gclog, "sliding cell of size %zd (mark %x) from %p (meta %p) to new dest %p\n",
+         //        cell_size, mark & 0x7F, cell, cell->get_meta(), dest);
+         memcpy(dest, cell, cell_size);
+         delta_line_counts(dest, cell_size, 1);
+@@ -4791,6 +4811,7 @@
+   //
+   gcglobals.lazy_mapped_granule_marks           = allocate_lazily_zero_mapped<uint8_t>(lazy_mapped_granule_marks_size()); // byte marks
+   gcglobals.lazy_mapped_frame_liveness          = allocate_lazily_zero_mapped<uint16_t>(     size_t(1) << (address_space_prefix_size_log() - 15));
++  gcglobals.lazy_mapped_sliver_offsets          = allocate_lazily_zero_mapped<uint64_t>(     size_t(1) << (address_space_prefix_size_log() - IMMIX_SLIVER_SIZE_LOG));
+ 
+   gcglobals.gc_time_us = 0.0;
+   gcglobals.num_gcs_triggered = 0;

@@ -1,0 +1,742 @@
+# HG changeset patch
+# Parent  f5e96db054f1e8222acbdf04b7c816bd9708bd3c
+Restore missing bits and pieces of simple generational GC implementation.
+
+diff --git a/runtime/foster_globals.cpp b/runtime/foster_globals.cpp
+--- a/runtime/foster_globals.cpp
++++ b/runtime/foster_globals.cpp
+@@ -32,6 +32,7 @@
+   //                                               not -foster-runtime-X=ARG!
+   void parse_runtime_options(int argc, char** argv) {
+     __foster_globals.semispace_size = 1024 * 1024;
++    __foster_globals.nursery_size = 256 * 1024;
+ 
+     int args_to_skip = 0;
+ 
+@@ -51,6 +52,8 @@
+           __foster_globals.semispace_size = ssize_t(parse_double(argv[i + 1], 1.0) * 1024.0 * 1024.0);
+         } else if (streq("--foster-heap-GB", arg)) { args_to_skip += 1;
+           __foster_globals.semispace_size = ssize_t(parse_double(argv[i + 1], 0.001) * 1024.0 * 1024.0 * 1024.0);
++        } else if (streq("--foster-nursery-MB", arg)) { args_to_skip += 1;
++          __foster_globals.nursery_size = ssize_t(parse_double(argv[i + 1], 1.0) * 1024.0 * 1024.0);
+         } else if (streq("--foster-json-stats", arg)) { args_to_skip += 1;
+           __foster_globals.dump_json_stats_path = argv[i + 1];
+         }
+diff --git a/runtime/foster_globals.h b/runtime/foster_globals.h
+--- a/runtime/foster_globals.h
++++ b/runtime/foster_globals.h
+@@ -24,6 +24,7 @@
+   std::string              dump_json_stats_path;
+ 
+   ssize_t                  semispace_size;
++  ssize_t                  nursery_size;
+ 
+   // One timer thread for the whole runtime, not per-vCPU.
+   std::atomic<bool>      scheduling_timer_thread_ending;
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -63,7 +63,7 @@
+ #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
+ #define DEBUG_INITIALIZE_ALLOCATIONS  0 // Initialize even when the middle end doesn't think it's necessary
+ #define ELIDE_INITIALIZE_ALLOCATIONS  0 // Unsafe: ignore requests to initialize allocated memory.
+-#define MEMSET_FREED_MEMORY           GC_ASSERTIONS
++#define MEMSET_FREED_MEMORY           0 || GC_ASSERTIONS
+ // This included file may un/re-define these parameters, providing
+ // a way of easily overriding-without-overwriting the defaults.
+ #include "gc/foster_gc_reconfig-inl.h"
+@@ -74,6 +74,7 @@
+ extern void* foster__typeMapList[];
+ 
+ int64_t gNumRootsScanned = 0;
++int64_t g_bytes_alloc_prev = 0;
+ 
+ /////////////////////////////////////////////////////////////////
+ 
+@@ -304,19 +305,32 @@
+ 
+ struct immix_common;
+ struct immix_space;
++
++/*
+ struct immix_worklist_t {
+-    void       initialize()      { ptrs.clear(); idx = 0; }
++    void       initialize()      { roots.clear(); idx = 0; }
+     void       process(immix_heap* target, immix_common& common);
+-    bool       empty()           { return idx >= ptrs.size(); }
++    bool       empty()           { return idx >= roots.size(); }
+     void       advance()         { ++idx; }
+-    heap_cell* peek_front()      { return ptrs[idx]; }
+-    void       add(heap_cell* c) { ptrs.push_back(c); }
+-    size_t     size()            { return ptrs.size(); }
++    void**     peek_front()      { return roots[idx]; }
++    void       add_root(void** r) { roots.push_back(r); }
++    size_t     size()            { return roots.size(); }
+   private:
+-    size_t                  idx;
+-    std::vector<heap_cell*> ptrs;
++    size_t                idx;
++    std::vector<void**> roots;
+ };
+-
++*/
++struct immix_worklist_t {
++    void       initialize()      { roots.clear(); }
++    //template <condemned_set_status condemned_status>
++    void       process(immix_heap* target, immix_common& common);
++    bool       empty()           { return roots.empty(); }
++    void** pop_root()  { auto root = roots.back(); roots.pop_back(); return root; }
++    void       add_root(void** root) { roots.push_back(root); }
++    size_t     size()            { return roots.size(); }
++  private:
++    std::vector<void**> roots;
++};
+ 
+ // {{{ Global data used by the GC
+ 
+@@ -483,6 +497,7 @@
+   uint64_t num_objects_marked_total;
+   uint64_t alloc_bytes_marked_total;
+   uint64_t num_objects_evacuated;
++  uint64_t num_bytes_evacuated;
+ 
+   uint64_t max_bytes_live_at_whole_heap_gc;
+   uint64_t lines_live_at_whole_heap_gc;
+@@ -783,6 +798,12 @@
+ // Returns either null (for static data) or a valid immix_space*.
+ immix_heap* heap_for(void* addr);
+ 
++// Markable objects live in the upper bits of address space;
++// the low 4 GB is for constants, (immutable) globals, etc.
++bool non_markable_addr(void* addr) {
++  return uintptr_t(addr) < uintptr_t(0x100000000ULL);
++}
++
+ bool non_kosher_addr(void* addr) {
+   intptr_t signed_val = intptr_t(addr);
+   return signed_val < 0x100000;
+@@ -830,6 +851,7 @@
+ const typemap* tryGetTypemap(heap_cell* cell);
+ // }}}
+ 
++void* re_allocate_cell(immix_space* tospace, typemap* typeinfo, int64_t cell_size);
+ 
+ namespace helpers {
+ 
+@@ -1324,7 +1346,7 @@
+   } else {
+     cell_size = array_size_for(arr->num_elts(), map->cell_size);
+     if (GCLOG_DETAIL > 1) {
+-      fprintf(gclog, "Collecting array of total size %" PRId64
++      fprintf(gclog, "Encountered array of total size %" PRId64
+                     " (rounded up from %" PRId64 " + %" PRId64 " = %" PRId64
+                     "), cell size %" PRId64 ", len %" PRId64 "...\n",
+                           cell_size,
+@@ -1387,6 +1409,36 @@
+   }
+ }
+ 
++template <typename CellThunk>
++void for_each_child_slot_with(heap_cell* cell, heap_array* arr, const typemap* map,
++                              int64_t cell_size, CellThunk thunk) {
++  if (!map) { return; }
++
++  if (!arr) {
++    auto body = cell->body_addr();
++    for (int i = 0; i < map->numOffsets; ++i) {
++      thunk((intr*) offset(body, map->offsets[i]));
++    }
++  } else {
++    int64_t numcells = arr->num_elts();
++    for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
++      auto body = arr->elt_body(cellnum, map->cell_size);
++      for (int i = 0; i < map->numOffsets; ++i) {
++        thunk((intr*) offset(body, map->offsets[i]));
++      }
++    }
++  }
++
++  if (map->isCoro == 1) {
++    // Coroutines reference stacks which contain embedded references to the heap
++    // that (for performance) are not tracked by write barriers.
++    // TODO fix
++    //foster_bare_coro* coro = reinterpret_cast<foster_bare_coro*>(cell->body_addr());
++    //collect_roots_from_stack_of_coro(coro);
++    //fprintf(gclog, "for_each_child_slot noticed a coro object...\n");
++  }
++}
++
+ // This struct contains per-frame state and code shared between
+ // regular and line-based immix frames.
+ struct immix_common {
+@@ -1399,6 +1451,12 @@
+   // register pressure, resulting in a net extra instruction in the critical path of allocation.
+   uintptr_t prevent_const_prop() { return prevent_constprop; }
+ 
++/*
++  void* evac_with_map_and_arr(heap_cell* cell, const typemap* map,
++                             heap_array* arr, int64_t cell_size,
++                             immix_space* tospace);
++                             */
++
+   template <condemned_set_status condemned_portion>
+   void scan_with_map_and_arr(immix_heap* space,
+                              heap_cell* cell, const typemap& map,
+@@ -1427,8 +1485,7 @@
+         fprintf(gclog, "scan_with_map scanning pointer %p from slot %p (field %d of %d in at offset %d in object %p)\n",
+             *unchecked, unchecked, i, map.numOffsets, map.offsets[i], body);
+       }
+-      uint64_t ignored =
+-        immix_trace<condemned_portion>(space, (unchecked_ptr*) unchecked, depth);
++      immix_trace<condemned_portion>(space, (unchecked_ptr*) unchecked, depth);
+     }
+   }
+ 
+@@ -1437,6 +1494,62 @@
+     return (k == frame15kind::immix_smallmedium || k == frame15kind::immix_linebased);
+   }
+ 
++/*
++  // Jones/Hosking/Moss refer to this function as "process(fld)".
++  // Returns 1 if root was located in a condemned space; 0 otherwise.
++  // Precondition: root points to an unmarked, unforwarded, markable object.
++  template <condemned_set_status condemned_portion>
++  void immix_trace(unchecked_ptr* root, heap_cell* obj) {
++    //       |------------|       obj: |------------|
++    // root: |    body    |---\        |  size/meta |
++    //       |------------|   |        |------------|
++    //                        \- tidy->|            |
++    //                        |       ...          ...
++    //                        \-*root->|            |
++    //                                 |------------|
++
++    if (should_opportunistically_evacuate<condemned_portion>(obj)) {
++      auto tidyn = scan_and_evacuate_to((immix_space*)gcglobals.default_allocator, obj);
++      *root = make_unchecked_ptr((tori*) tidyn);
++    } else {
++      scan_cell(obj);
++    }
++  }
++  */
++
++  // Precondition: cell is part of the condemned set.
++  // Precondition: cell is not forwarded.
++  void* scan_and_evacuate_to(immix_space* tospace, int depth, heap_cell* cell) {
++
++    heap_array* arr = NULL;
++    const typemap* map = NULL;
++    int64_t cell_size;
++    get_cell_metadata(cell, arr, map, cell_size);
++
++    gcglobals.num_bytes_evacuated += cell_size;
++
++    // Without metadata for the cell, there's not much we can do...
++    if (map && gcglobals.typemap_memory.contains((void*) map)) {
++      //tidy* newbody = tospace->defrag_copy_cell(cell, (typemap*)map, cell_size);
++      tidy* newbody = (tidy*) re_allocate_cell(tospace, (typemap*) map, cell_size);
++      heap_cell* newcell = heap_cell::for_tidy(newbody);
++      heap_array* newarr = arr ? heap_array::from_heap_cell(newcell) : nullptr;
++      memcpy(newcell, cell, cell_size);
++      for_each_child_slot_with(newcell, newarr, map, cell_size, [](intr* slot) {
++          heap_cell* slotcell = * (heap_cell**) slot;
++          if (!non_markable_addr(slotcell)) {
++            //fprintf(gclog, "adding child slot %p containing cell %p\n", slot, slotcell);
++            immix_worklist.add_root((void**)slot);
++          }
++      });
++      cell->set_forwarded_body(newbody);
++      //fprintf(gclog, "Evacuated cell %p with map %p and size %zd, forwarded to new body %p, and added child slots to worklist.\n", cell, map, cell_size, newbody);
++      return newbody;
++    }
++    fprintf(gclog, "WARN: Ignored cell %p because its map %p appeared corrupted\n", cell, map);
++    return nullptr;
++  }
++
+   // Precondition: cell is part of the condemned set.
+   template <condemned_set_status condemned_portion>
+   void scan_cell(immix_heap* space, heap_cell* cell, int depth_remaining) {
+@@ -1463,11 +1576,6 @@
+       return;
+     }
+ 
+-    if (depth_remaining == 0) {
+-      immix_worklist.add(cell);
+-      return;
+-    }
+-
+     auto frameclass = frame15_classification(cell);
+     if (GCLOG_DETAIL > 3) { fprintf(gclog, "frame classification for obj %p in frame %u is %d\n", cell, frame15_id_of(cell), int(frameclass)); }
+ 
+@@ -1476,6 +1584,8 @@
+     int64_t cell_size;
+     get_cell_metadata(cell, arr, map, cell_size);
+ 
++    fprintf(gclog, "scan cell %p : size %zd\n", cell, cell_size);
++
+     if (GC_ASSERTIONS) { gcglobals.marked_in_current_gc.insert(cell); }
+     do_mark_obj(cell);
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
+@@ -1529,6 +1639,8 @@
+       return 0;
+     }
+ 
++    if (non_markable_addr(body)) { return 0; }
++
+     if ( (condemned_portion == condemned_set_status::single_subheap_condemned
+           && !owned_by(body, space)) ||
+          (condemned_portion == condemned_set_status::per_frame_condemned
+@@ -1540,27 +1652,38 @@
+         // and ignore objects stored in non-condemned regions.
+         // The remembered set is guaranteed to contain all incoming pointers
+         // from non-condemned regions.
+-        if (GCLOG_DETAIL > 3) { fprintf(gclog, "immix_trace() ignoring non-condemned cell %p in line %d of (%u)\n",
+-            body, line_offset_within_f15(body), f15id); }
++        if (GCLOG_DETAIL > 3) { fprintf(gclog, "immix_trace() ignoring non-condemned cell %p from root %p in line %d of (%u)\n",
++            body, root, line_offset_within_f15(body), f15id); }
+         return 0;
+     }
+ 
++    if (depth == 0) {
++      immix_worklist.add_root((void**)root);
++      return 0;
++    }
++
+     // TODO drop the assumption that body is a tidy pointer.
+     heap_cell* obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(body));
++
++    //fprintf(gclog, "immix_trace encountered cell %p (body %p); cond port is %d\n", obj, body, condemned_portion);
+     bool should_evacuate = condemned_portion == condemned_set_status::nursery_only;
+     if (should_evacuate) {
+       if (obj->is_forwarded()) {
+         auto tidyn = (void*) obj->get_forwarded_body();
+-        *root = make_unchecked_ptr((tori*) offset(tidyn, distance(obj->body_addr(), body) ));
++        fprintf(gclog, "object %p (body %p) in root %p had been forwarded to %p\n", obj, body, root, tidyn);
++        //*root = make_unchecked_ptr((tori*) offset(tidyn, distance(obj->body_addr(), body) ));
++        (*(void**)root) = tidyn;
+       } else {
+         gcglobals.num_objects_evacuated++;
+-        auto tidyn = scan_and_evacuate_to(root, obj, depth, get_mature_space());
++        //fprintf(gclog, "object %p (body %p) scanning and evacuating\n", obj, body);
++        auto tidyn = scan_and_evacuate_to((immix_space*) get_mature_space(), depth, /*root,*/ obj);
+         if (tidyn == nullptr) {
+           // Depth limit reached; root has been enqueued
++          fprintf(gclog, "WARN: tidyn from scan+evac was null for obj %p!\n", obj);
+         } else {
+           // Calculate the original root's updated (possibly interior) pointer.
+-          
+-          *root = make_unchecked_ptr((tori*) offset(tidyn, distance(obj->body_addr(), body) ));
++          (*(void**)root) = tidyn;
++          //*root = make_unchecked_ptr((tori*) offset(tidyn, distance(obj->body_addr(), body) ));
+           //gc_assert(NULL != untag(*root), "copying gc should not null out slots");
+           //gc_assert(body != untag(*root), "copying gc should return new pointers");
+         }
+@@ -1627,13 +1750,15 @@
+     for (tori** src_slot : slots) {
+       // We can ignore the remembered set root if the source is also getting collected.
+       if (slot_is_condemned<condemned_portion>(src_slot, space)) {
+-        if (GCLOG_DETAIL > 3) {
++        if (true || GCLOG_DETAIL > 3) {
+           fprintf(gclog, "space %p skipping ptr %p, from remset, in co-condemned slot %p\n", space, *src_slot, src_slot);
+         }
+         continue;
+       }
+ 
+       tori* ptr = *src_slot;
++
++      fprintf(gclog, "remset slot %p contained ptr %p\n", src_slot, ptr);
+       // Otherwise, we must check whether the source slot was modified;
+       // if so, it might not point into our space (or might point to a
+       // non-condemned portion of our space).
+@@ -1651,7 +1776,7 @@
+           fprintf(gclog, "space %p skipping remset bad-typemap ptr %p in slot %p\n", space, ptr, src_slot);
+         }
+       } else {
+-        if (GCLOG_DETAIL > 3) {
++        if (true || GCLOG_DETAIL > 3) {
+           fprintf(gclog, "space %p skipping remset non-condemned ptr %p in slot %p\n", space, ptr, src_slot);
+         }
+       }
+@@ -2363,6 +2488,24 @@
+ }
+ 
+ void* allocate_array_from_mature_space(typemap* elt_typeinfo, int64_t n, bool init);
++/*
++void* immix_common::evac_with_map_and_arr(heap_cell* cell, const typemap* map,
++                            heap_array* arr, int64_t cell_size,
++                            immix_space* tospace) {
++  // We have separate functions for allocating arrays vs non-array cells in order
++  // to initialize the number-of-elements field. But here, the field is already
++  // there; all we need to do is copy the whole blob and trace is as usual.
++  tidy* newbody = tospace->defrag_copy_cell(cell, (typemap*)map, cell_size);
++  heap_cell* newcell = heap_cell::for_tidy(newbody);
++  heap_array* newarr = arr ? heap_array::from_heap_cell(newcell) : nullptr;
++  for_each_child_slot_with(newcell, newarr, map, cell_size, [](intr* slot) {
++      if (!non_markable_addr(* (void**)slot)) {
++        immix_worklist.add_root((unchecked_ptr*) slot);
++      }
++  });
++  return newbody;
++}
++*/
+ 
+ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
+     gcglobals.num_gcs_triggered += 1;
+@@ -2378,6 +2521,7 @@
+ #endif
+ 
+     auto num_evac_at_start = gcglobals.num_objects_evacuated;
++    auto bytes_evac_at_start = gcglobals.num_bytes_evacuated;
+     auto num_marked_at_start   = gcglobals.num_objects_marked_total;
+     auto bytes_marked_at_start = gcglobals.alloc_bytes_marked_total;
+     bool isWholeHeapGC = gcglobals.condemned_set.status == condemned_set_status::whole_heap_condemned;
+@@ -2416,7 +2560,10 @@
+ 
+     //ct.start();
+     uint64_t numCondemnedRoots = visitGCRoots(__builtin_frame_address(0), active_space);
+-    fprintf(gclog, "num condemned + remset roots: %zu\n", numCondemnedRoots + numRemSetRoots);
++    fprintf(gclog, "num condemned + remset roots: %zu + %zu = %zu\n",
++      numCondemnedRoots,
++      numRemSetRoots,
++      numCondemnedRoots + numRemSetRoots);
+     //double trace_ms = ct.elapsed_ms();
+ 
+ #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
+@@ -2487,6 +2634,11 @@
+          (double(bytes_live) / double(line_bytes)) * 100.0,
+         ((double(line_bytes) / double(bytes_live)) - 1.0) * 100.0,
+         gcglobals.num_objects_evacuated - num_evac_at_start);
++      fprintf(gclog, "gc: %d evaced: %zd allocated: %zd\n",
++        gcglobals.num_gcs_triggered,
++        gcglobals.num_bytes_evacuated - bytes_evac_at_start,
++        gcglobals.num_alloc_bytes - g_bytes_alloc_prev);
++      g_bytes_alloc_prev = gcglobals.num_alloc_bytes;
+     }
+ 
+ #if ((GCLOG_DETAIL > 1) || ENABLE_GCLOG_ENDGC)
+@@ -2738,7 +2890,8 @@
+ 
+   void reset_nursery_bumper() {
+     this->nursery_bumper.base  = realigned_for_allocation(this->nursery_base);
+-    this->nursery_bumper.bound = offset(nursery_base, nursery_size - (1 << 15));
++    //this->nursery_bumper.bound = offset(nursery_base, nursery_size - (1 << 15));
++    this->nursery_bumper.bound = offset(nursery_base, nursery_size);
+   }
+ 
+   virtual remset_t& get_incoming_ptr_addrs() { return incoming_ptr_addrs; }
+@@ -2759,7 +2912,14 @@
+   virtual void force_gc_for_debugging_purposes() {
+     //if (GCLOG_DETAIL > 2) { fprintf(gclog, "force_gc_for_debugging_purposes triggering immix gc\n"); }
+     //common.common_gc(this, incoming_ptr_addrs, true);
+-    gc_assert(false, "immix_nursery force GC");
++    //gc_assert(false, "immix_nursery force GC");
++
++    fprintf(gclog, "nursery had allocated %zd bytes since last collection\n",
++      distance(this->nursery_base, this->nursery_bumper.base) - 8);
++    
++      condemned_set_status_manager tmp(condemned_set_status::nursery_only);
++      common.common_gc(gcglobals.default_allocator, false);
++      reset_nursery_bumper();
+   }
+ 
+   // {{{ Prechecked allocation functions
+@@ -2812,6 +2972,32 @@
+   virtual void* allocate_cell_32(typemap* typeinfo) { return allocate_cell_N<32>(typeinfo); }
+   virtual void* allocate_cell_48(typemap* typeinfo) { return allocate_cell_N<48>(typeinfo); }
+   
++  bool gc_if_necessary___are_we_oom() {
++    // Invariant: mature space is large enough to accomodate nursery.
++    {
++      //fprintf(gclog, "")
++      condemned_set_status_manager tmp(condemned_set_status::nursery_only);
++      common.common_gc(this, false);
++      reset_nursery_bumper();
++    }
++
++    // If (mature free space > nursery_free_space) invariant broken,
++    // do a full-heap collection to try to re-establish it.
++    if (mature_space_almost_full()) {
++      fprintf(gclog, "Initiating full-heap GC to clear out the mature space...\n");
++      condemned_set_status_manager tmp(condemned_set_status::whole_heap_condemned);
++      common.common_gc(this, false);
++
++      // If it's still broken, we're effectively OOM.
++      if (mature_space_almost_full()) {
++        fprintf(gclog, "full-heap GC did not clear sufficient room to evacuate nursery\n");
++        helpers::oops_we_died_from_heap_starvation();
++        return true;
++      }
++    }
++    return false;
++  }
++
+   void* nursery_allocate_cell_slowpath(typemap* typeinfo) __attribute__((noinline))
+   {
+     int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
+@@ -2821,33 +3007,7 @@
+         mature_space_approx_size());
+     }
+ 
+-    // When we run out of memory, we should collect the whole heap, regardless of
+-    // what the active subheap happens to be -- the underlying principle being that
+-    // subheap-enabled code shouldn't needlessly diverge from more traditional
+-    // runtime's behavior in these cases.
+-    // An alternative would be to collect the current subheap and then, if that
+-    // doesn't reclaim "enough", to try the whole heap, but that's a shaky heuristic
+-    // that can easily lead to nearly-doubled wasted work.
+-
+-    if (mature_space_almost_full()) {
+-      condemned_set_status_manager tmp(condemned_set_status::whole_heap_condemned);
+-      common.common_gc(this, false);
+-
+-      if (mature_space_almost_full()) {
+-        fprintf(gclog, "full-heap GC did not clear sufficient room to evacuate nursery\n");
+-        helpers::oops_we_died_from_heap_starvation(); return NULL;
+-      }
+-    }
+-
+-    {
+-      condemned_set_status_manager tmp(condemned_set_status::nursery_only);
+-      common.common_gc(this, false);
+-      reset_nursery_bumper();
+-    }
+-
+-    if (!try_establish_alloc_precondition(&nursery_bumper, cell_size)) {
+-      helpers::oops_we_died_from_heap_starvation(); return NULL;
+-    }
++    if (gc_if_necessary___are_we_oom()) { return nullptr; }
+ 
+     return allocate_cell_prechecked(typeinfo);
+   }
+@@ -2862,9 +3022,10 @@
+       hdr_record_value(gcglobals.hist_gc_alloc_array, req_bytes);
+     }
+ 
+-    if (req_bytes <= IMMIX_LINE_SIZE) {
++    if (req_bytes <= 8192) {
+       return allocate_array_into_bumper(&nursery_bumper, elt_typeinfo, n, req_bytes, init);
+     } else {
++      fprintf(gclog, "Allocating large array (size %zd) from mature space.\n", req_bytes);
+       return allocate_array_from_mature_space(elt_typeinfo, n, init);
+     }
+   }
+@@ -2873,25 +3034,9 @@
+     if (try_establish_alloc_precondition(bumper, req_bytes)) {
+       return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, common.prevent_const_prop(), init);
+     } else {
+-      if (GCLOG_DETAIL > 0) { fprintf(gclog, "allocate_array_into_bumper triggering immix gc\n"); }
+-      if (mature_space_almost_full()) {
+-        condemned_set_status_manager tmp(condemned_set_status::whole_heap_condemned);
+-        common.common_gc(this, false);
+-      }
+-
+-      if (mature_space_almost_full()) {
+-        helpers::oops_we_died_from_heap_starvation(); return NULL;
+-      }
+-
+-      {
+-        condemned_set_status_manager tmp(condemned_set_status::nursery_only);
+-        common.common_gc(this, false);
+-        reset_nursery_bumper();
+-      }
+-
+-      if (!try_establish_alloc_precondition(bumper, req_bytes)) {
+-        helpers::oops_we_died_from_heap_starvation(); return NULL;
+-      }
++      if (true || GCLOG_DETAIL > 0) { fprintf(gclog, "allocate_array_into_bumper triggering immix nursery gc\n"); }
++
++     if (gc_if_necessary___are_we_oom()) { return nullptr; }
+ 
+       //fprintf(gclog, "gc collection freed space for array, now have %lld\n", curr->free_size());
+       //fflush(gclog);
+@@ -2940,6 +3085,8 @@
+     if (GCLOG_DETAIL > 2) { fprintf(gclog, "new immix_space %p, current space limit: %zd f15s\n", this, gcglobals.space_limit->frame15s_left); }
+ 
+     incoming_ptr_addrs.set_empty_key(nullptr);
++    small_bumper.base = small_bumper.bound = 0;
++    medium_bumper.base = medium_bumper.bound = 0;
+   }
+ 
+   virtual void dump_stats(FILE* json) {
+@@ -3066,12 +3213,16 @@
+ 
+   // Invariant: cell size is less than one line.
+   virtual void* allocate_cell(typemap* typeinfo) {
+-    int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
+-
+-    if (try_establish_alloc_precondition(&small_bumper, cell_size)) {
+-      return allocate_cell_prechecked(typeinfo);
++    return allocate_cell_ND(typeinfo, typeinfo->cell_size);
++  }
++
++  void* allocate_cell_ND(typemap* typeinfo, int64_t cell_size) {
++    bump_allocator* bumper = (cell_size <= IMMIX_LINE_SIZE) ? &small_bumper : &medium_bumper;
++
++    if (try_establish_alloc_precondition(bumper, cell_size)) {
++      return helpers::allocate_cell_prechecked(bumper, typeinfo, cell_size, common.prevent_const_prop());
+     } else {
+-      return allocate_cell_slowpath(typeinfo);
++      return allocate_cell_ND_slowpath(typeinfo, cell_size, bumper);
+     }
+   }
+ 
+@@ -3089,6 +3240,33 @@
+   virtual void* allocate_cell_32(typemap* typeinfo) { return allocate_cell_N<32>(typeinfo); }
+   virtual void* allocate_cell_48(typemap* typeinfo) { return allocate_cell_N<48>(typeinfo); }
+ 
++  void* allocate_cell_ND_slowpath(typemap* typeinfo, int64_t cell_size, bump_allocator* bumper) __attribute__((noinline))
++  {
++    fprintf(gclog, "WARN: allocate_cell_ND_slowpath triggered\n");
++
++    // When we run out of memory, we should collect the whole heap, regardless of
++    // what the active subheap happens to be -- the underlying principle being that
++    // subheap-enabled code shouldn't needlessly diverge from more traditional
++    // runtime's behavior in these cases.
++    // An alternative would be to collect the current subheap and then, if that
++    // doesn't reclaim "enough", to try the whole heap, but that's a shaky heuristic
++    // that can easily lead to nearly-doubled wasted work.
++    {
++      condemned_set_status_manager tmp(condemned_set_status::whole_heap_condemned);
++      common.common_gc(this, false);
++    }
++
++    if (GCLOG_DETAIL > 2) {
++      fprintf(gclog, "forced heap-frame gc reclaimed %zd frames\n", gcglobals.space_limit->frame15s_left);
++    }
++
++    if (!try_establish_alloc_precondition(bumper, cell_size)) {
++      helpers::oops_we_died_from_heap_starvation(); return NULL;
++    }
++
++    return helpers::allocate_cell_prechecked(bumper, typeinfo, cell_size, common.prevent_const_prop());
++  }
++
+   void* allocate_cell_slowpath(typemap* typeinfo) __attribute__((noinline))
+   {
+     int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
+@@ -3428,8 +3606,8 @@
+ 
+ void immix_worklist_t::process(immix_heap* target, immix_common& common) {
+   while (!empty()) {
+-    heap_cell* cell = peek_front();
+-    advance();
++    void** root = pop_root();
++    heap_cell* cell = (heap_cell*) *root;
+ 
+     switch (gcglobals.condemned_set.status) {
+     case               condemned_set_status::single_subheap_condemned:
+@@ -3439,8 +3617,9 @@
+     case               condemned_set_status::whole_heap_condemned:
+       common.scan_cell<condemned_set_status::whole_heap_condemned>(target, cell, kFosterGCMaxDepth);
+     case               condemned_set_status::nursery_only:
+-      unchecked_ptr* root = (unchecked_ptr*) cell; // cell-to-root
+-      common.immix_trace<condemned_set_status::nursery_only>(get_mature_space(), root, kFosterGCMaxDepth);
++      //fprintf(gclog, "immix worklist::process() grabbed cell %p from root %p\n", cell, root);
++      common.immix_trace<condemned_set_status::nursery_only>(get_mature_space(),
++                (unchecked_ptr*) root, kFosterGCMaxDepth);
+     }
+   }
+   initialize();
+@@ -3693,7 +3872,8 @@
+   pages_boot();
+ 
+   int64_t total_bytes = gSEMISPACE_SIZE();
+-  int64_t nursery_bytes = (std::min)(total_bytes / 2, int64_t(1 << 20));
++  int64_t nursery_bytes = (std::min)(total_bytes / 4, __foster_globals.nursery_size);
++  fprintf(gclog, "Nursery size in bytes: %zd\n", nursery_bytes);
+   gcglobals.space_limit = new byte_limit(total_bytes - nursery_bytes);
+ 
+   nursery = new immix_nursery(nursery_bytes);
+@@ -3735,6 +3915,7 @@
+   gcglobals.num_objects_marked_total = 0;
+   gcglobals.alloc_bytes_marked_total = 0;
+   gcglobals.num_objects_evacuated = 0;
++  gcglobals.num_bytes_evacuated = 0;
+   gcglobals.max_bytes_live_at_whole_heap_gc = 0;
+   gcglobals.lines_live_at_whole_heap_gc = 0;
+   gcglobals.num_closure_calls = 0;
+@@ -3905,6 +4086,8 @@
+ immix_heap* get_mature_space() { return gcglobals.maturespace; }
+ int64_t mature_space_approx_size() { return gcglobals.maturespace->approx_size_in_bytes(); }
+ bool    mature_space_almost_full() {
++  fprintf(gclog, "Mature  space bytes size: %zd\n", global_frame15_allocator.approx_bytes_capacity());
++  fprintf(gclog, "Nursery space bytes size: %zd\n", gcglobals.default_allocator->approx_size_in_bytes());
+   return global_frame15_allocator.approx_bytes_capacity() <= 
+          gcglobals.default_allocator->approx_size_in_bytes();
+ }
+@@ -4019,6 +4202,10 @@
+     auto s = foster::humanize_s(double(gcglobals.num_objects_evacuated), "");
+     fprintf(gclog, "'Num_Objects_Evacuated': %s\n", s.c_str());
+   }
++  if (true) {
++    auto s = foster::humanize_s(double(gcglobals.num_bytes_evacuated), "B");
++    fprintf(gclog, "'Num_Bytes_Evacuated': %s\n", s.c_str());
++  }
+   if (TRACK_WRITE_BARRIER_COUNTS) {
+     fprintf(gclog, "'Num_Write_Barriers_Fast': %lu\n", (gcglobals.write_barrier_phase0_hits - gcglobals.write_barrier_phase1_hits));
+     fprintf(gclog, "'Num_Write_Barriers_Slow': %lu\n",  gcglobals.write_barrier_phase1_hits);
+@@ -4149,6 +4336,10 @@
+   fflush(gclog);
+   */
+ }
++
++extern "C" void inspect_ptr_for_debugging_purposes_importable__autowrap(void* bodyvoid) {
++  inspect_ptr_for_debugging_purposes(bodyvoid);
++}
+ // }}}
+ 
+ // {{{ Pointer classification utilities
+@@ -4179,6 +4370,10 @@
+ }
+ // }}}
+ 
++void* re_allocate_cell(immix_space* tospace, typemap* typeinfo, int64_t cell_size) {
++  return tospace->allocate_cell_ND(typeinfo, cell_size);
++}
++
+ /////////////////////////////////////////////////////////////////
+ 
+ extern "C" {
+@@ -4232,7 +4427,7 @@
+ __attribute((noinline))
+ void foster_write_barrier_slowpath(immix_heap* hv, immix_heap* hs, void* val, void** slot) {
+     if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1_hits; }
+-    if (GCLOG_DETAIL > 3) { fprintf(gclog, "space %p remembering slot %p with inc ptr %p and old pointer %p; slot heap is %p\n", hv, slot, val, *slot, hs); }
++    if (true || GCLOG_DETAIL > 3) { fprintf(gclog, "space %p remembering slot %p with inc ptr %p and old pointer %p; slot heap is %p\n", hv, slot, val, *slot, hs); }
+     hv->remember_into(slot);
+ }
+ 
+@@ -4242,8 +4437,22 @@
+   //immix_heap* hv = heap_for_tidy((tidy*)val);
+   //immix_heap* hs = heap_for_tidy((tidy*)slot);
+ 
++  // Writing val into slot
++  //
++  //   hv : [  val: {...}  ]      hs : [  slot:{ * } ]
++  //             ^------------------------------/
++  //
++  // We want to record the slot if hv is the nursery and hs is not.
++
++  immix_heap* hs = heap_for_wb((void*)slot);
++  
++  // Don't remember pointers originating from the nursery.
++  if (hs == gcglobals.default_allocator) { 
++    *slot = val;
++    return; }
++
+   immix_heap* hv = heap_for_wb(val);
+-  immix_heap* hs = heap_for_wb((void*)slot);
++
+   if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
+   //fprintf(gclog, "write barrier (%zu) writing ptr %p from heap %p into slot %p in heap %p\n",
+   //    gcglobals.write_barrier_phase0_hits, val, hv, slot, hs); fflush(gclog);
+diff --git a/scripts/fosterc b/scripts/fosterc
+--- a/scripts/fosterc
++++ b/scripts/fosterc
+@@ -21,5 +21,5 @@
+ echo ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} --cxxpath $(cxxpath) $@ $MAYBE_OUT
+ ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} --cxxpath $(cxxpath) $@ $MAYBE_OUT
+ 
+-rm -f meGCstats.txt
+-rm -rf ${TMPDIR} $1.postopt.ll $1.preopt.ll
++#rm -f meGCstats.txt
++#rm -rf ${TMPDIR} $1.postopt.ll $1.preopt.ll

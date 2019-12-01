@@ -1,0 +1,152 @@
+# HG changeset patch
+# Parent  78d3d5c9529c6737dd3e0b304023ed5431cb88a3
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -35,6 +35,6 @@
+ // These are defined as compile-time constants so that the compiler
+ // can do effective dead-code elimination. If we were JIT compiling
+ // the GC we could (re-)specialize these config vars at runtime...
+-#define GCLOG_DETAIL 3
++#define GCLOG_DETAIL 0
+ #define ENABLE_LINE_GCLOG 0
+ #define ENABLE_GCLOG_PREP 0
+@@ -39,10 +39,10 @@
+ #define ENABLE_LINE_GCLOG 0
+ #define ENABLE_GCLOG_PREP 0
+-#define ENABLE_GCLOG_ENDGC 1
+-#define PRINT_STDOUT_ON_GC 1
++#define ENABLE_GCLOG_ENDGC 0
++#define PRINT_STDOUT_ON_GC 0
+ #define FOSTER_GC_TRACK_BITMAPS       0
+ #define FOSTER_GC_ALLOC_HISTOGRAMS    0
+ #define FOSTER_GC_TIME_HISTOGRAMS     1 // Adds ~300 cycles per collection
+ #define FOSTER_GC_EFFIC_HISTOGRAMS    0
+ #define ENABLE_GC_TIMING              1
+ #define ENABLE_GC_TIMING_TICKS        1 // Adds ~430 cycles per collection
+@@ -43,9 +43,10 @@
+ #define FOSTER_GC_TRACK_BITMAPS       0
+ #define FOSTER_GC_ALLOC_HISTOGRAMS    0
+ #define FOSTER_GC_TIME_HISTOGRAMS     1 // Adds ~300 cycles per collection
+ #define FOSTER_GC_EFFIC_HISTOGRAMS    0
+ #define ENABLE_GC_TIMING              1
+ #define ENABLE_GC_TIMING_TICKS        1 // Adds ~430 cycles per collection
++#define PRINT_EVERY_ALLOC 0
+ #define GC_ASSERTIONS 0
+ #define MARK_FRAME21S                 0
+ #define MARK_FRAME21S_OOL             0
+@@ -60,7 +61,7 @@
+ #define TRACK_BYTES_KEPT_ENTRIES      0
+ #define TRACK_BYTES_ALLOCATED_ENTRIES 0
+ #define TRACK_BYTES_ALLOCATED_PINHOOK 0
+-#define DEBUG_INITIALIZE_ALLOCATIONS  1 // Initialize even when the middle end doesn't think it's necessary
++#define DEBUG_INITIALIZE_ALLOCATIONS  0 // Initialize even when the middle end doesn't think it's necessary
+ #define ELIDE_INITIALIZE_ALLOCATIONS  0 // Unsafe: ignore requests to initialize allocated memory.
+ #define MEMSET_FREED_MEMORY           0
+ // This included file may un/re-define these parameters, providing
+@@ -855,7 +856,7 @@
+     //if (GC_ASSERTIONS) { gc_assert(frame15_id_of(allot) == frame15_id_of(allot->body_addr()), "pre array: metadata and body address on different frames!"); }
+     if (DEBUG_INITIALIZE_ALLOCATIONS ||
+       (init && !ELIDE_INITIALIZE_ALLOCATIONS)) { memset((void*) allot, 0x00, total_bytes); }
+-    //fprintf(gclog, "alloc'a %d, bump = %p, low bits: %x\n", int(total_bytes), bump, intptr_t(bump) & 0xF);
++    if (PRINT_EVERY_ALLOC) { fprintf(gclog, "alloc'a %d, allot=%p, body=%p\n", int(total_bytes), allot, allot->body_addr()); }
+     allot->set_header(arr_elt_map, mark_value);
+     allot->set_num_elts(num_elts);
+     //if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(total_bytes); }
+@@ -914,6 +915,9 @@
+       //obj_start.set_bit(granule);
+     }
+ 
++    if (PRINT_EVERY_ALLOC) { fprintf(gclog, "allocating cell %p (body %p) in line %d of frame (%u)\n", allot, allot->body_addr(),
++        line_offset_within_f15(allot), frame15_id_of(allot)); }
++
+     if (GC_ASSERTIONS && line_for_slot_is_marked(allot)) {
+       fprintf(gclog, "INVARIANT VIOLATED: allocating cell (%p) on a pre-marked line?!?\n", allot);
+       exit(4);
+@@ -1405,8 +1409,8 @@
+     //fprintf(gclog, "copying %lld cell %p, map np %d, name %s\n", cell_size, cell, map.numEntries, map.name); fflush(gclog);
+     if (!arr) {
+       tidy* newbody = (tidy*) maturespace->allocate_cell((typemap*)&map); // TODO don't assume these won't GC
+-      heap_cell* mcell = heap_cell::for_tidy(newbody);
+-      memcpy(mcell, cell, map.cell_size);
++      heap_cell* newcell = heap_cell::for_tidy(newbody);
++      memcpy(newcell, cell, map.cell_size);
+       cell->set_forwarded_body(newbody);
+       if (GCLOG_DETAIL > 3) { fprintf(gclog, "forwarding cell %p to (new body) %p\n", cell, newbody);
+         for (int i = 0; i < (map.cell_size - 8); ++i) {
+@@ -2860,6 +2868,7 @@
+   void reset_nursery_bumper() {
+     this->nursery_bumper.base  = realigned_for_allocation(this->nursery_base);
+     this->nursery_bumper.bound = offset(nursery_base, nursery_size - (1 << 15));
++    if (MEMSET_FREED_MEMORY) this->nursery_bumper.wipe_memory(0xBB);
+   }
+ 
+   virtual remset_t& get_incoming_ptr_addrs() { return incoming_ptr_addrs; }
+@@ -4309,5 +4318,7 @@
+   gcglobals.num_closure_calls++;
+ }
+ 
++const int gclim = 2;
++
+ // {{{ Allocation interface used by generated code
+ void* memalloc_cell(typemap* typeinfo) {
+@@ -4312,6 +4323,7 @@
+ // {{{ Allocation interface used by generated code
+ void* memalloc_cell(typemap* typeinfo) {
++  if (gcglobals.num_gcs_triggered >= gclim) { return gcglobals.maturespace->allocate_cell(typeinfo); }
+   return nursery->allocate_cell(typeinfo);
+ }
+ 
+ void* memalloc_cell_16(typemap* typeinfo) {
+@@ -4314,8 +4326,9 @@
+   return nursery->allocate_cell(typeinfo);
+ }
+ 
+ void* memalloc_cell_16(typemap* typeinfo) {
++  if (gcglobals.num_gcs_triggered >= gclim) { return gcglobals.maturespace->allocate_cell_16(typeinfo); }
+   return nursery->allocate_cell_16(typeinfo);
+ }
+ 
+ void* memalloc_cell_32(typemap* typeinfo) {
+@@ -4318,8 +4331,9 @@
+   return nursery->allocate_cell_16(typeinfo);
+ }
+ 
+ void* memalloc_cell_32(typemap* typeinfo) {
++  if (gcglobals.num_gcs_triggered >= gclim) { return gcglobals.maturespace->allocate_cell_32(typeinfo); }
+   return nursery->allocate_cell_32(typeinfo);
+ }
+ 
+ void* memalloc_cell_48(typemap* typeinfo) {
+@@ -4322,8 +4336,9 @@
+   return nursery->allocate_cell_32(typeinfo);
+ }
+ 
+ void* memalloc_cell_48(typemap* typeinfo) {
++  if (gcglobals.num_gcs_triggered >= gclim) { return gcglobals.maturespace->allocate_cell_48(typeinfo); }
+   return nursery->allocate_cell_48(typeinfo);
+ }
+ 
+ void* memalloc_array(typemap* typeinfo, int64_t n, int8_t init) {
+@@ -4326,7 +4341,8 @@
+   return nursery->allocate_cell_48(typeinfo);
+ }
+ 
+ void* memalloc_array(typemap* typeinfo, int64_t n, int8_t init) {
++  if (gcglobals.num_gcs_triggered >= gclim) { return gcglobals.maturespace->allocate_array(typeinfo, n, (bool) init); }
+   return nursery->allocate_array(typeinfo, n, (bool) init);
+ }
+ 
+@@ -4492,7 +4508,10 @@
+ 
+   gc::heap_cell* cell = gc::heap_cell::for_tidy((gc::tidy*) constructed);
+   const gc::typemap* map = tryGetTypemap(cell);
+-  gc_assert(map, "foster_ctor_id_of() was unable to get a usable typemap");
++  if (!map) {
++    fprintf(gc::gclog, "foster_ctor_id_of(%p) was unable to get a usable typemap\n", constructed); fflush(gc::gclog);
++    exit(3);
++  }
+   int8_t ctorId = map->ctorId;
+   if (ctorId < 0) {
+     fprintf(gc::gclog, "foster_ctor_id_of inspected bogus ctor id %d from cell %p in line %d of frame %u\n", ctorId, cell, line_offset_within_f15(cell), frame15_id_of(cell));

@@ -1,0 +1,248 @@
+# HG changeset patch
+# Parent  32857bcff088f6b37ee96e20d53c8ba1ed691e6a
+Implement partial compaction to skip densely populated frames.
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -46,6 +46,7 @@
+ #define ENABLE_GCLOG_PREP 0
+ #define ENABLE_GCLOG_ENDGC 1
+ #define PRINT_STDOUT_ON_GC 0
++#define PRINT_HEAP_LINE_SNAPSHOT      1
+ #define FOSTER_GC_TRACK_BITMAPS       0
+ #define FOSTER_GC_ALLOC_HISTOGRAMS    0
+ #define FOSTER_GC_TIME_HISTOGRAMS     1 // Adds ~300 cycles per collection
+@@ -419,7 +420,7 @@
+   frame15kind      frame_classification;
+   uint8_t          num_available_lines_at_last_collection; // TODO these two fields are mutually exclusively used...
+   uint8_t          num_holes_at_last_full_collection;
+-  uint8_t pad0;
++  uint8_t          compactable;
+ };
+ 
+ // We track "available" rather than "marked" lines because it's more natural
+@@ -1851,7 +1852,7 @@
+     }
+ 
+     if (!non_markable_addr(unchecked_ptr_val(*root))) {
+-      fprintf(gclog, "adding root slot %p to worklist\n", root);
++      //fprintf(gclog, "adding root slot %p to worklist\n", root);
+       immix_worklist.add_root(root);
+     }
+   }
+@@ -2645,6 +2646,20 @@
+ }
+ uint8_t count_marked_lines_for_frame15(frame15* f15, uint8_t* linemap_for_frame);
+ 
++bool should_skip_compaction_for_frame15_id(frame15_id fid) {
++  int byte_residency_in_lines  = int((double(gcglobals.lazy_mapped_frame_liveness[fid]) / 32768.0) * 128.0);
++  // Line counts are recorded in sweeping, but we haven't swept yet,
++  // and line counts from previous sweeps are too stale to be useful.
++  uint8_t* linemap = linemap_for_frame15_id(fid);
++  int num_marked_lines = count_marked_lines_for_frame15(frame15_for_frame15_id(fid), linemap);
++  int lines_freed_by_compaction = num_marked_lines - byte_residency_in_lines;
++  bool skip_compaction = byte_residency_in_lines == 0 // too little data to bother with; can reuse exisiting lines
++                      ||  byte_residency_in_lines > 100      // too much data to move?
++                      || ((double(lines_freed_by_compaction) * 1.4) < double(byte_residency_in_lines)) // too little payoff...
++                      ;
++  return skip_compaction;
++}
++
+ void show_linemap_for_frame15(frame15_id fid) {
+   uint8_t* linemap = linemap_for_frame15_id(fid);
+   fprintf(gclog, "frame %u: ", fid);
+@@ -2658,6 +2673,8 @@
+     fprintf(gclog, (i < byte_residency_out_of_32) ? "-" :
+                   ((i < line_residency_out_of_32) ? "=" : " ")); }
+   fprintf(gclog, "|");
++  bool skip_compaction = should_skip_compaction_for_frame15_id(fid);
++  fprintf(gclog, skip_compaction ? " -  " : "    ");
+   fprintf(gclog, "\n");
+ }
+ 
+@@ -2889,7 +2906,7 @@
+ uint64_t starting_addr(frame15_id fid) {
+   return uint64_t(realigned_for_allocation(frame15_for_frame15_id(fid)));
+ }
+-int64_t compute_sliver_offsets(std::vector<frame15_id>& ids) {
++void compute_sliver_offsets(std::vector<frame15_id>& ids) {
+   auto curr_id = 0;
+   auto prev_sliver = frame15_id_to_sliver(ids[curr_id]);
+   gcglobals.lazy_mapped_sliver_offsets[ prev_sliver ] = starting_addr( ids[curr_id] );
+@@ -2938,11 +2955,11 @@
+ 
+   // fprintf(gclog, "summed bytes   : %zd\n", summed_bytes);
+   // fprintf(gclog, "compacted bytes: %zd\n", (curr_id * (1 << 15)));
+-
+-  return curr_id;
+ }
+ 
+ heap_cell* compute_forwarding_addr(heap_cell* old) {
++  if (!frame15_info_for_frame15_id(frame15_id_of(old))->compactable) { return nullptr; }
++
+   uint64_t base = gcglobals.lazy_mapped_sliver_offsets[ sliver_id_of(old) ];
+   uint64_t offset = byte_offset_in_sliver(old);
+   // fprintf(gclog, "forwarding addr was base %zx + offset %6zu (%6zx) for ptr %p in sliver %zd\n", base, offset, offset, old, sliver_id_of(old));
+@@ -4320,7 +4337,7 @@
+   if (space->can_alloc_for_defrag(cell_size)) {
+     return space->defrag_copy_cell_rc(cell, (typemap*)map, cell_size);
+   } else {
+-    fprintf(gclog, "RC unable to continue opportunistic evacuation...\n");
++    //fprintf(gclog, "RC unable to continue opportunistic evacuation...\n");
+     gcglobals.evac_disabled = true;
+     return nullptr;
+   }
+@@ -4331,39 +4348,57 @@
+     unchecked_ptr* root = pop_root();
+     tori* body = unchecked_ptr_val(*root);
+     heap_cell* obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(body));
+-    heap_cell* fwded = compute_forwarding_addr(obj);
+-    *root = make_unchecked_ptr((tori*) fwded->body_addr());
++    if (heap_cell* fwded = compute_forwarding_addr(obj)) {
++      *root = make_unchecked_ptr((tori*) fwded->body_addr());
++    }
+   }
+   initialize();
+ }
+ 
+ void do_compactify_via_granule_marks(immix_space* default_subheap) {
+   clocktimer<false> ct; ct.start();
++  std::vector<frame15_id> all_ids;
++  default_subheap->copy_frame15_ids(all_ids);
++
+   std::vector<frame15_id> ids;
+-  default_subheap->copy_frame15_ids(ids);
++  ids.reserve(all_ids.size());
++  for (auto fid : all_ids) {
++    bool do_skip = should_skip_compaction_for_frame15_id(fid);
++    if (!do_skip) {
++      ids.push_back(fid);
++    }
++
++    frame15_info_for_frame15_id(fid)->compactable = !do_skip;
++  }
+ 
+   //gfx::timsort(ids.begin(), ids.end());
++  std::sort(all_ids.begin(), all_ids.end()); // just for prettier printing.
+   std::sort(ids.begin(), ids.end());
+   // We now have a virtualized list of frame ids, in address order.
+-  fprintf(gclog, "do_compactify: acquiring sorted frames: %.1f us\n", ct.elapsed_us());
+-
+-  for (auto fid : ids) {
+-    show_linemap_for_frame15(fid);
++  fprintf(gclog, "do_compactify: acquiring culled, sorted frames: %.1f us\n", ct.elapsed_us());
++
++  if (PRINT_HEAP_LINE_SNAPSHOT) {
++    for (auto fid : all_ids) {
++      show_linemap_for_frame15(fid);
++    }
+   }
+ 
+   ct.start();
+-  int64_t curr_id = compute_sliver_offsets(ids);
++  compute_sliver_offsets(ids);
+   fprintf(gclog, "do_compactify: computing new forwarding addresses: %.1f us\n", ct.elapsed_us()); fflush(gclog);
+ 
+   ct.start();
+   // Update references and relocate.
+-  for (auto fid : ids) {
+-    auto mdb = metadata_block_for_frame15_id(fid);
+-    uint8_t* linemap = &mdb->linemap[0][0];
+-
++  for (auto fid : all_ids) {
+     auto f15 = frame15_for_frame15_id(fid);
+-    uint8_t* linemarks = &linemap[line_offset_within_f21(f15)];
+-    memset(linemarks, 0, IMMIX_LINES_PER_FRAME15);
++    bool compacting = frame15_info_for_frame15_id(fid)->compactable;
++
++    if (compacting) {
++      auto mdb = metadata_block_for_frame15_id(fid);
++      uint8_t* linemap = &mdb->linemap[0][0];
++      uint8_t* linemarks = &linemap[line_offset_within_f21(f15)];
++      memset(linemarks, 0, IMMIX_LINES_PER_FRAME15);
++    }
+ 
+     heap_cell* base = (heap_cell*) realigned_for_allocation(f15);
+     uint8_t* marks = &gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)];
+@@ -4381,16 +4416,24 @@
+         for_each_child_slot_with(cell, arr, map, cell_size, [](intr* slot) {
+             void* ptr = *(void**)slot;
+             if (!non_markable_addr(ptr)) {
+-              heap_cell* obj = compute_forwarding_addr(heap_cell::for_tidy((tidy*) ptr));
+-               *(tidy**)slot = (tidy*) obj->body_addr();
++              if (heap_cell* obj = compute_forwarding_addr(heap_cell::for_tidy((tidy*) ptr))) {
++                *(tidy**)slot = (tidy*) obj->body_addr();
++              }
+             }
+         });
+ 
+-        heap_cell* dest = compute_forwarding_addr(cell);
+-        // fprintf(gclog, "sliding cell of size %zd (mark %x) from %p (meta %p) to new dest %p\n",
+-        //        cell_size, mark & 0x7F, cell, cell->get_meta(), dest); fflush(gclog);
+-        memcpy(dest, cell, cell_size);
+-        delta_line_counts(dest, cell_size, 1);
++        if (!compacting) {
++          // skip!
++        } else if (heap_cell* dest = compute_forwarding_addr(cell)) {
++          // fprintf(gclog, "sliding cell of size %zd (mark %x) from %p (meta %p) to new dest %p\n",
++          //        cell_size, mark & 0x7F, cell, cell->get_meta(), dest); fflush(gclog);
++          memcpy(dest, cell, cell_size);
++          delta_line_counts(dest, cell_size, 1);
++        } else {
++          // Restore nullified line counts for un-modified cells.
++          //delta_line_counts(cell, cell_size, 1);
++          fprintf(gclog, "WARNING: tried to compute forwarding addr for cell %p but had none...\n", cell);
++        }
+ /*
+         if (map->isCoro) {
+           fprintf(gclog, "coro found!\n");
+@@ -4451,7 +4494,9 @@
+     foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
+     foster_bare_coro*  coro = *coro_slot;
+     heap_cell* coro_cell = heap_cell::for_tidy((tidy*) coro);
+-    *coro_slot = (foster_bare_coro*) compute_forwarding_addr(coro_cell)->body_addr();
++    if (auto new_addr = compute_forwarding_addr(coro_cell)->body_addr()) {
++      *coro_slot = (foster_bare_coro*) new_addr;
++    }
+   }
+ #if 0
+   ct.start();
+@@ -4485,21 +4530,17 @@
+ 
+   ct.start();
+   // Clear all object mark bits.
+-  int frames_freed = 0;
+-  fprintf(gclog, "curr_id is %zd\n", curr_id);
+-  std::set<frame15_id> uniq_ids(ids.begin(), ids.end());
+-  fprintf(gclog, "ids.size: %zd; uniq size: %zd\n", ids.size(), uniq_ids.size());
+-  for (unsigned i = 0; i < ids.size(); ++i) {
+-    auto fid = ids[i];
++  for (auto fid : all_ids) {
+     auto f15 = frame15_for_frame15_id(fid);
+     clear_object_mark_bits_for_frame15(f15);
+   }
+ 
+-  fprintf(gclog, "should be freeing %d of %zd frames...\n", frames_freed, ids.size());
+   fprintf(gclog, "do_compactify: updating mark bits: %.1f us\n", ct.elapsed_us());
+ 
+-  for (auto fid : ids) {
+-    show_linemap_for_frame15(fid);
++  if (PRINT_HEAP_LINE_SNAPSHOT) {
++    for (auto fid : all_ids) {
++      show_linemap_for_frame15(fid);
++    }
+   }
+ 
+   // TODO have separate granule byte maps and bit maps;
+@@ -4515,6 +4556,10 @@
+ 
+   default_subheap->next_collection_sticky = false;
+ 
++  // Reset, just to be safe...
++  for (auto fid : all_ids) {
++    frame15_info_for_frame15_id(fid)->compactable = false;
++  }
+   // TODO: try implementing Compressor-style one-pass compression.
+ }
+ 

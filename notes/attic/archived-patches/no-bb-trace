@@ -1,0 +1,16 @@
+# HG changeset patch
+# Parent  b6009a35dc5ba6ded320279c007989decbc0e6a4
+Disable basic-block tracer.
+
+diff --git a/compiler/fosteroptc.cpp b/compiler/fosteroptc.cpp
+--- a/compiler/fosteroptc.cpp
++++ b/compiler/fosteroptc.cpp
+@@ -457,7 +457,7 @@
+     passes.add(llvm::createVerifierPass());
+   }
+ 
+-  passes.add(foster::createBasicBlockTracerPass());
++  //passes.add(foster::createBasicBlockTracerPass());
+ 
+   foster::runFunctionPassesOverModule(fpasses, mod);
+   passes.run(*mod);

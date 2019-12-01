@@ -1,0 +1,23 @@
+# HG changeset patch
+# Parent  a2870a97ae77c5a9bf7fcffbea7fdefa2f3e6fa7
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -163,7 +163,6 @@
+ 
+   virtual void force_gc_for_debugging_purposes() = 0;
+ 
+-  virtual void scan_cell(heap_cell* cell, int maxdepth) = 0;
+   virtual void visit_root(unchecked_ptr* root, const char* slotname) = 0;
+ 
+   virtual void* allocate_array(typemap* elt_typeinfo, int64_t n, bool init) = 0;
+@@ -1671,7 +1670,7 @@
+     subheaps.push_back(subheap);
+   }
+ 
+-  virtual void scan_cell(heap_cell* cell, int depth) {
++  void scan_cell(heap_cell* cell, int depth) {
+     return common.scan_cell(this, cell, depth);
+   }
+ 

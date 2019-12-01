@@ -1,0 +1,87 @@
+# HG changeset patch
+# Parent  7d46392848942227e055075f09aaa78d721d3cab
+Eager resetting of out-of-line object marks.
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -655,7 +655,7 @@
+   do_mark_obj_with(obj, invert_mark(make_mark_t(get_obj_mark_value(obj))));
+ }
+ 
+-#if 0
++#if 1
+ void set_object_mark_bits_for_frame15(void* f15, mark_t value) {
+   if (GCLOG_DETAIL > 2) { fprintf(gclog, "clearing granule bits for frame %p (%u)\n", f15, frame15_id_of(f15)); }
+   if (MARK_OBJECT_WITH_BITS) {
+@@ -705,7 +705,7 @@
+                        immix_heap* parent) {
+     void* base = malloc(total_bytes + 8);
+     heap_array* allot = align_as_array(base);
+-    do_mark_obj_with(allot, invert_mark(parent->active_mark));
++    //do_mark_obj_with(allot, invert_mark(parent->active_mark));
+ 
+     if (GC_ASSERTIONS) { gc_assert(frame15_id_of(allot) == frame15_id_of(allot->body_addr()), "large array: metadata and body address on different frames!"); }
+     if (DEBUG_INITIALIZE_ALLOCATIONS ||
+@@ -908,7 +908,7 @@
+                                   bool     init,
+                                   mark_t   m) {
+     heap_array* allot = static_cast<heap_array*>(bumper->prechecked_alloc_noinit(total_bytes));
+-    do_mark_obj_with(allot, m);
++    //do_mark_obj_with(allot, m);
+ 
+     if (GC_ASSERTIONS) { gc_assert(frame15_id_of(allot) == frame15_id_of(allot->body_addr()), "pre array: metadata and body address on different frames!"); }
+     if (DEBUG_INITIALIZE_ALLOCATIONS ||
+@@ -958,7 +958,7 @@
+                                  mark_t   m,
+                                  uint32_t space_id) {
+     heap_cell* allot = static_cast<heap_cell*>(bumper->prechecked_alloc(cell_size));
+-    do_mark_obj_with(allot, m);
++    //do_mark_obj_with(allot, m);
+ 
+     if (GC_ASSERTIONS) { gc_assert(frame15_id_of(allot) == frame15_id_of(allot->body_addr()), "cell prechecked: metadata and body address on different frames!"); }
+     //if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(map->cell_size); }
+@@ -1006,6 +1006,7 @@
+            line_for_slot_is_marked(cell), obj_is_marked(cell)); fflush(gclog);
+            */
+     if (!obj_is_marked_with(cell, heap_for(cell)->active_mark)) { return true; }
++    //if (!obj_is_marked_with(cell, make_mark_t(1))) { return true; }
+     // TODO check to make sure that the space ownership hasn't changed?
+     return false;
+   }
+@@ -1557,6 +1558,7 @@
+       fprintf(gclog, "scanning cell %p for space %p with remaining depth %d\n", cell, space, depth_remaining);
+       fflush(gclog); }
+     if (obj_is_marked_with(cell, space->active_mark)) {
++    //if (obj_is_marked_with(cell, make_mark_t(1))) {
+       if (GC_ASSERTIONS) {
+         if (gcglobals.marked_in_current_gc.count(cell) == 0) {
+           fprintf(gclog, "GC INVARIANT VIOLATED: cell %p, of frame %u, appears marked before actually being marked!\n", cell, frame15_id_of(cell));
+@@ -1588,6 +1590,7 @@
+ 
+     if (GC_ASSERTIONS) { gcglobals.marked_in_current_gc.insert(cell); }
+     do_mark_obj_with(cell, space->active_mark);
++    //do_mark_obj_with(cell, make_mark_t(1));
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += cell_size; }
+ 
+@@ -3301,8 +3304,8 @@
+     });
+     auto inspectFrame21Time_us = insp_ct.elapsed_us();
+ 
+-    mark_t flipped = invert_mark(this->active_mark);
+-    this->active_mark = flipped;
++    //mark_t flipped = invert_mark(this->active_mark);
++    //this->active_mark = flipped;
+ 
+     auto deltaPostMarkingCleanup_us = phase.elapsed_us();
+ 
+@@ -3454,7 +3457,7 @@
+ 
+     int64_t t0 = __foster_getticks_start();
+     memset(linemap, 0, IMMIX_LINES_PER_BLOCK);
+-    //set_object_mark_bits_for_frame15(f15, invert_mark(this->active_mark));
++    set_object_mark_bits_for_frame15(f15, invert_mark(this->active_mark));
+     int64_t t1 = __foster_getticks_end();
+     gcglobals.resetting_ticks += __foster_getticks_elapsed(t0, t1);
+ 

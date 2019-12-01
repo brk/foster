@@ -1,0 +1,235 @@
+# HG changeset patch
+# Parent  bfa683420f787fe7c841790b6592a6909982573f
+Use statepoints for GC.
+
+Using llvm.gcroot() by itself brings only a small penalty (on the order of 3%
+for fannkuchredux-alt). The main costs appear to be in (1) providing
+space safety by nulling out dead root slots, and (2) reloading roots to support
+relocating collectors. The former can be significantly (+/- 10-15%) faster or
+slower; the latter carries consistent penalties of 10-30% for fannkuchredux-alt.
+
+I'm not sure offhand whether statepoint stack maps elide dead roots.
+
+One thing we lose is the ability to convey the middle-end's knowledge about what
+calls might trigger GCs and which definitely won't. However, with the "push"
+design for state updates with statepoints, versus the "pull" model with
+llvm.gcroot(), having extra safepoints doesn't significantly pessimize the code.
+
+At this point, because LLVM 3.9 uses stack map layout version 1 instead of
+version 3, we can't actually use the statepoint infrastructure at runtime.
+But it's here and looks mostly OK for when we move to LLVM 4.1.
+
+diff --git a/compiler/passes/Codegen/CodegenUtils.cpp b/compiler/passes/Codegen/CodegenUtils.cpp
+--- a/compiler/passes/Codegen/CodegenUtils.cpp
++++ b/compiler/passes/Codegen/CodegenUtils.cpp
+@@ -195,7 +195,7 @@
+ extern char kFosterMain[];
+ void CodegenPass::markFosterFunction(Function* f) {
+   f->setAttributes(this->fosterFunctionAttributes);
+-  if (this->config.useGC) { f->setGC("fostergc"); }
++  if (this->config.useGC) { f->setGC("statepoint-example"); }
+ 
+   // We must not inline foster__main, which is marked with our gc,
+   // into its caller, which is a gc-less function!
+@@ -299,7 +299,7 @@
+                                                   slotSizeOf(ty), /*align*/ 4));
+   }
+ 
+-  return builder.CreateBitCast(mem, ptrTo(ty), "ptr");
++  return emitBitcast(mem, ptrTo(ty), "ptr");
+ }
+ 
+ llvm::Value*
+@@ -319,7 +319,7 @@
+   llvm::Value* num_elts = signExtend(n, builder.getInt64Ty());
+   llvm::CallInst* mem = builder.CreateCall(memalloc, { typemap, num_elts,
+                                                        builder.getInt8(init) }, "arrmem");
+-  return builder.CreateBitCast(mem,
++  return emitBitcast(mem,
+                   ArrayTypeAST::getZeroLengthTypeRef(elt_type), "arr_ptr");
+ }
+ 
+@@ -614,7 +614,7 @@
+     llvm::CallInst* call = builder.CreateCall(f);
+     call->setCallingConv(llvm::CallingConv::C);
+     // Implicitly: called function may GC...
+-    builder.CreateRet(builder.CreateBitCast(call, F->getReturnType()));
++    builder.CreateRet(emitBitcast(call, F->getReturnType()));
+ }
+ 
+ void codegenCall1ToFunctionWithArg(llvm::Function* F, llvm::Value* f, llvm::Value* n) {
+@@ -624,7 +624,7 @@
+     if (F->getReturnType()->isVoidTy()) {
+       builder.CreateRetVoid();
+     } else {
+-      builder.CreateRet(builder.CreateBitCast(call, F->getReturnType()));
++      builder.CreateRet(emitBitcast(call, F->getReturnType()));
+     }
+ 
+ }
+@@ -728,7 +728,7 @@
+     Function::arg_iterator AI = F->arg_begin();
+     Value* n = &*(AI++);
+     codegenCall1ToFunctionWithArg(F, pass->lookupFunctionOrDie("foster_subheap_activate_raw"),
+-      builder.CreateBitCast(n, builder.getInt8PtrTy()));
++      emitBitcast(n, builder.getInt8PtrTy()));
+   }
+ };
+ 
+@@ -749,7 +749,7 @@
+     Function::arg_iterator AI = F->arg_begin();
+     Value* n = &*(AI++);
+     codegenCall1ToFunctionWithArg(F, pass->lookupFunctionOrDie("foster_subheap_collect_raw"),
+-      builder.CreateBitCast(n, builder.getInt8PtrTy()));
++      emitBitcast(n, builder.getInt8PtrTy()));
+   }
+ };
+ 
+@@ -768,7 +768,23 @@
+     Function::arg_iterator AI = F->arg_begin();
+     Value* n = &*(AI++);
+     codegenCall1ToFunctionWithArg(F, pass->lookupFunctionOrDie("foster_subheap_shrink_raw"),
+-      builder.CreateBitCast(n, builder.getInt8PtrTy()));
++      emitBitcast(n, builder.getInt8PtrTy()));
++  }
++};
++
++struct LLProcGCSafepointPoll : public LLProcPrimBase {
++  explicit LLProcGCSafepointPoll() {
++      this->name = "gc.safepoint_poll";
++      std::vector<TypeAST*> argTypes;
++      std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
++      this->type = new FnTypeAST(VoidTypeAST::get(),
++                                 argTypes, annots);
++  }
++  virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
++    //pass->markFosterFunction(F);
++    llvm::CallInst* call = builder.CreateCall(pass->lookupFunctionOrDie("foster_gc_safepoint_poll"));
++    call->setCallingConv(llvm::CallingConv::C);
++    builder.CreateRetVoid();
+   }
+ };
+ 
+@@ -783,6 +799,8 @@
+ 
+   procs.push_back(new LLProcAllocDefaultCoro());
+ 
++  procs.push_back(new LLProcGCSafepointPoll());
++
+   procs.push_back(new LLProcSubheapCreatePrim());
+   procs.push_back(new LLProcSubheapActivatePrim());
+   procs.push_back(new LLProcSubheapCollectPrim());
+diff --git a/compiler/passes/LLCodegen.cpp b/compiler/passes/LLCodegen.cpp
+--- a/compiler/passes/LLCodegen.cpp
++++ b/compiler/passes/LLCodegen.cpp
+@@ -71,15 +71,6 @@
+ llvm::Type* slotType(llvm::Type* t) { return t->getContainedType(0); }
+ llvm::Type* slotType(llvm::Value* v) { return slotType(v->getType()); }
+ 
+-bool isLargishStructPointerTy(llvm::Type* ty) {
+-  if (llvm::PointerType* pt = llvm::dyn_cast<llvm::PointerType>(ty)) {
+-    if (llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(pt->getElementType())) {
+-      return st->getNumElements() >= 2;
+-    }
+-  }
+-  return false;
+-}
+-
+ bool isPointerToUnknown(Type* ty) {
+   return ty->isPointerTy() &&
+          slotType(ty)->isIntegerTy(kUnknownBitsize);
+@@ -109,22 +100,6 @@
+   return true;
+ }
+ 
+-llvm::Value* emitBitcast(llvm::Value* v, llvm::Type* dstTy, llvm::StringRef msg = "") {
+-  llvm::Type* srcTy = v->getType();
+-  if (srcTy->isVoidTy()) {
+-    return getNullOrZero(dstTy);
+-  }
+-  if (isFunctionPointerTy(srcTy) && isLargishStructPointerTy(dstTy)) {
+-    ASSERT(false) << "cannot cast " << str(srcTy) << " to " << str(dstTy) << "\n" << str(v);
+-  }
+-  if (dstTy->isPointerTy() != srcTy->isPointerTy()) {
+-    builder.GetInsertBlock()->getParent()->dump();
+-    ASSERT(false) << "cannot cast " << str(srcTy) << " to " << str(dstTy) << "\ndue to pointer-type mismatch\n" << str(v);
+-  }
+-
+-  return builder.CreateBitCast(v, dstTy, msg);
+-}
+-
+ // TODO (eventually) try emitting masks of loaded/stored heap pointers
+ // to measure performance overhead of high/low tags.
+ 
+@@ -361,7 +336,7 @@
+     /*isConstant=*/  true,
+     /*Linkage=*/     llvm::GlobalValue::ExternalLinkage,
+     /*Initializer=*/ llvm::ConstantInt::get(builder.getInt32Ty(), 0),
+-    /*Name=*/        "foster__gcmaps",
++    /*Name=*/        "__llvm_stackmaps",
+     /*InsertBefore=*/NULL,
+     /*ThreadLocal=*/ llvm::GlobalVariable::NotThreadLocal);
+   }
+@@ -866,8 +841,10 @@
+   if (v->getType()->isVoidTy() && tgt == getUnitType()->getLLVMType()) {
+     // Can't cast a void value to a unit value,
+     // but we can manufacture a unit ptr...
+-    return llvm::ConstantPointerNull::getNullValue(tgt);
+-  } else return (v->getType() == tgt) ? v : emitBitcast(v, tgt);
++    return getNullOrZero(tgt);
++  } else {
++    return (v->getType() == tgt) ? v : emitBitcast(v, tgt);
++  }
+ }
+ 
+ void LLGCRootInit::codegenMiddle(CodegenPass* pass) {
+@@ -1095,8 +1072,8 @@
+                         const_arr_tidy,
+                         cellname);
+ 
+-  return builder.CreateBitCast(getPointerToIndex(arrayGlobal, builder.getInt32(1), "cellptr"),
+-                                ArrayTypeAST::getZeroLengthTypeRef(TypeAST::i(8)), "arr_ptr");
++  return emitBitcast(getPointerToIndex(arrayGlobal, builder.getInt32(1), "cellptr"),
++                     ArrayTypeAST::getZeroLengthTypeRef(TypeAST::i(8)), "arr_ptr");
+ }
+ 
+ llvm::Value* LLText::codegen(CodegenPass* pass) {
+@@ -1227,4 +1204,5 @@
+       emitFakeComment("nullary ctor!");
+       llvm::Value* val = builder.getInt8(this->ctorRepr.smallId);
+       llvm::Type* ptrty = getHeapPtrTo(this->type->getLLVMType());
++      /*
+       return builder.CreateIntToPtr(val, ptrty);
+@@ -1230,4 +1208,9 @@
+       return builder.CreateIntToPtr(val, ptrty);
++      */
++      return
++        emitBitcast(
++          builder.CreateCall(pass->mod->getFunction("foster__get_ctor_as_ptr"), { val }),
++          ptrty);
+       // return null pointer, or'ed with ctor smallId, bitcast to appropriate result.
+     } else {
+       return allocateCell(pass, this->type, this->region, this->ctorRepr,
+diff --git a/runtime/libfoster.cpp b/runtime/libfoster.cpp
+--- a/runtime/libfoster.cpp
++++ b/runtime/libfoster.cpp
+@@ -569,6 +569,10 @@
+   return base::TimeDelta::FromMicroseconds(later - early).InSecondsF();
+ }
+ 
++void foster_gc_safepoint_poll() {
++  fprintf(stderr, "foster gc safepoint?\n");
++}
++
+ // We want to perform aggressive link time optimization of
+ // foster code + stdlib, without having runtime::initialize()
+ // and ::cleanup() discarded. This function is hardcoded to be
+@@ -585,7 +589,7 @@
+ 
+   if (!tru) {
+     // kung-fu grip to prevent LTO from being too mean.
+-    foster_coro_delete_self_reference((void*)&foster__gcmaps);
++    foster_coro_delete_self_reference((void*)&__LLVM_StackMaps);
+   }
+ 
+   return foster::runtime::cleanup();

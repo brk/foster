@@ -1,0 +1,120 @@
+# HG changeset patch
+# Parent  02abb6b57026c932d98612f56a9179aed0791baf
+Un-disable line-grain Immix collection.
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -303,7 +303,7 @@
+ 
+   bool next_collection_sticky;
+ 
+-  virtual uint32_t hash_for_object_headers() { return fold_64_to_32(uint64_t(this)); }
++  virtual uint32_t hash_for_object_headers();
+ 
+   virtual tidy* tidy_for(tori* t) = 0;
+ 
+@@ -313,6 +313,8 @@
+ 
+   virtual uint64_t prepare_for_collection() = 0;
+ 
++  virtual void remember_generational(void* obj, void** slot) = 0;
++
+   virtual void condemn() = 0;
+   virtual void uncondemn() = 0;
+   virtual bool is_condemned() = 0;
+@@ -564,6 +566,12 @@
+ 
+ GCGlobals<immix_heap> gcglobals;
+ 
++uint32_t heap::hash_for_object_headers() {
++  if (this == gcglobals.default_allocator) return 0;
++  return fold_64_to_32(uint64_t(this));
++}
++
++
+ void reset_marked_histogram() {
+   for (int i = 0; i < 128; ++i) { gcglobals.marked_histogram[i] = 0; }
+ }
+@@ -2185,8 +2193,9 @@
+ 
+   std::vector<used_linegroup> used_lines;
+ 
+-  // The points-into remembered set
++  // The points-into subheap remembered set
+   remset_t incoming_ptr_addrs;
++  remset_t generational_remset;
+ 
+   bool condemned_flag;
+ 
+@@ -2282,9 +2291,26 @@
+     common.common_gc(this, true);
+   }
+ 
++  virtual void remember_generational(void* obj, void** slot) {
++    generational_remset.insert((tori**)slot);
++  }
++
+   virtual uint64_t prepare_for_collection() {
+-    exit(42);
+-    return 0;
++    if (this->next_collection_sticky) {
++      std::vector<tori**> roots = generational_remset.move_to_vector();
++      for (auto slot : roots) {
++        //fprintf(gclog, "visiting generational remset root %p in slot %p\n", *slot, slot); fflush(gclog);
++        common.visit_root(this, (unchecked_ptr*) slot, "generational_remset_root");
++      }
++      return roots.size();
++    } else {
++      for (auto usedgroup : used_lines) {
++        usedgroup.clear_line_and_object_mark_bits();
++      }
++      laa.reset_large_array_marks();
++      generational_remset.clear();
++      return 0;
++    }
+   }
+ 
+   // Marks lines we own as condemned; ignores lines owned by other spaces.
+@@ -2343,13 +2369,6 @@
+           ++num_lines_reclaimed;
+         }
+       }
+-
+-      if (!this->next_collection_sticky) {
+-        usedgroup.clear_line_and_object_mark_bits();
+-      }
+-    }
+-    if (!this->next_collection_sticky) {
+-      laa.reset_large_array_marks();
+     }
+     return num_lines_reclaimed;
+   }
+@@ -2973,9 +2992,6 @@
+   virtual uint64_t prepare_for_collection() {
+     if (this->next_collection_sticky) {
+       std::vector<tori**> roots = generational_remset.move_to_vector();
+-      // Process generational remset.
+-      // We must be careful not to process the same root more than once;
+-      // otherwise, we might evacuate the same object multiple times.
+       for (auto slot : roots) {
+         //fprintf(gclog, "visiting generational remset root %p in slot %p\n", *slot, slot); fflush(gclog);
+         common.visit_root(this, (unchecked_ptr*) slot, "generational_remset_root");
+@@ -3575,7 +3591,7 @@
+     incoming_ptr_addrs.insert((tori**) slot);
+   }
+ 
+-  void remember_generational(void* obj, void** slot) {
++  virtual void remember_generational(void* obj, void** slot) {
+     generational_remset.insert((tori**)slot);
+   }
+ 
+@@ -4506,7 +4522,7 @@
+     return; // Don't bother recording old-to-old pointers.
+   }
+   immix_heap* hs = heap_for_wb(obj);
+-  ((immix_space*)hs)->remember_generational(obj, slot); // TODO fix this assumption
++  hs->remember_generational(obj, slot);
+   if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1g_hits; }
+ }
+ 

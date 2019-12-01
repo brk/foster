@@ -1,0 +1,17 @@
+# HG changeset patch
+# Parent  147391ba9f674781729b252199c81a2b40e9cde2
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -3994,8 +3995,8 @@
+ immix_heap* get_mature_space() { return gcglobals.maturespace; }
+ int64_t mature_space_approx_size() { return gcglobals.maturespace->approx_size_in_bytes(); }
+ bool    mature_space_almost_full() {
+-  return global_frame15_allocator.approx_bytes_capacity() <= 
+-         gcglobals.default_allocator->approx_size_in_bytes();
++  return (global_frame15_allocator.approx_bytes_capacity() <= 
++         gcglobals.default_allocator->approx_size_in_bytes());
+ }
+ 
+ FILE* print_timing_stats() {

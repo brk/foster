@@ -1,0 +1,74 @@
+# HG changeset patch
+# Parent  ea648f842a20c0dd026de17389c80e11e09c3ec5
+Account for potential fragmentation when ensuring mature space can accomodate
+the nursery.
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -1584,7 +1584,7 @@
+     int64_t cell_size;
+     get_cell_metadata(cell, arr, map, cell_size);
+ 
+-    fprintf(gclog, "scan cell %p : size %zd\n", cell, cell_size);
++    //fprintf(gclog, "scan cell %p : size %zd; header %p\n", cell, cell_size, cell->get_meta());
+ 
+     if (GC_ASSERTIONS) { gcglobals.marked_in_current_gc.insert(cell); }
+     do_mark_obj(cell);
+@@ -1670,7 +1670,7 @@
+     if (should_evacuate) {
+       if (obj->is_forwarded()) {
+         auto tidyn = (void*) obj->get_forwarded_body();
+-        fprintf(gclog, "object %p (body %p) in root %p had been forwarded to %p\n", obj, body, root, tidyn);
++        //fprintf(gclog, "object %p (body %p) in root %p had been forwarded to %p\n", obj, body, root, tidyn);
+         //*root = make_unchecked_ptr((tori*) offset(tidyn, distance(obj->body_addr(), body) ));
+         (*(void**)root) = tidyn;
+       } else {
+@@ -2574,14 +2574,14 @@
+     gNumRootsScanned = 0;
+ 
+ 
+-
+     foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
+     foster_bare_coro*  coro = *coro_slot;
+     if (coro) {
+       if (GCLOG_DETAIL > 1) {
+         fprintf(gclog, "==========visiting current coro: %p\n", coro); fflush(gclog);
+       }
+-      visit_root(active_space, (unchecked_ptr*)coro_slot, NULL);
++      immix_worklist.add_root((void**) coro_slot);
++      //visit_root(active_space, (unchecked_ptr*)coro_slot, NULL);
+       if (GCLOG_DETAIL > 1) {
+         fprintf(gclog, "==========visited current coro: %p\n", coro); fflush(gclog);
+       }
+@@ -3607,7 +3607,10 @@
+ void immix_worklist_t::process(immix_heap* target, immix_common& common) {
+   while (!empty()) {
+     void** root = pop_root();
+-    heap_cell* cell = (heap_cell*) *root;
++    void* body = *root;
++    if (non_kosher_addr(body)) continue;
++
++    heap_cell* cell = heap_cell::for_tidy(reinterpret_cast<tidy*>(body));
+ 
+     switch (gcglobals.condemned_set.status) {
+     case               condemned_set_status::single_subheap_condemned:
+@@ -3617,7 +3620,6 @@
+     case               condemned_set_status::whole_heap_condemned:
+       common.scan_cell<condemned_set_status::whole_heap_condemned>(target, cell, kFosterGCMaxDepth);
+     case               condemned_set_status::nursery_only:
+-      //fprintf(gclog, "immix worklist::process() grabbed cell %p from root %p\n", cell, root);
+       common.immix_trace<condemned_set_status::nursery_only>(get_mature_space(),
+                 (unchecked_ptr*) root, kFosterGCMaxDepth);
+     }
+@@ -4088,8 +4090,8 @@
+ bool    mature_space_almost_full() {
+   fprintf(gclog, "Mature  space bytes size: %zd\n", global_frame15_allocator.approx_bytes_capacity());
+   fprintf(gclog, "Nursery space bytes size: %zd\n", gcglobals.default_allocator->approx_size_in_bytes());
+-  return global_frame15_allocator.approx_bytes_capacity() <= 
+-         gcglobals.default_allocator->approx_size_in_bytes();
++  return double(global_frame15_allocator.approx_bytes_capacity()) <= 
++         double(gcglobals.default_allocator->approx_size_in_bytes()) * 1.6;
+ }
+ 
+ FILE* print_timing_stats() {

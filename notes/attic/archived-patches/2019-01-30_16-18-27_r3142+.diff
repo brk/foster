@@ -1,0 +1,377 @@
+# HG changeset patch
+# Parent  15b487ea402570b984957baaf5d9454e72b8d3a5
+Checkpoint work on Compressor-style compaction for RC Immix.
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -382,6 +382,8 @@
+     template <condemned_set_status condemned_status>
+     void process_for_cycle_collection(immix_heap* target, immix_common* common);
+ 
++    void process_for_compaction();
++
+     bool       empty()           { return roots.empty(); }
+     unchecked_ptr* pop_root()  { auto root = roots.back(); roots.pop_back(); return root; }
+     void       add_root(unchecked_ptr* root) { __builtin_prefetch(*(void**)root); roots.push_back(root); }
+@@ -737,8 +764,9 @@
+ inline void do_mark_obj(heap_cell* obj) {
+   obj->mark_not_young();
+   if (GCLOG_DETAIL > 3) { fprintf(gclog, "setting granule bit  for object %p in frame %u\n", obj, frame15_id_of(obj)); }
+   gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)] = 1;
+ }
++*/
+ 
+ inline void do_unmark_granule(void* obj) {
+   gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)] = 0;
+@@ -2788,7 +2821,100 @@
+   }
+ }
+ 
+-void do_cycle_collection(immix_heap* active_space, clocktimer<false>& phase, clocktimer<false>& gcstart, immix_common* common) {
++// TODO improve via lookup table of bitmap?
++// 1 byte = 8 bits = 8 granules = 128 bytes
++//         64 bits            => 1024 bytes = 1 chunk
++// frame15 => 256 bytes == 32 chunks
++uint64_t byte_offset_in_block(void* addr) {
++  uintptr_t ga = global_granule_for(addr);
++  uintptr_t gb = global_granule_for(frame15_for_frame15_id(frame15_id_of(addr)));
++  uint64_t sum = 0;
++  // This loop can execute up to 2048 iterations -- 1024 on average...
++  for (auto i = gb; i < ga; ++i) { sum += gcglobals.lazy_mapped_granule_marks[i] & 0x7F; }
++  return sum * 16;
++}
++
++uint64_t sum_live_bytes(frame15_id fid) {
++  uintptr_t gb = global_granule_for(frame15_for_frame15_id(fid));
++  uintptr_t gn = global_granule_for(frame15_for_frame15_id(fid + 1));
++  uint64_t sum = 0;
++  /*
++  fprintf(gclog, "granules for fid %u: ", fid);
++  for (auto i = gb; i < gn; ++i) {
++    if ((i % 64) == 0) {
++      fprintf(gclog, "\n                     ");
++    }
++    auto g = gcglobals.lazy_mapped_granule_marks[i];
++    if (g & 0x80) {
++      fprintf(gclog, ">%x", g & 0x7F);
++    } else {
++      fprintf(gclog, " %x", g & 0x7F);
++    }
++  }
++  fprintf(gclog, "\n");
++  */
++  for (auto i = gb; i < gn; ++i) { sum += gcglobals.lazy_mapped_granule_marks[i] & 0x7F; }
++  //fprintf(gclog, "\n");
++  return sum * 16;
++}
++
++int64_t compute_block_offsets(std::vector<frame15_id>& ids) {
++  gcglobals.lazy_mapped_frame_offsets[ ids[0] ] = uint64_t(realigned_for_allocation(frame15_for_frame15_id(ids[0])));
++
++  auto curr_id = 0;
++  uint64_t summed_bytes = 0;
++
++  // fprintf(gclog, "computing block offsets for logical blocks 1-%zd\n", ids.size());
++  for (auto i = 1; i < ids.size(); ++i) {
++    auto prev_offset = gcglobals.lazy_mapped_frame_offsets[ ids[i - 1] ];
++    auto delta_bytes =                      sum_live_bytes( ids[i - 1] );
++    summed_bytes += delta_bytes;
++    auto new_offset = prev_offset + delta_bytes;
++    // fprintf(gclog, "prev_offset: %zx; delta: %zu; new offset: %zx; frame_ids %u vs %u\n",
++    //     prev_offset, delta_bytes, new_offset,
++    //     frame15_id_of((void*) prev_offset),
++    //     frame15_id_of((void*) new_offset));
++    // Make sure we don't inadvertently create a frame-crossing object during compaction.
++    if (frame15_id_of((void*) prev_offset) != frame15_id_of((void*) new_offset)) {
++      ++curr_id;
++      auto new_prev_offset = uint64_t(realigned_for_allocation(frame15_for_frame15_id( ids[curr_id] )));
++      gcglobals.lazy_mapped_frame_offsets[ ids[i - 1] ] = new_prev_offset;
++      new_offset = new_prev_offset + delta_bytes;
++      // fprintf(gclog, "avoiding frame-crossing offset by jumping ahead to id %zd\n", curr_id);
++      // fprintf(gclog, "  prev offset updated to %zx; new offset now %zx\n", new_prev_offset, new_offset);
++    }
++    gcglobals.lazy_mapped_frame_offsets[ ids[i] ] = new_offset;
++  }
++  // // Forcibly make sure the last frame doesn't cross a boundary.
++  // fprintf(gclog, "last frame offset (for %u = %p) was %zx...\n",
++  //   ids[ids.size() - 1], frame15_for_frame15_id(ids[ids.size() - 1]),
++  //   gcglobals.lazy_mapped_frame_offsets[ ids[ids.size() - 1] ]
++  //   );
++  ++curr_id;
++  gcglobals.lazy_mapped_frame_offsets[ ids[ids.size() - 1] ] = 
++        uint64_t(realigned_for_allocation(frame15_for_frame15_id( ids[curr_id] )));
++  // fprintf(gclog, "last frame offset (for %u = %p) updated %zx\n",
++  //   ids[ids.size() - 1], frame15_for_frame15_id(ids[ids.size() - 1]),
++  //   gcglobals.lazy_mapped_frame_offsets[ ids[ids.size() - 1] ]
++  //   );
++
++  // fprintf(gclog, "summed bytes   : %zd\n", summed_bytes);
++  // fprintf(gclog, "compacted bytes: %zd\n", (curr_id * (1 << 15)));
++
++  return curr_id;
++}
++
++heap_cell* compute_forwarding_addr(heap_cell* old) {
++  uint64_t base = gcglobals.lazy_mapped_frame_offsets[ frame15_id_of(old) ];
++  uint64_t offset = byte_offset_in_block(old);
++  // fprintf(gclog, "forwarding addr was base %zx + offset %6zu (%6zx) for ptr %p\n", base, offset, offset, old);
++  return (heap_cell*) (base + offset);
++}
++
++void do_compactify_via_granule_marks(immix_space* default_subheap);
++
++void do_cycle_collection(immix_heap* active_space, clocktimer<false>& phase, clocktimer<false>& gcstart,
++                         bool should_compact, immix_common* common) {
+   // Because we're tracing and will re-establish object RC values, we need not process inc/decs.
+   // However, we do need to unset the logged bit from logged objects.
+   for (auto cell : gcglobals.incbuf) {
+@@ -2809,6 +2935,9 @@
+   process_worklist_for_cycle_collection(active_space, common);
+   auto deltaRecursiveMarking_us = phase.elapsed_us();
+ 
++  if (should_compact && active_space == gcglobals.default_allocator) {
++    do_compactify_via_granule_marks((immix_space*) gcglobals.default_allocator);
++  }
+ 
+   phase.start();
+   bool hadEmptyRootSet = false; // (numCondemnedRoots + numRemSetRoots + numGenRoots) == 0;
+@@ -2819,7 +2948,7 @@
+ 
+   fprintf(gclog, "Cycle collection: %.1f us to reset marks; %.1f us to trace the heap; %.1f us to sweep\n",
+       resettingMarkBits_us, deltaRecursiveMarking_us, sweep_us);
+-  fprintf(gclog, "       %.1f us total   (%.1f ns/line)\n", total_us, (total_us * 1000.0) / double(num_lines_reclaimed));
++  fprintf(gclog, "       %.1f us total   (%.1f ns/line) [compact? %d]\n", total_us, (total_us * 1000.0) / double(num_lines_reclaimed), should_compact);
+ }
+ 
+ template <condemned_set_status condemned_status>
+@@ -2837,8 +2966,8 @@
+       tidy* fwded = obj->get_forwarded_body();
+       *root = make_unchecked_ptr((tori*) fwded);
+ 
+-      fprintf(gclog, "cycle collection saw object cell %p with header %lx forwarding to body %p from root %p\n",
+-          obj, obj->raw_header(), fwded, root);
++      //fprintf(gclog, "cycle collection saw object cell %p with header %lx forwarding to body %p from root %p\n",
++      //    obj, obj->raw_header(), fwded, root);
+       //obj = heap_cell::for_tidy(fwded);
+       //obj->inc_rc_mb(1);
+     } else {
+@@ -2985,5 +3114,8 @@
+       do_rc_collection(active_space, phase);
+     } else {
+       gcglobals.evac_disabled = true;
+-      do_cycle_collection(active_space, phase, gcstart, this);
++      //gcglobals.evac_disabled = false;
++      bool should_compact = gcglobals.last_full_gc_fragmentation_percentage > 0.0 &&
++                            gcglobals.last_full_gc_fragmentation_percentage <= 55.0;
++      do_cycle_collection(active_space, phase, gcstart, should_compact, this);
+       auto bytes_marked = gcglobals.alloc_bytes_marked_total - bytes_marked_at_start;
+@@ -2989,5 +3121,9 @@
+       auto bytes_marked = gcglobals.alloc_bytes_marked_total - bytes_marked_at_start;
+-      fprintf(gclog, "occupancy: %.1f%%\n", 100.0 * (double(bytes_marked) / double(global_frame15_allocator.heap_size_in_bytes())));
++      fprintf(gclog, "occupancy: %.1f%% (%zd bytes marked)\n",
++                100.0 * (double(bytes_marked) / double(global_frame15_allocator.heap_size_in_bytes())),
++                bytes_marked);
++      gcglobals.last_full_gc_fragmentation_percentage = 100.0 * (double(bytes_marked) / double(global_frame15_allocator.heap_size_in_bytes()));
++      gcglobals.evac_disabled = false;
+     }
+ 
+ #if 0
+@@ -3624,7 +3760,7 @@
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += cell_size; }
+     mark_lines_for_slots(newbody, cell_size);
+-    do_mark_obj(mcell);
++    do_mark_obj_of_size(mcell, cell_size);
+ 
+     return newbody;
+   }
+@@ -4094,6 +4230,10 @@
+     });
+   }
+ 
++  void copy_frame15_ids(std::vector<frame15_id>& ids) {
++    tracking.copy_frame15_ids(ids);
++  }
++
+ public:
+   immix_common common;
+ 
+@@ -4144,6 +4284,177 @@
+   }
+ }
+ 
++void immix_worklist_t::process_for_compaction() {
++  while (!empty()) {
++    unchecked_ptr* root = pop_root();
++    tori* body = unchecked_ptr_val(*root);
++    heap_cell* obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(body));
++    heap_cell* fwded = compute_forwarding_addr(obj);
++    *root = make_unchecked_ptr((tori*) fwded->body_addr());
++  }
++  initialize();
++}
++
++void do_compactify_via_granule_marks(immix_space* default_subheap) {
++  clocktimer<false> ct; ct.start();
++  std::vector<frame15_id> ids;
++  default_subheap->copy_frame15_ids(ids);
++
++  //gfx::timsort(ids.begin(), ids.end());
++  std::sort(ids.begin(), ids.end());
++  // We now have a virtualized list of frame ids, in address order.
++  fprintf(gclog, "do_compactify: acquiring sorted frames: %.1f us\n", ct.elapsed_us());
++
++  ct.start();
++  int64_t curr_id = compute_block_offsets(ids);
++  fprintf(gclog, "do_compactify: computing new forwarding addresses: %.1f us\n", ct.elapsed_us()); fflush(gclog);
++
++  ct.start();
++  // Update references and relocate.
++  for (auto fid : ids) {
++    auto f15 = frame15_for_frame15_id(fid);
++    heap_cell* base = (heap_cell*) realigned_for_allocation(f15);
++    uint8_t* marks = &gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)];
++    for (int i = 0; i < 2048; ++i) {
++      auto mark = marks[i];
++      if (mark & 0x80) {
++        // object start
++        heap_cell* cell = (heap_cell*) offset(base, 16 * i);
++
++        heap_array* arr = NULL;
++        const typemap* map = NULL;
++        int64_t cell_size;
++        get_cell_metadata(cell, arr, map, cell_size);
++
++        for_each_child_slot_with(cell, arr, map, cell_size, [](intr* slot) {
++            void* ptr = *(void**)slot;
++            if (!non_markable_addr(ptr)) {
++              heap_cell* obj = compute_forwarding_addr(heap_cell::for_tidy((tidy*) ptr));
++               *(tidy**)slot = (tidy*) obj->body_addr();
++            }
++        });
++        heap_cell* dest = compute_forwarding_addr(cell);
++        //fprintf(gclog, "sliding cell of size %zd (mark %x) from %p (meta %p) to new dest %p\n",
++        //        cell_size, mark & 0x7F, cell, cell->get_meta(), dest);
++        memcpy(dest, cell, cell_size);
++        delta_line_counts(dest, cell_size, 1);
++      }
++    }
++  }
++#if 0
++    for (int i = 0; i < IMMIX_GRANULES_PER_FRAME15; ++i) {
++      if (marks[i] != 0) {
++        heap_cell* cell = (heap_cell*) offset(base, 16 * i);
++
++        heap_array* arr = NULL;
++        const typemap* map = NULL;
++        int64_t cell_size;
++        get_cell_metadata(cell, arr, map, cell_size);
++
++        //fprintf(gclog, "updateReferences(%p) [size %zd, map %p]\n", cell, cell_size, map); fflush(gclog);
++        for_each_child_slot_with(cell, arr, map, cell_size, [&fwd, cell](intr* slot) {
++          void* ptr = * (void**) slot;
++          //fprintf(gclog, "    slot %p of cell %p held ptr %p\n", slot, cell, ptr);
++          if (!non_markable_addr(ptr)) {
++            auto target = heap_cell::for_tidy( (tidy*) ptr);
++            //*((tidy**)slot) = target->get_forwarded_body();
++            auto p = fwd[target];
++            *((tidy**)slot) = p;
++            //fprintf(gclog, "                                     updating to fwd'ed ptr %p (frame %u)\n", p, frame15_id_of(p));
++          }
++        });
++      }
++    }
++  }
++#endif
++  fprintf(gclog, "do_compactify: updating heap references: %.1f us\n", ct.elapsed_us());
++  ct.start();
++
++  fprintf(gclog, "Collecting roots from stack in do_compactify().\n");
++  collect_roots_from_stack(__builtin_frame_address(0));
++  fprintf(gclog, "Done Collecting roots from stack in do_compactify().\n");
++  immix_worklist.process_for_compaction();
++
++  fprintf(gclog, "do_compactify: updating stack references: %.1f us\n", ct.elapsed_us());
++
++#if 0
++  ct.start();
++  // Relocate
++  for (auto fid : ids) {
++    auto f15 = frame15_for_frame15_id(fid);
++    uint8_t* marks = &gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)];
++    heap_cell* base = (heap_cell*) realigned_for_allocation(f15);
++    for (int i = 0; i < IMMIX_GRANULES_PER_FRAME15; ++i) {
++      if (marks[i] != 0) {
++        heap_cell* cell = (heap_cell*) offset(base, 16 * i);
++        heap_array* arr = NULL;
++        const typemap* map = NULL;
++        int64_t cell_size;
++        get_cell_metadata(cell, arr, map, cell_size);
++
++        //tidy* new_body = cell->get_forwarded_body();
++        tidy* new_body = fwd[cell];
++        heap_cell* new_cell = heap_cell::for_tidy(new_body);
++        //fprintf(gclog, "forwarding cell %p with header %lx and first slot %p to %p\n", cell, cell->raw_header(),
++        //      * (void**)cell->body_addr(), new_cell);
++        memcpy(new_cell, cell, cell_size);
++        //do_mark_obj(new_cell);
++        do_unmark_granule(new_cell);
++        do_unmark_granule(cell);
++      }
++    }
++  }
++  fprintf(gclog, "do_compactify: relocating objects: %.1f us\n", ct.elapsed_us());
++#endif
++
++/*
++  ct.start();
++  // Update line mark bits
++  int frames_freed = 0;
++  fprintf(gclog, "curr_id is %zd\n", curr_id);
++  std::set<frame15_id> uniq_ids(ids.begin(), ids.end());
++  fprintf(gclog, "ids.size: %zd; uniq size: %zd\n", ids.size(), uniq_ids.size());
++  for (unsigned i = 0; i < ids.size(); ++i) {
++    auto fid = ids[i];
++    auto mdb = metadata_block_for_frame15_id(fid);
++    uint8_t* linemap = &mdb->linemap[0][0];
++
++    auto f15 = frame15_for_frame15_id(fid);
++    uint8_t* marks = &linemap[line_offset_within_f21(f15)];
++    if (i < curr_id) {
++      fprintf(gclog, "setting marks for frame %d (=%u == %p)\n", i, fid, f15);
++      memset(marks, 1, IMMIX_LINES_PER_FRAME15);
++    } else if (i > curr_id) {
++      fprintf(gclog, "clearing marks for frame %d (=%u == %p)\n", i, fid, f15);
++      memset(marks, 0, IMMIX_LINES_PER_FRAME15);
++      ++frames_freed;
++    } else {
++      fprintf(gclog, "setting marks for frame %d (=%u)\n", i, fid);
++      memset(marks, 1, IMMIX_LINES_PER_FRAME15);
++    }
++
++    clear_object_mark_bits_for_frame15(f15);
++  }
++
++  // TODO clear object mark bits!
++  fprintf(gclog, "should be freeing %d of %zd frames...\n", frames_freed, ids.size());
++  fprintf(gclog, "do_compactify: updating mark bits: %.1f us\n", ct.elapsed_us());
++*/
++
++
++  /*
++  ct.start();
++  clocktimer<false> phase;
++  default_subheap->immix_sweep(phase);
++  fprintf(gclog, "do_compactify: sweeping: %.1f us\n", ct.elapsed_us());
++  */
++
++  default_subheap->next_collection_sticky = false;
++
++  // TODO: try implementing Compressor-style one-pass compression.
++}
++
++
+ 
+ void process_worklist(immix_heap* active_space, immix_common* common) {
+   switch (gcglobals.condemned_set.status) {

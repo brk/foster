@@ -1,0 +1,1129 @@
+# HG changeset patch
+# Parent  d2df6eaec517e72ee416457fe00f08f73cee20d9
+Implement Lisp2-style compaction.
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -13,9 +13,11 @@
+ #include "build/build_config.h" // from chromium_base
+ #include "hdr_histogram.h"
+ 
++#include "timsort.hpp"
++
+ #include "execinfo.h" // for backtrace
+ 
+ #include <functional>
+ #include <stddef.h> // offsetof
+ 
+ #include <sparsehash/dense_hash_set>
+@@ -16,9 +18,11 @@
+ #include "execinfo.h" // for backtrace
+ 
+ #include <functional>
+ #include <stddef.h> // offsetof
+ 
+ #include <sparsehash/dense_hash_set>
++#include <sparsehash/dense_hash_map>
++
+ 
+ // jemalloc_pages
+ bool  pages_boot(void);
+@@ -381,6 +385,7 @@
+     unchecked_ptr* pop_root()  { auto root = roots.back(); roots.pop_back(); return root; }
+     void       add_root(unchecked_ptr* root) { __builtin_prefetch(*(void**)root); roots.push_back(root); }
+     size_t     size()            { return roots.size(); }
++    void       process_for_compaction(google::dense_hash_map<heap_cell*, tidy*>&);
+   private:
+     size_t                  idx;
+     std::vector<unchecked_ptr*> roots;
+@@ -505,6 +510,7 @@
+   ClusterMap clusterForAddress;
+   memory_range typemap_memory;
+ 
++  bool compactify;
+   bool had_problems;
+   bool logall;
+ 
+@@ -1218,7 +1232,9 @@
+   }
+ 
+   void give_frame15(frame15* f) {
+-    if (MEMSET_FREED_MEMORY) { clear_frame15(f); }
++    if (MEMSET_FREED_MEMORY) {
++      fprintf(gclog, "clearing memory for returned frame15 %p, id (%u)\n", f, frame15_id_of(f));
++      clear_frame15(f); }
+     if (!defrag_reserve.full()) {
+       defrag_reserve.give_frame15(f);
+     } else {
+@@ -1281,7 +1300,7 @@
+   // Invariant: f must be completely clean.
+   void give_line_frame15(immix_line_frame15* f) {
+     if (MEMSET_FREED_MEMORY) {
+-      fprintf(gclog, "clearing line frame15 %p (%u)\n", f, frame15_id_of(f));
++      //fprintf(gclog, "clearing line frame15 %p (%u)\n", f, frame15_id_of(f));
+       do_clear_line_frame15(f); }
+ 
+     if (false && GC_ASSERTIONS) {
+@@ -1608,6 +1627,7 @@
+       thunk((intr*) offset(body, 8));
+       break;
+     default:
++      //fprintf(gclog, "applying thunk to %d offsets of body %p with map %p\n", map->numOffsets, body, map); fflush(gclog);
+       for (int i = 0; i < map->numOffsets; ++i) {
+         thunk((intr*) offset(body, map->offsets[i]));
+       }
+@@ -1865,6 +1885,11 @@
+   size_t count_clean_frame15s() { return clean_frame15s.size(); }
+   size_t count_clean_frame21s() { return clean_frame21s.size(); }
+ 
++  void copy_frame15_ids(std::vector<frame15_id>& ids) {
++    ids.reserve(uncoalesced_frame15s.size());
++    for (auto f15 : uncoalesced_frame15s) { ids.push_back(frame15_id_of(f15)); }
++  }
++
+   void note_clean_frame15(frame15* f15) { clean_frame15s.push_back(f15); }
+   void note_clean_frame21(frame21* f21) { clean_frame21s.push_back(f21); }
+ 
+@@ -2552,6 +2577,8 @@
+   owner->establish_ownership_for_allocation(current_frame, cell_size);
+ }
+ 
++void do_compactify(immix_space* default_subheap);
++
+ void process_worklist(immix_heap* active_space, immix_common* common);
+ 
+ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
+@@ -2639,4 +2666,5 @@
+       */
+ 
+     //ct.start();
++    fprintf(gclog, "Collecting roots from stack in common_gc().\n");
+     collect_roots_from_stack(__builtin_frame_address(0));
+@@ -2642,4 +2670,5 @@
+     collect_roots_from_stack(__builtin_frame_address(0));
++    fprintf(gclog, "Done Collecting roots from stack in common_gc().\n");
+     //fprintf(gclog, "num condemned + remset roots: %zu\n", numCondemnedRoots + numRemSetRoots);
+     //double trace_ms = ct.elapsed_ms();
+ 
+@@ -2780,23 +2809,35 @@
+     gcglobals.subheap_ticks += __foster_getticks_elapsed(t0, t1);
+ #endif
+ 
+-    if (unstick_next_coll) active_space->next_collection_sticky = false;
+-
+-    if (was_sticky_collection && !active_space->next_collection_sticky) {
+-      // We're close to running out of room. If we're REALLY close, trigger a non-sticky collection to reclaim more.
+-
+-      int64_t defrag_headroom_lines = num_assigned_defrag_lines();
+-      // Our "nursery" is full; need a full-heap collection to reset it.
+-      // Question is, do we trigger an immediate collection or not?
+-      //  Current heuristic: immediately collect if we didn't reclaim enough to fill the headroom.
+-      bool need_immediate_recollection = num_lines_reclaimed <= (defrag_headroom_lines / 4);
+-      if (need_immediate_recollection) {
+-        // Raise the yield threshold so we make it less likely to trigger a double collection.
+-        gcglobals.yield_percentage_threshold += 5.0;
+-        fprintf(gclog, "Triggering immediate non-sticky collection!\n");
+-      } else {
+-        // Lower the yield threshold if we've raised it.
+-        if (gcglobals.yield_percentage_threshold >= (4.0 + __foster_globals.sticky_base_threshold)) {
+-          gcglobals.yield_percentage_threshold -= 5.0;
+-          fprintf(gclog, "Adjusted the sticky yield threshold to %.1f\n", gcglobals.yield_percentage_threshold);
++
++    if (isWholeHeapGC && gcglobals.compactify && active_space == gcglobals.default_allocator) {
++      gcglobals.compactify = false;
++      fprintf(gclog, "After full heap collection with compactify bit set, have %zd reclaimed frames (%.1f%%)\n",
++          global_frame15_allocator.get_frame15s_left(), 100.0 * global_frame15_allocator.get_relative_size());
++
++      phase.start();
++      do_compactify((immix_space*) active_space);
++      double compact_us = phase.elapsed_us();
++      fprintf(gclog, "Compactification took %.1f us.\n", compact_us);
++    } else {
++      if (unstick_next_coll) active_space->next_collection_sticky = false;
++
++      if (was_sticky_collection && !active_space->next_collection_sticky) {
++        // We're close to running out of room. If we're REALLY close, trigger a non-sticky collection to reclaim more.
++
++        int64_t defrag_headroom_lines = num_assigned_defrag_lines();
++        // Our "nursery" is full; need a full-heap collection to reset it.
++        // Question is, do we trigger an immediate collection or not?
++        //  Current heuristic: immediately collect if we didn't reclaim enough to fill the headroom.
++        bool need_immediate_recollection = num_lines_reclaimed <= (defrag_headroom_lines / 4);
++        if (need_immediate_recollection) {
++          // Raise the yield threshold so we make it less likely to trigger a double collection.
++          gcglobals.yield_percentage_threshold += 5.0;
++          fprintf(gclog, "Triggering immediate non-sticky collection!\n");
++        } else {
++          // Lower the yield threshold if we've raised it.
++          if (gcglobals.yield_percentage_threshold >= (4.0 + __foster_globals.sticky_base_threshold)) {
++            gcglobals.yield_percentage_threshold -= 5.0;
++            fprintf(gclog, "Adjusted the sticky yield threshold to %.1f\n", gcglobals.yield_percentage_threshold);
++          }
+         }
+@@ -2802,2 +2843,3 @@
+         }
++        return need_immediate_recollection;
+       }
+@@ -2803,3 +2845,2 @@
+       }
+-      return need_immediate_recollection;
+     }
+@@ -2805,4 +2846,5 @@
+     }
++
+     return false;
+   }
+ 
+@@ -3523,9 +3565,13 @@
+       this->next_collection_sticky = (!__foster_globals.disable_sticky)
+                                       && (yield_percentage > gcglobals.yield_percentage_threshold)
+                                       && (yield_rate > 0.02);
++
++      if (!was_sticky && yield_rate < 0.16 && !gcglobals.compactify) { // TODO also check occupancy?
++        gcglobals.compactify = true;
++      }
+     }
+ 
+ #if ((GCLOG_DETAIL > 1) && ENABLE_GCLOG_ENDGC) || 1
+       { auto s = foster::humanize_s(nursery_ratio * double(lines_tracked * IMMIX_BYTES_PER_LINE), "B");
+       fprintf(gclog, "Allocated into %zd lines ('nursery' was %.1f%% = %s of %zd total)\n", lines_allocated, 100.0 * nursery_ratio, s.c_str(), lines_tracked);
+       }
+@@ -3672,7 +3718,10 @@
+       free_linegroup* g = (free_linegroup*) offset(f15,   leftmost_unmarked_line      * IMMIX_BYTES_PER_LINE);
+       g->bound =                            offset(f15, (rightmost_unmarked_line + 1) * IMMIX_BYTES_PER_LINE);
+ 
+-      if (MEMSET_FREED_MEMORY) { memset(offset(g, 16), 0xdd, distance(g, g->bound) - 16); }
++      if (MEMSET_FREED_MEMORY) {
++        //fprintf(gclog, "clearing linegroup in frame (%u)\n", fid);
++        memset(offset(g, 16), 0xdd, distance(g, g->bound) - 16);
++      }
+ 
+       int num_lines_in_group = (rightmost_unmarked_line - leftmost_unmarked_line) + 1;
+       if (num_lines_in_group == 1) {
+@@ -3723,6 +3772,10 @@
+     generational_remset.insert((tori**)slot);
+   }
+ 
++  void copy_frame15_ids(std::vector<frame15_id>& ids) {
++    tracking.copy_frame15_ids(ids);
++  }
++
+ public:
+   immix_common common;
+ 
+@@ -3752,6 +3805,17 @@
+   // immix_space_end
+ };
+ 
++
++void immix_worklist_t::process_for_compaction(google::dense_hash_map<heap_cell*, tidy*>& fwd) {
++  while (!empty()) {
++    unchecked_ptr* root = pop_root();
++    tori* body = unchecked_ptr_val(*root);
++    heap_cell* obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(body));
++    *root = make_unchecked_ptr((tori*) fwd[obj]);
++  }
++  initialize();
++}
++
+ void process_worklist(immix_heap* active_space, immix_common* common) {
+   switch (gcglobals.condemned_set.status) {
+     case condemned_set_status::single_subheap_condemned:
+@@ -3804,5 +3868,6 @@
+     heap_cell* obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(body));
+ 
+     if (obj->is_forwarded()) {
++      //fprintf(gclog, "following forwarding ptr in cell %p\n", obj);
+       *root = make_unchecked_ptr((tori*) obj->get_forwarded_body());
+     } else if (obj_is_marked(obj)) {
+@@ -3807,5 +3872,6 @@
+       *root = make_unchecked_ptr((tori*) obj->get_forwarded_body());
+     } else if (obj_is_marked(obj)) {
++      //fprintf(gclog, "skipping marked cell %p\n", obj);
+       // Skip marked objects.
+     } else {
+       common.immix_trace<condemned_status>(target, root, obj);
+@@ -3852,6 +3918,158 @@
+   return newbody;
+ }
+ 
++void do_compactify(immix_space* default_subheap) {
++  clocktimer<false> ct; ct.start();
++  std::vector<frame15_id> ids;
++  default_subheap->copy_frame15_ids(ids);
++
++  gfx::timsort(ids.begin(), ids.end());
++  // We now have a virtualized list of frame ids, in address order.
++  fprintf(gclog, "do_compactify: acquiring sorted frames: %.1f us\n", ct.elapsed_us());
++
++  google::dense_hash_map<heap_cell*, tidy*> fwd; // cheating for now :(
++  fwd.set_empty_key(nullptr);
++
++  int curr_id = 0;
++  void* curr = realigned_for_allocation(frame15_for_frame15_id(ids[curr_id]));
++
++  ct.start();
++  const int IMMIX_GRANULES_PER_FRAME15 = (1 << (15 - 4));
++  // Compute new forwarding addresses
++  for (auto fid : ids) {
++    auto f15 = frame15_for_frame15_id(fid);
++    uint8_t* marks = &gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)];
++    heap_cell* base = (heap_cell*) realigned_for_allocation(f15);
++    for (int i = 0; i < IMMIX_GRANULES_PER_FRAME15; ++i) {
++      if (marks[i] != 0) {
++        heap_array* arr = NULL;
++        const typemap* map = NULL;
++        int64_t cell_size;
++        heap_cell* cell = (heap_cell*) offset(base, 16 * i);
++        get_cell_metadata(cell, arr, map, cell_size);
++
++        void* next = offset(curr, cell_size);
++        // Be careful to not create frame-crossing objects.
++        if (frame15_id_of(next) != frame15_id_of(curr)) {
++          curr_id++;
++          curr = realigned_for_allocation(frame15_for_frame15_id(ids[curr_id]));
++          next = offset(curr, cell_size);
++          //fprintf(gclog, "switched to curr_id %d = frame %u\n", curr_id, ids[curr_id]);
++        }
++        //fprintf(gclog, "computeForwardingAddresses() having cell %p fwd to cell %p\n", cell, curr);
++        //cell->set_forwarded_body( (tidy*) offset(curr, 8) );
++        fwd[cell] = ((heap_cell*) curr)->body_addr();
++        curr = next;
++      }
++    }
++  }
++  fprintf(gclog, "do_compactify: computing new forwarding addresses: %.1f us\n", ct.elapsed_us());
++
++  ct.start();
++  // Update references
++  for (auto fid : ids) {
++    auto f15 = frame15_for_frame15_id(fid);
++    uint8_t* marks = &gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)];
++    heap_cell* base = (heap_cell*) realigned_for_allocation(f15);
++    for (int i = 0; i < IMMIX_GRANULES_PER_FRAME15; ++i) {
++      if (marks[i] != 0) {
++        heap_cell* cell = (heap_cell*) offset(base, 16 * i);
++
++        heap_array* arr = NULL;
++        const typemap* map = NULL;
++        int64_t cell_size;
++        get_cell_metadata(cell, arr, map, cell_size);
++
++        //fprintf(gclog, "updateReferences(%p) [size %zd, map %p]\n", cell, cell_size, map); fflush(gclog);
++        for_each_child_slot_with(cell, arr, map, cell_size, [&fwd, cell](intr* slot) {
++          void* ptr = * (void**) slot;
++          //fprintf(gclog, "    slot %p of cell %p held ptr %p\n", slot, cell, ptr);
++          if (!non_markable_addr(ptr)) {
++            auto target = heap_cell::for_tidy( (tidy*) ptr);
++            //*((tidy**)slot) = target->get_forwarded_body();
++            auto p = fwd[target];
++            *((tidy**)slot) = p;
++            //fprintf(gclog, "                                     updating to fwd'ed ptr %p (frame %u)\n", p, frame15_id_of(p));
++          }
++        });
++      }
++    }
++  }
++  fprintf(gclog, "do_compactify:u updating heap references: %.1f us\n", ct.elapsed_us());
++  ct.start();
++
++  fprintf(gclog, "Collecting roots from stack in do_compactify().\n");
++  collect_roots_from_stack(__builtin_frame_address(0));
++  fprintf(gclog, "Done Collecting roots from stack in do_compactify().\n");
++  immix_worklist.process_for_compaction(fwd);
++
++  fprintf(gclog, "do_compactify: updating stack references: %.1f us\n", ct.elapsed_us());
++
++  ct.start();
++  // Relocate
++  for (auto fid : ids) {
++    auto f15 = frame15_for_frame15_id(fid);
++    uint8_t* marks = &gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)];
++    heap_cell* base = (heap_cell*) realigned_for_allocation(f15);
++    for (int i = 0; i < IMMIX_GRANULES_PER_FRAME15; ++i) {
++      if (marks[i] != 0) {
++        heap_cell* cell = (heap_cell*) offset(base, 16 * i);
++        heap_array* arr = NULL;
++        const typemap* map = NULL;
++        int64_t cell_size;
++        get_cell_metadata(cell, arr, map, cell_size);
++
++        //tidy* new_body = cell->get_forwarded_body();
++        tidy* new_body = fwd[cell];
++        heap_cell* new_cell = heap_cell::for_tidy(new_body);
++        //fprintf(gclog, "forwarding cell %p with header %lx and first slot %p to %p\n", cell, cell->raw_header(),
++        //      * (void**)cell->body_addr(), new_cell);
++        memcpy(new_cell, cell, cell_size);
++        //do_mark_obj(new_cell);
++        do_unmark_granule(new_cell);
++        do_unmark_granule(cell);
++      }
++    }
++  }
++  fprintf(gclog, "do_compactify: relocating objects: %.1f us\n", ct.elapsed_us());
++
++  ct.start();
++  // Update line mark bits
++  int frames_freed = 0;
++  for (unsigned i = 0; i < ids.size(); ++i) {
++    auto fid = ids[i];
++    auto mdb = metadata_block_for_frame15_id(fid);
++    uint8_t* linemap = &mdb->linemap[0][0];
++
++    auto f15 = frame15_for_frame15_id(fid);
++    uint8_t* marks = &linemap[line_offset_within_f21(f15)];
++    if (i < curr_id) {
++      //fprintf(gclog, "setting marks for frame %d (=%u)\n", i, fid);
++      memset(marks, 1, IMMIX_LINES_PER_FRAME15);
++    } else if (i > curr_id) {
++      //fprintf(gclog, "clearing marks for frame %d (=%u)\n", i, fid);
++      memset(marks, 0, IMMIX_LINES_PER_FRAME15);
++      ++frames_freed;
++    } else {
++      //fprintf(gclog, "setting marks for frame %d (=%u)\n", i, fid);
++      memset(marks, 1, IMMIX_LINES_PER_FRAME15);
++    }
++  }
++  fprintf(gclog, "should be freeing %d frames...\n", frames_freed);
++  fprintf(gclog, "do_compactify: updating mark bits: %.1f us\n", ct.elapsed_us());
++
++  ct.start();
++
++  clocktimer<false> phase;
++  default_subheap->immix_sweep(phase);
++  fprintf(gclog, "do_compactify: sweeping: %.1f us\n", ct.elapsed_us());
++
++
++  default_subheap->next_collection_sticky = false;
++
++  // TODO: try implementing Compressor-style one-pass compression.
++}
++
+ #include "foster_gc_backtrace_x86-inl.h"
+ 
+ // {{{ Walks the call stack and inserts roots into immix_worklist.
+@@ -4101,6 +4319,7 @@
+ 
+   gcglobals.condemned_set.status = condemned_set_status::single_subheap_condemned;
+ 
++  gcglobals.compactify = false;
+   gcglobals.had_problems = false;
+   gcglobals.logall = false;
+ 
+diff --git a/scripts/build_libfoster.py b/scripts/build_libfoster.py
+--- a/scripts/build_libfoster.py
++++ b/scripts/build_libfoster.py
+@@ -47,4 +47,5 @@
+   corodir    = os.path.join(srcdir, 'third_party', 'libcoro')
+   jepages    = os.path.join(srcdir, 'third_party', 'jemalloc_pages', 'include')
+   hdrhist    = os.path.join(srcdir, 'third_party', 'HdrHistogram_c', 'src')
++  timsort    = os.path.join(srcdir, 'third_party', 'timsort')
+   nacl       = os.path.join(srcdir, 'third_party', 'nacl-20110221/build/foster/include/amd64')
+@@ -50,5 +51,5 @@
+   nacl       = os.path.join(srcdir, 'third_party', 'nacl-20110221/build/foster/include/amd64')
+-  include_dirs = [bindir, runtime, runtime_gc, basedir, corodir, jepages, hdrhist, nacl]
++  include_dirs = [bindir, runtime, runtime_gc, basedir, corodir, jepages, hdrhist, nacl, timsort]
+   includes = ' '.join(['-I ' + path for path in include_dirs])
+   defines = ' -D'.join(['', coro_method])
+   flags = debug_flag + defines + " -std=c++14 -O2 -march=native"
+diff --git a/third_party/timsort/README.txt b/third_party/timsort/README.txt
+new file mode 100644
+--- /dev/null
++++ b/third_party/timsort/README.txt
+@@ -0,0 +1,7 @@
++URL: https://github.com/gfx/cpp-TimSort/blob/master/timsort.hpp
++Version: 2017/05/21 $ git revision e39ca95
++Description: Header-only timsort implementation.
++License: MIT
++License File: none
++Local Modifications:
++  none
+diff --git a/third_party/timsort/timsort.hpp b/third_party/timsort/timsort.hpp
+new file mode 100644
+--- /dev/null
++++ b/third_party/timsort/timsort.hpp
+@@ -0,0 +1,683 @@
++/*
++ * C++ implementation of timsort
++ *
++ * ported from Python's and OpenJDK's:
++ * - http://svn.python.org/projects/python/trunk/Objects/listobject.c
++ * - http://cr.openjdk.java.net/~martin/webrevs/openjdk7/timsort/raw_files/new/src/share/classes/java/util/TimSort.java
++ *
++ * Copyright (c) 2011 Fuji, Goro (gfx) <gfuji@cpan.org>. C++03/move-compliance modifications by Matt Bentley 2017 (mattreecebentley@gmail.com)
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to
++ * deal in the Software without restriction, including without limitation the
++ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
++ * sell copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
++ * IN THE SOFTWARE.
++ */
++
++#ifndef GFX_TIMSORT_HPP
++#define GFX_TIMSORT_HPP
++
++#include <vector>
++#include <cassert>
++#include <algorithm> // std::copy
++#include <functional> // std::less
++
++#ifdef ENABLE_TIMSORT_LOG
++#include <iostream>
++#define GFX_TIMSORT_LOG(expr) (std::clog << "# " << __func__ << ": " << expr << std::endl)
++#else
++#define GFX_TIMSORT_LOG(expr) ((void)0)
++#endif
++
++// If compiler supports both type traits and move semantics - will cover most but not all compilers/std libraries:
++#if (defined(_MSC_VER) && _MSC_VER >= 1700) || ((defined(__cplusplus) && __cplusplus >= 201103L && !defined(_LIBCPP_VERSION)) && ((!defined(__GNUC__) || __GNUC__ >= 5)) && (!defined(__GLIBCXX__) ||  __GLIBCXX__ >= 20150422))
++	#include <iterator> // iterator_traits
++	#include <utility> // std::move
++
++	#define GFX_TIMSORT_MOVE(x) (std::is_move_constructible<value_t>::value && std::is_move_assignable<value_t>::value) ? std::move(x) : (x)
++	#define GFX_TIMSORT_MOVE_RANGE(in1, in2, out) \
++		if (std::is_move_constructible<value_t>::value && std::is_move_assignable<value_t>::value) \
++		{ \
++			std::move((in1), (in2), (out)); \
++		} \
++		else \
++		{ \
++			std::copy((in1), (in2), (out)); \
++		}
++	#define GFX_TIMSORT_MOVE_BACKWARD(in1, in2, out) \
++		if (std::is_move_constructible<value_t>::value && std::is_move_assignable<value_t>::value) \
++		{ \
++			std::move_backward((in1), (in2), (out)); \
++		} \
++		else \
++		{ \
++			std::copy_backward((in1), (in2), (out)); \
++		}
++#else
++	#define GFX_TIMSORT_MOVE(x) (x)
++	#define GFX_TIMSORT_MOVE_RANGE(in1, in2, out) std::copy((in1), (in2), (out)); 
++	#define GFX_TIMSORT_MOVE_BACKWARD(in1, in2, out) std::copy_backward((in1), (in2), (out));
++#endif
++
++
++
++namespace gfx {
++
++// ---------------------------------------
++// Declaration
++// ---------------------------------------
++
++/**
++ * Same as std::stable_sort(first, last).
++ */
++template <typename RandomAccessIterator>
++inline void timsort(RandomAccessIterator const first, RandomAccessIterator const last);
++
++/**
++ * Same as std::stable_sort(first, last, c).
++ */
++template <typename RandomAccessIterator, typename LessFunction>
++inline void timsort(RandomAccessIterator const first, RandomAccessIterator const last, LessFunction compare);
++
++// ---------------------------------------
++// Implementation
++// ---------------------------------------
++
++template <typename Value, typename LessFunction> class Compare {
++  public:
++    typedef Value value_type;
++    typedef LessFunction func_type;
++
++    Compare(LessFunction f) : less_(f) {
++    }
++    Compare(const Compare<value_type, func_type> &other) : less_(other.less_) {
++    }
++
++    bool lt(value_type x, value_type y) {
++        return less_(x, y);
++    }
++    bool le(value_type x, value_type y) {
++        return less_(x, y) || !less_(y, x);
++    }
++    bool gt(value_type x, value_type y) {
++        return !less_(x, y) && less_(y, x);
++    }
++    bool ge(value_type x, value_type y) {
++        return !less_(x, y);
++    }
++
++    func_type &less_function() {
++        return less_;
++    }
++
++  private:
++    func_type less_;
++};
++
++template <typename RandomAccessIterator, typename LessFunction> class TimSort {
++    typedef RandomAccessIterator iter_t;
++    typedef typename std::iterator_traits<iter_t>::value_type value_t;
++    typedef typename std::iterator_traits<iter_t>::reference ref_t;
++    typedef typename std::iterator_traits<iter_t>::difference_type diff_t;
++    typedef Compare<const value_t &, LessFunction> compare_t;
++
++    static const int MIN_MERGE = 32;
++
++    compare_t comp_;
++
++    static const int MIN_GALLOP = 7;
++
++    int minGallop_; // default to MIN_GALLOP
++
++    std::vector<value_t> tmp_; // temp storage for merges
++    typedef typename std::vector<value_t>::iterator tmp_iter_t;
++
++    struct run {
++        iter_t base;
++        diff_t len;
++
++        run(iter_t const b, diff_t const l) : base(b), len(l) {
++        }
++    };
++    std::vector<run> pending_;
++
++    static void sort(iter_t const lo, iter_t const hi, compare_t c) {
++        assert(lo <= hi);
++
++        diff_t nRemaining = (hi - lo);
++        if (nRemaining < 2) {
++            return; // nothing to do
++        }
++
++        if (nRemaining < MIN_MERGE) {
++            diff_t const initRunLen = countRunAndMakeAscending(lo, hi, c);
++            GFX_TIMSORT_LOG("initRunLen: " << initRunLen);
++            binarySort(lo, hi, lo + initRunLen, c);
++            return;
++        }
++
++        TimSort ts(c);
++        diff_t const minRun = minRunLength(nRemaining);
++        iter_t cur = lo;
++        do {
++            diff_t runLen = countRunAndMakeAscending(cur, hi, c);
++
++            if (runLen < minRun) {
++                diff_t const force = std::min(nRemaining, minRun);
++                binarySort(cur, cur + force, cur + runLen, c);
++                runLen = force;
++            }
++
++            ts.pushRun(cur, runLen);
++            ts.mergeCollapse();
++
++            cur += runLen;
++            nRemaining -= runLen;
++        } while (nRemaining != 0);
++
++        assert(cur == hi);
++        ts.mergeForceCollapse();
++        assert(ts.pending_.size() == 1);
++
++        GFX_TIMSORT_LOG("size: " << (hi - lo) << " tmp_.size(): " << ts.tmp_.size()
++                                 << " pending_.size(): " << ts.pending_.size());
++    } // sort()
++
++    static void binarySort(iter_t const lo, iter_t const hi, iter_t start, compare_t compare) {
++        assert(lo <= start && start <= hi);
++        if (start == lo) {
++            ++start;
++        }
++        for (; start < hi; ++start) {
++            assert(lo <= start);
++            /*const*/ value_t pivot = GFX_TIMSORT_MOVE(*start);
++
++            iter_t const pos = std::upper_bound(lo, start, pivot, compare.less_function());
++            for (iter_t p = start; p > pos; --p) {
++                *p = GFX_TIMSORT_MOVE(*(p - 1));
++            }
++            *pos = GFX_TIMSORT_MOVE(pivot);
++        }
++    }
++
++    static diff_t countRunAndMakeAscending(iter_t const lo, iter_t const hi, compare_t compare) {
++        assert(lo < hi);
++
++        iter_t runHi = lo + 1;
++        if (runHi == hi) {
++            return 1;
++        }
++
++        if (compare.lt(*(runHi++), *lo)) { // descending
++            while (runHi < hi && compare.lt(*runHi, *(runHi - 1))) {
++                ++runHi;
++            }
++            std::reverse(lo, runHi);
++        } else { // ascending
++            while (runHi < hi && compare.ge(*runHi, *(runHi - 1))) {
++                ++runHi;
++            }
++        }
++
++        return runHi - lo;
++    }
++
++    static diff_t minRunLength(diff_t n) {
++        assert(n >= 0);
++
++        diff_t r = 0;
++        while (n >= MIN_MERGE) {
++            r |= (n & 1);
++            n >>= 1;
++        }
++        return n + r;
++    }
++
++    TimSort(compare_t c) : comp_(c), minGallop_(MIN_GALLOP) {
++    }
++
++    void pushRun(iter_t const runBase, diff_t const runLen) {
++        pending_.push_back(run(runBase, runLen));
++    }
++
++    void mergeCollapse() {
++        while (pending_.size() > 1) {
++            diff_t n = pending_.size() - 2;
++
++            if ((n > 0 && pending_[n - 1].len <= pending_[n].len + pending_[n + 1].len) ||
++                (n > 1 && pending_[n - 2].len <= pending_[n - 1].len + pending_[n].len)) {
++                if (pending_[n - 1].len < pending_[n + 1].len) {
++                    --n;
++                }
++                mergeAt(n);
++            } else if (pending_[n].len <= pending_[n + 1].len) {
++                mergeAt(n);
++            } else {
++                break;
++            }
++        }
++    }
++
++    void mergeForceCollapse() {
++        while (pending_.size() > 1) {
++            diff_t n = pending_.size() - 2;
++
++            if (n > 0 && pending_[n - 1].len < pending_[n + 1].len) {
++                --n;
++            }
++            mergeAt(n);
++        }
++    }
++
++    void mergeAt(diff_t const i) {
++        diff_t const stackSize = pending_.size();
++        assert(stackSize >= 2);
++        assert(i >= 0);
++        assert(i == stackSize - 2 || i == stackSize - 3);
++
++        iter_t base1 = pending_[i].base;
++        diff_t len1 = pending_[i].len;
++        iter_t base2 = pending_[i + 1].base;
++        diff_t len2 = pending_[i + 1].len;
++
++        assert(len1 > 0 && len2 > 0);
++        assert(base1 + len1 == base2);
++
++        pending_[i].len = len1 + len2;
++
++        if (i == stackSize - 3) {
++            pending_[i + 1] = pending_[i + 2];
++        }
++
++        pending_.pop_back();
++
++        diff_t const k = gallopRight(*base2, base1, len1, 0);
++        assert(k >= 0);
++
++        base1 += k;
++        len1 -= k;
++
++        if (len1 == 0) {
++            return;
++        }
++
++        len2 = gallopLeft(*(base1 + (len1 - 1)), base2, len2, len2 - 1);
++        assert(len2 >= 0);
++        if (len2 == 0) {
++            return;
++        }
++
++        if (len1 <= len2) {
++            mergeLo(base1, len1, base2, len2);
++        } else {
++            mergeHi(base1, len1, base2, len2);
++        }
++    }
++
++    template <typename Iter> diff_t gallopLeft(ref_t key, Iter const base, diff_t const len, diff_t const hint) {
++        assert(len > 0 && hint >= 0 && hint < len);
++
++        diff_t lastOfs = 0;
++        diff_t ofs = 1;
++
++        if (comp_.gt(key, *(base + hint))) {
++            diff_t const maxOfs = len - hint;
++            while (ofs < maxOfs && comp_.gt(key, *(base + (hint + ofs)))) {
++                lastOfs = ofs;
++                ofs = (ofs << 1) + 1;
++
++                if (ofs <= 0) { // int overflow
++                    ofs = maxOfs;
++                }
++            }
++            if (ofs > maxOfs) {
++                ofs = maxOfs;
++            }
++
++            lastOfs += hint;
++            ofs += hint;
++        } else {
++            diff_t const maxOfs = hint + 1;
++            while (ofs < maxOfs && comp_.le(key, *(base + (hint - ofs)))) {
++                lastOfs = ofs;
++                ofs = (ofs << 1) + 1;
++
++                if (ofs <= 0) {
++                    ofs = maxOfs;
++                }
++            }
++            if (ofs > maxOfs) {
++                ofs = maxOfs;
++            }
++
++            diff_t const tmp = lastOfs;
++            lastOfs = hint - ofs;
++            ofs = hint - tmp;
++        }
++        assert(-1 <= lastOfs && lastOfs < ofs && ofs <= len);
++
++        return std::lower_bound(base + (lastOfs + 1), base + ofs, key, comp_.less_function()) - base;
++    }
++
++    template <typename Iter> diff_t gallopRight(ref_t key, Iter const base, diff_t const len, diff_t const hint) {
++        assert(len > 0 && hint >= 0 && hint < len);
++
++        diff_t ofs = 1;
++        diff_t lastOfs = 0;
++
++        if (comp_.lt(key, *(base + hint))) {
++            diff_t const maxOfs = hint + 1;
++            while (ofs < maxOfs && comp_.lt(key, *(base + (hint - ofs)))) {
++                lastOfs = ofs;
++                ofs = (ofs << 1) + 1;
++
++                if (ofs <= 0) {
++                    ofs = maxOfs;
++                }
++            }
++            if (ofs > maxOfs) {
++                ofs = maxOfs;
++            }
++
++            diff_t const tmp = lastOfs;
++            lastOfs = hint - ofs;
++            ofs = hint - tmp;
++        } else {
++            diff_t const maxOfs = len - hint;
++            while (ofs < maxOfs && comp_.ge(key, *(base + (hint + ofs)))) {
++                lastOfs = ofs;
++                ofs = (ofs << 1) + 1;
++
++                if (ofs <= 0) { // int overflow
++                    ofs = maxOfs;
++                }
++            }
++            if (ofs > maxOfs) {
++                ofs = maxOfs;
++            }
++
++            lastOfs += hint;
++            ofs += hint;
++        }
++        assert(-1 <= lastOfs && lastOfs < ofs && ofs <= len);
++
++        return std::upper_bound(base + (lastOfs + 1), base + ofs, key, comp_.less_function()) - base;
++    }
++
++    void mergeLo(iter_t const base1, diff_t len1, iter_t const base2, diff_t len2) {
++        assert(len1 > 0 && len2 > 0 && base1 + len1 == base2);
++
++        copy_to_tmp(base1, len1);
++
++        tmp_iter_t cursor1 = tmp_.begin();
++        iter_t cursor2 = base2;
++        iter_t dest = base1;
++
++        *(dest++) = GFX_TIMSORT_MOVE(*(cursor2++));
++        if (--len2 == 0) {
++            GFX_TIMSORT_MOVE_RANGE(cursor1, cursor1 + len1, dest);
++            return;
++        }
++        if (len1 == 1) {
++            GFX_TIMSORT_MOVE_RANGE(cursor2, cursor2 + len2, dest);
++            *(dest + len2) = GFX_TIMSORT_MOVE(*cursor1);
++            return;
++        }
++
++        int minGallop(minGallop_);
++
++        // outer:
++        while (true) {
++            int count1 = 0;
++            int count2 = 0;
++
++            bool break_outer = false;
++            do {
++                assert(len1 > 1 && len2 > 0);
++
++                if (comp_.lt(*cursor2, *cursor1)) {
++                    *(dest++) = GFX_TIMSORT_MOVE(*(cursor2++));
++                    ++count2;
++                    count1 = 0;
++                    if (--len2 == 0) {
++                        break_outer = true;
++                        break;
++                    }
++                } else {
++                    *(dest++) = GFX_TIMSORT_MOVE(*(cursor1++));
++                    ++count1;
++                    count2 = 0;
++                    if (--len1 == 1) {
++                        break_outer = true;
++                        break;
++                    }
++                }
++            } while ((count1 | count2) < minGallop);
++            if (break_outer) {
++                break;
++            }
++
++            do {
++                assert(len1 > 1 && len2 > 0);
++
++                count1 = gallopRight(*cursor2, cursor1, len1, 0);
++                if (count1 != 0) {
++                    GFX_TIMSORT_MOVE_BACKWARD(cursor1, cursor1 + count1, dest + count1);
++                    dest += count1;
++                    cursor1 += count1;
++                    len1 -= count1;
++
++                    if (len1 <= 1) {
++                        break_outer = true;
++                        break;
++                    }
++                }
++                *(dest++) = GFX_TIMSORT_MOVE(*(cursor2++));
++                if (--len2 == 0) {
++                    break_outer = true;
++                    break;
++                }
++
++                count2 = gallopLeft(*cursor1, cursor2, len2, 0);
++                if (count2 != 0) {
++                    GFX_TIMSORT_MOVE_RANGE(cursor2, cursor2 + count2, dest);
++                    dest += count2;
++                    cursor2 += count2;
++                    len2 -= count2;
++                    if (len2 == 0) {
++                        break_outer = true;
++                        break;
++                    }
++                }
++                *(dest++) = GFX_TIMSORT_MOVE(*(cursor1++));
++                if (--len1 == 1) {
++                    break_outer = true;
++                    break;
++                }
++
++                --minGallop;
++            } while ((count1 >= MIN_GALLOP) | (count2 >= MIN_GALLOP));
++            if (break_outer) {
++                break;
++            }
++
++            if (minGallop < 0) {
++                minGallop = 0;
++            }
++            minGallop += 2;
++        } // end of "outer" loop
++
++        minGallop_ = std::min(minGallop, 1);
++
++        if (len1 == 1) {
++            assert(len2 > 0);
++            GFX_TIMSORT_MOVE_RANGE(cursor2, cursor2 + len2, dest);
++            *(dest + len2) = GFX_TIMSORT_MOVE(*cursor1);
++        } else {
++            assert(len1 != 0 && "Comparison function violates its general contract");
++            assert(len2 == 0);
++            assert(len1 > 1);
++            GFX_TIMSORT_MOVE_RANGE(cursor1, cursor1 + len1, dest);
++        }
++    }
++
++    void mergeHi(iter_t const base1, diff_t len1, iter_t const base2, diff_t len2) {
++        assert(len1 > 0 && len2 > 0 && base1 + len1 == base2);
++
++        copy_to_tmp(base2, len2);
++
++        iter_t cursor1 = base1 + (len1 - 1);
++        tmp_iter_t cursor2 = tmp_.begin() + (len2 - 1);
++        iter_t dest = base2 + (len2 - 1);
++
++        *(dest--) = GFX_TIMSORT_MOVE(*(cursor1--));
++        if (--len1 == 0) {
++            GFX_TIMSORT_MOVE_RANGE(tmp_.begin(), tmp_.begin() + len2, dest - (len2 - 1));
++            return;
++        }
++        if (len2 == 1) {
++            dest -= len1;
++            cursor1 -= len1;
++            GFX_TIMSORT_MOVE_BACKWARD(cursor1 + 1, cursor1 + (1 + len1), dest + (1 + len1));
++            *dest = GFX_TIMSORT_MOVE(*cursor2);
++            return;
++        }
++
++        int minGallop(minGallop_);
++
++        // outer:
++        while (true) {
++            int count1 = 0;
++            int count2 = 0;
++
++            bool break_outer = false;
++            do {
++                assert(len1 > 0 && len2 > 1);
++
++                if (comp_.lt(*cursor2, *cursor1)) {
++                    *(dest--) = GFX_TIMSORT_MOVE(*(cursor1--));
++                    ++count1;
++                    count2 = 0;
++                    if (--len1 == 0) {
++                        break_outer = true;
++                        break;
++                    }
++                } else {
++                    *(dest--) = GFX_TIMSORT_MOVE(*(cursor2--));
++                    ++count2;
++                    count1 = 0;
++                    if (--len2 == 1) {
++                        break_outer = true;
++                        break;
++                    }
++                }
++            } while ((count1 | count2) < minGallop);
++            if (break_outer) {
++                break;
++            }
++
++            do {
++                assert(len1 > 0 && len2 > 1);
++
++                count1 = len1 - gallopRight(*cursor2, base1, len1, len1 - 1);
++                if (count1 != 0) {
++                    dest -= count1;
++                    cursor1 -= count1;
++                    len1 -= count1;
++                    GFX_TIMSORT_MOVE_BACKWARD(cursor1 + 1, cursor1 + (1 + count1), dest + (1 + count1));
++
++                    if (len1 == 0) {
++                        break_outer = true;
++                        break;
++                    }
++                }
++                *(dest--) = GFX_TIMSORT_MOVE(*(cursor2--));
++                if (--len2 == 1) {
++                    break_outer = true;
++                    break;
++                }
++
++                count2 = len2 - gallopLeft(*cursor1, tmp_.begin(), len2, len2 - 1);
++                if (count2 != 0) {
++                    dest -= count2;
++                    cursor2 -= count2;
++                    len2 -= count2;
++                    GFX_TIMSORT_MOVE_RANGE(cursor2 + 1, cursor2 + (1 + count2), dest + 1);
++                    if (len2 <= 1) {
++                        break_outer = true;
++                        break;
++                    }
++                }
++                *(dest--) = GFX_TIMSORT_MOVE(*(cursor1--));
++                if (--len1 == 0) {
++                    break_outer = true;
++                    break;
++                }
++
++                minGallop--;
++            } while ((count1 >= MIN_GALLOP) | (count2 >= MIN_GALLOP));
++            if (break_outer) {
++                break;
++            }
++
++            if (minGallop < 0) {
++                minGallop = 0;
++            }
++            minGallop += 2;
++        } // end of "outer" loop
++
++        minGallop_ = std::min(minGallop, 1);
++
++        if (len2 == 1) {
++            assert(len1 > 0);
++            dest -= len1;
++            GFX_TIMSORT_MOVE_BACKWARD(cursor1 + (1 - len1), cursor1 + 1, dest + (1 + len1));
++            *dest = GFX_TIMSORT_MOVE(*cursor2);
++        } else {
++            assert(len2 != 0 && "Comparison function violates its general contract");
++            assert(len1 == 0);
++            assert(len2 > 1);
++            GFX_TIMSORT_MOVE_RANGE(tmp_.begin(), tmp_.begin() + len2, dest - (len2 - 1));
++        }
++    }
++
++    void copy_to_tmp(iter_t const begin, diff_t const len) {
++        tmp_.clear();
++        tmp_.reserve(len);
++        GFX_TIMSORT_MOVE_RANGE(begin, begin + len, std::back_inserter(tmp_));
++    }
++
++    // the only interface is the friend timsort() function
++    template <typename IterT, typename LessT> friend void timsort(IterT first, IterT last, LessT c);
++};
++
++template <typename RandomAccessIterator>
++inline void timsort(RandomAccessIterator const first, RandomAccessIterator const last) {
++    typedef typename std::iterator_traits<RandomAccessIterator>::value_type value_type;
++    timsort(first, last, std::less<value_type>());
++}
++
++template <typename RandomAccessIterator, typename LessFunction>
++inline void timsort(RandomAccessIterator const first, RandomAccessIterator const last, LessFunction compare) {
++    TimSort<RandomAccessIterator, LessFunction>::sort(first, last, compare);
++}
++
++} // namespace gfx
++
++#undef GFX_TIMSORT_LOG
++#undef GFX_TIMSORT_MOVE
++#undef GFX_TIMSORT_MOVE_RANGE
++#undef GFX_TIMSORT_MOVE_BACKWARD
++#endif // GFX_TIMSORT_HPP

@@ -1,0 +1,124 @@
+# HG changeset patch
+# Parent  937efecef94378d0b88d1d89aa7d95ba261a4095
+v1, but use more constants instead of active mark references.
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -774,7 +774,7 @@
+       void* base = *it;
+       heap_array* arr = align_as_array(base);
+       fprintf(gclog, "arr: %p in heap %p\n", arr, heap_for(arr)); fflush(gclog);
+-      mark_t active_mark = heap_for(arr)->active_mark;
++      mark_t active_mark = make_mark_t(1);//heap_for(arr)->active_mark;
+       if (obj_is_marked_with(arr, active_mark)) {
+         do_mark_obj_with(arr, invert_mark(active_mark));
+         ++it;
+@@ -1537,7 +1537,8 @@
+     if (GCLOG_DETAIL > 3) {
+       fprintf(gclog, "scanning cell %p for space %p with remaining depth %d\n", cell, space, depth_remaining);
+       fflush(gclog); }
+-    if (obj_is_marked_with(cell, space->active_mark)) {
++    //if (obj_is_marked_with(cell, space->active_mark)) {
++    if (obj_is_marked_with(cell, make_mark_t(1))) {
+       if (GC_ASSERTIONS) {
+         if (gcglobals.marked_in_current_gc.count(cell) == 0) {
+           fprintf(gclog, "GC INVARIANT VIOLATED: cell %p, of frame %u, appears marked before actually being marked!\n", cell, frame15_id_of(cell));
+@@ -1568,14 +1569,15 @@
+     get_cell_metadata(cell, arr, map, cell_size);
+ 
+     if (GC_ASSERTIONS) { gcglobals.marked_in_current_gc.insert(cell); }
+-    do_mark_obj_with(cell, space->active_mark);
++    //do_mark_obj_with(cell, space->active_mark);
++    do_mark_obj_with(cell, make_mark_t(1));
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += cell_size; }
+ 
+     if (frameclass == frame15kind::immix_smallmedium
+      || frameclass == frame15kind::immix_linebased) {
+         void* slot = (void*) cell;
+-        mark_lines_for_slots_with(slot, cell_size, space->active_mark);
++        mark_lines_for_slots_with(slot, cell_size, make_mark_t(1));
+     } else if (frameclass == frame15kind::unknown || frameclass == frame15kind::staticdata) {
+       gcglobals.condemned_set.unframed_and_marked.insert(cell);
+     }
+@@ -2329,8 +2331,6 @@
+                            clocktimer<false>& gcstart) { // immix_line_sweep / sweep_line_space
+     laa.sweep_arrays();
+ 
+-    mark_t flipped = invert_mark(this->active_mark);
+-
+     // Split this space's lines into marked and unmarked buckets.
+     std::vector<used_linegroup> used(used_lines);
+     used_lines.clear();
+@@ -2348,7 +2348,7 @@
+       // we append one line at a time, in order, and let the helper do the merging.
+       for (int i = startline; i < endline; ++i) {
+         //fprintf(gclog, "looking at linemap entry %d for (%u)\n", i, usedgroup.associated_frame15_id());
+-        if (linemap[i].val == this->active_mark.val) {
++        if (linemap[i].val == 1) {
+           //fprintf(gclog, "immix_sweep for %p: line %d marked\n", usedgroup.base, i);
+           append_linegroup(used_lines, usedgroup.singleton(i - startline));
+         } else {
+@@ -2357,7 +2357,7 @@
+         }
+       }
+ 
+-      usedgroup.clear_line_and_object_mark_bits(flipped);
++      usedgroup.clear_line_and_object_mark_bits(make_mark_t(0));
+     }
+     //this->active_mark = flipped;
+   }
+@@ -2799,7 +2799,7 @@
+     // within it become inaccessible.
+     heap_cell* handle_cell = handle->as_cell();
+     auto space = handle->body;
+-    if ((!obj_is_marked_with(handle_cell, heap_for(handle_cell)->active_mark)) && space->is_empty()) {
++    if ((!obj_is_marked_with(handle_cell, make_mark_t(1))) && space->is_empty()) {
+       //fprintf(gclog, "DELETING SPACE %p\n", space);
+       //delete space;
+     } else {
+@@ -3087,7 +3087,7 @@
+     // is-forwarded check subsumes the obj_is_marked check.
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += cell_size; }
+-    mark_lines_for_slots_with(newbody, cell_size, this->active_mark);
++    mark_lines_for_slots_with(newbody, cell_size, make_mark_t(1));
+ 
+     return newbody;
+   }
+@@ -3362,7 +3362,7 @@
+   bool inspect_frame15_postgc(frame15_id fid, frame15* f15) {
+     // TODO-X benchmark impact of using frame15_is_marked
+     mark_t* linemap = linemap_for_frame15_id(fid);
+-    int num_marked_lines = count_marked_lines_for_frame15(f15, linemap, this->active_mark);
++    int num_marked_lines = count_marked_lines_for_frame15(f15, linemap, make_mark_t(1));
+     gcglobals.lines_live_at_whole_heap_gc += num_marked_lines;
+     
+     //if (GCLOG_DETAIL > 2) {
+@@ -3392,11 +3392,11 @@
+     while (num_lines_to_process > 0) {
+       // At least one available line means this loop will terminate before cursor == 0
+       // Precondition: cursor is marked
+-      while (line_is_marked_with(cursor - 1, linemap, this->active_mark)) --cursor;
++      while (line_is_marked_with(cursor - 1, linemap, make_mark_t(1))) --cursor;
+       // Postcondition: cursor is marked; cursor - 1 is unmarked.
+       int rightmost_unmarked_line = --cursor;
+ 
+-      while (cursor >= 0 && !line_is_marked_with(cursor, linemap, this->active_mark)) --cursor;
++      while (cursor >= 0 && !line_is_marked_with(cursor, linemap, make_mark_t(1))) --cursor;
+       // Postcondition: line_is_marked(cursor), line_is_unmarked(cursor + 1), cursor >= -1
+       int leftmost_unmarked_line = cursor + 1;
+ 
+@@ -3428,9 +3428,8 @@
+     // Clear line and object mark bits.
+ 
+     int64_t t0 = __foster_getticks_start();
+-    mark_t flipped = invert_mark(this->active_mark);
+-    memset(linemap, flipped.val, IMMIX_LINES_PER_BLOCK);
+-    set_object_mark_bits_for_frame15(f15, flipped);
++    memset(linemap, 0, IMMIX_LINES_PER_BLOCK);
++    set_object_mark_bits_for_frame15(f15, make_mark_t(0));
+     int64_t t1 = __foster_getticks_end();
+     gcglobals.resetting_ticks += __foster_getticks_elapsed(t0, t1);
+ 

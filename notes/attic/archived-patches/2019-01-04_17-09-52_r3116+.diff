@@ -1,0 +1,75 @@
+# HG changeset patch
+# Parent  fe5393ade92b9cfa03892ce920208966f5b3ed79
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -35,6 +35,6 @@
+ // These are defined as compile-time constants so that the compiler
+ // can do effective dead-code elimination. If we were JIT compiling
+ // the GC we could (re-)specialize these config vars at runtime...
+-#define GCLOG_DETAIL 0
++#define GCLOG_DETAIL 3
+ #define ENABLE_LINE_GCLOG 0
+ #define ENABLE_GCLOG_PREP 0
+@@ -39,7 +39,7 @@
+ #define ENABLE_LINE_GCLOG 0
+ #define ENABLE_GCLOG_PREP 0
+-#define ENABLE_GCLOG_ENDGC 0
+-#define PRINT_STDOUT_ON_GC 0
++#define ENABLE_GCLOG_ENDGC 1
++#define PRINT_STDOUT_ON_GC 1
+ #define FOSTER_GC_TRACK_BITMAPS       0
+ #define FOSTER_GC_ALLOC_HISTOGRAMS    0
+ #define FOSTER_GC_TIME_HISTOGRAMS     1 // Adds ~300 cycles per collection
+@@ -63,7 +63,7 @@
+ #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
+ #define DEBUG_INITIALIZE_ALLOCATIONS  0 // Initialize even when the middle end doesn't think it's necessary
+ #define ELIDE_INITIALIZE_ALLOCATIONS  0 // Unsafe: ignore requests to initialize allocated memory.
+-#define MEMSET_FREED_MEMORY           GC_ASSERTIONS
++#define MEMSET_FREED_MEMORY           1
+ // This included file may un/re-define these parameters, providing
+ // a way of easily overriding-without-overwriting the defaults.
+ #include "gc/foster_gc_reconfig-inl.h"
+@@ -1610,7 +1610,7 @@
+   template <condemned_set_status condemned_portion>
+   uint64_t immix_trace(immix_heap* space, unchecked_ptr* root, int depth) {
+     //       |------------|       obj: |------------|
+-    // root: |    body    |---\        |  size/meta |
++    // root: |    body    |---\        |header(fwd?)|
+     //       |------------|   |        |------------|
+     //                        \- tidy->|            |
+     //                        |       ...          ...
+@@ -4196,8 +4201,8 @@
+                  : (!(intptr_t(bodyvoid) & 0x03)) ? 4 : 0
+                  ;
+                  */
+-  fprintf(gclog, "<%p>\n", bodyvoid);
+-  fprintf(stdout, "<%p>\n", bodyvoid);
++  fprintf(gclog, "<%p>; in nursery? %d\n", bodyvoid, gcglobals.default_allocator->contains(bodyvoid));
++  fprintf(stdout, "<%p>; in nursery? %d\n", bodyvoid, gcglobals.default_allocator->contains(bodyvoid));
+   /*
+   unchecked_ptr bodyu = make_unchecked_ptr(static_cast<tori*>(bodyvoid));
+   tori* body = untag(bodyu);
+@@ -4233,6 +4238,10 @@
+   fflush(gclog);
+   */
+ }
++
++extern "C" void foster__inspect_ptr__autowrap(void* ptr) {
++  inspect_ptr_for_debugging_purposes(ptr);
++}
+ // }}}
+ 
+ // {{{ Pointer classification utilities
+diff --git a/scripts/fosterc b/scripts/fosterc
+--- a/scripts/fosterc
++++ b/scripts/fosterc
+@@ -21,5 +21,5 @@
+ echo ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} --cxxpath $(cxxpath) $@ $MAYBE_OUT
+ ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} --cxxpath $(cxxpath) $@ $MAYBE_OUT
+ 
+-rm -f meGCstats.txt
+-rm -rf ${TMPDIR} $1.postopt.ll $1.preopt.ll
++#rm -f meGCstats.txt
++#rm -rf ${TMPDIR} $1.postopt.ll $1.preopt.ll

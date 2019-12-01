@@ -1,0 +1,962 @@
+# HG changeset patch
+# Parent  d301eeda161ff5236c228e49cec9d4f8d7d26c2c
+Initial prototype of RC Immix.
+
+diff --git a/compiler/include/foster/passes/FosterLL.h b/compiler/include/foster/passes/FosterLL.h
+--- a/compiler/include/foster/passes/FosterLL.h
++++ b/compiler/include/foster/passes/FosterLL.h
+@@ -382,7 +382,7 @@
+                         string static_or_dynamic, string srclines)
+     : base(base), index(index),
+       static_or_dynamic(static_or_dynamic), srclines(srclines) {}
+-  llvm::Value* codegenARI(CodegenPass* pass, Value** base, llvm::Type* ty);
++  llvm::Value* codegenARI(CodegenPass* pass, Value** base, llvm::Type* ty, Value** idx64_out = nullptr);
+ };
+ 
+ // base[index]
+diff --git a/compiler/llvm/plugins/FosterGC.cpp b/compiler/llvm/plugins/FosterGC.cpp
+--- a/compiler/llvm/plugins/FosterGC.cpp
++++ b/compiler/llvm/plugins/FosterGC.cpp
+@@ -118,6 +118,10 @@
+ class FosterGCPrinter : public llvm::GCMetadataPrinter {
+ public:
+   void beginAssembly(llvm::Module &M, llvm::GCModuleInfo &Info, llvm::AsmPrinter &AP) {
++    const llvm::MCAsmInfo &MAI = *(AP.MAI);
++
++    AP.OutStreamer->SwitchSection(AP.getObjFileLowering().getDataSection());
++    EmitSymbol("foster__begin_static_data", AP, MAI);
+   }
+ 
+   void finishAssembly(llvm::Module &M, llvm::GCModuleInfo &Info, llvm::AsmPrinter &AP) {
+diff --git a/compiler/passes/LLCodegen.cpp b/compiler/passes/LLCodegen.cpp
+--- a/compiler/passes/LLCodegen.cpp
++++ b/compiler/passes/LLCodegen.cpp
+@@ -127,5 +127,5 @@
+   return builder.CreateBitCast(v, dstTy, msg);
+ }
+ 
+-llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot) {
++llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot, Value* arrIdx) {
+   if (!base) base = getNullOrZero(builder.getInt8PtrTy());
+@@ -131,6 +131,10 @@
+   if (!base) base = getNullOrZero(builder.getInt8PtrTy());
+-  llvm::Constant* llvm_gcwrite = llvm::Intrinsic::getDeclaration(pass->mod,
+-                                                      llvm::Intrinsic::gcwrite);
++  llvm::Value* llvm_gcwrite = (arrIdx != nullptr)
++                        ? pass->mod->getFunction("foster_write_barrier_with_arr_generic")
++                        : llvm::Intrinsic::getDeclaration(pass->mod,
++                                                          llvm::Intrinsic::gcwrite);
++
++  if (arrIdx != nullptr) { llvm::outs() << "gcwrite_arr: " << llvm_gcwrite << "\n"; }
+ 
+ /*
+   llvm::outs() << "emitting GC write" << "\n";
+@@ -147,7 +151,11 @@
+   Value* base_generic = builder.CreateBitCast(base, builder.getInt8PtrTy());
+   Value* slot_generic = builder.CreateBitCast(slot, builder.getInt8PtrTy()->getPointerTo(0));
+   Value*  val_generic = builder.CreateBitCast(val,  builder.getInt8PtrTy());
+-  return builder.CreateCall(llvm_gcwrite, { val_generic, base_generic, slot_generic });
++  if (arrIdx != nullptr) {
++    return builder.CreateCall(llvm_gcwrite, { val_generic, base_generic, slot_generic, arrIdx});
++  } else {
++    return builder.CreateCall(llvm_gcwrite, { val_generic, base_generic, slot_generic });
++  }
+ }
+ 
+ // TODO (eventually) try emitting masks of loaded/stored heap pointers
+@@ -166,7 +174,8 @@
+                        llvm::Value* val,
+                        llvm::Value* base,
+                        llvm::Value* ptr,
+-                       WriteSelector w = WriteUnspecified) {
++                       WriteSelector w,
++                       llvm::Value* arrIdx = nullptr) {
+   //llvm::outs() << "logging write of " << *val <<
+   //              "\n              to " << *ptr <<
+   //              "\n     isNonGC = " << (w == WriteKnownNonGC) << "; val is ptr ty? " << val->getType()->isPointerTy() << "\n";
+@@ -178,7 +187,7 @@
+ 
+   if (isPointerToType(ptr->getType(), val->getType())) {
+     if (useBarrier) {
+-      return emitGCWrite(pass, val, base, ptr);
++      return emitGCWrite(pass, val, base, ptr, arrIdx);
+     } else {
+       return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
+     }
+@@ -1065,7 +1074,7 @@
+   llvm::Value* val  = v->codegen(pass);
+   llvm::Value* slot = r->codegen(pass);
+   if (isTraced && pass->config.useGC) {
+-    return emitGCWrite(pass, val, slot, slot);
++    return emitGCWrite(pass, val, slot, slot, nullptr);
+   } else {
+     return emitGCWriteOrStore(pass, val, slot, slot, WriteKnownNonGC);
+   }
+@@ -1412,7 +1421,7 @@
+ }
+ 
+ 
+-llvm::Value* LLArrayIndex::codegenARI(CodegenPass* pass, Value** outbase, Type* ty) {
++llvm::Value* LLArrayIndex::codegenARI(CodegenPass* pass, Value** outbase, Type* ty, Value** idx64) {
+   *outbase    = this->base ->codegen(pass);
+   Value* idx  = this->index->codegen(pass);
+   idx = builder.CreateZExt(idx, llvm::Type::getInt64Ty(builder.getContext()));
+@@ -1416,6 +1425,7 @@
+   *outbase    = this->base ->codegen(pass);
+   Value* idx  = this->index->codegen(pass);
+   idx = builder.CreateZExt(idx, llvm::Type::getInt64Ty(builder.getContext()));
++  if (idx64) { *idx64 = idx; }
+   ASSERT(static_or_dynamic == "static" || static_or_dynamic == "dynamic");
+   return getArraySlot(*outbase, idx, pass, ty,
+                       this->static_or_dynamic == "dynamic", this->srclines);
+@@ -1439,9 +1449,10 @@
+ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
+   Value* val  = this->value->codegen(pass);
+   Value* base = NULL;
+-  Value* slot = ari->codegenARI(pass, &base, val->getType());
++  Value* idx  = NULL;
++  Value* slot = ari->codegenARI(pass, &base, val->getType(), &idx);
+ 
+   if (auto eltTy = needsBitcastToMediateUnknownPointerMismatch(val, slot)) {
+     val = emitBitcast(val, eltTy, "specSgen");
+   }
+ 
+@@ -1443,10 +1454,9 @@
+ 
+   if (auto eltTy = needsBitcastToMediateUnknownPointerMismatch(val, slot)) {
+     val = emitBitcast(val, eltTy, "specSgen");
+   }
+ 
+-  //builder.CreateStore(val, slot, /*isVolatile=*/ false);
+-  emitGCWriteOrStore(pass, val, base, slot);
++  emitGCWriteOrStore(pass, val, base, slot, WriteUnspecified, idx);
+   return getNullOrZero(getUnitType()->getLLVMType());
+ }
+ 
+@@ -1521,7 +1531,8 @@
+       for (unsigned i = 0; i < ncvals.size(); ++i) {
+         unsigned k  = ncvals[i].second;
+         Value* val  = ncvals[i].first;
+-        Value* slot = getPointerToIndex(heapmem, llvm::ConstantInt::get(i32, k), "arr_slot");
++        Value* idx  = llvm::ConstantInt::get(i32, k);
++        Value* slot = getPointerToIndex(heapmem, idx, "arr_slot");
+         bool useBarrier = val->getType()->isPointerTy() && pass->config.useGC;
+         //maybeEmitCallToLogPtrWrite(pass, slot, val, useBarrier);
+         if (useBarrier) {
+@@ -1525,7 +1536,7 @@
+         bool useBarrier = val->getType()->isPointerTy() && pass->config.useGC;
+         //maybeEmitCallToLogPtrWrite(pass, slot, val, useBarrier);
+         if (useBarrier) {
+-          emitGCWrite(pass, val, heapmem, slot);
++          emitGCWrite(pass, val, heapmem, slot, idx);
+         } else {
+           builder.CreateStore(val, slot, /*isVolatile=*/ false);
+         }
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -282,7 +282,7 @@
+ 
+   virtual void force_gc_for_debugging_purposes() = 0;
+ 
+-  virtual uint64_t prepare_for_collection() = 0;
++  //virtual uint64_t prepare_for_collection() = 0;
+ 
+   virtual void condemn() = 0;
+   virtual void uncondemn() = 0;
+@@ -440,7 +441,7 @@
+ 
+   int64_t approx_condemned_capacity_in_bytes(Allocator* active_space);
+ 
+-  void prepare_for_collection(Allocator* active_space, bool voluntary, immix_common* common, uint64_t*, uint64_t*);
++  //void prepare_for_collection(Allocator* active_space, bool voluntary, immix_common* common, uint64_t*, uint64_t*);
+ };
+ 
+ template<typename Allocator>
+@@ -827,6 +831,16 @@
+   // this implies that we can't use the 3rd GB of the 32-bit addr pace.
+ }
+ 
++bool is_rc_able(void* obj) {
++  if (non_kosher_addr(obj)) return false;
++  auto frameclass = frame15_classification(obj);
++  bool notstatic = frameclass != frame15kind::staticdata;
++  if (notstatic && frameclass != frame15kind::immix_smallmedium) {
++    fprintf(gclog, "is_rc_able(%p) had class %d\n", obj, (int) frameclass);
++  }
++  return notstatic;
++}
++
+ // TODO make sure the addresses we use for allocation are kosher...
+ bool owned_by(tori* body, immix_heap* space) {
+   if (non_kosher_addr(body)) {
+@@ -854,9 +868,19 @@
+   }
+ }
+ 
++bool slot_is_condemned_dyn(void* slot, immix_heap* space, condemned_set_status condemned_portion) {
++  if (condemned_portion == condemned_set_status::whole_heap_condemned) {
++    return true;
++  } else if (condemned_portion == condemned_set_status::single_subheap_condemned) {
++    return owned_by((tori*)slot, space);
++  } else {
++    return space->is_condemned() && owned_by((tori*)slot, space);
++  }
++}
++
+ // }}}
+ 
+ // {{{
+ // {{{ Function prototype decls
+ bool line_for_slot_is_marked(void* slot);
+ void inspect_typemap(const typemap* ti);
+@@ -857,10 +881,10 @@
+ // }}}
+ 
+ // {{{
+ // {{{ Function prototype decls
+ bool line_for_slot_is_marked(void* slot);
+ void inspect_typemap(const typemap* ti);
+-uint64_t visitGCRoots(void* start_frame, immix_heap* visitor);
++void visitGCRoots(void* start_frame, immix_heap* visitor);
+ void coro_visitGCRoots(foster_bare_coro* coro, immix_heap* visitor);
+ const typemap* tryGetTypemap(heap_cell* cell);
+ // }}}
+@@ -1386,6 +1410,6 @@
+   } else {
+     cell_size = array_size_for(arr->num_elts(), map->cell_size);
+     if (GCLOG_DETAIL > 1) {
+-      fprintf(gclog, "Collecting array of total size %" PRId64
++      fprintf(stdout, "Collecting array %p (map %p) of total size %" PRId64
+                     " (rounded up from %" PRId64 " + %" PRId64 " = %" PRId64
+                     "), cell size %" PRId64 ", len %" PRId64 "...\n",
+@@ -1390,8 +1414,8 @@
+                     " (rounded up from %" PRId64 " + %" PRId64 " = %" PRId64
+                     "), cell size %" PRId64 ", len %" PRId64 "...\n",
+-                          cell_size,
++                          cell, map, cell_size,
+                           int64_t(sizeof(heap_array)),
+                                                arr->num_elts() * map->cell_size,
+                           sizeof(heap_array) + arr->num_elts() * map->cell_size,
+                           map->cell_size,
+                           arr->num_elts());
+@@ -1393,8 +1417,9 @@
+                           int64_t(sizeof(heap_array)),
+                                                arr->num_elts() * map->cell_size,
+                           sizeof(heap_array) + arr->num_elts() * map->cell_size,
+                           map->cell_size,
+                           arr->num_elts());
++      if (cell_size < 0) { fflush(stdout); exit(43); }
+     }
+   }
+   // }}}
+@@ -2311,7 +2336,8 @@
+     common.common_gc(this, true);
+   }
+ 
++/*
+   virtual uint64_t prepare_for_collection() {
+     exit(42);
+     return 0;
+   }
+@@ -2314,7 +2340,8 @@
+   virtual uint64_t prepare_for_collection() {
+     exit(42);
+     return 0;
+   }
++  */
+ 
+   // Marks lines we own as condemned; ignores lines owned by other spaces.
+   virtual void condemn() {
+@@ -2526,7 +2692,13 @@
+     auto num_marked_at_start   = gcglobals.num_objects_marked_total;
+     auto bytes_marked_at_start = gcglobals.alloc_bytes_marked_total;
+     bool isWholeHeapGC = gcglobals.condemned_set.status == condemned_set_status::whole_heap_condemned;
+-    bool was_sticky_collection = active_space->next_collection_sticky;
++    bool was_sticky_collection = active_space->next_collection_sticky; // for RC, "non sticky" means cycle-collecting
++
++    if (!was_sticky_collection) {
++      fprintf(gclog, "TODO: implement cycle collection for RC.\n");
++      fprintf(stderr, "TODO: implement cycle collection for RC.\n");
++      exit(42);
++    }
+ 
+     if (isWholeHeapGC) {
+       if (gcglobals.last_full_gc_fragmentation_percentage > 40.0) {
+@@ -2539,16 +2711,15 @@
+ 
+     global_immix_line_allocator.realign_and_split_line_bumper();
+ 
+-    phase.start();
+-    uint64_t numGenRoots = 0;
+-    uint64_t numRemSetRoots = 0;
+-    gcglobals.condemned_set.prepare_for_collection(active_space, voluntary, this, &numGenRoots, &numRemSetRoots);
+-    auto markResettingAndRemsetTracing_us = phase.elapsed_us();
+-
+-    fprintf(gclog, "# generational roots: %zu; # subheap roots: %zu\n", numGenRoots, numRemSetRoots);
++    //phase.start();
++    //uint64_t numGenRoots = 0;
++    //uint64_t numRemSetRoots = 0;
++    //gcglobals.condemned_set.prepare_for_collection(active_space, voluntary, this, &numGenRoots, &numRemSetRoots);
++    //auto markResettingAndRemsetTracing_us = phase.elapsed_us();
++    //fprintf(gclog, "# generational roots: %zu; # subheap roots: %zu\n", numGenRoots, numRemSetRoots);
+ 
+     phase.start();
+ #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
+     int64_t phaseStartTicks = __foster_getticks_start();
+ #endif
+ 
+@@ -2549,19 +2720,21 @@
+ 
+     phase.start();
+ #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
+     int64_t phaseStartTicks = __foster_getticks_start();
+ #endif
+ 
+-#if 0
+-    //clocktimer<false> ct; ct.start();
+-    // Remembered sets would be ignored for full-heap collections, because
+-    // remembered sets skip co-condemned pointers, and everything is condemned.
+-    uint64_t numRemSetRoots =
+-        voluntary ? process_remsets(active_space) : 0;
+-    if (voluntary && gcglobals.condemned_set.status == condemned_set_status::per_frame_condemned) {
+-      for (auto space : gcglobals.condemned_set.spaces) {
+-        if (space != active_space) {
+-          numRemSetRoots += process_remsets(space);
+-        }        
+-      }
++    visitGCRoots(__builtin_frame_address(0), active_space);
++
++    // TODO handle coro objects...
++    // They contain stacks which experience unlogged mutations,
++    // so we must revisit any stacks from coros that have been
++    // switched to since our collection cycle.
++    // IDEA: embed a last-gc-cycle tag in the coro;
++    //       when switching, if it doesn't match the current one,
++    //       add the coro to a list and update the tag.
++    /*
++    foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
++    foster_bare_coro*  coro = *coro_slot;
++    if (coro) {
++	immix_worklist.add((unchecked_ptr*)coro_slot);
+     }
+@@ -2567,19 +2740,7 @@
+     }
+-#endif
+-    //double roots_ms = ct.elapsed_ms();
+-
+-/*
+-    fprintf(gclog, "gc %zd, voluntary %d; space %p of size %zu bytes had %zu potential incoming ptrs, %zu remset roots\n",
+-      gcglobals.num_gcs_triggered, int(voluntary), active_space,
+-      active_space->approx_size_in_bytes(), incoming_ptr_addrs.size(), numRemSetRoots);
+-      */
+-
+-    //ct.start();
+-    uint64_t numCondemnedRoots = visitGCRoots(__builtin_frame_address(0), active_space);
+-    //fprintf(gclog, "num condemned + remset roots: %zu\n", numCondemnedRoots + numRemSetRoots);
+-    //double trace_ms = ct.elapsed_ms();
++    */
+ 
+ #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
+     hdr_record_value(gcglobals.hist_gc_rootscan_ticks, __foster_getticks_elapsed(phaseStartTicks, __foster_getticks_end()));
+ #endif
+ 
+@@ -2581,22 +2742,15 @@
+ 
+ #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
+     hdr_record_value(gcglobals.hist_gc_rootscan_ticks, __foster_getticks_elapsed(phaseStartTicks, __foster_getticks_end()));
+ #endif
+ 
+-    hdr_record_value(gcglobals.hist_gc_stackscan_roots, gNumRootsScanned);
+-    gNumRootsScanned = 0;
+-
+-
+-
+-    foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
+-    foster_bare_coro*  coro = *coro_slot;
+-    if (coro) {
+-      if (GCLOG_DETAIL > 1) {
+-        fprintf(gclog, "==========visiting current coro: %p\n", coro); fflush(gclog);
+-      }
+-      visit_root(active_space, (unchecked_ptr*)coro_slot, NULL);
+-      if (GCLOG_DETAIL > 1) {
+-        fprintf(gclog, "==========visited current coro: %p\n", coro); fflush(gclog);
++    size_t initial_root_list_size = immix_worklist.roots.size();
++    size_t initial_incbuf_list_size = gcglobals.incbuf.size();
++    size_t initial_decbuf_list_size = gcglobals.decbuf.size();
++    // Increment the root set's counts.
++    for (auto rootslot : immix_worklist.roots) {
++      if (is_rc_able(untag(*rootslot))) {
++        rc_increment(untag(*rootslot));
+       }
+     }
+ 
+@@ -2603,4 +2807,4 @@
+     //ct.start();
+-    immix_worklist.process(active_space, *this);
++    //immix_worklist.process(active_space, *this);
+     //double worklist_ms = ct.elapsed_ms();
+ 
+@@ -2605,5 +2809,5 @@
+     //double worklist_ms = ct.elapsed_ms();
+ 
+-    auto deltaRecursiveMarking_us = phase.elapsed_us();
+-    phase.start();
++    //auto deltaRecursiveMarking_us = phase.elapsed_us();
++    //phase.start();
+ #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
+@@ -2609,5 +2813,5 @@
+ #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
+-    phaseStartTicks = __foster_getticks_start();
++    //phaseStartTicks = __foster_getticks_start();
+ #endif
+ 
+     //ct.start();
+@@ -2611,7 +2815,7 @@
+ #endif
+ 
+     //ct.start();
+-
++/*
+     int64_t approx_condemned_space_in_lines =
+               gcglobals.condemned_set.approx_condemned_capacity_in_bytes(active_space)
+                 / IMMIX_BYTES_PER_LINE;
+@@ -2628,6 +2832,7 @@
+       gcglobals.last_full_gc_fragmentation_percentage =
+         byte_level_fragmentation_percentage;
+     }
++    */
+ 
+ /*
+     if (!voluntary) {
+@@ -2640,6 +2845,6 @@
+     }
+     */
+ 
+-    if (GC_ASSERTIONS) { gcglobals.marked_in_current_gc.clear(); }
++    //if (GC_ASSERTIONS) { gcglobals.marked_in_current_gc.clear(); }
+ 
+ #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
+@@ -2644,5 +2849,5 @@
+ 
+ #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
+-    hdr_record_value(gcglobals.hist_gc_postgc_ticks, __foster_getticks_elapsed(phaseStartTicks, __foster_getticks_end()));
++    //hdr_record_value(gcglobals.hist_gc_postgc_ticks, __foster_getticks_elapsed(phaseStartTicks, __foster_getticks_end()));
+ #endif
+ 
+@@ -2647,5 +2852,6 @@
+ #endif
+ 
++    /*
+   if (GCLOG_DETAIL > 0 || ENABLE_GCLOG_ENDGC) {
+     if (TRACK_NUM_OBJECTS_MARKED) {
+       if (isWholeHeapGC) {
+@@ -2659,6 +2865,7 @@
+         approx_condemned_space_in_lines);
+     }
+   }
++  */
+ 
+ #if ((GCLOG_DETAIL > 1) || ENABLE_GCLOG_ENDGC)
+ #   if TRACK_NUM_OBJECTS_MARKED
+@@ -2662,9 +2869,10 @@
+ 
+ #if ((GCLOG_DETAIL > 1) || ENABLE_GCLOG_ENDGC)
+ #   if TRACK_NUM_OBJECTS_MARKED
++    /*
+       if (isWholeHeapGC) {
+         fprintf(gclog, "\t%zu objects marked in this GC cycle, %zu marked overall; %zu bytes live\n",
+                 gcglobals.num_objects_marked_total - num_marked_at_start,
+                 gcglobals.num_objects_marked_total,
+                 bytes_live);
+       }
+@@ -2665,7 +2873,8 @@
+       if (isWholeHeapGC) {
+         fprintf(gclog, "\t%zu objects marked in this GC cycle, %zu marked overall; %zu bytes live\n",
+                 gcglobals.num_objects_marked_total - num_marked_at_start,
+                 gcglobals.num_objects_marked_total,
+                 bytes_live);
+       }
++      */
+ #   endif
+@@ -2671,4 +2880,5 @@
+ #   endif
++      /*
+       if (TRACK_NUM_REMSET_ROOTS && !isWholeHeapGC && false) {
+         fprintf(gclog, "\t%lu objects identified in remset\n", numRemSetRoots);
+       }
+@@ -2672,6 +2882,8 @@
+       if (TRACK_NUM_REMSET_ROOTS && !isWholeHeapGC && false) {
+         fprintf(gclog, "\t%lu objects identified in remset\n", numRemSetRoots);
+       }
++      */
++#if 0
+     if (isWholeHeapGC) {
+       if (ENABLE_GC_TIMING) {
+         double delta_us = gcstart.elapsed_us();
+@@ -2689,6 +2901,7 @@
+       fflush(gclog);
+     }
+ #endif
++#endif
+ 
+   if (PRINT_STDOUT_ON_GC) { fprintf(stdout, "                              endgc\n"); fflush(stdout); }
+ 
+@@ -2708,6 +2921,8 @@
+     gcglobals.subheap_ticks += __foster_getticks_elapsed(t0, t1);
+ #endif
+ 
++    // TODO rework this for RC
++    /*
+     if (was_sticky_collection && !active_space->next_collection_sticky) {
+       // We're close to running out of room. If we're REALLY close, trigger a non-sticky collection to reclaim more.
+ 
+@@ -2728,6 +2943,7 @@
+       }
+       return need_immediate_recollection;
+     }
++    */
+     return false;
+   }
+ 
+@@ -2731,9 +2947,10 @@
+     return false;
+   }
+ 
++/*
+ template<typename Allocator>
+ void condemned_set<Allocator>::prepare_for_collection(Allocator* active_space,
+                                                       bool voluntary,
+                                                       immix_common* common,
+                                                       uint64_t* numGenRoots,
+                                                       uint64_t* numRemSetRoots) {
+@@ -2734,10 +2951,9 @@
+ template<typename Allocator>
+ void condemned_set<Allocator>::prepare_for_collection(Allocator* active_space,
+                                                       bool voluntary,
+                                                       immix_common* common,
+                                                       uint64_t* numGenRoots,
+                                                       uint64_t* numRemSetRoots) {
+-
+   switch (this->status) {
+     case condemned_set_status::single_subheap_condemned: {
+       *numGenRoots += active_space->prepare_for_collection();
+@@ -2772,6 +2988,7 @@
+     }
+   }
+ }
++  */
+ 
+ template<typename Allocator>
+ int64_t condemned_set<Allocator>::approx_condemned_capacity_in_bytes(Allocator* active_space) {
+@@ -2847,10 +3064,10 @@
+       //   * Allocation in A puts an arbitrary bit pattern in B's referent
+       //     (especially the header/typemap)
+       //   * Single-subheap GC of A follows the remset entry for B and goes off the rails.
+-      gcglobals.default_allocator->trim_remset();
+-      for (auto handle : subheap_handles) {
+-        handle->body->trim_remset();
+-      }
++      //gcglobals.default_allocator->trim_remset();
++      //for (auto handle : subheap_handles) {
++      //  handle->body->trim_remset();
++      //}
+ 
+       num_lines_reclaimed += gcglobals.default_allocator->immix_sweep(phase, gcstart);
+       for (auto handle : subheap_handles) {
+@@ -2891,4 +3108,6 @@
+ 
+ // }}}
+ 
++bool is_line_marked(uint8_t* linemap, int i) { return linemap[i] > 0; }
++
+ // Invariant: IMMIX_LINES_PER_BLOCK <= 256
+@@ -2894,5 +3113,5 @@
+ // Invariant: IMMIX_LINES_PER_BLOCK <= 256
+-// Invariant: marked lines have value 1, unmarked are 0.
++// Invariant: marked lines have value >= 1, unmarked are 0.
+ uint8_t count_marked_lines_for_frame15(frame15* f15, uint8_t* linemap_for_frame) {
+   uint8_t count = 0; // Note: Clang compiles this to straight-line code using vector ops.
+   if (frame15_is_marked(f15)) { // TODO-X
+@@ -2896,7 +3115,7 @@
+ uint8_t count_marked_lines_for_frame15(frame15* f15, uint8_t* linemap_for_frame) {
+   uint8_t count = 0; // Note: Clang compiles this to straight-line code using vector ops.
+   if (frame15_is_marked(f15)) { // TODO-X
+-    for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { count += linemap_for_frame[i]; }
++    for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { count += is_line_marked(linemap_for_frame, i); }
+   }
+   return count;
+ }
+@@ -2910,5 +3129,5 @@
+ 
+ uint8_t count_holes_in_linemap_for_frame15(uint8_t* linemap_for_frame) {
+   uint8_t numTransitions = 0;
+-  uint8_t currentState = linemap_for_frame[0];
++  bool currentState = is_line_marked(linemap_for_frame, 0);
+   for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) {
+@@ -2914,3 +3133,4 @@
+   for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) {
+-    if (linemap_for_frame[i] != currentState) {
++    bool newState = is_line_marked(linemap_for_frame, i);
++    if (newState != currentState) {
+       ++numTransitions;
+@@ -2916,5 +3136,5 @@
+       ++numTransitions;
+-      currentState = linemap_for_frame[i];
++      currentState = newState;
+     }
+   }
+ 
+@@ -2990,6 +3210,7 @@
+     return;
+   }
+ 
++  /*
+   virtual uint64_t prepare_for_collection() {
+     if (this->next_collection_sticky) {
+       uint64_t numRoots = 0;
+@@ -3025,6 +3246,7 @@
+       //});
+       }
+   }
++  */
+ 
+   void clear_line_and_object_mark_bits_for_frame15(frame15* f15) {
+     uint8_t* linemap = linemap_for_frame15_id(frame15_id_of(f15));
+@@ -3155,10 +3377,10 @@
+ 
+   int unmarked_line_from(uint8_t* linemap, int start) {
+       for (int i = start; i < (IMMIX_LINES_PER_BLOCK - 1); ++i) {
+-        if (linemap[i] == 0) return i;
++        if (!is_line_marked(linemap, i)) return i;
+       }
+       return -1;
+   }
+ 
+   int first_marked_line_after(uint8_t* linemap, int start) {
+       for (int i = start + 1; i < IMMIX_LINES_PER_BLOCK; ++i) {
+@@ -3159,10 +3381,10 @@
+       }
+       return -1;
+   }
+ 
+   int first_marked_line_after(uint8_t* linemap, int start) {
+       for (int i = start + 1; i < IMMIX_LINES_PER_BLOCK; ++i) {
+-        if (linemap[i] != 0) return i;
++        if (is_line_marked(linemap, i)) return i;
+       }
+       return IMMIX_LINES_PER_BLOCK;
+   }
+@@ -3503,8 +3725,8 @@
+     gcglobals.lines_live_at_whole_heap_gc += num_marked_lines;
+     
+     if (GCLOG_DETAIL > 2) {
+-      fprintf(gclog, "frame %u: ", fid);
+-      for(int i = 0;i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", (linemap[i] == 0) ? '_' : 'd'); }
++      fprintf(gclog, "frame %u: %d marked lines: ", fid, num_marked_lines);
++      for(int i = 0;i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap_code(linemap[i])); }
+       fprintf(gclog, "\n");
+     }
+ 
+@@ -3590,6 +3812,7 @@
+     incoming_ptr_addrs.insert((tori**) slot);
+   }
+ 
++/*
+   void remember_generational(void* obj, void** slot) {
+     generational_remset.push_back(slot);
+   }
+@@ -3616,7 +3867,8 @@
+   // card table inspected for pointers that actually point here.
+   //std::set<frame15_id> frames_pointing_here;
+   remset_t incoming_ptr_addrs;
+-  std::vector<void**> generational_remset;
++
++  //std::vector<void**> generational_remset;
+ 
+   bool condemned_flag;
+   // immix_space_end
+@@ -3652,7 +3904,7 @@
+           && f15info->num_holes_at_last_full_collection >= gcglobals.evac_threshold;
+ 
+   if (want_to_opportunistically_evacuate) {
+-    heap_array* arr; const typemap* map; int64_t cell_size;
++    heap_array* arr = NULL; const typemap* map; int64_t cell_size;
+     get_cell_metadata(obj, arr, map, cell_size);
+     bool can = ((immix_space*)space)->can_alloc_for_defrag(cell_size);
+     if (!can) { fprintf(gclog, "unable to continue opportunistic evacuation...\n"); }
+@@ -3691,8 +3943,7 @@
+ #include "foster_gc_backtrace_x86-inl.h"
+ 
+ // {{{ Walks the call stack, calling visitor->visit_root() along the way.
+-uint64_t visitGCRoots(void* start_frame, immix_heap* visitor) {
+-  uint64_t condemnedRootsVisited = 0;
++void visitGCRoots(void* start_frame, immix_heap* visitor) {
+   enum { MAX_NUM_RET_ADDRS = 4024 };
+   // Garbage collection requires 16+ KB of stack space due to these arrays.
+   ret_addr  retaddrs[MAX_NUM_RET_ADDRS];
+@@ -3783,9 +4034,16 @@
+     for (int a = 0; a < pc->liveCountWithMetadata; ++a) {
+       int32_t     off = lo[a];
+       const void*   m = ms[a];
+-      void*  rootaddr = (off <= 0) ? offset(fp, off)
+-                                   : offset(sp, off);
+-
++      void**  rootaddr = (void**) ((off <= 0) ? offset(fp, off)
++                                              : offset(sp, off));
++
++      if (is_rc_able(*rootaddr)) {
++        // Filter out null and irrelevant root values.
++        if (slot_is_condemned_dyn(*rootaddr, visitor, gcglobals.condemned_set.status)) {
++          immix_worklist.add((unchecked_ptr*) rootaddr);
++        }
++      }
++/*
+       condemnedRootsVisited +=
+         visitor->visit_root(static_cast<unchecked_ptr*>(rootaddr),
+                             static_cast<const char*>(m));
+@@ -3789,8 +4047,9 @@
+       condemnedRootsVisited +=
+         visitor->visit_root(static_cast<unchecked_ptr*>(rootaddr),
+                             static_cast<const char*>(m));
++*/
+     }
+ 
+     gc_assert(pc->liveCountWithoutMetadata == 0,
+                   "TODO: scan pointer w/o metadata");
+   }
+@@ -3792,10 +4051,8 @@
+     }
+ 
+     gc_assert(pc->liveCountWithoutMetadata == 0,
+                   "TODO: scan pointer w/o metadata");
+   }
+-
+-  return condemnedRootsVisited;
+ }
+ // }}}
+ 
+@@ -3888,7 +4145,7 @@
+   }
+ 
+   fprintf(gclog, "coro_visitGCRoots\n"); fflush(gclog);
+-  uint64_t numCondemnedRoots = visitGCRoots(frameptr, visitor);
++  visitGCRoots(frameptr, visitor);
+ 
+   if (GCLOG_DETAIL > 1) {
+     fprintf(gclog, "========= scanned coro stack from %p\n", frameptr);
+@@ -3927,6 +4184,24 @@
+ 
+ extern "C" void* opaquely_ptr(void*);
+ 
++extern "C" void* foster__begin_static_data; // it's really void, not void*; it's just a label emitted by the Foster GC plugin.
++
++template<typename T> T min3(T a, T b, T c) { return std::min(std::min(a, b), c); }
++template<typename T> T max3(T a, T b, T c) { return std::max(std::max(a, b), c); }
++
++void mark_static_data_frames() {
++  uintptr_t a = uintptr_t(&foster__begin_static_data); // marker for mutable globals
++  uintptr_t b = uintptr_t(&foster__typeMapList); // type maps may be merged into the text segment
++  uintptr_t c = uintptr_t(&foster__gcmaps);
++
++  auto mn = min3(a, b, c); // don't assume any a priori ordering on the symbols,
++  auto mx = max3(a, b, c); // but do assume they bound the Foster-generated globals.
++
++  for (uint32_t fid = frame15_id_of((void*) mn); fid <= frame15_id_of((void*) mx); ++fid) {
++     set_classification_for_frame15_id(fid, frame15kind::staticdata);
++  }
++}
++
+ void initialize(void* stack_highest_addr) {
+   gcglobals.init_start.start();
+   gclog = fopen("gclog.txt", "w");
+@@ -3956,6 +4231,8 @@
+   //
+   gcglobals.lazy_mapped_granule_marks           = allocate_lazily_zero_mapped<uint8_t>(lazy_mapped_granule_marks_size()); // byte marks
+ 
++  mark_static_data_frames();
++
+   gcglobals.gc_time_us = 0.0;
+   gcglobals.num_gcs_triggered = 0;
+   gcglobals.num_gcs_triggered_involuntarily = 0;
+@@ -4362,8 +4639,7 @@
+     gc::heap_cell* cell = gc::heap_cell::for_tidy(gc::gcglobals.allocator->tidy_for(body));
+     if (cell->is_forwarded()) {
+       fprintf(gclog, "cell is forwarded to %p\n", cell->get_forwarded_body());
+-    } else {
+-      if (const gc::typemap* ti = tryGetTypemap(cell)) {
++    J else { if (const gc::typemap* ti = tryGetTypemap(cell)) {
+         //gc::inspect_typemap(stdout, ti);
+         int iters = ti->numOffsets > 128 ? 0 : ti->numOffsets;
+         for (int i = 0; i < iters; ++i) {
+@@ -4403,6 +4679,7 @@
+   }
+   
+   if (!gcglobals.typemap_memory.contains((void*) map)) {
++    fprintf(gclog, "tryGetTypemap(%p) found map %p that wasn't a pointer to known typemap memory.\n", cell, map);
+     return nullptr;
+   }
+ 
+@@ -4472,6 +4749,7 @@
+   return ((immix_heap**)val)[-2];
+ }
+ 
++/*
+ __attribute__((noinline))
+ void foster_generational_write_barrier_slowpath(void* val, void* obj, void** slot) {
+   if (obj_is_marked(heap_cell::for_tidy((tidy*)val))) {
+@@ -4482,6 +4760,7 @@
+   ((immix_space*)hs)->remember_generational(obj, slot); // TODO fix this assumption
+   if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1g_hits; }
+ }
++*/
+ 
+ __attribute__((noinline))
+ void foster_write_barrier_with_obj_fullpath(void* val, void* obj, void** slot) {
+@@ -4512,7 +4791,12 @@
+ }
+ 
+ __attribute__((always_inline))
+-void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot) /*__attribute((always_inline))*/ {
++void foster_write_barrier_with_arr_generic(void* val, void* obj, void** slot, uint64_t idx) /*__attribute((always_inline))*/ {
++  fprintf(gclog, "array write barrier not yet implemented\n");
++  fprintf(stdout, "array write barrier not yet implemented\n");
++  fprintf(stderr, "array write barrier not yet implemented\n");
++  exit(42);
++/*
+   *slot = val;
+ 
+   //if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
+@@ -4534,6 +4818,54 @@
+   }
+ 
+   foster_write_barrier_with_obj_fullpath(val, obj, slot);
++*/
++}
++
++
++// cell : [  |  |slot:*|  ]
++//                    +
++//                    :- - - - > oldval : [...]
++//                    |
++//                    +===> newval : [...]
++__attribute__((noinline))
++void foster_refcounting_write_barrier_slowpath(void* obj) {
++  auto cell = heap_cell::for_tidy((tidy*) obj);
++
++  //fprintf(gclog, "remembering slot %p, currently updated to contain val %p\n", slot, val);
++  immix_heap* hs = heap_for_wb(obj);
++  ((immix_space*)gcglobals.default_allocator)->rc_log_object(cell);
++  //((immix_space*)hs)->rc_log_object(cell); // TODO fix this assumption
++  if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1g_hits; }
++}
++
++__attribute__((always_inline))
++void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot) {
++  //if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
++
++  if (!non_kosher_addr(val)) {
++
++    uint64_t obj_header = heap_cell::for_tidy((tidy*) obj)->raw_header();
++    if (header_is_old_and_unlogged(obj_header)) {
++    //if (!header_is_logged(obj_header)) { // only valid when not forcing initialization barriers
++      foster_refcounting_write_barrier_slowpath(obj);
++    }
++  /*
++    uint64_t obj_header = heap_cell::for_tidy((tidy*) obj)->raw_header();
++    uint64_t val_header = heap_cell::for_tidy((tidy*) val)->raw_header();
++
++    if ( (space_id_of_header(val_header)
++      == space_id_of_header(obj_header))) {
++
++      if (!header_is_logged(obj_header)) {
++        foster_refcounting_write_barrier_slowpath(obj);
++      }
++    } else {
++      foster_write_barrier_with_obj_fullpath(val, obj, slot);
++    }
++  */
++
++  }
++  *slot = val;
+ }
+ 
+ // We need a degree of separation between the possibly-moving
+@@ -4543,6 +4875,8 @@
+ // aligned (though I guess it's not strictly necessary for types without any
+ // constructors).
+ void* foster_subheap_create_raw() {
++  return nullptr;
++/*
+   ++gcglobals.num_subheaps_created;
+   immix_space* subheap = new immix_space();
+   void* alloc = malloc(sizeof(heap_handle<immix_space>));
+@@ -4552,6 +4886,7 @@
+   h->body             = subheap;
+   gcglobals.all_subheap_handles_except_default_allocator.push_back(h);
+   return h->as_tidy();
++*/
+ }
+ 
+ void* foster_subheap_create_small_raw() {
+@@ -4555,6 +4890,8 @@
+ }
+ 
+ void* foster_subheap_create_small_raw() {
++  return nullptr;
++/*
+   ++gcglobals.num_subheaps_created;
+   immix_line_space* subheap = new immix_line_space();
+   void* alloc = malloc(sizeof(heap_handle<heap>));
+@@ -4564,6 +4901,7 @@
+   h->body             = subheap;
+   gcglobals.all_subheap_handles_except_default_allocator.push_back(h);
+   return h->as_tidy();
++*/
+ }
+ 
+ void* foster_subheap_activate_raw(void* generic_subheap) {
+diff --git a/runtime/gc/foster_gc_utils.h b/runtime/gc/foster_gc_utils.h
+--- a/runtime/gc/foster_gc_utils.h
++++ b/runtime/gc/foster_gc_utils.h
+@@ -78,6 +78,8 @@
+ const uint64_t FORWARDED_BIT    = 0x02; // 0b000..00010
+ const uint64_t LOW_HEADER_BITS  = HEADER_MARK_BITS | FORWARDED_BIT;
+ 
++const uint64_t HEADER_OLD_BIT   = (1 << (24 + 7));
++
+ // This should remain synchronized with getHeapCellHeaderTy()
+ // in Codegen-typemaps.cpp
+ #define HEAP_CELL_HEADER_TYPE uint64_t
+@@ -85,6 +87,8 @@
+ 
+ NEWTYPE(cell_header, HEAP_CELL_HEADER_TYPE);
+ 
++// TODO move flex bits to low end (fwd bit cannot move so we sacrifice one RC bit).
++
+ // Cell header layout:
+ //   [  space id (32 bits)  | Flex space (8 bits) | typemap* (24 bits) ]
+ //                                       i                            ^
+@@ -88,8 +92,9 @@
+ // Cell header layout:
+ //   [  space id (32 bits)  | Flex space (8 bits) | typemap* (24 bits) ]
+ //                                       i                            ^
+-//            (when fwd unset)                          fwd & mark bits
++//            (when fwd unset)                                fwd/logged
++//                                                           & mark bits
+ //
+ // U [        fwd ptr (64 bits, 8+ byte aligned)   when fwd bit set * ]
+ //
+ //
+@@ -92,9 +97,9 @@
+ //
+ // U [        fwd ptr (64 bits, 8+ byte aligned)   when fwd bit set * ]
+ //
+ //
+-// Flex bits:  [old bit (1=old, 0=new)| RC count (7 bits)]
+-//
++// Flex bits:  [old bit (1=old, 0=new)|RC count (7 bits)]
++//                ^ bit 7                  ^ bits 0-6
+ //
+ // Mark and forwarded bits are only set during collection;
+ // the mutator doesn't see them.

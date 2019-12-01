@@ -1,0 +1,373 @@
+# HG changeset patch
+# Parent  5953116d04730db8cf3fd3acf9c4eabdc9b12bcf
+Added evacuation to RC Immix.
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -67,7 +67,7 @@
+ // a way of easily overriding-without-overwriting the defaults.
+ #include "gc/foster_gc_reconfig-inl.h"
+ 
+-const double kFosterDefragReserveFraction = 0.02;
++const double kFosterDefragReserveFraction = 0.12;
+ const int kFosterGCMaxDepth = 250;
+ const ssize_t inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
+ 
+@@ -2685,6 +2686,8 @@
+   // trying to focus on "unmarked" objects/lines.
+   //
+ 
+-void rc_increment(void* obj) {
++heap_cell* try_opportunistic_evacuation_rc(heap_cell* obj);
++
++void rc_increment(void** slot) {
+   if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
+ 
+@@ -2689,6 +2692,15 @@
+   if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
+ 
+-  heap_cell* cell = heap_cell::for_tidy((tidy*) obj);
++  heap_cell* cell = heap_cell::for_tidy((tidy*) *slot);
++
++  if (cell->is_new_and_forwarded()) {
++    // The forwarding bit means "logged" for old objects.
++    tidy* body = cell->get_forwarded_body();
++    *slot = (void*) body;
++    cell = heap_cell::for_tidy(body);
++    // Invariant: header for forwarded body is marked old, not new.
++  }
++
+   uint64_t header = cell->raw_header();
+ 
+   auto frameclass = frame15_classification(cell);
+@@ -2698,6 +2710,15 @@
+ 
+     if (header_is_new(header)) {
+       // assert rc_is_zero(header)
++
++      if (frameclass == frame15kind::immix_smallmedium) {
++        if (auto newcell = try_opportunistic_evacuation_rc(cell)) {
++          // Old cell has been forwarded by evacuation.
++          *slot = (void*) newcell->body_addr(); // Update source with new object location.
++          cell = newcell; // Get ready to fiddle with line counts, etc.
++        }
++      }
++
+       cell->set_header_old_with_rc1();
+       delta_line_counts_for_cell(cell, 1);
+ 
+@@ -2701,8 +2722,7 @@
+       cell->set_header_old_with_rc1();
+       delta_line_counts_for_cell(cell, 1);
+ 
+-      //fprintf(gclog, "treating new object cell %p as modified; assigned refcount 1 and set old bit.\n", cell);
+       gcglobals.incbuf.push_back(cell);
+     } else {
+       if (!hit_max_rc(header)) {
+         cell->inc_rc_by(1);
+@@ -2705,8 +2725,7 @@
+       gcglobals.incbuf.push_back(cell);
+     } else {
+       if (!hit_max_rc(header)) {
+         cell->inc_rc_by(1);
+-        //fprintf(gclog, "incrementing rc of object cell %p produced new refcount %d\n", cell, int(cell->get_rc()));
+       }
+     }
+ 
+@@ -2721,9 +2740,8 @@
+ 
+ void process_modbuf_entry(heap_cell* cell) {
+   for_each_child_slot(cell, [](void** slot) {
+-    void* value = *slot;
+-    if (is_rc_able(value)) {
+-      rc_increment(value);
++    if (is_rc_able(*slot)) {
++      rc_increment(slot);
+     }
+   });
+ }
+@@ -2769,7 +2787,7 @@
+     // Increment the root set's counts.
+     for (auto rootslot : immix_worklist.roots) {
+       if (is_rc_able(untag(*rootslot))) {
+-        rc_increment(untag(*rootslot));
++        rc_increment((void**)rootslot);
+       }
+     }
+ 
+@@ -2779,9 +2797,8 @@
+     while (!gcglobals.arrbuf.empty()) {
+       auto slot = gcglobals.arrbuf.back(); gcglobals.arrbuf.pop_back();
+       ++modbuf_entries_processed;
+-      auto ptr = *slot;
+-      if (is_rc_able(ptr)) {
+-        rc_increment(ptr);
++      if (is_rc_able(*slot)) {
++        rc_increment(slot);
+       }
+     }
+ 
+@@ -2884,6 +2901,8 @@
+     hdr_record_value(gcglobals.hist_gc_rootscan_ticks, __foster_getticks_elapsed(phaseStartTicks, __foster_getticks_end()));
+ #endif
+ 
++    gcglobals.evac_disabled = (num_avail_defrag_frame15s() * 3) < num_assigned_defrag_frame15s();
++    fprintf(gclog, "Have %d out of %d defrag frame15s ready.\n", num_avail_defrag_frame15s(), num_assigned_defrag_frame15s());
+ 
+     if (was_sticky_collection) {
+       do_rc_collection(active_space, phase);
+@@ -2892,5 +2911,6 @@
+       if (isWholeHeapGC) {
+         if (gcglobals.last_full_gc_fragmentation_percentage > 40.0) {
+           gcglobals.evac_threshold = select_defrag_threshold();
++          gcglobals.evac_disabled  = false;
+           reset_marked_histogram();
+         } else {
+@@ -2895,6 +2915,6 @@
+           reset_marked_histogram();
+         } else {
+-          gcglobals.evac_threshold = 0;
++          gcglobals.evac_disabled  = true;
+         }
+       }
+ 
+@@ -3517,6 +3537,24 @@
+     return true;
+   }
+ 
++  heap_cell* defrag_copy_cell_rc(heap_cell* cell, typemap* map, int64_t cell_size) {
++    tidy* newbody = helpers::allocate_cell_prechecked(&small_bumper, map, cell_size, common.prevent_const_prop());
++    heap_cell* mcell = heap_cell::for_tidy(newbody);
++    memcpy(mcell, cell, map->cell_size);
++    cell->set_forwarded_body(newbody);
++    return mcell;
++  }
++
++  heap_cell* defrag_copy_array_rc(typemap* map, heap_array* arr, int64_t req_bytes) {
++    bool init = false;
++    tidy* newbody = helpers::allocate_array_prechecked(&small_bumper, map, arr->num_elts(), req_bytes, gcglobals.current_subheap_hash, init);
++    heap_cell* mcell = heap_cell::for_tidy(newbody);
++    heap_array* marr = heap_array::from_heap_cell(mcell);
++    memcpy(marr->elt_body(0, 0), arr->elt_body(0, 0), map->cell_size * arr->num_elts());
++    arr->set_forwarded_body(newbody);
++    return mcell;
++  }
++
+   tidy* defrag_copy_cell(heap_cell* cell, typemap* map, int64_t cell_size) {
+     tidy* newbody = helpers::allocate_cell_prechecked(&small_bumper, map, cell_size, common.prevent_const_prop());
+     heap_cell* mcell = heap_cell::for_tidy(newbody);
+@@ -3737,10 +3775,21 @@
+     size_t lines_tracked = (tracking.logical_frame15s() + tracking.frame15s_in_reserve_clean()) * IMMIX_LINES_PER_FRAME15;
+     double yield_percentage = 100.0 * (double(num_lines_reclaimed) / double(lines_tracked));
+ 
+-    // If we see signs that we're running out of space, discard sticky bits to get more space next time.
+-    this->next_collection_sticky = (!__foster_globals.disable_sticky)
+-                                    && (yield_percentage > gcglobals.yield_percentage_threshold)
+-                                    && ((num_avail_defrag_frame15s() * 3) > num_assigned_defrag_frame15s());
++    fprintf(gclog, "Number of available defrag frames: %d vs %d wanted\n", num_avail_defrag_frame15s(), num_assigned_defrag_frame15s());
++    if (this->next_collection_sticky) {
++      if (yield_percentage < 2.0) {
++        this->next_collection_sticky = false;
++      }
++    } else {
++      // Tracing collections should always be followed by RC mode.
++      this->next_collection_sticky = true;
++      /*
++      // If we see signs that we're running out of space, discard sticky bits to get more space next time.
++      this->next_collection_sticky = (!__foster_globals.disable_sticky)
++                                      && (yield_percentage > gcglobals.yield_percentage_threshold)
++                                      && ((num_avail_defrag_frame15s() * 3) > num_assigned_defrag_frame15s());
++                                      */
++    }
+ 
+ #if ((GCLOG_DETAIL > 1) && ENABLE_GCLOG_ENDGC) || 1
+       fprintf(gclog, "Reclaimed %.2f%% (%zd) of %zd lines.\n", yield_percentage, num_lines_reclaimed, lines_tracked);
+@@ -3996,6 +4045,32 @@
+   // immix_space_end
+ };
+ 
++// Precondition: cell is in a small/medium frame and marked new.
++heap_cell* try_opportunistic_evacuation_rc(heap_cell* cell) {
++  // Cycle collection has different criteria for evacuating, such as
++  // fragmentation information collected from previous collections,
++  // because it deals with old objects.
++  if (gcglobals.evac_disabled) return nullptr;
++
++  auto space = (immix_space*) heap_for(cell); // This cast is justified by our smallmedium precondition.
++
++  heap_array* arr = NULL; const typemap* map = NULL; int64_t cell_size;
++  get_cell_metadata(cell, arr, map, cell_size);
++
++  if (space->can_alloc_for_defrag(cell_size)) {
++    if (arr) {
++      return space->defrag_copy_array_rc((typemap*)map, arr, cell_size);
++    } else {
++      return space->defrag_copy_cell_rc(cell, (typemap*)map, cell_size);
++    }
++  } else {
++    fprintf(gclog, "RC unable to continue opportunistic evacuation...\n");
++    return nullptr;
++  }
++}
++
++
++
+ void immix_worklist_t::process(immix_heap* target, immix_common& common) {
+   while (!empty()) {
+     unchecked_ptr* root = peek_front();
+@@ -4019,7 +4094,7 @@
+           immix_heap* space,
+           heap_cell* obj) {
+   bool want_to_opportunistically_evacuate =
+-              condemned_portion == condemned_set_status::whole_heap_condemned
+-          && f15info->frame_classification == frame15kind::immix_smallmedium
+-          && gcglobals.evac_threshold > 0
++              (condemned_portion == condemned_set_status::whole_heap_condemned
++            || condemned_portion == condemned_set_status::single_subheap_condemned)
++          && !gcglobals.evac_disabled
+           && space == gcglobals.default_allocator
+@@ -4025,6 +4100,7 @@
+           && space == gcglobals.default_allocator
++          //&& f15info->frame_classification == frame15kind::immix_smallmedium (implied by prior conditions)
+           && f15info->num_holes_at_last_full_collection >= gcglobals.evac_threshold;
+ 
+   if (want_to_opportunistically_evacuate) {
+     heap_array* arr = NULL; const typemap* map; int64_t cell_size;
+     get_cell_metadata(obj, arr, map, cell_size);
+@@ -4026,8 +4102,9 @@
+           && f15info->num_holes_at_last_full_collection >= gcglobals.evac_threshold;
+ 
+   if (want_to_opportunistically_evacuate) {
+     heap_array* arr = NULL; const typemap* map; int64_t cell_size;
+     get_cell_metadata(obj, arr, map, cell_size);
++    // The cast to immix_space is justified by the restriction to using the default allocator.
+     bool can = ((immix_space*)space)->can_alloc_for_defrag(cell_size);
+     if (!can) { fprintf(gclog, "unable to continue opportunistic evacuation...\n"); }
+     return can;
+@@ -4383,6 +4460,7 @@
+   gcglobals.num_closure_calls = 0;
+   gcglobals.evac_candidates_found = 0;
+   gcglobals.evac_threshold = 0;
++  gcglobals.evac_disabled = false;
+   gcglobals.yield_percentage_threshold = __foster_globals.sticky_base_threshold;
+   gcglobals.last_full_gc_fragmentation_percentage = 0.0;
+ 
+@@ -5118,6 +5196,4 @@
+ 
+   gc::heap_cell* cell = gc::heap_cell::for_tidy((gc::tidy*) constructed);
+ 
+-/*
+-  fprintf(gc::gclog, "ctor_id_of(%p)\n", constructed);
+   if (cell->is_forwarded()) {
+@@ -5123,7 +5199,7 @@
+   if (cell->is_forwarded()) {
+-    fprintf(gc::gclog, "ctor_id_of observed a forwarded pointer... huh!\n");
+-  }
+-*/
++    fprintf(gc::gclog, "ctor_id_of observed a forwarded cell pointer %p... huh!\n", cell);
++    exit(3);
++  }
+ 
+   const gc::typemap* map = tryGetTypemap(cell);
+   gc_assert(map, "foster_ctor_id_of() was unable to get a usable typemap");
+diff --git a/runtime/gc/foster_gc_utils.h b/runtime/gc/foster_gc_utils.h
+--- a/runtime/gc/foster_gc_utils.h
++++ b/runtime/gc/foster_gc_utils.h
+@@ -76,9 +76,8 @@
+ // 4-byte alignment required for typeinfo structs.
+ const uint64_t HEADER_MARK_BITS = 0x01; // 0b000..00001
+ const uint64_t FORWARDED_BIT    = 0x02; // 0b000..00010
+-const uint64_t LOW_HEADER_BITS  = HEADER_MARK_BITS | FORWARDED_BIT;
+-
+-const uint64_t HEADER_OLD_BIT   = (1 << (24 + 7));
++const uint64_t HEADER_OLD_BIT   = 0x04; // 0b000..00100
++const uint64_t LOW_HEADER_BITS  = HEADER_MARK_BITS | FORWARDED_BIT | HEADER_OLD_BIT;
+ 
+ // This should remain synchronized with getHeapCellHeaderTy()
+ // in Codegen-typemaps.cpp
+@@ -87,7 +86,5 @@
+ 
+ NEWTYPE(cell_header, HEAP_CELL_HEADER_TYPE);
+ 
+-// TODO move flex bits to low end (fwd bit cannot move so we sacrifice one RC bit).
+-
+ // Cell header layout:
+ //   [  space id (32 bits)  | Flex space (8 bits) | typemap* (24 bits) ]
+@@ -92,8 +89,8 @@
+ // Cell header layout:
+ //   [  space id (32 bits)  | Flex space (8 bits) | typemap* (24 bits) ]
+-//                                       i                            ^
+-//            (when fwd unset)                                fwd/logged
+-//                                                           & mark bits
++//                                                                    ^
++//            (when fwd unset)                               fwd/logged,
++//                                                      old & mark bits
+ //
+ // U [        fwd ptr (64 bits, 8+ byte aligned)   when fwd bit set * ]
+ //
+@@ -97,4 +94,6 @@
+ //
+ // U [        fwd ptr (64 bits, 8+ byte aligned)   when fwd bit set * ]
+ //
++// We can use three low bits of the typemap pointer because we make sure
++// (in Codegen-typemaps.cpp) to give type maps sufficient alignment.
+ //
+@@ -100,6 +99,5 @@
+ //
+-// Flex bits:  [old bit (1=old, 0=new)|RC count (7 bits)]
+-//                ^ bit 7                  ^ bits 0-6
++// Flex bits:  [RC count, 8 bits]
+ //
+ // Mark and forwarded bits are only set during collection;
+ // the mutator doesn't see them.
+@@ -111,7 +109,7 @@
+   return (const typemap*) (header & (0xFFFFFF ^ LOW_HEADER_BITS));
+ }
+ 
+-inline bool header_is_old(uint64_t header) { return flex_bits_of_header(header) >= 128; }
+-inline bool header_is_new(uint64_t header) { return flex_bits_of_header(header)  < 128; }
++inline bool header_is_old(uint64_t header) { return (header & HEADER_OLD_BIT) != 0; }
++inline bool header_is_new(uint64_t header) { return !header_is_old(header); }
+ 
+ inline bool header_is_logged(uint64_t header) { return (header & FORWARDED_BIT) != 0; }
+@@ -116,4 +114,4 @@
+ 
+ inline bool header_is_logged(uint64_t header) { return (header & FORWARDED_BIT) != 0; }
+-inline bool header_is_old_and_unlogged(uint64_t header) { return (uint32_t(header) & 0x80000002) == 0x80000000; }
++inline bool header_is_old_and_unlogged(uint64_t header) { return (header & (HEADER_OLD_BIT | FORWARDED_BIT)) == HEADER_OLD_BIT; }
+ 
+@@ -119,3 +117,3 @@
+ 
+-inline bool rc_is_zero(uint64_t header) { return uint8_t(flex_bits_of_header(header) << 1) == 0; }
++inline bool rc_is_zero(uint64_t header) { return flex_bits_of_header(header)  == 0; }
+ 
+@@ -121,6 +119,4 @@
+ 
+-// New objects do not have RC operations applied,
+-// so we only see non-zero reference counts when the old bit is set.
+ inline bool hit_max_rc(uint64_t header) { return flex_bits_of_header(header) == 255; }
+ 
+ inline HEAP_CELL_HEADER_TYPE build_header(const typemap* data, uint32_t space_id) {
+@@ -138,8 +134,10 @@
+ 
+   uint64_t raw_header() { return header; }
+ 
+-  void set_header_old_with_rc1() { header |= (HEADER_OLD_BIT | (1 << 24)); }
++  void set_header_old_with_rc1() { header |= (HEAP_CELL_HEADER_TYPE(HEADER_OLD_BIT)
++                                          |   HEAP_CELL_HEADER_TYPE(1 << 24)); }
++  void set_header_old() { header |= (HEADER_OLD_BIT); }
+   void set_header_logged() { header |= FORWARDED_BIT; }
+ 
+   void inc_rc_by(HEAP_CELL_HEADER_TYPE n) { header = header + (n << 24); }
+   bool dec_rc_by(HEAP_CELL_HEADER_TYPE n) { header = header - (n << 24); return rc_is_zero(header); }
+@@ -142,8 +140,8 @@
+   void set_header_logged() { header |= FORWARDED_BIT; }
+ 
+   void inc_rc_by(HEAP_CELL_HEADER_TYPE n) { header = header + (n << 24); }
+   bool dec_rc_by(HEAP_CELL_HEADER_TYPE n) { header = header - (n << 24); return rc_is_zero(header); }
+-  uint8_t get_rc() { return flex_bits_of_header(header) & 0x7F; }
++  uint8_t get_rc() { return flex_bits_of_header(header); }
+ 
+   void clear_logged_bit() { header &= ~(FORWARDED_BIT); }
+ 

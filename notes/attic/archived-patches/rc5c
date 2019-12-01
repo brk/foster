@@ -1,0 +1,49 @@
+# HG changeset patch
+# Parent  5b9bf39883c527b3237acd753a953e39ccfce94d
+Have try_opportunistic_evacuation_rc() explicitly take a target space.
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -2689,7 +2689,7 @@
+ }
+ 
+ void process_worklist(immix_heap* active_space, immix_common* common);
+-heap_cell* try_opportunistic_evacuation_rc(heap_cell* cell);
++heap_cell* try_opportunistic_evacuation_rc(heap_cell* cell, immix_space* space);
+ 
+ char linemap_code(uint8_t entry) {
+   switch (entry) {
+@@ -2796,12 +2796,15 @@
+    || frameclass == frame15kind::immix_linebased) {
+ 
+     if (header_is_new(header)) {
++      auto heap = heap_for(cell);
+       // assert rc_is_zero(header)
+       if (frameclass == frame15kind::immix_smallmedium) {
++        auto space = (immix_space*) heap; // This cast is justified by our smallmedium precondition.
++
+         // Sticky immix evacuates old and new objects from examined frames based on
+         // liveness collected from previous marking passes; in contrast, in RC mode
+         // we can only move _new_ objects.
+-        if (auto newcell = try_opportunistic_evacuation_rc(cell)) {
++        if (auto newcell = try_opportunistic_evacuation_rc(cell, space)) {
+           // Old cell has been forwarded by evacuation.
+           *slot = (void*) newcell->body_addr(); // Update source with new object location.
+           cell = newcell; // Get ready to fiddle with line counts, etc.
+@@ -4493,14 +4496,12 @@
+ };
+ 
+ // Precondition: cell is in a small/medium frame and marked new.
+-heap_cell* try_opportunistic_evacuation_rc(heap_cell* cell) {
++heap_cell* try_opportunistic_evacuation_rc(heap_cell* cell, immix_space* space) {
+   // Cycle collection has different criteria for evacuating, such as
+   // fragmentation information collected from previous collections,
+   // because it deals with old objects.
+   if (gcglobals.evac_disabled) return nullptr;
+ 
+-  auto space = (immix_space*) heap_for(cell); // This cast is justified by our smallmedium precondition.
+-
+   heap_array* arr = NULL; const typemap* map = NULL; int64_t cell_size;
+   get_cell_metadata(cell, arr, map, cell_size);
+ 
