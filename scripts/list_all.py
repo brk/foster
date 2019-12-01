@@ -39,7 +39,7 @@ def _main(bootstrap_dir):
   else:
     f = path_nil_info
 
-  testpaths = collect_all_tests(bootstrap_dir, f)
+  testpaths = collect_all_tests_ext(bootstrap_dir, f)
 
   for (info, testpath) in testpaths:
     if options.lines:
