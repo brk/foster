@@ -1,0 +1,476 @@
+snafuinclude Text "text";
+snafuinclude Prelude "prelude";
+
+// Pretty direct translation of https://github.com/aras-p/ToyPathTracer
+// As of 2018-04-03, Foster's single-threaded performance (with indirections)
+// is half that of the C++ code. Time spent collecting garbage is under 3%.
+// Time spent in allocation appears to be more than 30%.
+//
+// With superfluous allocations:
+// 31.5B insns, 13.3B cycles; 18.4 GB allocated, 2.25 Mrays/s, GC runtime ~2%, alloc ~36% cycles
+//
+// Avoiding superfluous allocations in F3-constructing functions:
+// 19.4B insns, 8.0B cycles;  8.73 GB allocated, 3.7 Mrays/s, GC runtime ~1%, alloc ~30% cycles.
+
+
+f3SqrLen = { f3 => f3Dot f3 f3 };
+
+f3Len = { f3 => f3 |> f3SqrLen |> sqrt-f32 };
+
+f3Normalize = { f3 =>
+  f3 `f3ScaleBy` (1.0 `div-f32` f3Len f3)
+};
+
+mkF3 :: { Float32 => Float32 => Float32 => Vector4 Float32 };
+mkF3 = { a => b => c =>
+  v0 = prim Vector4f32_zero ;
+  v1 = Vector4f32_put0 v0 a;
+  v2 = Vector4f32_put1 v1 b;
+  v3 = Vector4f32_put2 v2 c;
+  v3
+};
+
+
+f3Plus = { f3a => f3b => Vector4f32_plus f3a f3b };
+f3Minus = { f3a => f3b => Vector4f32_minus f3a f3b };
+f3Times = { f3a => f3b => Vector4f32_times f3a f3b };
+
+f3Dot = { f3a => f3b =>
+  s = f3Times f3a f3b;
+  x = Vector4f32_get0 s;
+  y = Vector4f32_get1 s;
+  z = Vector4f32_get2 s;
+  x +f32 y +f32 z
+};
+
+f3Cross = { f3a => f3b =>
+  xa = Vector4f32_get0 f3a;
+  ya = Vector4f32_get1 f3a;
+  za = Vector4f32_get2 f3a;
+  xb = Vector4f32_get0 f3b;
+  yb = Vector4f32_get1 f3b;
+  zb = Vector4f32_get2 f3b;
+  mkF3 ((ya *f32 zb) -f32 (za *f32 yb))
+       (0.0 -f32 ((xa *f32 zb) -f32 (za *f32 xb)))
+       ((xa *f32 yb) -f32 (ya *f32 xb))
+};
+
+f3ScaleBy = { f3 => k => f3Times f3 (mkF3 k k k) };
+
+f3Negate = { f3 => f3Minus (mkF3 0 0 0) f3 };
+
+abs-f32 :: { Float32 => Float32 };
+abs-f32 = { f => if f <f32 0.0 then 0.0 -f32 f else f end };
+
+f3IsNormalized = { f3 => abs-f32 (f3SqrLen f3 -f32 1.0) <f32 0.01 };
+
+f3Reflect = { v => n =>
+  v `f3Minus` (n `f3ScaleBy` ((f3Dot v n) *f32 2.0))
+};
+
+f32sqr :: { Float32 => Float32 };
+f32sqr = { x => x *f32 x };
+
+//f3Refract :: { F3 => F3 => Float32 => Maybe F3 };
+f3Refract = { v => n => nint =>
+  dt = f3Dot v n;
+  discr = 1.0 -f32 ((f32sqr nint) *f32 (1.0 -f32 (f32sqr dt)));
+  if discr >f32 0.0
+    then Some (((v `f3Minus` (n `f3ScaleBy` dt)) `f3ScaleBy` nint)
+                   `f3Minus` (n `f3ScaleBy` (sqrt-f32 discr)))
+    else None
+  end
+};
+
+
+pi :: { Float32 };
+pi = { 3.1415926 };
+
+schlick = { cosine => ri =>
+  r0 = (1.0 -f32 ri) `div-f32` (1.0 +f32 ri);
+  r0sq = f32sqr r0;
+  r0sq +f32 ((1.0 -f32 r0sq) *f32 (powi-f32 (1.0 -f32 cosine) 5))
+};
+
+xorShift32 :: { Ref Int32 => Int32 };
+xorShift32 = { st =>
+  a = 13;
+  b = 17;
+  c = 15;
+  x = st^;
+  y0 = bitxor-Int32  x ( bitshl-Int32  x a);
+  y1 = bitxor-Int32 y0 (bitlshr-Int32 y0 b);
+  y2 = bitxor-Int32 y1 ( bitshl-Int32 y1 c);
+  y2 >^ st;
+  y2;
+};
+
+randFloat01 = { st =>
+  (((xorShift32 st) `bitand-Int32` 0xFFF`FFF) |> u32-to-f32-unsafe) `div-f32` 16`777`216.0 
+};
+
+randInUnitDisk :: { Ref Int32 => Vector4 Float32 };
+randInUnitDisk = { st =>
+  REC loop = {
+    p = ((mkF3 (randFloat01 st) (randFloat01 st) 0.0) `f3ScaleBy` 2.0) `f3Minus` (mkF3 1.0 1.0 0.0);
+    if f3SqrLen p >=f32 1.0
+      then loop !
+      else p
+    end
+  };
+
+  loop !
+};
+
+randUnitVector = { st =>
+  z = (randFloat01 st *f32 2.0) -f32 1.0;
+  a = (randFloat01 st *f32 2.0) *f32 (pi !);
+  r = sqrt-f32 (1.0 -f32 (f32sqr z));
+  x = r *f32 cos-f32 a;
+  y = r *f32 sin-f32 a;
+  mkF3 x y z
+};
+
+randInUnitSphere :: { Ref Int32 => Vector4 Float32 };
+randInUnitSphere = { st =>
+  REC loop = {
+    p = ((mkF3 (randFloat01 st) (randFloat01 st) (randFloat01 st)) `f3ScaleBy` 2.0) `f3Minus` (mkF3 1.0 1.0 1.0);
+    if f3SqrLen p >=f32 1.0
+      then loop !
+      else p
+    end
+  };
+
+  loop !
+};
+
+type case Ray of $Ray (Vector4 Float32) (Vector4 Float32);
+
+rayPointAt = { ray => t => case ray of $Ray orig dir -> orig `f3Plus` (dir `f3ScaleBy` t) end };
+rayDir = { ray => case ray of $Ray orig dir -> dir end };
+
+type case Hit of $Hit (Vector4 Float32) (Vector4 Float32) Float32;
+
+hitT = { h => case h of $Hit _ _ t -> t end };
+hitPos = { h => case h of $Hit p _ _ -> p end };
+hitNormal = { h => case h of $Hit _ n _ -> n end };
+
+type case Sphere of $Sphere (Vector4 Float32) Float32 Float32;
+
+mkSphere = { c => r : Float32 => Sphere c r (1.0 `div-f32` r) };
+
+between-f32 = { f => lo => hi =>
+  if f <f32 hi then
+     f >f32 lo else False
+  end
+};
+
+hitSphere :: { Sphere => Ray => Float32 => Float32 => Maybe Hit };
+hitSphere = { sph => ray => tmin => tmax =>
+  case sph of $Sphere center radius invRadius -> case ray of $Ray orig dir ->
+    oc = orig `f3Minus` center;
+    b = f3Dot oc dir;
+    c = f3Dot oc oc -f32 (f32sqr radius);
+    discr = f32sqr b -f32 c;
+    if discr >f32 0.0
+      then ds = sqrt-f32 discr;
+           t0 = (0.0 -f32 b) -f32 ds;
+           if between-f32 t0 tmin tmax
+             then pos = rayPointAt ray t0;
+                  norm = (pos `f3Minus` center) `f3ScaleBy` invRadius;
+                  Some (Hit pos norm t0)
+             else
+                t1 = (0.0 -f32 b) +f32 ds;
+                if between-f32 t1 tmin tmax
+                  then pos = rayPointAt ray t1;
+                       norm = (pos `f3Minus` center) `f3ScaleBy` invRadius;
+                       Some (Hit pos norm t1)
+                  else None
+                end
+          end
+      else None
+    end
+  end end
+};
+
+type case Camera of $Camera (Vector4 Float32) (Vector4 Float32) (Vector4 Float32) (Vector4 Float32) (Vector4 Float32) (Vector4 Float32) (Vector4 Float32) Float32; // origin, lowerLeftCorner, horiz, vert, u, v, w, lensRadius
+
+mkCamera = { lookFrom: (Vector4 Float32) => lookAt : (Vector4 Float32) => vup : (Vector4 Float32) => vfov : Float32 => aspect => aperture => focusDist =>
+  lensRadius = aperture `div-f32` 2.0;
+  theta = (vfov *f32 (pi !)) `div-f32` 180.0;
+  halfHeight = tan-f32 (theta `div-f32` 2.0);
+  halfWidth = aspect *f32 halfHeight;
+  w = f3Normalize (lookFrom `f3Minus` lookAt);
+  u = f3Normalize (f3Cross vup w);
+  v = f3Cross w u;
+  origin = lookFrom;
+  lowerLeftCorner = origin `f3Minus` ((u `f3ScaleBy` (halfWidth *f32 focusDist))
+                            `f3Plus` (v `f3ScaleBy` (halfHeight *f32 focusDist))
+                            `f3Plus` (w `f3ScaleBy` focusDist));
+  horiz = u `f3ScaleBy` (2.0 *f32 halfWidth  *f32 focusDist);
+  vert  = v `f3ScaleBy` (2.0 *f32 halfHeight *f32 focusDist);
+
+  Camera lookFrom lowerLeftCorner horiz vert u v w lensRadius;
+};
+
+getRay :: { Camera => Float32 => Float32 => Ref Int32 => Ray };
+getRay = { cam => s => t => st =>
+  case cam of $Camera origin lowerLeftCorner horiz vert u v w lensRadius ->
+    rd = (randInUnitDisk st) `f3ScaleBy` lensRadius;
+    x = Vector4f32_get0 rd;
+    y = Vector4f32_get1 rd;
+    z = Vector4f32_get2 rd;
+
+    offset = (u `f3ScaleBy` x) `f3Plus` (v `f3ScaleBy` y);
+    origoff = f3Plus origin offset;
+    unNormed = (lowerLeftCorner `f3Plus` (horiz `f3ScaleBy` s) `f3Plus` (vert `f3ScaleBy` t))
+                        `f3Minus` origoff;
+    Ray origoff (f3Normalize unNormed)
+  end
+};
+
+type case MaterialType
+  of $Lambert
+  of $Metal
+  of $Dielectric
+  ;
+
+type case Material
+  of $Material MaterialType (Vector4 Float32) (Vector4 Float32) Float32 Float32;
+
+matEmissive = { m =>
+  case m of $Material typ albedo emissive roughness ri -> emissive end
+};
+
+matRi = { m =>
+  case m of $Material typ albedo emissive roughness ri -> ri end
+};
+
+matAlbedo = { m =>
+  case m of $Material typ albedo emissive roughness ri -> albedo end
+};
+
+matType = { m =>
+  case m of $Material typ albedo emissive roughness ri -> typ end
+};
+
+matRoughness = { m =>
+  case m of $Material typ albedo emissive roughness ri -> roughness end
+};
+
+materialHasEmission = { m =>
+  case m of $Material typ albedo emissive roughness ri ->
+    x = f3x emissive;
+    y = f3y emissive;
+    z = f3z emissive;
+    if x >f32 0.0 then True else
+    if y >f32 0.0 then True else
+        z >f32 0.0
+    end
+    end
+  end
+};
+
+f3x = { f => Vector4f32_get0 f };
+f3y = { f => Vector4f32_get1 f };
+f3z = { f => Vector4f32_get2 f };
+
+rayTrace = { spheres => sphereMats => r => depth => rayCount => st =>
+  idRef = (prim ref 0);
+  (rayCount^ +Int32 1) >^ rayCount;
+
+  kMinT = (0.001 as Float32);
+  kMaxT = (1.0e7 as Float32);
+
+  case hitWorld rayCount spheres r kMinT kMaxT idRef
+    of $Some hitRec ->
+      mat = sphereMats[idRef^];
+      kMaxDepth = 10;
+      if depth <SInt32 kMaxDepth
+        then case scatter mat r hitRec rayCount st
+               of $Some (attenuation, scattered) ->
+                 matEmissive mat `f3Plus` ((rayTrace spheres sphereMats scattered (depth +Int32 1) rayCount st) `f3Times` attenuation)
+               of $None -> matEmissive mat
+             end
+        else matEmissive mat
+      end
+
+    of $None -> // sky
+      unitDir = rayDir r;
+      t = 0.5 *f32 (f3y unitDir +f32 1.0);
+      (((mkF3 1.0 1.0 1.0) `f3ScaleBy` (1.0 -f32 t)) `f3Plus`
+       ((mkF3 0.5 0.7 1.0) `f3ScaleBy` t)) `f3ScaleBy` 0.3
+  end
+};
+
+scatter = { mat => r_in => hitRec => rayCount => st =>
+  case matType mat
+    of $Lambert ->
+      target  = hitPos hitRec `f3Plus` hitNormal hitRec `f3Plus` randUnitVector st;
+      scattered = Ray (hitPos hitRec) (f3Normalize (target `f3Minus` (hitPos hitRec)));
+      attenuation = matAlbedo mat;
+      Some (attenuation, scattered)
+
+    of $Metal ->
+      refl = f3Reflect (rayDir r_in) (hitNormal hitRec);
+      scattered = Ray (hitPos hitRec) (f3Normalize (refl `f3Plus` ((randInUnitSphere st) `f3ScaleBy` matRoughness mat)));
+      attenuation = matAlbedo mat;
+      scat = f3Dot (rayDir scattered) (hitNormal hitRec);
+      if scat >f32 0.0
+        then Some (attenuation, scattered)
+        else None
+      end
+
+    of $Dielectric ->
+      rdir = rayDir r_in;
+      refl = f3Reflect rdir (hitNormal hitRec);
+      attenuation = mkF3 1.0 1.0 1.0;
+      let (outN, nint, cosine) = if f3Dot rdir (hitNormal hitRec) >f32 0.0
+                                    then (f3Negate (hitNormal hitRec), matRi mat, (matRi mat) *f32 (f3Dot rdir (hitNormal hitRec)))
+                                    else (         (hitNormal hitRec), 1.0 `div-f32` matRi mat, 0.0 -f32 (f3Dot rdir (hitNormal hitRec)))
+                                  end;
+      scattered = case f3Refract rdir outN nint
+                    of $Some refr ->
+                      reflProb = schlick cosine (matRi mat);
+                      if randFloat01 st <f32 reflProb
+                        then Ray (hitPos hitRec) (f3Normalize refl)
+                        else Ray (hitPos hitRec) (f3Normalize refr)
+                      end
+
+                    of $None -> Ray (hitPos hitRec) (f3Normalize refl)
+                  end;
+      Some (attenuation, scattered)
+  end
+};
+
+
+hitWorld :: { Ref Int32 => Array Sphere => Ray => Float32 => Float32 => Ref Int32 => Maybe Hit };
+hitWorld = { rayCount => spheres => r => tMin => tMax => lastHitIdxRef =>
+  closest = (prim ref tMax);
+  foldRange 0 (arrayLength32 spheres) None { i => mbhit =>
+    newhit = hitSphere spheres[i] r tMin closest^;
+    case newhit
+      of $None -> mbhit
+      of $Some hit -> i >^ lastHitIdxRef;
+                      (hitT hit) >^ closest;
+                      newhit
+    end
+  }
+};
+
+traceRowJob = { spheres => sphereMats => y => screenWidth => screenHeight => frameCount => backbuffer => cam =>
+  backbufferIdx0 = y *Int32 screenWidth *Int32 4;
+  invWidth  = 1.0 `div-f32` (u32-to-f32-unsafe screenWidth);
+  invHeight = 1.0 `div-f32` (u32-to-f32-unsafe screenHeight);
+  lerpFac = (u32-to-f32-unsafe frameCount) `div-f32` (u32-to-f32-unsafe (frameCount +Int32 1));
+
+  st = (prim ref ((y *Int32 9781 +Int32 (frameCount *Int32 6271)) `bitor-Int32` 1));
+  rayCount = (prim ref 0);
+  foldRange 0 screenWidth backbufferIdx0 { x => backbufferIdx =>
+    col0 = mkF3 0.0 0.0 0.0;
+    samplesPerPixel = 4;
+    samplesPerPixelF = (4.0 as Float32);
+    REC frgo = { n : Int32 => acc : Vector4 Float32 =>
+        iter = { s => col : Vector4 Float32 =>
+          u = ((x |> u32-to-f32-unsafe) +f32 randFloat01 st) *f32 invWidth;
+          v = ((y |> u32-to-f32-unsafe) +f32 randFloat01 st) *f32 invHeight;
+          r = getRay cam u v st;
+          col `f3Plus` rayTrace spheres sphereMats r 0 rayCount st
+        };
+        fin = samplesPerPixel;
+        if n >=SInt32 fin then acc else
+          frgo (n +Int32 1) (iter n acc)
+        end
+    };
+    col = frgo 0 col0;
+    //col = foldRange:[Vector4 Float32] 0 samplesPerPixel col0 ... ;
+    colA = col `f3ScaleBy` (1.0 `div-f32` samplesPerPixelF);
+    colB = mkF3 (sqrt-f32 (f3x colA)) (sqrt-f32 (f3y colA)) (sqrt-f32 (f3z colA));
+    prev = mkF3 (backbuffer[backbufferIdx +Int32 0])
+                (backbuffer[backbufferIdx +Int32 1])
+                (backbuffer[backbufferIdx +Int32 2]);
+    colC = (prev `f3ScaleBy` lerpFac) `f3Plus` (colB `f3ScaleBy` (1.0 -f32 lerpFac));
+    (f3x colC)  >^ backbuffer[backbufferIdx +Int32 0];
+    (f3y colC)  >^ backbuffer[backbufferIdx +Int32 1];
+    (f3z colC)  >^ backbuffer[backbufferIdx +Int32 2];
+    backbufferIdx +Int32 4
+  };
+
+  rayCount^
+};
+
+noinline_llvm_drawTest = { spheres : Array Sphere => sphereMats : Array Material => ftime : Float32 => frameCount => screenWidth => screenHeight => backbuffer : Array Float32 =>
+  lookFrom = mkF3 0.0 2.0 3.0;
+  lookAt   = mkF3 0.0 0.0 0.0;
+  distToFocus = (3.0 as Float32);
+  aperture = (0.1 as Float32);
+  cam = mkCamera lookFrom lookAt (mkF3 0.0 1.0 0.0) 60.0 ((u32-to-f32-unsafe screenWidth) `div-f32` (u32-to-f32-unsafe screenHeight)) aperture distToFocus;
+  rayCount = (prim ref 0);
+  enumRange32 0 screenHeight { y =>
+    nrays = traceRowJob spheres sphereMats y screenWidth screenHeight frameCount backbuffer cam;
+    (rayCount^ +Int32 nrays) >^ rayCount;
+  };
+  rayCount^
+};
+
+
+emit = {
+  w = 1280;
+  h = 720;
+
+  backbuffer = allocDArray:[Float32] (w *Int32 h *Int32 4);
+
+  spheres = prim mach-array-literal
+              (mkSphere (mkF3 0.0 -100.5 -1.0) 100.0)
+              (mkSphere (mkF3 2.0 0.0 -1.0) 0.5)
+              (mkSphere (mkF3 0.0 0.0 -1.0) 0.5)
+              (mkSphere (mkF3 -2.0 0.0 -1.0) 0.5)
+              (mkSphere (mkF3 2.0 0.0 1.0) 0.5)
+              (mkSphere (mkF3 0.0 0.0 1.0) 0.5)
+              (mkSphere (mkF3 -2.0 0.0 1.0) 0.5)
+              (mkSphere (mkF3 0.5 1.0 0.5) 0.5)
+              (mkSphere (mkF3 -1.5 1.5 0.0) 0.3);
+
+  sphereMats = prim mach-array-literal
+              (Material Lambert (mkF3 0.8 0.8 0.8) (mkF3 0.0 0.0 0.0) 0.0 0.0)
+              (Material Lambert (mkF3 0.8 0.4 0.4) (mkF3 0.0 0.0 0.0) 0.0 0.0)
+              (Material Lambert (mkF3 0.4 0.8 0.4) (mkF3 0.0 0.0 0.0) 0.0 0.0)
+              (Material Metal   (mkF3 0.4 0.4 0.8) (mkF3 0.0 0.0 0.0) 0.0 0.0)
+              (Material Metal  (mkF3 0.4 0.8 0.4) (mkF3 0.0 0.0 0.0) 0.0 0.0)
+              (Material Metal  (mkF3 0.4 0.8 0.4) (mkF3 0.0 0.0 0.0) 0.2 0.0)
+              (Material Metal  (mkF3 0.4 0.8 0.4) (mkF3 0.0 0.0 0.0) 0.6 0.0)
+              (Material Dielectric (mkF3 0.4 0.4 0.4) (mkF3 0.0 0.0 0.0) 0.0 1.5)
+              (Material Lambert (mkF3 0.8 0.6 0.2) (mkF3 30.0 25.0 15.0) 0.0 0.0);
+
+  kFrameCount = 01;
+  totalRayCount = (prim ref 0);
+  us0 = foster_gettime_microsecs !;
+  enumRange32 0 kFrameCount { i =>
+    nrays = noinline_llvm_drawTest spheres sphereMats 0.0 i w h backbuffer;
+    us1 = foster_gettime_microsecs !;
+
+    (totalRayCount^ +Int32 nrays) >^ totalRayCount;
+    frames = i +Int32 1;
+
+    s = foster_gettime_elapsed_secs us0 us1;
+    ms = s *f64 1.0e3;
+    
+    mrayS = ((totalRayCount^ |> u32-to-f64) `div-f64` s) *f64 1.0e-6;
+    mrayFr = (nrays |> u32-to-f64) *f64 1.0e-6;
+    print_text_bare "ms: "; print_float_f64 ms;
+    print_text_bare "  Mrays/s: "; print_float_f64 mrayS;
+    print_text_bare "  Mrays/frame: "; print_float_f64 mrayFr;
+    print_text_bare "  frame: "; print_i32 frames;
+  };
+
+/*
+  bytes = allocDArray:[Int8] (arrayLength backbuffer);
+  enumRangeBy 0 (arrayLength32 bytes) 4 { i => 
+    clamp (backbuffer[i +Int32 2]
+  };
+  */
+};
+
+main = {
+  emit !
+};

@@ -1,0 +1,43 @@
+xorshift-nonzero-Int64 = { x => if x ==Int64 0 then 1 else x end };
+xor1x64gen :: { Int64 => Int64 };
+xor1x64gen = { s =>
+  a = 13;
+  b = 7;
+  c = 17;
+  x = xorshift-nonzero-Int64 s;
+  y0 = bitxor-Int64  x ( bitshl-Int64  x a);
+  y1 = bitxor-Int64 y0 (bitlshr-Int64 y0 b);
+  y2 = bitxor-Int64 y1 ( bitshl-Int64 y1 c);
+  y2
+};
+
+type case List
+  of $Node List Int64
+  of $Fini
+  ;
+
+main = {
+  REC loop = { n => r => len => s =>
+    if n ==Int64 0
+      then print_i32 len
+      else
+        if (n `bitand-Int64` 0xFF`FFFF) ==Int64 0
+          then print_i64 n;
+               print_i32 len;
+        end;
+        nr = xor1x64gen r;
+        if nr <UInt64 18014398509481984 /* 2^54 is 1/1024th of the 64 bit space */
+          then
+            // Uncommon case: add to our growing list.
+            loop (n -Int64 1) nr (len +Int32 1) (Node s nr)
+          else
+            case s
+              of $Fini -> loop (n -Int64 1) nr (len +Int32 1) (Node s nr) /* shouldn't happen... */
+              of $Node tail _ -> loop (n -Int64 1) nr len (Node tail nr) /* common case: drop previously allocated node */
+            end
+        end
+    end
+  };
+
+  loop 1`000`000`000    1  1   (Node Fini 0);
+};
