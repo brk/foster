@@ -1,0 +1,114 @@
+# HG changeset patch
+# User Ben Karel <eschew@gmail.com>
+# Date 1535487188 14400
+#      Tue Aug 28 16:13:08 2018 -0400
+# Node ID 2e5fe34490aa5b6d444cefd056e301746d0bf78d
+# Parent  6a8f536661350bc695623a50d4f9068b803333fa
+imported patch ctor-elimination-part0
+
+diff --git a/compiler/me/src/Foster/MKNExpr.hs b/compiler/me/src/Foster/MKNExpr.hs
+--- a/compiler/me/src/Foster/MKNExpr.hs
++++ b/compiler/me/src/Foster/MKNExpr.hs
+@@ -38,6 +38,8 @@
+ import Prelude hiding ((<$>))
+ import Text.PrettyPrint.ANSI.Leijen
+ 
++import Debug.Trace(trace)
++
+ -- Binding occurrences of variables, with link to a free occurrence (if not dead).
+ data MKBound x = MKBound (TypedId x) (OrdRef (Maybe (FreeOcc x)))
+ 
+@@ -310,7 +312,18 @@
+       case [sib | (True, sib) <- zip goods siblings] of
+         [] -> error "linkFor didn't find our candidate among the siblings"
+         [x] -> return x
+-        _ -> error $ "linkFor found multiple candidates among the siblings!"
++        candidates -> do
++          knT <- knOfMK NoCont term
++          knP <- knOfMK NoCont p
++          cands <- mapM (\s -> do tm <- readLink "sib" s ; knOfMK NoCont tm) candidates
++          compiledThrowE [text "linkFor found multiple candidates among the siblings!",
++                                 text "parent:",
++                                 indent 10 $ pretty knP,
++                                 text "term:",
++                                 indent 10 $ pretty knT,
++                                 text "candidates:",
++                                 indent 10 $ vsep (map (\s -> text "***" <> pretty s) cands)]
++                                 
+ 
+ subtermsOf :: MKTerm t -> Compiled [Subterm t]
+ subtermsOf term =
+@@ -1402,6 +1415,8 @@
+                      ccWhen ccVerbose $ do
+                         redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
+                         dbgDoc $ text "CallOfSingletonFunction starting with: " <+> align (pretty redex)
++                        knfn <- knOfMKFn NoCont fn
++                        dbgDoc $ text "CallOfSingletonFunction fn is " <+> align (pretty knfn)
+ 
+                      ccWhen ccVerbose $ do
+                         v <- freeBinder callee
+@@ -1650,10 +1665,26 @@
+ 
+                  go (gas - 1)
+ 
++               MKCase _up ty v arms -> do
++                 x <- freeBinder v
++                 expBindsMap <- liftIO $ readIORef er
++                 case Map.lookup x expBindsMap of
++                    Nothing -> do
++                      dbgDoc $ text "skipping case expression because scrutinee is unknown for " <> pretty x
++                      go gas
++
++                    Just _scrutLink -> do
++                      findMatchingArm bindingWorklistRef subterm ty v arms (\v -> do
++                                  x <- freeBinder v
++                                  case Map.lookup x expBindsMap of
++                                    Nothing -> return Nothing
++                                    Just link -> readLink "case.scrut" link >>= return . Just)
++                      go gas
++
+                _ -> do
+                  ccWhen ccVerbose $ do
+                     kn <- knOfMK (YesCont mainCont) mredex
+-                    dbgDoc $ text $ "skipping non-call/cont redex: " ++ show (pretty kn)
++                    liftIO $ putDocLn $ text "skipping non-call/cont redex: " <> pretty kn
+                  go gas
+ 
+     let gas = case mb_gas of
+@@ -1918,6 +1949,8 @@
+   newterm <- readLink "replaceWith" newsubterm
+   replaceTermWith oldterm newterm
+   writeOrdRef poss_indir_target     (Just newterm)
++  --newlink2 <- getActiveLinkFor newterm
++  --return ()
+ 
+ replaceTermWith :: Pretty ty => MKTerm ty -> MKTerm ty -> Compiled ()
+ replaceTermWith oldterm newterm = do
+@@ -1981,7 +2014,7 @@
+       Just link -> readOrdRef link
+ 
+ betaReduceOnlyCall fn args kv    wr fd = do
+-    mapM_ substVarForBound (zip args (mkfnVars fn))
++    mapM_ substVarForBound (zipSameLength args (mkfnVars fn))
+     kvb1 <- freeBinder kv
+ 
+     case mkfnCont fn of
+@@ -1993,7 +2026,9 @@
+         substVarForBound (kv, oldret)
+ 
+     kvb2 <- freeBinder kv
+-    dbgDoc $ text $ "      betaReduceOnlyCall on " ++ show (pretty (mkfnVar fn))
++    do argBinders <- mapM freeBinder args
++       dbgDoc $ text "      betaReduceOnlyCall on " <> pretty (mkfnVar fn)
++                              <+> text " with args " <+> pretty argBinders
+     if kvb1 /= kvb2
+       then do
+         dbgDoc $ text "       kv before: " <> pretty kvb1
+@@ -2119,6 +2154,7 @@
+           MKLetVal      _u (bv, subexpr) k -> do
+               letable <- lift $ letableOfSubexpr subexpr
+               isDead  <- lift $ binderIsDead bv
++              
+               if isDead && isPure letable
+                 then go k head insns
+                 else go k head (ILetVal (tidIdent $ boundVar bv) letable : insns)
