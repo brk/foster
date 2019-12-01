@@ -52,9 +52,10 @@ int64_t foster_stdin_read_bytes(foster_bytes* to, int32_t* status) {
 int64_t foster_posix_read_bytes(int64_t       fd,
                                 foster_bytes* to,
                                 int64_t       bytes_offset,
+                                int64_t       trailing_pad,
                                 int32_t*      status) {
   foster__assert(bytes_offset >= 0 && bytes_offset < to->cap, "byte offset out of range");
-  int64_t len = to->cap - bytes_offset;
+  int64_t len = (to->cap - bytes_offset) - trailing_pad;
   foster__assert(len <= SIZE_MAX, "can't read that many bytes!");
 
   ssize_t nread = read(int(fd), &to->bytes[bytes_offset], size_t(len));
