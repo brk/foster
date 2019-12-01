@@ -1,0 +1,90 @@
+# HG changeset patch
+# Parent  aadd7e8a72014edaec12ee8034d70642df8cb807
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -60,6 +60,5 @@
+ #define TRACK_BYTES_KEPT_ENTRIES      0
+ #define TRACK_BYTES_ALLOCATED_ENTRIES 0
+ #define TRACK_BYTES_ALLOCATED_PINHOOK 0
+-#define GC_BEFORE_EVERY_MEMALLOC_CELL 0
+-#define DEBUG_INITIALIZE_ALLOCATIONS  0 // Initialize even when the middle end doesn't think it's necessary
++#define DEBUG_INITIALIZE_ALLOCATIONS  1 // Initialize even when the middle end doesn't think it's necessary
+ #define ELIDE_INITIALIZE_ALLOCATIONS  0 // Unsafe: ignore requests to initialize allocated memory.
+@@ -65,5 +64,5 @@
+ #define ELIDE_INITIALIZE_ALLOCATIONS  0 // Unsafe: ignore requests to initialize allocated memory.
+-#define MEMSET_FREED_MEMORY           1
++#define MEMSET_FREED_MEMORY           0
+ // This included file may un/re-define these parameters, providing
+ // a way of easily overriding-without-overwriting the defaults.
+ #include "gc/foster_gc_reconfig-inl.h"
+@@ -1506,6 +1505,7 @@
+       */
+       tidy* fwdbody = cell->get_forwarded_body();
+       gc_assert(tag_of(*root) == tag_of(make_unchecked_ptr((tori*) fwdbody)), "scan_fwded produced wrong tag");
++      gc_assert(uintptr_t(fwdbody) > 64, "forwarded to a null body??");
+       return (void*) fwdbody;
+     }
+ 
+@@ -1608,7 +1608,7 @@
+   }
+ 
+   // Jones/Hosking/Moss refer to this function as "process(fld)".
+-  // Returns 1 if root was located in a condemned space; 0 otherwise.
++  // Returns 1 if the pointed-to object was located in a condemned space; 0 otherwise.
+   template <condemned_set_status condemned_portion>
+   uint64_t immix_trace(immix_heap* space, unchecked_ptr* root, int depth) {
+     //       |------------|       obj: |------------|
+@@ -1667,6 +1667,8 @@
+         auto tidyn = (void*) obj->get_forwarded_body();
+         *root = tagged_with((tidy*) offset(tidyn, distance(obj->body_addr(), body) ),
+                             oldtag);
++        fprintf(gclog, "evacuated (duplicate) body ptr %p from root %p to new obj %p\n",
++            body, root, untag(*root));
+         gc_assert(tag_of(*root) == oldtag, "evac produced wrong tag");
+       } else {
+         gcglobals.num_objects_evacuated++;
+@@ -1674,8 +1676,8 @@
+         auto tidyn = scan_and_evacuate_to(root, obj, depth, get_mature_space());
+         if (tidyn == nullptr) {
+           // Depth limit reached; root has been enqueued
+-          fprintf(gclog, "depth-limit-reached\n");
++          fprintf(gclog, "depth-limit-reached for root %p -> %p\n", root, unchecked_ptr_val(*root));
+         } else {
+           // Calculate the original root's updated (possibly interior) pointer.
+           *root = tagged_with((tidy*) offset(tidyn, distance(obj->body_addr(), body) ),
+                               oldtag);
+@@ -1678,8 +1680,9 @@
+         } else {
+           // Calculate the original root's updated (possibly interior) pointer.
+           *root = tagged_with((tidy*) offset(tidyn, distance(obj->body_addr(), body) ),
+                               oldtag);
+-
++          fprintf(gclog, "evacuated body ptr %p from root %p to new obj %p\n",
++            body, root, untag(*root));
+           gc_assert(tag_of(*root) == oldtag, "evac altered tag!");
+ 
+           //tori* newbody = untag(*root);
+@@ -2489,8 +2492,9 @@
+ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
+     gcglobals.num_gcs_triggered += 1;
+     if (!voluntary) { gcglobals.num_gcs_triggered_involuntarily++; }
+-    if (PRINT_STDOUT_ON_GC) { fprintf(stdout, "                        start GC #%d [type %d]\n",
+-      gcglobals.num_gcs_triggered, (int) gcglobals.condemned_set.status); fflush(stdout); }
++    if (PRINT_STDOUT_ON_GC) { fprintf(stdout, "                        start GC #%d [type %d], active==nursery? %d\n",
++      gcglobals.num_gcs_triggered, (int) gcglobals.condemned_set.status,
++      active_space == gcglobals.default_allocator); fflush(stdout); }
+     //{ fprintf(gclog, "                        start GC #%d; space %p; voluntary? %d\n", gcglobals.num_gcs_triggered, active_space, voluntary); }
+ 
+     clocktimer<false> gcstart; gcstart.start();
+@@ -3546,7 +3550,8 @@
+       common.scan_cell<condemned_set_status::whole_heap_condemned>(target, cell, kFosterGCMaxDepth);
+     case               condemned_set_status::nursery_only:
+       unchecked_ptr* root = (unchecked_ptr*) cell; // cell-to-root
+-      common.immix_trace<condemned_set_status::nursery_only>(get_mature_space(), root, kFosterGCMaxDepth);
++      fprintf(gclog, "immix_worklist working on root %p -> %p\n", root, unchecked_ptr_val(*root));
++      common.immix_trace<condemned_set_status::nursery_only>(gcglobals.default_allocator, root, kFosterGCMaxDepth);
+     }
+   }
+   initialize();

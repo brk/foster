@@ -1,0 +1,265 @@
+# HG changeset patch
+# Parent  e0a3c82ae5c4126470ff393cd114c3c8ee5c6491
+Implement a simple generational GC.
+
+diff --git a/compiler/llvm/passes/GCBarrierOptimizer.cpp b/compiler/llvm/passes/GCBarrierOptimizer.cpp
+--- a/compiler/llvm/passes/GCBarrierOptimizer.cpp
++++ b/compiler/llvm/passes/GCBarrierOptimizer.cpp
+@@ -231,12 +231,6 @@
+ 
+ } // unnamed namespace
+ 
+-/*
+-INITIALIZE_PASS(GCBarrierOptimizer, "foster-gc-barrier-optimizer",
+-                "Flow-based optimization of GC write barriers",
+-                false, false)
+-*/
+-
+ INITIALIZE_PASS_BEGIN(GCBarrierOptimizer, "foster-gc-barrier-optimizer", "Flow-based optimization of GC write barriers", /*cfgonly=*/true, /*analysis=*/false)
+ INITIALIZE_PASS_DEPENDENCY(CallGraphWrapperPass)
+ INITIALIZE_PASS_END(GCBarrierOptimizer, "foster-gc-barrier-optimizer", "Flow-based optimization of GC write barriers", /*cfgonly=*/true, /*analysis=*/false)
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -826,24 +832,6 @@
+ tidy* assume_tori_is_tidy(tori* p) { return (tidy*) p; }
+ 
+ uint8_t condemned_count_for(void* addr, frame15info* finfo);
+-/*
+-bool is_condemned_(void* slot, frame15info* finfo) {
+-  return condemned_status_for_frame15info(finfo, slot) == condemned_status::yes_condemned;
+-}
+-*/
+-
+-// ``finfo`` is only needed when the condemned portion is
+-//   condemned_set_status::per_frame_condemned.
+-template<condemned_set_status condemned_portion>
+-bool is_condemned(void* slot, immix_heap* space, frame15info* finfo) {
+-  if (condemned_portion == condemned_set_status::whole_heap_condemned) {
+-    return true;
+-  } else if (condemned_portion == condemned_set_status::single_subheap_condemned) {
+-    return owned_by((tori*)slot, space);
+-  } else {
+-    return condemned_count_for(slot, finfo) > 0;
+-  }
+-}
+ 
+ // }}}
+ 
+@@ -873,6 +861,6 @@
+ 
+   tidy* allocate_array_prechecked(bump_allocator* bumper,
+                                   const typemap* arr_elt_map,
+-                                  int64_t  num_elts,
+-                                  int64_t  total_bytes,
++                                  int64_t    num_elts,
++                                  int64_t    total_bytes,
+                                   uintptr_t  mark_value,
+@@ -878,5 +866,5 @@
+                                   uintptr_t  mark_value,
+-                                  bool     init) {
++                                  bool       init) {
+     heap_array* allot = static_cast<heap_array*>(bumper->prechecked_alloc_noinit(total_bytes));
+ 
+     if (GC_ASSERTIONS) { gc_assert(frame15_id_of(allot) == frame15_id_of(allot->body_addr()), "pre array: metadata and body address on different frames!"); }
+@@ -937,6 +925,10 @@
+       //obj_start.set_bit(granule);
+     }
+ 
++    if (GCLOG_DETAIL > 2) {
++      fprintf(gclog, "allocating cell %p, body addr %p, alloc %lld\n", allot, allot->body_addr(), gcglobals.num_allocations);
++    }
++
+     if (GC_ASSERTIONS && line_for_slot_is_marked(allot)) {
+       fprintf(gclog, "INVARIANT VIOLATED: allocating cell (%p) on a pre-marked line?!?\n", allot);
+       exit(4);
+@@ -1347,8 +1340,13 @@
+                               const typemap* & map,
+                               int64_t        & cell_size) {
+   cell_size = cell->cell_size();
+-  if (GCLOG_DETAIL > 3 || cell_size <= 0) { fprintf(gclog, "obj %p in frame (%u) has size %zd (0x%zx)\n", cell,
+-    frame15_id_of(cell), cell_size, cell_size); fflush(gclog); }
++  if (GCLOG_DETAIL > 3 || cell_size <= 0) {
++      fprintf(gclog, "obj %p in frame (%u) has size %zd (0x%zx)\n", cell,
++        frame15_id_of(cell), cell_size, cell_size);
++      immix_heap* space = heap_for(cell);
++      fprintf(gclog, "space %p (nursery? %d)\n", space, is_nursery(space));
++      fflush(gclog); }
++
+   gc_assert(cell_size > 0, "cannot copy cell lacking metadata or length");
+ 
+   if ((map = tryGetTypemap(cell))) {
+@@ -1468,8 +1506,7 @@
+         fprintf(gclog, "scan_with_map scanning pointer %p from slot %p (field %d of %d in at offset %d in object %p)\n",
+             *unchecked, unchecked, i, map.numOffsets, map.offsets[i], body);
+       }
+-      immix_trace<condemned_portion>(space, (unchecked_ptr*) unchecked,
+-                                     depth);
++      immix_trace<condemned_portion>(space, (unchecked_ptr*) unchecked, depth);
+     }
+   }
+ 
+@@ -1536,6 +1639,21 @@
+     }
+   }
+ 
++  // ``finfo`` is only needed when the condemned portion is
++  //   condemned_set_status::per_frame_condemned.
++  template<condemned_set_status condemned_portion>
++  bool is_condemned(void* slot, immix_heap* space, frame15info* finfo) {
++    if (condemned_portion == condemned_set_status::nursery_only) {
++      return gcglobals.default_allocator->contains(slot);
++    } else if (condemned_portion == condemned_set_status::whole_heap_condemned) {
++      return true;
++    } else if (condemned_portion == condemned_set_status::single_subheap_condemned) {
++      return owned_by((tori*)slot, space);
++    } else {
++      return condemned_count_for(slot, finfo) > 0;
++    }
++  }
++
+   // Jones/Hosking/Moss refer to this function as "process(fld)".
+   template <condemned_set_status condemned_portion>
+   void immix_trace(immix_heap* space, unchecked_ptr* root, int depth) {
+@@ -1581,8 +1699,8 @@
+ 
+     if (GCLOG_DETAIL > 4) {
+       fprintf(gclog, "immix_trace: space %p saw pointer %p, untagged from %p; f15id %u, condemned portion: %d\n",
+-        space, body, root->val, f15id, condemned_portion);
++        space, body, root->val, f15id, (int) condemned_portion);
+     }
+ 
+     // TODO drop the assumption that body is a tidy pointer.
+     heap_cell* obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(body));
+@@ -1605,7 +1725,9 @@
+     case                            condemned_set_status::per_frame_condemned:
+       return visit_root_specialized<condemned_set_status::per_frame_condemned>(space, root, slotname);
+     case                            condemned_set_status::whole_heap_condemned:
+-      return visit_root_specialized<condemned_set_status::whole_heap_condemned>(space, root, slotname); 
++      return visit_root_specialized<condemned_set_status::whole_heap_condemned>(space, root, slotname);
++    case                            condemned_set_status::nursery_only:
++      return visit_root_specialized<condemned_set_status::nursery_only>(space, root, slotname);
+     }
+   }
+ 
+@@ -1634,4 +1756,8 @@
+       return process_remset<condemned_set_status::per_frame_condemned>(space, incoming_ptr_addrs);
+     case                    condemned_set_status::whole_heap_condemned:
+       return process_remset<condemned_set_status::whole_heap_condemned>(space, incoming_ptr_addrs);
++    case                    condemned_set_status::nursery_only:
++      uint64_t rv = process_remset<condemned_set_status::nursery_only>(space, incoming_ptr_addrs);
++      incoming_ptr_addrs.clear();
++      return rv;
+     }
+@@ -1637,4 +1763,5 @@
+     }
++
+   }
+ 
+   template <condemned_set_status condemned_portion>
+@@ -2165,6 +2292,7 @@
+     return lineframe;
+   }
+ 
++  virtual bool contains(void* slot) { return this == heap_for(slot); }
+   virtual tidy* tidy_for(tori* t) { return (tidy*) t; }
+ 
+   virtual void* allocate_array(typemap* elt_typeinfo, int64_t n, bool init) {
+@@ -2423,6 +2551,8 @@
+   owner->establish_ownership_for_allocation(current_frame, cell_size);
+ }
+ 
++void* allocate_array_from_mature_space(typemap* elt_typeinfo, int64_t n, bool init);
++
+ void immix_common::common_gc(immix_heap* active_space,
+                              remset_t& incoming_ptr_addrs,
+                              bool voluntary) {
+@@ -2454,7 +2584,6 @@
+         voluntary ? process_remsets(active_space, incoming_ptr_addrs) : 0;
+ 
+     //double roots_ms = ct.elapsed_ms();
+-
+ /*
+     fprintf(gclog, "gc %zd, voluntary %d; space %p of size %zu bytes had %zu potential incoming ptrs, %zu remset roots\n",
+       gcglobals.num_gcs_triggered, int(voluntary), active_space,
+@@ -2472,6 +2601,4 @@
+     hdr_record_value(gcglobals.hist_gc_stackscan_roots, gNumRootsScanned);
+     gNumRootsScanned = 0;
+ 
+-
+-
+     foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
+@@ -2477,2 +2604,3 @@
+     foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
++    
+     foster_bare_coro*  coro = *coro_slot;
+@@ -2478,4 +2606,5 @@
+     foster_bare_coro*  coro = *coro_slot;
++    
+     if (coro) {
+       if (GCLOG_DETAIL > 1) {
+         fprintf(gclog, "==========visiting current coro: %p\n", coro); fflush(gclog);
+@@ -2870,6 +3189,8 @@
+       return true;
+     }
+ 
++    if (GCLOG_DETAIL > 3) { fprintf(gclog, "global frame15s left: %zd\n", gcglobals.space_limit->frame15s_left); }
++
+     if (gcglobals.space_limit->frame15s_left > 0) {
+       --gcglobals.space_limit->frame15s_left;
+       // Note: cannot call clear() on global allocator until
+@@ -3547,6 +3886,7 @@
+   gcglobals.write_barrier_slow_path_ticks = 0;
+   gcglobals.num_objects_marked_total = 0;
+   gcglobals.alloc_bytes_marked_total = 0;
++  gcglobals.num_objects_evacuated = 0;
+ 
+   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_frames);
+   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_roots);
+@@ -3847,8 +4194,8 @@
+ int cleanup() {
+   FILE* json = print_timing_stats();
+   bool had_problems = gcglobals.had_problems;
+-  if (json) gcglobals.allocator->dump_stats(json);
+-  delete gcglobals.allocator;
++  if (json) nursery->dump_stats(json);
++  delete nursery;
+   fclose(gclog); gclog = NULL;
+   if (json) fprintf(json, "}\n");
+   if (json) fclose(json);
+diff --git a/runtime/libfoster.cpp b/runtime/libfoster.cpp
+--- a/runtime/libfoster.cpp
++++ b/runtime/libfoster.cpp
+@@ -170,7 +170,11 @@
+ }
+ 
+ extern "C" foster_bare_coro** __foster_get_current_coro_slot() {
+-  return &(__foster_get_current_vCPU()->current_coro);
++  printf("current coro slot... "); fflush(stdout);
++  printf("  vCPU %p ; ", __foster_get_current_vCPU()); fflush(stdout);
++  auto rv = &(__foster_get_current_vCPU()->current_coro);
++  printf("%p\n", rv); fflush(stdout);
++  return rv;
+ }
+ 
+ // $ gotest.sh speed/siphash --optc-arg=-foster-insert-timer-checks --backend-optimize
+@@ -246,5 +250,6 @@
+ void initialize(int argc, char** argv, void* stack_base) {
+   parse_runtime_options(argc, argv);
+ 
++  printf("initializing GC...\n"); fflush(stdout);
+   gc::initialize(stack_base);
+ 
+@@ -249,4 +254,5 @@
+   gc::initialize(stack_base);
+ 
++  printf("initializing vCPU zero\n"); fflush(stdout);
+   __foster_vCPUs.push_back(new FosterVirtualCPU());
+   __foster_vCPUs[0]->install_signal_stack();
+@@ -251,5 +257,6 @@
+   __foster_vCPUs.push_back(new FosterVirtualCPU());
+   __foster_vCPUs[0]->install_signal_stack();
++  printf("initialized vCPU zero: %p\n", __foster_vCPUs[0]); fflush(stdout);
+ 
+   __foster_install_sigsegv_handler();
+ 

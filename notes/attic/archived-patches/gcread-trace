@@ -1,0 +1,50 @@
+# HG changeset patch
+# Parent  d0434d3aa984afb05f0cfc410d17956bba0adc36
+
+diff --git a/compiler/passes/LLCodegen.cpp b/compiler/passes/LLCodegen.cpp
+--- a/compiler/passes/LLCodegen.cpp
++++ b/compiler/passes/LLCodegen.cpp
+@@ -1048,6 +1048,10 @@
+ 
+   Value* base_generic = builder.CreateBitCast(base, builder.getInt8PtrTy());
+   Value* slot_generic = builder.CreateBitCast(slot, builder.getInt8PtrTy()->getPointerTo(0));
++  
++  auto ci = builder.CreateCall(pass->mod->getFunction("foster__trace_gcread"), { slot_generic });
++  markAsNonAllocating(ci);
++
+   Value* val_generic = builder.CreateCall(llvm_gcread, { base_generic, slot_generic });
+   return builder.CreateBitCast(val_generic, slot->getType()->getPointerElementType());
+ }
+diff --git a/runtime/libfoster.cpp b/runtime/libfoster.cpp
+--- a/runtime/libfoster.cpp
++++ b/runtime/libfoster.cpp
+@@ -644,6 +644,7 @@
+ extern "C" void foster_coro_delete_self_reference(void* vc);
+ extern "C" void foster_write_barrier_generic(void* ptr, void** slot);
+ extern "C" void foster__trace_bb(const char* fnname, const char* bbname);
++extern "C" void foster__trace_gcread(void** slot);
+ 
+ int foster__runtime__main__wrapper(int argc, char** argv) {
+   bool tru = opaquely_i32(0) == 0;
+@@ -656,6 +657,7 @@
+     foster_coro_delete_self_reference((void*)&foster__gcmaps);
+     printf("%p\n", &foster_write_barrier_generic);
+     printf("%p\n", &foster__trace_bb);
++    printf("%p\n", &foster__trace_gcread);
+   }
+ 
+   return foster::runtime::cleanup();
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -4256,6 +4261,10 @@
+   */
+ }
+ 
++extern "C" void foster__trace_gcread(void** slot) {
++  fprintf(gclog, "        gcread: %p -> %p\n", slot, *slot);
++}
++
+ extern "C" void foster__trace_bb(const char* fnname, const char* bbname) {
+   fprintf(gclog, "        %s: %s\n", fnname, bbname);
+ }

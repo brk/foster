@@ -1,0 +1,117 @@
+# HG changeset patch
+# Parent  91bd32c307ac90dcbc8d809c4eaad2dcf4d0b946
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -1504,7 +1504,9 @@
+         abort();
+       }
+       */
+-      return (void*) cell->get_forwarded_body();
++      tidy* fwdbody = cell->get_forwarded_body();
++      gc_assert(tag_of(*root) == tag_of(make_unchecked_ptr((tori*) fwdbody)), "scan_fwded produced wrong tag");
++      return (void*) fwdbody;
+     }
+ 
+     if (depth_remaining == 0) {
+@@ -1620,6 +1622,8 @@
+     tori* body = untag(*root);
+     if (!body) return 0;
+ 
++    uintptr_t oldtag = tag_of(*root);
++
+     auto f15id = frame15_id_of((void*) body);
+     auto f15info = frame15_info_for((void*) body);
+ 
+@@ -1661,6 +1665,8 @@
+     if (should_evacuate) {
+       if (obj->is_forwarded()) {
+         auto tidyn = (void*) obj->get_forwarded_body();
+-        *root = make_unchecked_ptr((tori*) offset(tidyn, distance(obj->body_addr(), body) ));
++        *root = tagged_with((tidy*) offset(tidyn, distance(obj->body_addr(), body) ),
++                            oldtag);
++        gc_assert(tag_of(*root) == oldtag, "evac produced wrong tag");
+       } else {
+         gcglobals.num_objects_evacuated++;
+@@ -1665,5 +1671,6 @@
+       } else {
+         gcglobals.num_objects_evacuated++;
++        const typemap* oldmeta = obj->get_meta();
+         auto tidyn = scan_and_evacuate_to(root, obj, depth, get_mature_space());
+         if (tidyn == nullptr) {
+           // Depth limit reached; root has been enqueued
+@@ -1667,5 +1674,6 @@
+         auto tidyn = scan_and_evacuate_to(root, obj, depth, get_mature_space());
+         if (tidyn == nullptr) {
+           // Depth limit reached; root has been enqueued
++          fprintf(gclog, "depth-limit-reached\n");
+         } else {
+           // Calculate the original root's updated (possibly interior) pointer.
+@@ -1670,7 +1678,15 @@
+         } else {
+           // Calculate the original root's updated (possibly interior) pointer.
+-          
+-          *root = make_unchecked_ptr((tori*) offset(tidyn, distance(obj->body_addr(), body) ));
++          *root = tagged_with((tidy*) offset(tidyn, distance(obj->body_addr(), body) ),
++                              oldtag);
++
++          gc_assert(tag_of(*root) == oldtag, "evac altered tag!");
++
++          //tori* newbody = untag(*root);
++          //heap_cell* newobj = heap_cell::for_tidy(reinterpret_cast<tidy*>(newbody));
++          //uint8_t newcid = ctor_id_of((tidy*) newbody);
++          //gc_assert(newobj->get_meta() == oldmeta, "copying gc should preserve metadata/header word");
++          //gc_assert(oldcid == newcid, "copying gc should preserve inline tag bits");
+           //gc_assert(NULL != untag(*root), "copying gc should not null out slots");
+           //gc_assert(body != untag(*root), "copying gc should return new pointers");
+         }
+@@ -4203,7 +4219,7 @@
+                  ;
+                  */
+   fprintf(gclog, "<%p>; in nursery? %d\n", bodyvoid, gcglobals.default_allocator->contains(bodyvoid));
+-  fprintf(stdout, "<%p>; in nursery? %d\n", bodyvoid, gcglobals.default_allocator->contains(bodyvoid));
++  //fprintf(stdout, "<%p>; in nursery? %d\n", bodyvoid, gcglobals.default_allocator->contains(bodyvoid));
+   /*
+   unchecked_ptr bodyu = make_unchecked_ptr(static_cast<tori*>(bodyvoid));
+   tori* body = untag(bodyu);
+diff --git a/runtime/gc/foster_gc_utils.h b/runtime/gc/foster_gc_utils.h
+--- a/runtime/gc/foster_gc_utils.h
++++ b/runtime/gc/foster_gc_utils.h
+@@ -38,6 +38,14 @@
+   return mask_ptr(unchecked_ptr_val(p), FOSTER_GC_DEFAULT_ALIGNMENT_MASK);
+ }
+ 
++inline uintptr_t tag_of(unchecked_ptr p) {
++  return uintptr_t(unchecked_ptr_val(p)) & FOSTER_GC_DEFAULT_ALIGNMENT_MASK;
++}
++
++inline unchecked_ptr tagged_with(tidy* p, uintptr_t tag) {
++  return make_unchecked_ptr((tori*) (uintptr_t(p) | tag));
++}
++
+ inline tori* tori_of_tidy(tidy* t) { return (tori*) t; }
+ 
+ // }}}
+@@ -98,7 +106,9 @@
+ 
+   bool is_forwarded() { return (header & FORWARDED_BIT) != 0; }
+   void set_forwarded_body(tidy* newbody) {
+-    header = HEAP_CELL_HEADER_TYPE(newbody) | FORWARDED_BIT;
++    //auto tag_hi = tag_lo << 56;
++    auto bits = HEAP_CELL_HEADER_TYPE(newbody); //| HEAP_CELL_HEADER_TYPE(tag_hi);
++    header = bits | FORWARDED_BIT;
+   }
+   tidy* get_forwarded_body() { return (tidy*) (header & ~FORWARDED_BIT); }
+   uint8_t get_mark_bits() { return (header & HEADER_MARK_BITS); }
+diff --git a/compiler/passes/LLCodegen.cpp b/compiler/passes/LLCodegen.cpp
+--- a/compiler/passes/LLCodegen.cpp
++++ b/compiler/passes/LLCodegen.cpp
+@@ -984,6 +984,7 @@
+   case CTR_BareValue: return inspected;
+   case CTR_OutOfLine: return emitCallGetCtorIdOf(pass, inspected);
+   case CTR_MaskWith3: {
++    emitCallToInspectPtr(pass, inspected);
+     llvm::Value* truncated = builder.CreatePtrToInt(inspected, builder.getInt8Ty());
+                       return builder.CreateAnd(truncated, 0x7); }
+   }

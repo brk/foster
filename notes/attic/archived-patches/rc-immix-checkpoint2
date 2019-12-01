@@ -1,0 +1,1036 @@
+# HG changeset patch
+# Parent  85aea307be7aadc70ba006e1d0d9365ac41c558a
+Checkpoint work on RC Immix.
+
+diff --git a/compiler/llvm/passes/GCBarrierOptimizer.cpp b/compiler/llvm/passes/GCBarrierOptimizer.cpp
+--- a/compiler/llvm/passes/GCBarrierOptimizer.cpp
++++ b/compiler/llvm/passes/GCBarrierOptimizer.cpp
+@@ -364,10 +364,11 @@
+                 llvm::outs() << "specializing gcwrite of " << ptr->getName() << " to " << slot->getName() << "\n";
+                 //auto si = new StoreInst(ci->getArgOperand(0), ci->getArgOperand(2), ii);
+                 auto nci = CallInst::Create(gcwrite_fn, {
+-                  ci->getArgOperand(0),
+-                  ci->getArgOperand(1),
+-                  ci->getArgOperand(2),
+-                  ci->getArgOperand(3),
++                  ci->getArgOperand(0), // val
++                  ci->getArgOperand(1), // obj
++                  ci->getArgOperand(2), // slot
++                  ci->getArgOperand(3), // arr
++                  ci->getArgOperand(4), // gen
+                   ConstantInt::getSigned(needSubheap->getType(), 0) // disable subheap portion of barrier.
+                  }, "", ci);
+                 ci->replaceAllUsesWith(nci);
+diff --git a/compiler/passes/LLCodegen.cpp b/compiler/passes/LLCodegen.cpp
+--- a/compiler/passes/LLCodegen.cpp
++++ b/compiler/passes/LLCodegen.cpp
+@@ -127,7 +127,7 @@
+   return builder.CreateBitCast(v, dstTy, msg);
+ }
+ 
+-llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot, bool gen, bool subheap) {
++llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot, bool arr, bool gen, bool subheap) {
+   if (!base) base = getNullOrZero(builder.getInt8PtrTy());
+   auto gcwrite_fn = pass->mod->getFunction("foster_write_barrier_with_obj_generic");
+ 
+@@ -141,7 +141,8 @@
+     Value*  val_generic = builder.CreateBitCast(val,  builder.getInt8PtrTy());
+     Value* need_gen     = builder.getInt8(gen     ? 1 : 0);
+     Value* need_subheap = builder.getInt8(subheap ? 1 : 0);
+-    return builder.CreateCall(gcwrite_fn, { val_generic, base_generic, slot_generic, need_gen, need_subheap });
++    Value* is_arr       = builder.getInt8(arr     ? 1 : 0);
++    return builder.CreateCall(gcwrite_fn, { val_generic, base_generic, slot_generic, is_arr, need_gen, need_subheap });
+   }
+ }
+ 
+@@ -161,6 +162,7 @@
+                        llvm::Value* val,
+                        llvm::Value* base,
+                        llvm::Value* ptr,
++                       bool arr,
+                        bool needGen, bool needSubheap,
+                        WriteSelector w = WriteUnspecified) {
+   //llvm::outs() << "logging write of " << *val <<
+@@ -174,7 +176,7 @@
+ 
+   if (isPointerToType(ptr->getType(), val->getType())) {
+     if (useBarrier) {
+-      return emitGCWrite(pass, val, base, ptr, needGen, needSubheap);
++      return emitGCWrite(pass, val, base, ptr, arr, needGen, needSubheap);
+     } else {
+       return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
+     }
+@@ -216,7 +218,7 @@
+     val = emitBitcast(val, eltTy, "specSgen");
+   }
+ 
+-  return emitGCWriteOrStore(pass, val, base, ptr, needGen, needSubheap, w);
++  return emitGCWriteOrStore(pass, val, base, ptr, false, needGen, needSubheap, w);
+ }
+ 
+ Value* emitCallToInspectPtr(CodegenPass* pass, Value* ptr) {
+@@ -1079,10 +1081,11 @@
+   llvm::Value* val  = v->codegen(pass);
+   llvm::Value* slot = r->codegen(pass);
+   if (isTraced && pass->config.useGC) {
+-    return emitGCWrite(pass, val, slot, slot, pass->config.useGenBarriers,
+-                                              pass->config.useSubheapBarriers);
++    return emitGCWrite(pass, val, slot, slot, false,
++                       pass->config.useGenBarriers,
++                       pass->config.useSubheapBarriers);
+   } else {
+-    return emitGCWriteOrStore(pass, val, slot, slot, false, false, WriteKnownNonGC);
++    return emitGCWriteOrStore(pass, val, slot, slot, false, false, false, WriteKnownNonGC);
+   }
+ }
+ 
+@@ -1460,7 +1463,7 @@
+     val = emitBitcast(val, eltTy, "specSgen");
+   }
+ 
+-  emitGCWriteOrStore(pass, val, base, slot, true, true);
++  emitGCWriteOrStore(pass, val, base, slot, true, true, true);
+   return getNullOrZero(getUnitType()->getLLVMType());
+ }
+ 
+@@ -1535,13 +1538,14 @@
+       for (unsigned i = 0; i < ncvals.size(); ++i) {
+         unsigned k  = ncvals[i].second;
+         Value* val  = ncvals[i].first;
+-        Value* slot = getPointerToIndex(heapmem, llvm::ConstantInt::get(i32, k), "arr_slot");
++        llvm::Constant* arrIdx = llvm::ConstantInt::get(i32, k);
++        Value* slot = getPointerToIndex(heapmem, arrIdx, "arr_slot");
+         bool useBarrier = val->getType()->isPointerTy() && pass->config.useGC;
+         //maybeEmitCallToLogPtrWrite(pass, slot, val, useBarrier);
+         if (useBarrier) {
+           bool gen = false;
+           bool subheap = false;
+-          emitGCWrite(pass, val, heapmem, slot, gen, subheap);
++          emitGCWrite(pass, val, heapmem, slot, arrIdx, gen, subheap);
+         } else {
+           builder.CreateStore(val, slot, /*isVolatile=*/ false);
+         }
+diff --git a/runtime/foster_globals.cpp b/runtime/foster_globals.cpp
+--- a/runtime/foster_globals.cpp
++++ b/runtime/foster_globals.cpp
+@@ -33,6 +33,7 @@
+   void parse_runtime_options(int argc, char** argv) {
+     __foster_globals.semispace_size = 1024 * 1024;
+     __foster_globals.disable_sticky = false;
++    __foster_globals.rc_reserved_fraction = 0.01;
+ 
+     int args_to_skip = 0;
+ 
+@@ -60,6 +61,8 @@
+           __foster_globals.dump_json_stats_path = argv[i + 1];
+         } else if (streq("--foster-sticky-threshold", arg)) { args_to_skip += 1;
+           __foster_globals.sticky_base_threshold = parse_double(argv[i + 1], 5.0);
++        } else if (streq("--foster-rc-reserved-fraction", arg)) { args_to_skip += 1;
++          __foster_globals.rc_reserved_fraction = parse_double(argv[i + 1], 0.12);
+         }
+       }
+     }
+diff --git a/runtime/foster_globals.h b/runtime/foster_globals.h
+--- a/runtime/foster_globals.h
++++ b/runtime/foster_globals.h
+@@ -32,6 +32,7 @@
+ 
+   bool                   disable_sticky;
+   double                 sticky_base_threshold;
++  double                 rc_reserved_fraction;
+ };
+ 
+ extern FosterGlobals __foster_globals;
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -370,6 +370,7 @@
+     size_t     size()            { return roots.size(); }
+   private:
+     size_t                  idx;
++  public:
+     std::vector<unchecked_ptr*> roots;
+ };
+ */
+@@ -377,12 +378,17 @@
+     void       initialize()      { roots.clear(); }
+     template <condemned_set_status condemned_status>
+     void       process(immix_heap* target, immix_common& common);
++
++    template <condemned_set_status condemned_status>
++    void process_for_cycle_collection(immix_heap* target, immix_common* common);
++
+     bool       empty()           { return roots.empty(); }
+     unchecked_ptr* pop_root()  { auto root = roots.back(); roots.pop_back(); return root; }
+     void       add_root(unchecked_ptr* root) { __builtin_prefetch(*(void**)root); roots.push_back(root); }
+     size_t     size()            { return roots.size(); }
+   private:
+     size_t                  idx;
++  public:
+     std::vector<unchecked_ptr*> roots;
+     ptr_fifo_2             fifo;
+ };
+@@ -560,10 +566,16 @@
+ 
+   int64_t evac_candidates_found;
+ 
++  std::vector<heap_cell*> incbuf;
++  std::vector<void**>     arrbuf;
++  std::vector<void* >     decbuf;
++
+   double yield_percentage_threshold;
++  double defrag_reserved_fraction;
+ 
+   double last_full_gc_fragmentation_percentage;
+   int evac_threshold;
++  bool evac_disabled;
+   int64_t marked_histogram[128];
+   int64_t marked_histogram_frames[128];
+   int64_t residency_histogram[128];
+@@ -748,7 +760,7 @@
+ }
+ 
+ 
+-bool line_is_marked(  int line, uint8_t* linemap) { return linemap[line] == 1; }
++bool line_is_marked(  int line, uint8_t* linemap) { return linemap[line] >= 1; }
+ bool line_is_unmarked(int line, uint8_t* linemap) { return linemap[line] == 0; }
+ void do_mark_line(  int line, uint8_t* linemap) { linemap[line] = 1; }
+ void do_unmark_line(int line, uint8_t* linemap) { linemap[line] = 0; }
+@@ -1194,7 +1206,8 @@
+ 
+     // At 10M, 1% + 6 == 4 + 6 = 2.5%; at 1000M, 1% + 6 = 400 + 6 = 1%
+     auto num_defrag_reserved_frames =
+-            int(double(frame15s_left) * kFosterDefragReserveFraction) + 6;
++       //     int(double(frame15s_left) * kFosterDefragReserveFraction) + 6;
++            int(double(frame15s_left) * gcglobals.defrag_reserved_fraction) + 6;
+     frame15s_left -= num_defrag_reserved_frames;
+     for (int i = 0; i < num_defrag_reserved_frames; ++i) {
+       defrag_reserve.give_frame15(get_frame15());
+@@ -1260,6 +1273,7 @@
+ public:
+   ssize_t get_frame15s_left() { return frame15s_left; }
+   double  get_relative_size() { return double(frame15s_left)/double(full_heap_frame15_count); }
++  ssize_t heap_size_in_bytes() { return full_heap_frame15_count * (1 << 15); }
+   bool empty() { return frame15s_left == 0; }
+ 
+   // Precondition: !empty()
+@@ -1701,14 +1715,10 @@
+   }
+ 
+   // Precondition: cell is part of the condemned set and not yet marked.
++  template <bool do_mark_lines>
+   void scan_cell(immix_heap* space, heap_cell* cell) {
+     if (GCLOG_DETAIL > 3) { fprintf(gclog, "scanning cell %p for space %p\n", cell, space); fflush(gclog); }
+ 
+-
+-    frame15info* finfo = frame15_info_for_frame15_id(frame15_id_of(cell));
+-    auto frameclass = finfo->frame_classification;
+-    if (GCLOG_DETAIL > 3) { fprintf(gclog, "frame classification for obj %p in frame %u is %d\n", cell, frame15_id_of(cell), int(frameclass)); }
+-
+     heap_array* arr = NULL;
+     const typemap* map = NULL;
+     int64_t cell_size;
+@@ -1718,10 +1728,16 @@
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += cell_size; }
+ 
++    frame15info* finfo = frame15_info_for_frame15_id(frame15_id_of(cell));
++    auto frameclass = finfo->frame_classification;
++    if (GCLOG_DETAIL > 3) { fprintf(gclog, "frame classification for obj %p in frame %u is %d\n", cell, frame15_id_of(cell), int(frameclass)); }
++
+     if (frameclass == frame15kind::immix_smallmedium) {
+-        mark_lines_for_slots((void*) cell, cell_size);
++        if (do_mark_lines) {
++          mark_lines_for_slots((void*) cell, cell_size);
++        }
+         gcglobals.lazy_mapped_frame_liveness[frame15_id_of(cell)] += uint16_t(cell_size);
+-    } else if (frameclass == frame15kind::immix_linebased) {
++    } else if (frameclass == frame15kind::immix_linebased && do_mark_lines) {
+         mark_lines_for_slots((void*) cell, cell_size);
+     } else if (frameclass == frame15kind::unknown) {
+       gcglobals.condemned_set.unframed_and_marked.insert(cell);
+@@ -1738,7 +1754,7 @@
+   // Jones/Hosking/Moss refer to this function as "process(fld)".
+   // Returns 1 if root was located in a condemned space; 0 otherwise.
+   // Precondition: root points to an unmarked, unforwarded, markable object.
+-  template <condemned_set_status condemned_portion>
++  template <condemned_set_status condemned_portion, bool do_mark_lines>
+   uint64_t immix_trace(immix_heap* space, unchecked_ptr* root, heap_cell* obj) {
+     //       |------------|       obj: |------------|
+     // root: |    body    |---\        |  size/meta |
+@@ -1765,10 +1781,11 @@
+     }
+ 
+     if (should_opportunistically_evacuate<condemned_portion>(space, obj)) {
++      fprintf(gclog, "immix_trace forwarding object!\n");
+       auto tidyn = scan_and_evacuate_to((immix_space*)space, obj);
+       *root = make_unchecked_ptr((tori*) tidyn);
+     } else {
+-      scan_cell(space, obj);
++      scan_cell<do_mark_lines>(space, obj);
+     }
+ 
+     return 1;
+@@ -2564,11 +2581,288 @@
+ }
+ 
+ void process_worklist(immix_heap* active_space, immix_common* common);
++heap_cell* try_opportunistic_evacuation_rc(heap_cell* cell);
++
++char linemap_code(uint8_t entry) {
++  switch (entry) {
++    case 0: return '_';
++    case 1: return '1';
++    case 2: return '2';
++    case 3: return '3';
++    case 4: return '4';
++    case 5: return '5';
++    case 6: return '6';
++    case 7: return '7';
++    case 8: return '8';
++    case 9: return '9';
++    default: return '+';
++  }
++}
++
++void show_linemap_for_frame15(frame15_id fid) {
++  uint8_t* linemap = linemap_for_frame15_id(fid);
++  fprintf(gclog, "frame %u: ", fid);
++  for(int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap_code(linemap[i])); }
++  fprintf(gclog, "\n");
++}
++
++void delta_line_counts(void* slot, uint64_t cell_size, int8_t delta) {
++  //show_linemap_for_frame15(frame15_id_of(slot));
++  //fprintf(gclog, "delta (%d) applying to lines for object %p of size %zu\n", int(delta), slot, cell_size);
++
++  auto mdb = metadata_block_for_frame15_id(frame15_id_of(slot));
++  uint8_t* linemap = &mdb->linemap[0][0];
++
++  void* lastslot = offset(slot, cell_size);
++
++  auto firstoff = line_offset_within_f21(slot);
++  auto lastoff  = line_offset_within_f21(lastslot);
++
++  //if (GCLOG_DETAIL > 3) { fprintf(gclog, "marking lines %lu - %lu for slot %p of size %zd\n", firstoff, lastoff, slot, cell_size); }
++
++  linemap[firstoff] += delta;
++
++  // Mark intermediate lines if necessary.
++  while (++firstoff <= lastoff) {
++    linemap[firstoff] += delta;
++  }
++}
++
++void delta_line_counts_for_cell(heap_cell* cell, int delta) {
++  heap_array* arr = NULL; const typemap* map; int64_t cell_size;
++  get_cell_metadata(cell, arr, map, cell_size);
++  delta_line_counts(cell, cell_size, delta);
++}
++
++
++void rc_increment(void** slot) {
++  if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
++
++  heap_cell* cell = heap_cell::for_tidy((tidy*) *slot);
++
++  if (cell->is_new_and_forwarded()) {
++    // The forwarding bit means "logged" for old objects.
++    tidy* body = cell->get_forwarded_body();
++    *slot = (void*) body;
++    cell = heap_cell::for_tidy(body);
++    // Invariant: header for forwarded body is marked old, not new.
++  }
++
++  uint64_t header = cell->raw_header();
++  auto frameclass = frame15_classification(cell);
++
++  if (frameclass == frame15kind::immix_smallmedium
++   || frameclass == frame15kind::immix_linebased) {
++
++    if (header_is_new(header)) {
++      // assert rc_is_zero(header)
++      if (frameclass == frame15kind::immix_smallmedium) {
++        // Sticky immix evacuates old and new objects from examined frames based on
++        // liveness collected from previous marking passes; in contrast, in RC mode
++        // we can only move _new_ objects.
++        if (auto newcell = try_opportunistic_evacuation_rc(cell)) {
++          // Old cell has been forwarded by evacuation.
++          *slot = (void*) newcell->body_addr(); // Update source with new object location.
++          cell = newcell; // Get ready to fiddle with line counts, etc.
++        }
++      }
++
++      cell->set_header_old_with_rc1();
++      delta_line_counts_for_cell(cell, 1);
++      gcglobals.incbuf.push_back(cell);
++    } else {
++      if (!hit_max_rc(header)) {
++        cell->inc_rc_by(1);
++      }
++    }
++  }
++}
++
++bool is_rc_able(void* ptr) { return !non_markable_addr(ptr); }
++
++void rc_decrement(void* obj) {
++  heap_cell* cell = heap_cell::for_tidy((tidy*) obj);
++  uint64_t header = cell->raw_header();
++  if (!hit_max_rc(header)) {
++    bool now_dead = cell->dec_rc_by(1);
++    if (now_dead) {
++      delta_line_counts_for_cell(cell, -1);
++      for_each_child_slot(cell, [](intr* slot) {
++        void* value = *(void**)slot;
++        if (is_rc_able(value)) {
++          gcglobals.decbuf.push_back(value);
++        }
++      });
++    }
++  }
++}
++
++double g_rc_sweeping_total_us = 0.0;
++
++void do_rc_collection(immix_heap* active_space, clocktimer<false>& phase) {
++    size_t initial_root_list_size = immix_worklist.roots.size();
++    size_t initial_arrbuf_list_size = gcglobals.arrbuf.size();
++    size_t initial_incbuf_list_size = gcglobals.incbuf.size();
++    size_t initial_decbuf_list_size = gcglobals.decbuf.size();
++    // Increment the root set's counts.
++    for (auto rootslot : immix_worklist.roots) {
++      if (is_rc_able(untag(*rootslot))) {
++        rc_increment((void**)rootslot);
++      }
++    }
++
++    size_t secondary_incbuf_list_size = gcglobals.incbuf.size();
++    size_t modbuf_entries_processed = 0;
++    // Process increment and decrement buffers.
++    while (!gcglobals.arrbuf.empty()) {
++      auto slot = gcglobals.arrbuf.back(); gcglobals.arrbuf.pop_back();
++      ++modbuf_entries_processed;
++      if (is_rc_able(*slot)) {
++        rc_increment( slot);
++      }
++    }
++
++    while (!gcglobals.incbuf.empty()) {
++      auto cell = gcglobals.incbuf.back(); gcglobals.incbuf.pop_back();
++      ++modbuf_entries_processed;
++      for_each_child_slot(cell, [](intr* slot) {
++        if (is_rc_able(* (void**)slot)) {
++          rc_increment(  (void**)slot);
++        }
++      });
++      cell->clear_logged_bit();
++    }
++
++    size_t decbuf_entries_processed = 0;
++    while (!gcglobals.decbuf.empty()) {
++      auto obj = gcglobals.decbuf.back(); gcglobals.decbuf.pop_back();
++      ++decbuf_entries_processed;
++      rc_decrement(obj);
++    }
++
++    // Buffer decrements for the root set.
++    gcglobals.decbuf.reserve(immix_worklist.size());
++    for (auto rootslot : immix_worklist.roots) {
++      auto ptr = unchecked_ptr_val(*rootslot);
++      if (is_rc_able(ptr)) {
++        gcglobals.decbuf.push_back(ptr);
++      }
++    }
++
++    immix_worklist.roots.clear();
++
++
++    double rc_tracing_us = phase.elapsed_us();
++
++    fprintf(gclog, "Initial sizes: %zd + %zd mod/increments, %zd decrements.\n", initial_incbuf_list_size, initial_arrbuf_list_size, initial_decbuf_list_size);
++    fprintf(gclog, "Out of %zd roots, found %zd new objects.\n",  initial_root_list_size, (secondary_incbuf_list_size - initial_incbuf_list_size));
++    fprintf(gclog, "Processed      %zd mod/arr/increments, %zd decrements.\n", modbuf_entries_processed, decbuf_entries_processed);
++    auto total_entries_processed = double(modbuf_entries_processed + decbuf_entries_processed + initial_arrbuf_list_size + initial_root_list_size);
++    fprintf(gclog, "      entries processed/us: %.2f; ns/entry: %.2f\n",
++          total_entries_processed / rc_tracing_us, (rc_tracing_us * 1000.0) / total_entries_processed);
++
++    phase.start();
++    bool hadEmptyRootSet = initial_root_list_size == 0;
++    int64_t num_lines_reclaimed = gcglobals.condemned_set.sweep_condemned(active_space, phase, hadEmptyRootSet);
++    double sweeping_us = phase.elapsed_us();
++
++    double lines_per_us = double(num_lines_reclaimed) / rc_tracing_us;
++    double ns_per_line = (rc_tracing_us * 1000.0) / double(num_lines_reclaimed);
++    fprintf(gclog, "       RC tracing took %.2f us. (lines/us: %.2f;  ns/line: %.2f)\n", rc_tracing_us, lines_per_us, ns_per_line);
++    g_rc_sweeping_total_us += sweeping_us;
++    fprintf(gclog, "Sweeping reclaimed %zd lines in %f us.     (total RC sweeping time: %.2f us)\n", num_lines_reclaimed, sweeping_us, g_rc_sweeping_total_us);
++
++//#if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
++//    hdr_record_value(gcglobals.hist_gc_sweep_micros, sweeping_us);
++//#endif
++}
++
++void process_worklist_for_cycle_collection(immix_heap* active_space, immix_common* common) {
++  switch (gcglobals.condemned_set.status) {
++    case condemned_set_status::single_subheap_condemned:
++      immix_worklist.process_for_cycle_collection<condemned_set_status::single_subheap_condemned>(active_space, common); break;
++    case condemned_set_status::per_frame_condemned:
++      immix_worklist.process_for_cycle_collection<condemned_set_status::per_frame_condemned>(active_space, common); break;
++    case condemned_set_status::whole_heap_condemned:
++      immix_worklist.process_for_cycle_collection<condemned_set_status::whole_heap_condemned>(active_space, common); break;
++  }
++}
++
++void do_cycle_collection(immix_heap* active_space, clocktimer<false>& phase, clocktimer<false>& gcstart, immix_common* common) {
++  // Because we're tracing and will re-establish object RC values, we need not process inc/decs.
++  // However, we do need to unset the logged bit from logged objects.
++  for (auto cell : gcglobals.incbuf) {
++    cell->clear_logged_bit();
++  }
++  gcglobals.arrbuf.clear();
++  gcglobals.incbuf.clear();
++  gcglobals.decbuf.clear();
++
++  phase.start();
++
++  // Step one: reset line and object (granule) marks.
++  active_space->prepare_for_collection(false);
++  //immix_space* space = (immix_space*) active_space; // TODO fix
++
++  auto resettingMarkBits_us = phase.elapsed_us();
++  phase.start();
++  process_worklist_for_cycle_collection(active_space, common);
++  auto deltaRecursiveMarking_us = phase.elapsed_us();
++
++
++  phase.start();
++  bool hadEmptyRootSet = false; // (numCondemnedRoots + numRemSetRoots + numGenRoots) == 0;
++  int64_t num_lines_reclaimed = gcglobals.condemned_set.sweep_condemned(active_space, phase, hadEmptyRootSet);
++  double sweep_us = phase.elapsed_us();
++
++  double total_us = gcstart.elapsed_us();
++
++  fprintf(gclog, "Cycle collection: %.1f us to reset marks; %.1f us to trace the heap; %.1f us to sweep\n",
++      resettingMarkBits_us, deltaRecursiveMarking_us, sweep_us);
++  fprintf(gclog, "       %.1f us total   (%.1f ns/line)\n", total_us, (total_us * 1000.0) / double(num_lines_reclaimed));
++}
++
++template <condemned_set_status condemned_status>
++void immix_worklist_t::process_for_cycle_collection(immix_heap* target, immix_common* common) {
++  while (true) {
++    unchecked_ptr* root;
++
++    if (empty()) break;
++    root = pop_root();
++
++    tori* body = unchecked_ptr_val(*root); // TODO drop the assumption that body is a tidy pointer.
++    heap_cell* obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(body));
++
++    if (obj->is_forwarded()) {
++      tidy* fwded = obj->get_forwarded_body();
++      *root = make_unchecked_ptr((tori*) fwded);
++
++      fprintf(gclog, "cycle collection saw object cell %p with header %lx forwarding to body %p from root %p\n",
++          obj, obj->raw_header(), fwded, root);
++      //obj = heap_cell::for_tidy(fwded);
++      //obj->inc_rc_mb(1);
++    } else {
++      if (obj_is_marked(obj)) {
++        // Increment RC for marked objects (if not at max RC).
++        obj->inc_rc_mb(1);
++      } else {
++        // First visit to unmarked object: reset RC to 1, adjust line count.
++        obj->reset_rc_to_zero();
++        obj->set_header_old_with_rc1();
++        delta_line_counts_for_cell(obj, 1);
++
++        common->immix_trace<condemned_status, false>(target, root, obj);
++      }
++    }
++  }
++  initialize();
++}
++
+ 
+ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
+     gcglobals.num_gcs_triggered += 1;
+     if (!voluntary) { gcglobals.num_gcs_triggered_involuntarily++; }
+-    if (PRINT_STDOUT_ON_GC) { fprintf(stdout, "                        start GC #%d\n", gcglobals.num_gcs_triggered); fflush(stdout); }
++    if (PRINT_STDOUT_ON_GC) { fprintf(stdout, "                        start GC #%d (sticky? %d)\n", gcglobals.num_gcs_triggered, active_space->next_collection_sticky); fflush(stdout); }
+     { fprintf(gclog, "                        start GC #%d; space %p; voluntary? %d; sticky? %d\n", gcglobals.num_gcs_triggered, active_space, voluntary, active_space->next_collection_sticky); }
+ 
+     clocktimer<false> gcstart; gcstart.start();
+@@ -2584,6 +2878,13 @@
+     bool isWholeHeapGC = gcglobals.condemned_set.status == condemned_set_status::whole_heap_condemned;
+     bool was_sticky_collection = active_space->next_collection_sticky;
+     bool unstick_next_coll = false;
++    gcglobals.evac_disabled = false;
++
++    /*
++    if (!was_sticky_collection) {
++      fprintf(stderr, "TODO: implement cycle collection for RC.\n");
++      exit(42);
++    }
+ 
+     if (isWholeHeapGC) {
+       if (was_sticky_collection && (num_avail_defrag_lines() < (num_assigned_defrag_lines() / 2))) {
+@@ -2611,16 +2912,17 @@
+         gcglobals.evac_threshold = 0;
+       }
+     }
++    */
+ 
+     global_immix_line_allocator.realign_and_split_line_bumper();
+ 
+-    phase.start();
+-    uint64_t numGenRoots = 0;
+-    uint64_t numRemSetRoots = 0;
+-    gcglobals.condemned_set.prepare_for_collection(active_space, voluntary, was_sticky_collection, this, &numGenRoots, &numRemSetRoots);
+-    auto markResettingAndRemsetCollection_us = phase.elapsed_us();
+-
+-    fprintf(gclog, "# generational roots: %zu; # subheap roots: %zu (sticky=%d)\n", numGenRoots, numRemSetRoots, was_sticky_collection);
++    //phase.start();
++    //uint64_t numGenRoots = 0;
++    //uint64_t numRemSetRoots = 0;
++    //gcglobals.condemned_set.prepare_for_collection(active_space, voluntary, was_sticky_collection, this, &numGenRoots, &numRemSetRoots);
++    //auto markResettingAndRemsetCollection_us = phase.elapsed_us();
++
++    //fprintf(gclog, "# generational roots: %zu; # subheap roots: %zu (sticky=%d)\n", numGenRoots, numRemSetRoots, was_sticky_collection);
+ 
+     phase.start();
+ #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
+@@ -2637,7 +2939,7 @@
+       for (auto space : gcglobals.condemned_set.spaces) {
+         if (space != active_space) {
+           numRemSetRoots += process_remsets(space);
+-        }        
++        }
+       }
+     }
+ #endif
+@@ -2651,6 +2953,11 @@
+ 
+     //ct.start();
+     collect_roots_from_stack(__builtin_frame_address(0));
++    // TODO handle coro objects; they contain stacks which experience unlogged mutations,
++    //      so we must revisit any stacks from coros that have been switched to since our
++    //      last collection cycle.
++    //      IDEA: embed a last-gc-cycle tag in the coro; when switching, if it doesn't match
++    //            the current one, add the coro to a list and update the tag.
+     //fprintf(gclog, "num condemned + remset roots: %zu\n", numCondemnedRoots + numRemSetRoots);
+     //double trace_ms = ct.elapsed_ms();
+ 
+@@ -2674,6 +2981,16 @@
+       }
+     }
+ 
++    if (was_sticky_collection) {
++      do_rc_collection(active_space, phase);
++    } else {
++      gcglobals.evac_disabled = true;
++      do_cycle_collection(active_space, phase, gcstart, this);
++      auto bytes_marked = gcglobals.alloc_bytes_marked_total - bytes_marked_at_start;
++      fprintf(gclog, "occupancy: %.1f%%\n", 100.0 * (double(bytes_marked) / double(global_frame15_allocator.heap_size_in_bytes())));
++    }
++
++#if 0
+     process_worklist(active_space, this);
+ 
+     auto deltaRecursiveMarking_us = phase.elapsed_us();
+@@ -2723,7 +3040,8 @@
+       }
+     }
+   }
+-
++#endif
++#if 0
+ #if ((GCLOG_DETAIL > 1) || ENABLE_GCLOG_ENDGC)
+ #   if TRACK_NUM_OBJECTS_MARKED
+       if (isWholeHeapGC) {
+@@ -2772,6 +3090,7 @@
+       fflush(gclog);
+     }
+ #endif
++#endif
+ 
+   if (PRINT_STDOUT_ON_GC) { fprintf(stdout, "                              endgc\n"); fflush(stdout); }
+ 
+@@ -2791,6 +3110,7 @@
+     gcglobals.subheap_ticks += __foster_getticks_elapsed(t0, t1);
+ #endif
+ 
++#if 0
+     if (unstick_next_coll) active_space->next_collection_sticky = false;
+ 
+     if (was_sticky_collection && !active_space->next_collection_sticky) {
+@@ -2814,6 +3134,7 @@
+       }
+       return need_immediate_recollection;
+     }
++#endif
+     return false;
+   }
+ 
+@@ -2933,10 +3254,10 @@
+       //   * Allocation in A puts an arbitrary bit pattern in B's referent
+       //     (especially the header/typemap)
+       //   * Single-subheap GC of A follows the remset entry for B and goes off the rails.
+-      gcglobals.default_allocator->trim_remset();
+-      for (auto handle : subheap_handles) {
+-        handle->body->trim_remset();
+-      }
++      //gcglobals.default_allocator->trim_remset();
++      //for (auto handle : subheap_handles) {
++      //  handle->body->trim_remset();
++      //}
+ 
+       num_lines_reclaimed += gcglobals.default_allocator->immix_sweep(phase);
+       for (auto handle : subheap_handles) {
+@@ -2976,13 +3297,14 @@
+ }
+ 
+ // }}}
++bool is_line_marked(uint8_t* linemap, int i) { return linemap[i] > 0; }
+ 
+ // Invariant: IMMIX_LINES_PER_BLOCK <= 256
+-// Invariant: marked lines have value 1, unmarked are 0.
++// Invariant: marked lines have value >= 1, unmarked are 0.
+ uint8_t count_marked_lines_for_frame15(frame15* f15, uint8_t* linemap_for_frame) {
+   uint8_t count = 0; // Note: Clang compiles this to straight-line code using vector ops.
+   if (frame15_is_marked(f15)) { // TODO-X
+-    for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { count += linemap_for_frame[i]; }
++    for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { count += is_line_marked(linemap_for_frame, i); }
+   }
+   return count;
+ }
+@@ -2996,11 +3318,12 @@
+ 
+ uint8_t count_holes_in_linemap_for_frame15(uint8_t* linemap_for_frame) {
+   uint8_t numTransitions = 0;
+-  uint8_t currentState = linemap_for_frame[0];
++  bool currentState = is_line_marked(linemap_for_frame, 0);
+   for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) {
+-    if (linemap_for_frame[i] != currentState) {
++    bool newState = is_line_marked(linemap_for_frame, i);
++    if (newState != currentState) {
+       ++numTransitions;
+-      currentState = linemap_for_frame[i];
++      currentState = newState;
+     }
+   }
+ 
+@@ -3263,14 +3586,14 @@
+ 
+   int unmarked_line_from(uint8_t* linemap, int start) {
+       for (int i = start; i < (IMMIX_LINES_PER_BLOCK - 1); ++i) {
+-        if (linemap[i] == 0) return i;
++        if (!is_line_marked(linemap, i)) return i;
+       }
+       return -1;
+   }
+ 
+   int first_marked_line_after(uint8_t* linemap, int start) {
+       for (int i = start + 1; i < IMMIX_LINES_PER_BLOCK; ++i) {
+-        if (linemap[i] != 0) return i;
++        if (is_line_marked(linemap, i)) return i;
+       }
+       return IMMIX_LINES_PER_BLOCK;
+   }
+@@ -3280,8 +3603,8 @@
+ 
+     frame15* f = defrag_reserve.try_get_frame15_for_defrag();
+     if (!f) {
+-      // Make sure we short-circuit further attempts to defrag.
+-      gcglobals.evac_threshold = 0;
++      // Make sure we short-circuit further attempts to defrag in this cycle.
++      gcglobals.evac_disabled = true;
+       return false;
+     } else {
+       tracking.add_frame15(f);
+@@ -3306,6 +3629,14 @@
+     return newbody;
+   }
+ 
++  heap_cell* defrag_copy_cell_rc(heap_cell* cell, typemap* map, int64_t cell_size) {
++    tidy* newbody = helpers::allocate_cell_prechecked(&small_bumper, map, cell_size, common.prevent_const_prop());
++    heap_cell* mcell = heap_cell::for_tidy(newbody);
++    memcpy(mcell, cell, cell_size);
++    cell->set_forwarded_body(newbody);
++    return mcell;
++  }
++
+   // Quick benchmark suggests we can use the line-mark map
+   // to skip full blocks at a rate of 3 microseconds per 2 MB.
+   // Use of SIMD could probably reduce that to ~100 ns per MB.
+@@ -3494,6 +3825,7 @@
+ 
+     clocktimer<false> insp_ct; insp_ct.start();
+     tracking.iter_frame15( [&](frame15* f15) {
++      //show_linemap_for_frame15(frame15_id_of(f15));
+       int reclaimed = this->inspect_frame15_postgc(frame15_id_of(f15), f15);
+       num_lines_reclaimed += reclaimed;
+       return reclaimed;
+@@ -3519,6 +3851,8 @@
+ 
+     bool was_sticky = this->next_collection_sticky;
+ 
++    const double target_yield_rate = 0.02;
++
+     if (this == gcglobals.default_allocator) {
+       // If we see signs that we're running out of space, discard sticky bits to get more space next time.
+       // High survival rates mean both less room to run until the next collection,
+@@ -3527,13 +3861,13 @@
+         fprintf(gclog, "Scheduling a non-sticky collection because our yield percentage (%.1f) was below our threshold (%.1f).\n",
+             yield_percentage, gcglobals.yield_percentage_threshold);
+       }
+-      else if (yield_rate <= 0.02) {
++      else if (yield_rate <= target_yield_rate) {
+         fprintf(gclog, "Scheduling a non-sticky collection because our upcoming nursery percentage (%.1f) was below 2%%.\n",
+             100.0 * yield_rate);
+       }
+       this->next_collection_sticky = (!__foster_globals.disable_sticky)
+                                       && (yield_percentage > gcglobals.yield_percentage_threshold)
+-                                      && (yield_rate > 0.02);
++                                      && (yield_rate > target_yield_rate);
+     }
+ 
+ #if ((GCLOG_DETAIL > 1) && ENABLE_GCLOG_ENDGC) || 1
+@@ -3734,6 +4068,32 @@
+     generational_remset.insert((tori**)slot);
+   }
+ 
++  void rc_log_arr(void** slot, void* oldval) {
++    // We don't log the array object because we don't bother recording
++    // all the array entries (but we do elide RC ops for new arrays).
++
++    gcglobals.arrbuf.push_back(slot);
++    if (is_rc_able(oldval)) {
++      gcglobals.decbuf.push_back(oldval);
++    }
++  }
++
++  void rc_log_object(heap_cell* cell) {
++    //fprintf(gclog, "rc_log_object(%p)\n", cell);
++    cell->set_header_logged();
++
++    // TODO trigger collection if mutation log grows too big.
++    gcglobals.incbuf.push_back(cell);
++
++    for_each_child_slot(cell, [](intr* slot) {
++      void* value = *(void**)slot;
++      if (is_rc_able(value)) {
++        //fprintf(gclog, "rc_log_object(%p) recorded field[%d] value %p at offset %d\n", cell, i, value, map->offsets[i]);
++        gcglobals.decbuf.push_back(value);
++      }
++    });
++  }
++
+ public:
+   immix_common common;
+ 
+@@ -3763,6 +4123,28 @@
+   // immix_space_end
+ };
+ 
++// Precondition: cell is in a small/medium frame and marked new.
++heap_cell* try_opportunistic_evacuation_rc(heap_cell* cell) {
++  // Cycle collection has different criteria for evacuating, such as
++  // fragmentation information collected from previous collections,
++  // because it deals with old objects.
++  if (gcglobals.evac_disabled) return nullptr;
++
++  auto space = (immix_space*) heap_for(cell); // This cast is justified by our smallmedium precondition.
++
++  heap_array* arr = NULL; const typemap* map = NULL; int64_t cell_size;
++  get_cell_metadata(cell, arr, map, cell_size);
++
++  if (space->can_alloc_for_defrag(cell_size)) {
++    return space->defrag_copy_cell_rc(cell, (typemap*)map, cell_size);
++  } else {
++    fprintf(gclog, "RC unable to continue opportunistic evacuation...\n");
++    gcglobals.evac_disabled = true;
++    return nullptr;
++  }
++}
++
++
+ void process_worklist(immix_heap* active_space, immix_common* common) {
+   switch (gcglobals.condemned_set.status) {
+     case condemned_set_status::single_subheap_condemned:
+@@ -3819,7 +4201,7 @@
+     } else if (obj_is_marked(obj)) {
+       // Skip marked objects.
+     } else {
+-      common.immix_trace<condemned_status>(target, root, obj);
++      common.immix_trace<condemned_status, true>(target, root, obj);
+     }
+   }
+   initialize();
+@@ -3827,14 +4209,16 @@
+ 
+ template <condemned_set_status condemned_portion>
+ bool should_opportunistically_evacuate(immix_heap* space, heap_cell* obj) {
+-  if (condemned_portion != condemned_set_status::whole_heap_condemned) return false;
++  if (!(condemned_portion == condemned_set_status::whole_heap_condemned)
++    || (condemned_portion == condemned_set_status::single_subheap_condemned)) return false;
+ 
+   auto f15info = frame15_info_for((void*) obj);
+   bool want_to_opportunistically_evacuate =
+-             gcglobals.evac_threshold > 0
++           (!gcglobals.evac_disabled)
+           && space == gcglobals.default_allocator
+           && f15info->num_holes_at_last_full_collection >= gcglobals.evac_threshold
+-          && f15info->frame_classification == frame15kind::immix_smallmedium;
++          //&& f15info->frame_classification == frame15kind::immix_smallmedium;
++          ;
+ 
+   if (want_to_opportunistically_evacuate) {
+     heap_array* arr; const typemap* map; int64_t cell_size;
+@@ -3960,7 +4344,7 @@
+       void*  rootaddr = (off <= 0) ? offset(fp, off)
+                                    : offset(sp, off);
+ 
+-      if (!non_markable_addr(*(void**)rootaddr)) {
++      if (!non_markable_addr(*(void**)rootaddr)) { // TODO filter rcable?
+         immix_worklist.add_root((unchecked_ptr*) rootaddr);
+       }
+     }
+@@ -4104,6 +4488,8 @@
+ 
+   pages_boot();
+ 
++  gcglobals.defrag_reserved_fraction = __foster_globals.rc_reserved_fraction;
++
+   global_frame15_allocator.set_heap_size(gSEMISPACE_SIZE());
+   gcglobals.allocator = new immix_space();
+   gcglobals.default_allocator = gcglobals.allocator;
+@@ -4149,6 +4535,7 @@
+   gcglobals.evac_threshold = 0;
+   gcglobals.yield_percentage_threshold = __foster_globals.sticky_base_threshold;
+   gcglobals.last_full_gc_fragmentation_percentage = 0.0;
++  gcglobals.evac_disabled = false;
+ 
+   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_frames);
+   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_roots);
+@@ -4685,6 +5072,7 @@
+   hv->remember_into(slot);
+ }
+ 
++#if 0
+ // TODO implement and test per-instance customized barriers.
+ __attribute__((noinline)) // this attribute will be removed once the barrier optimizer runs.
+ void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot, uint8_t gen, uint8_t subheap) {
+@@ -4707,6 +5095,57 @@
+     foster_write_barrier_with_obj_fullpath(val, obj, slot);
+   }
+ }
++#endif
++
++__attribute__((noinline))
++void foster_refcounting_write_barrier_arr_slowpath(void** slot, void* oldval) {
++  ((immix_space*)gcglobals.default_allocator)->rc_log_arr(slot, oldval);
++  if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1g_hits; }
++}
++
++__attribute__((noinline))
++void foster_refcounting_write_barrier_slowpath(void* obj) {
++  auto cell = heap_cell::for_tidy((tidy*) obj);
++  //fprintf(gclog, "remembering slot %p, currently updated to contain val %p\n", slot, val);
++  ((immix_space*)gcglobals.default_allocator)->rc_log_object(cell);
++  //if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1g_hits; }
++}
++
++__attribute__((noinline)) // this attribute will be removed once the barrier optimizer runs.
++void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot, uint8_t arr, uint8_t gen, uint8_t subheap) {
++  //if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
++
++  if (!non_markable_addr(val)) {
++    uint64_t obj_header = heap_cell::for_tidy((tidy*) obj)->raw_header();
++    if (arr) {
++      if (header_is_old(obj_header)) {
++        foster_refcounting_write_barrier_arr_slowpath(slot, *slot);
++      }
++    } else {
++      if (header_is_old_and_unlogged(obj_header)) {
++      //if (!header_is_logged(obj_header)) { // only valid when not forcing initialization barriers
++        if (gen) { foster_refcounting_write_barrier_slowpath(obj); }
++      }
++    }
++  /*
++    uint64_t obj_header = heap_cell::for_tidy((tidy*) obj)->raw_header();
++    uint64_t val_header = heap_cell::for_tidy((tidy*) val)->raw_header();
++
++    if ( (space_id_of_header(val_header)
++      == space_id_of_header(obj_header))) {
++
++      if (!header_is_logged(obj_header)) {
++        foster_refcounting_write_barrier_slowpath(obj);
++      }
++    } else {
++      foster_write_barrier_with_obj_fullpath(val, obj, slot);
++    }
++  */
++
++  }
++  *slot = val;
++}
++
+ 
+ // We need a degree of separation between the possibly-moving
+ // traced immix heap, which does not currently support finalizers/destructors,
+diff --git a/runtime/gc/foster_gc_utils.h b/runtime/gc/foster_gc_utils.h
+--- a/runtime/gc/foster_gc_utils.h
++++ b/runtime/gc/foster_gc_utils.h
+@@ -108,11 +108,17 @@
+ 
+ inline bool header_is_young(uint64_t header) { return (header & HEADER_MARK_BITS) == 0; }
+ 
+-inline bool header_is_old(uint64_t header) { return flex_bits_of_header(header) >= 128; }
+-inline bool header_is_new(uint64_t header) { return flex_bits_of_header(header)  < 128; }
++//inline bool header_is_old(uint64_t header) { return flex_bits_of_header(header) >= 128; }
++//inline bool header_is_new(uint64_t header) { return flex_bits_of_header(header)  < 128; }
+ 
+-// New objects do not have RC operations applied,
+-// so we only see non-zero reference counts when the old bit is set.
++inline bool header_is_new(uint64_t header) { return header_is_young(header); }
++inline bool header_is_old(uint64_t header) { return !header_is_new(header); }
++
++inline bool header_is_logged(uint64_t header) { return (header & FORWARDED_BIT) != 0; }
++//inline bool header_is_old_and_unlogged(uint64_t header) { return (uint32_t(header) & 0x80000002) == 0x80000000; }
++inline bool header_is_old_and_unlogged(uint64_t header) { return (header & 3) == 1; }
++
++inline bool rc_is_zero(uint64_t header) { return flex_bits_of_header(header) == 0; }
+ inline bool hit_max_rc(uint64_t header) { return flex_bits_of_header(header) == 255; }
+ 
+ inline HEAP_CELL_HEADER_TYPE build_header(const typemap* data, uint32_t space_id) {
+@@ -132,6 +138,18 @@
+ 
+   void mark_not_young() { header |= HEADER_MARK_BITS;  }
+ 
++  void reset_rc_to_zero() { header &= ~HEAP_CELL_HEADER_TYPE(0xFF << 24); }
++  void set_header_old_with_rc1() { header |= (HEADER_MARK_BITS | (1 << 24)); }
++  void set_header_logged() { header |= FORWARDED_BIT; }
++  void toggle_logged_bit() { header ^= FORWARDED_BIT; }
++
++  void inc_rc_by(HEAP_CELL_HEADER_TYPE n) { header = header + (n << 24); }
++  void inc_rc_mb(HEAP_CELL_HEADER_TYPE n) { if (!hit_max_rc(header)) { header = header + (n << 24); } }
++  bool dec_rc_by(HEAP_CELL_HEADER_TYPE n) { header = header - (n << 24); return rc_is_zero(header); }
++  uint8_t get_rc() { return flex_bits_of_header(header) & 0x7F; }
++
++  void clear_logged_bit() { header &= ~(FORWARDED_BIT); }
++
+   // Precondition: not forwarded
+   const typemap* get_meta() { return typemap_of_header(raw_header()); }
+ 
+@@ -141,6 +159,10 @@
+ 
+   bool is_marked_inline() { return (header & HEADER_MARK_BITS) != 0; }
+ 
++  bool is_new_and_forwarded() {
++    auto mask = (FORWARDED_BIT | HEADER_MARK_BITS);
++    return (header & mask) == FORWARDED_BIT;
++  }
+   bool is_forwarded() { return (header & FORWARDED_BIT) != 0; }
+   void set_forwarded_body(tidy* newbody) {
+     header = HEAP_CELL_HEADER_TYPE(newbody) | FORWARDED_BIT;

@@ -1,0 +1,17 @@
+# HG changeset patch
+# Parent  43ef2f94df6b935f5a7034733607cc87853bcf01
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -3838,8 +3838,10 @@
+   */
+ }
+ 
++int n_gc_reads = 0;
+ extern "C" void foster__trace_gcread(void** slot) {
+   fprintf(gclog, "        gcread: %p -> %p\n", slot, *slot);
++  if (++n_gc_reads > 78059) { exit(2); }
+ }
+ 
+ extern "C" void foster__trace_bb(const char* fnname, const char* bbname) {

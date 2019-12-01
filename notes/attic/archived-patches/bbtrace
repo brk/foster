@@ -1,0 +1,171 @@
+# HG changeset patch
+# Parent  147391ba9f674781729b252199c81a2b40e9cde2
+Add a dead-simple basic block tracer.
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -472,6 +472,7 @@
+   compiler/llvm/passes/CallingConventionChecker.cpp
+   compiler/llvm/passes/TimerCheckerInsertion.cpp
+   compiler/llvm/passes/BitcastLoadRecognizer.cpp
++  compiler/llvm/passes/BasicBlockTracer.cpp
+   compiler/llvm/passes/FosterPasses.cpp
+   compiler/llvm/plugins/FosterGC.cpp
+ )
+diff --git a/compiler/fosteroptc.cpp b/compiler/fosteroptc.cpp
+--- a/compiler/fosteroptc.cpp
++++ b/compiler/fosteroptc.cpp
+@@ -457,6 +457,8 @@
+     passes.add(llvm::createVerifierPass());
+   }
+ 
++  passes.add(foster::createBasicBlockTracerPass());
++
+   foster::runFunctionPassesOverModule(fpasses, mod);
+   passes.run(*mod);
+ }
+diff --git a/compiler/llvm/passes/BasicBlockTracer.cpp b/compiler/llvm/passes/BasicBlockTracer.cpp
+new file mode 100644
+--- /dev/null
++++ b/compiler/llvm/passes/BasicBlockTracer.cpp
+@@ -0,0 +1,95 @@
++// Copyright (c) 2019 Ben Karel. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
++
++#define DEBUG_TYPE "foster-basic-block-tracer"
++
++#include "llvm/Pass.h"
++#include "llvm/IR/Function.h"
++#include "llvm/IR/LLVMContext.h"
++#include "llvm/IR/Instructions.h"
++#include "llvm/IR/IRBuilder.h"
++#include "llvm/Support/raw_ostream.h"
++#include "llvm/IR/PatternMatch.h"
++#include "llvm/ADT/StringSwitch.h"
++#include "llvm/ADT/Statistic.h"
++
++#include "base/GenericGraph.h"
++#include "base/LLVMUtils.h"
++
++#include <set>
++#include <map>
++#include <vector>
++
++using namespace llvm;
++using namespace llvm::PatternMatch;
++using std::vector;
++
++
++struct BasicBlockTracer : public ModulePass {
++  static char ID;
++  std::map<std::string, llvm::Value*> names;
++  llvm::Function* bbTraceFn;
++  llvm::IRBuilder<>* builder;
++
++  BasicBlockTracer() : ModulePass(ID) {}
++
++  llvm::StringRef getPassName() const { return "BasicBlockTracer"; }
++
++  virtual bool doInitialization(Module& M) {
++    builder = new IRBuilder<>(M.getContext());
++    bbTraceFn = M.getFunction("foster__trace_bb");
++    return true;
++  }
++
++
++
++  llvm::Value* getName(const std::string& name) {
++    llvm::Value* rv = names[name];
++    if (!rv) {
++      rv = builder->CreateGlobalStringPtr(name);
++      names[name] = rv;
++    }
++
++    return rv;
++  }
++
++  bool shouldSkip(const llvm::Function& fn) {
++    if (!fn.hasGC()) return true;
++    if (fn.getName() == "foster__runtime__main__wrapper") return true;
++    
++    return false;
++  } 
++
++  virtual bool runOnModule(Module& M) {
++    if (!bbTraceFn) return false;
++
++    for (auto& F : M) {
++      if (shouldSkip(F)) continue;
++
++      for (auto& BB : F) {
++        builder->SetInsertPoint(&*BB.getFirstInsertionPt());
++        auto ci = builder->CreateCall(bbTraceFn,
++                            { getName(BB.getParent()->getName()), getName(BB.getName()) });
++        (void) ci;
++      }
++    }
++    return true;
++  }
++};
++
++char BasicBlockTracer::ID = 0;
++
++namespace llvm {
++  void initializeBasicBlockTracerPass(llvm::PassRegistry&);
++}
++
++INITIALIZE_PASS(BasicBlockTracer, "foster-basic-block-tracer",
++                "Add instrumentation to generate a trace of visited basic blocks",
++                true, false);
++
++namespace foster {
++
++Pass* createBasicBlockTracerPass() { return new BasicBlockTracer(); }
++
++}
+diff --git a/compiler/llvm/passes/FosterPasses.h b/compiler/llvm/passes/FosterPasses.h
+--- a/compiler/llvm/passes/FosterPasses.h
++++ b/compiler/llvm/passes/FosterPasses.h
+@@ -16,6 +16,7 @@
+ void runCleanupPasses(llvm::Module& mod, bool noBarrierOpt);
+ void runWarningPasses(llvm::Module& mod);
+ 
++llvm::Pass* createBasicBlockTracerPass();
+ llvm::Pass* createGCMallocFinderPass();
+ llvm::Pass* createGCBarrierOptimizerPass();
+ llvm::Pass* createGCRootSafetyCheckerPass();
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -4242,6 +4243,10 @@
+ extern "C" void foster__inspect_ptr__autowrap(void* ptr) {
+   inspect_ptr_for_debugging_purposes(ptr);
+ }
++
++extern "C" void foster__trace_bb(const char* fnname, const char* bbname) {
++  fprintf(gclog, "        %s: %s\n", fnname, bbname);
++}
+ // }}}
+ 
+ // {{{ Pointer classification utilities
+diff --git a/runtime/libfoster.cpp b/runtime/libfoster.cpp
+--- a/runtime/libfoster.cpp
++++ b/runtime/libfoster.cpp
+@@ -643,6 +643,7 @@
+ extern "C" int foster__main();
+ extern "C" void foster_coro_delete_self_reference(void* vc);
+ extern "C" void foster_write_barrier_generic(void* ptr, void** slot);
++extern "C" void foster__trace_bb(const char* fnname, const char* bbname);
+ 
+ int foster__runtime__main__wrapper(int argc, char** argv) {
+   bool tru = opaquely_i32(0) == 0;
+@@ -654,6 +655,7 @@
+     // kung-fu grip to prevent LTO from being too mean.
+     foster_coro_delete_self_reference((void*)&foster__gcmaps);
+     printf("%p\n", &foster_write_barrier_generic);
++    printf("%p\n", &foster__trace_bb);
+   }
+ 
+   return foster::runtime::cleanup();

@@ -1,0 +1,721 @@
+# HG changeset patch
+# Parent  3a3944a7622bd96ffa475ed01432c6d8036e347f
+Reset object marks lazily, out of line.
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -238,7 +238,7 @@
+ 
+   bool contains(void* slot) const { return slot > base && distance(base, slot) < size_in_bytes(); }
+ 
+-  void clear_line_and_object_mark_bits();
++  void clear_line_and_object_mark_bits(mark_t flipped);
+ };
+ 
+ struct byte_limit {
+@@ -271,9 +271,11 @@
+ 
+ class heap {
+ public:
++  mark_t active_mark;
++
+   virtual ~heap() {}
+ 
+-  virtual uint32_t hash_for_object_headers() { return fold_64_to_32(uint64_t(this)); }
++  uint32_t hash_for_object_headers() { return fold_64_to_32(uint64_t(this)); }
+ 
+   virtual tidy* tidy_for(tori* t) = 0;
+ 
+@@ -474,6 +476,7 @@
+   int num_gcs_triggered_involuntarily;
+   int num_big_stackwalks;
+   double subheap_ticks;
++  double resetting_ticks;
+ 
+   uint64_t num_allocations;
+   uint64_t num_alloc_bytes;
+@@ -610,26 +613,36 @@
+ void set_associated_for_frame15_id(frame15_id fid, void* v) {
+   gcglobals.lazy_mapped_frame15info[fid].associated = v;
+ }
+-
+-inline bool obj_is_marked_with(heap_cell* obj, mark_t value) {
++frame15kind frame15_classification(void* addr);
++
++inline uint8_t get_obj_mark_value(void* obj) {
++  /*
++  if (frame15_classification(obj) != frame15kind::unknown) {
++    return heap_cell::for_tidy((tidy*) obj)->mark_value();
++  }
++  */
++
+   if (MARK_OBJECT_WITH_BITS) {
+-    return bitmap::get_bit(global_granule_for(obj), gcglobals.lazy_mapped_granule_marks) == value.val;
++    return bitmap::get_bit(global_granule_for(obj), gcglobals.lazy_mapped_granule_marks);
+   } else {
+     uint8_t* markbyte = &gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)];
+-    return *markbyte == value.val;
++    return *markbyte;
+   }
+ }
+-inline bool obj_is_marked(heap_cell* obj) { return obj_is_marked_with(obj, make_mark_t(1)); }
+-inline bool arr_is_marked(heap_array* obj) { return obj_is_marked((heap_cell*)obj); }
+-
+-inline bool obj_in_space_is_marked(immix_heap* space, heap_cell* obj) {
+-  return obj_is_marked(obj);
++inline bool obj_is_marked_with(void* obj, mark_t value) {
++  return get_obj_mark_value(obj) == value.val;
+ }
+ 
+-frame15kind frame15_classification(void* addr);
+ immix_heap* heap_for(void* val);
+ 
+ inline void do_mark_obj_with(void* obj, mark_t value) {
++  /*
++  if (frame15_classification(obj) != frame15kind::unknown) {
++    heap_cell::for_tidy((tidy*) obj)->set_mark_value(value);
++    return;
++  }
++  */
++
+   if (GCLOG_DETAIL > 3) { fprintf(gclog, "setting granule bit  for object %p in frame %u\n", obj, frame15_id_of(obj)); }
+   if (MARK_OBJECT_WITH_BITS) {
+     bitmap::set_bit_to(global_granule_for(obj), value.val, gcglobals.lazy_mapped_granule_marks);
+@@ -638,9 +651,11 @@
+   }
+ }
+ 
+-inline void do_mark_obj(heap_cell* obj) { do_mark_obj_with(obj, make_mark_t(1)); }
+-inline void do_unmark_granule(void* obj) { do_mark_obj_with(obj, make_mark_t(0)); }
+-
++inline void flip_obj_mark(void* obj) {
++  do_mark_obj_with(obj, invert_mark(make_mark_t(get_obj_mark_value(obj))));
++}
++
++#if 0
+ void set_object_mark_bits_for_frame15(void* f15, mark_t value) {
+   if (GCLOG_DETAIL > 2) { fprintf(gclog, "clearing granule bits for frame %p (%u)\n", f15, frame15_id_of(f15)); }
+   if (MARK_OBJECT_WITH_BITS) {
+@@ -649,8 +664,7 @@
+     memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)], value.val, IMMIX_GRANULES_PER_BLOCK);
+   }
+ }
+-
+-void clear_object_mark_bits_for_frame15(void* f15) { set_object_mark_bits_for_frame15(f15, make_mark_t(0)); }
++#endif
+ 
+ void set_object_mark_bits_for_frame15(void* f15, int startline, int numlines, mark_t value) {
+   uintptr_t granule = global_granule_for(offset(f15, startline * IMMIX_BYTES_PER_LINE));
+@@ -661,19 +675,9 @@
+     memset(&gcglobals.lazy_mapped_granule_marks[granule],     value.val, (numlines * IMMIX_GRANULES_PER_LINE));
+   }
+ }
+-void clear_object_mark_bits_for_frame15(void* f15, int startline, int numlines) {
+-  set_object_mark_bits_for_frame15(f15, startline, numlines, make_mark_t(0));
+-}
+-
+-
+-bool line_is_marked_with(  int line, mark_t* linemap, mark_t value) { return linemap[line].val == value.val; }
+-bool line_is_marked(  int line, mark_t* linemap) { return line_is_marked_with(line, linemap, make_mark_t(1)); }
+-//bool line_is_unmarked(int line, mark_t* linemap) { return line_is_marked_with(line, linemap, 0); }
+-bool line_is_unmarked(int line, mark_t* linemap) { return !line_is_marked_with(line, linemap, make_mark_t(1)); }
+-
+-void do_mark_line_with(int line, mark_t* linemap, mark_t value) { linemap[line].val = value.val; }
+-void do_mark_line(  int line, mark_t* linemap) { do_mark_line_with(line, linemap, make_mark_t(1)); }
+-void do_unmark_line(int line, mark_t* linemap) { do_mark_line_with(line, linemap, make_mark_t(0)); }
++
++bool line_is_marked_with(int line, mark_t* linemap, mark_t value) { return linemap[line].val == value.val; }
++void do_mark_line_with(  int line, mark_t* linemap, mark_t value) {        linemap[line].val  = value.val; }
+ 
+ //static_assert(sizeof(frame15info) == 16, "expect frame15info to be two words");
+ 
+@@ -701,11 +705,12 @@
+                        immix_heap* parent) {
+     void* base = malloc(total_bytes + 8);
+     heap_array* allot = align_as_array(base);
++    do_mark_obj_with(allot, invert_mark(parent->active_mark));
+ 
+     if (GC_ASSERTIONS) { gc_assert(frame15_id_of(allot) == frame15_id_of(allot->body_addr()), "large array: metadata and body address on different frames!"); }
+     if (DEBUG_INITIALIZE_ALLOCATIONS ||
+       (init && !ELIDE_INITIALIZE_ALLOCATIONS)) { memset((void*) base, 0x00, total_bytes + 8); }
+-    allot->set_header(arr_elt_map, 0);
++    allot->set_header(arr_elt_map, 0); // TODO
+     allot->set_num_elts(num_elts);
+     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
+     if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
+@@ -783,8 +788,10 @@
+     while (it != allocated.end()) {
+       void* base = *it;
+       heap_array* arr = align_as_array(base);
+-      if (arr_is_marked(arr)) {
+-        do_unmark_granule(arr);
++      fprintf(gclog, "arr: %p in heap %p\n", arr, heap_for(arr)); fflush(gclog);
++      mark_t active_mark = heap_for(arr)->active_mark;
++      if (obj_is_marked_with(arr, active_mark)) {
++        do_mark_obj_with(arr, invert_mark(active_mark));
+         ++it;
+       } else { // unmarked, can free associated array.
+         if (GCLOG_DETAIL > 1) { fprintf(gclog, "freeing unmarked array %p\n", arr); }
+@@ -871,7 +878,7 @@
+ 
+ // {{{
+ // {{{ Function prototype decls
+-bool line_for_slot_is_marked(void* slot);
++bool line_for_slot_is_marked_with(void* slot, mark_t active);
+ void inspect_typemap(const typemap* ti);
+ uint64_t visitGCRoots(void* start_frame, immix_heap* visitor);
+ void coro_visitGCRoots(foster_bare_coro* coro, immix_heap* visitor);
+@@ -898,8 +905,10 @@
+                                   int64_t  num_elts,
+                                   int64_t  total_bytes,
+                                   uint32_t space_id,
+-                                  bool     init) {
++                                  bool     init,
++                                  mark_t   m) {
+     heap_array* allot = static_cast<heap_array*>(bumper->prechecked_alloc_noinit(total_bytes));
++    do_mark_obj_with(allot, m);
+ 
+     if (GC_ASSERTIONS) { gc_assert(frame15_id_of(allot) == frame15_id_of(allot->body_addr()), "pre array: metadata and body address on different frames!"); }
+     if (DEBUG_INITIALIZE_ALLOCATIONS ||
+@@ -920,11 +929,12 @@
+       //obj_limit.set_bit(granule + num_granules(total_bytes));
+     }
+ 
+-
+-    if (GC_ASSERTIONS && line_for_slot_is_marked(allot)) {
++#if 0
++    if (GC_ASSERTIONS && line_for_slot_is_marked_with(allot, ...)) {
+       fprintf(gclog, "INVARIANT VIOLATED: allocating array on a pre-marked line?!?\n");
+       exit(4);
+     }
++#endif
+ 
+     if (GCLOG_DETAIL > 3) {
+       fprintf(gclog, "allocating array (%p, body %p) in line %d of frame %u, total bytes %zd, alloc #%zd\n",
+@@ -945,8 +955,10 @@
+   tidy* allocate_cell_prechecked(bump_allocator* bumper,
+                                  const typemap* map,
+                                  int64_t  cell_size,
++                                 mark_t   m,
+                                  uint32_t space_id) {
+     heap_cell* allot = static_cast<heap_cell*>(bumper->prechecked_alloc(cell_size));
++    do_mark_obj_with(allot, m);
+ 
+     if (GC_ASSERTIONS) { gc_assert(frame15_id_of(allot) == frame15_id_of(allot->body_addr()), "cell prechecked: metadata and body address on different frames!"); }
+     //if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(map->cell_size); }
+@@ -963,6 +975,7 @@
+       //obj_start.set_bit(granule);
+     }
+ 
++#if 0
+     if (GC_ASSERTIONS && line_for_slot_is_marked(allot)) {
+       fprintf(gclog, "INVARIANT VIOLATED: allocating cell (%p) on a pre-marked line?!?\n", allot);
+       exit(4);
+@@ -971,12 +984,13 @@
+       fprintf(gclog, "INVARIANT VIOLATED: allocating cell (%p)      pre-marked     ?!?\n", allot);
+       exit(4);
+     }
++#endif
+ 
+     return allot->body_addr();
+   }
+ 
+   bool remset_entry_is_externally_stale(tori** slot) {
+-    return !line_for_slot_is_marked(slot);
++    return !line_for_slot_is_marked_with(slot, make_mark_t(1));
+   }
+ 
+   bool remset_entry_is_internally_stale(tori** slot) {
+@@ -991,13 +1005,14 @@
+       ptr, line_for_slot_is_marked(ptr ),
+            line_for_slot_is_marked(cell), obj_is_marked(cell)); fflush(gclog);
+            */
+-    if (!obj_is_marked(cell)) { return true; }
++    if (!obj_is_marked_with(cell, heap_for(cell)->active_mark)) { return true; }
+     // TODO check to make sure that the space ownership hasn't changed?
+     return false;
+   }
+ 
+   // Precondition: line marks have been established and not yet cleared.
+   bool remset_entry_is_externally_or_internally_stale(tori** slot) {
++    fprintf(gclog, "checking remset entries\n");
+     if (remset_entry_is_externally_stale(slot)) { return true; }
+     return remset_entry_is_internally_stale(slot);
+   }
+@@ -1331,7 +1346,7 @@
+   } else return !UNSAFE_ASSUME_F21_UNMARKED;
+ }
+ 
+-void used_linegroup::clear_line_and_object_mark_bits() {
++void used_linegroup::clear_line_and_object_mark_bits(mark_t flipped) {
+   mark_t* linemap = linemap_for_frame15_id(associated_frame15_id());
+   auto lineframe = associated_lineframe();
+ 
+@@ -1348,12 +1363,12 @@
+   // Note: must clear only our bits, since those of other groups may not yet have been inspected.
+   for (int i = startline(); i < endline(); ++i) {
+     //fprintf(gclog, "clearing linemap entry %d for (%u), linemap addr: %p\n", i, associated_frame15_id(), &linemap[i]);  fflush(gclog);
+-    do_unmark_line(i, linemap);
++    do_mark_line_with(i, linemap, flipped);
+   }
+   gc_assert(startline() >= 0, "invalid startline when clearing bits");
+   gc_assert(endline() <= IMMIX_LINES_PER_BLOCK, "invalid endline when clearing bits");
+   gc_assert(startline() < endline(), "invalid: startline after endline when clearing bits");
+-  clear_object_mark_bits_for_frame15(lineframe, startline(), (endline() - startline()) + 1);
++  set_object_mark_bits_for_frame15(lineframe, startline(), (endline() - startline()) + 1, flipped);
+ }
+ 
+ // {{{ metadata helpers
+@@ -1413,22 +1428,24 @@
+ 
+ // {{{
+ 
++#if 0
+ void mark_line_for_slot(void* slot) {
+   auto mdb = metadata_block_for_frame15_id(frame15_id_of(slot));
+   mark_t* linemap = &mdb->linemap[0][0];
+   do_mark_line(line_offset_within_f21(slot), linemap);
+ }
++#endif
+ 
+ // Precondition: slot is located in a markable frame.
+-bool line_for_slot_is_marked(void* slot) {
++bool line_for_slot_is_marked_with(void* slot, mark_t active_mark) {
+   auto mdb = metadata_block_for_frame15_id(frame15_id_of(slot));
+   mark_t* linemap = &mdb->linemap[0][0];
+-  return line_is_marked(line_offset_within_f21(slot), linemap);
++  return line_is_marked_with(line_offset_within_f21(slot), linemap, active_mark);
+ }
+ 
+ // Precondition: slot in small/medium/linemap frame,
+ // therefore slot and lastslot guaranteed to be in the same frame.
+-void mark_lines_for_slots(void* slot, uint64_t cell_size) {
++void mark_lines_for_slots_with(void* slot, uint64_t cell_size, mark_t active_mark) {
+   auto mdb = metadata_block_for_frame15_id(frame15_id_of(slot));
+   mark_t* linemap = &mdb->linemap[0][0];
+ 
+@@ -1442,9 +1459,9 @@
+ 
+   if (GCLOG_DETAIL > 3) { fprintf(gclog, "marking lines %lu - %lu for slot %p of size %zd\n", firstoff, lastoff, slot, cell_size); }
+ 
+-  linemap[firstoff] = make_mark_t(1);
++  linemap[firstoff] = active_mark;
+   // Exact marking for small objects
+-  linemap[lastoff] = make_mark_t(1);
++  linemap[lastoff] = active_mark;
+ 
+   // Interestingly, this gets *slower* if we remove the line above!
+   // Why? Without it, Clang is smart enough to recognize a memset-like loop,
+@@ -1453,7 +1470,7 @@
+ 
+   // Mark intermediate lines if necessary.
+   while (++firstoff < lastoff) {
+-    linemap[firstoff] = make_mark_t(1);
++    linemap[firstoff] = active_mark;
+   }
+ }
+ 
+@@ -1539,7 +1556,7 @@
+     if (GCLOG_DETAIL > 3) {
+       fprintf(gclog, "scanning cell %p for space %p with remaining depth %d\n", cell, space, depth_remaining);
+       fflush(gclog); }
+-    if (obj_in_space_is_marked(space, cell)) {
++    if (obj_is_marked_with(cell, space->active_mark)) {
+       if (GC_ASSERTIONS) {
+         if (gcglobals.marked_in_current_gc.count(cell) == 0) {
+           fprintf(gclog, "GC INVARIANT VIOLATED: cell %p, of frame %u, appears marked before actually being marked!\n", cell, frame15_id_of(cell));
+@@ -1551,11 +1568,13 @@
+       }
+       if (GCLOG_DETAIL > 3) { fprintf(gclog, "cell %p was already marked\n", cell); }
+ 
++#if 0
+       if (GC_ASSERTIONS && is_immix_markable_frame(cell) && !line_for_slot_is_marked(cell)) {
+         fprintf(gclog, "GC INVARIANT VIOLATED: cell %p marked but corresponding line not marked!\n", cell);
+         fflush(gclog);
+         abort();
+       }
++#endif
+       return;
+     }
+ 
+@@ -1568,14 +1587,14 @@
+     get_cell_metadata(cell, arr, map, cell_size);
+ 
+     if (GC_ASSERTIONS) { gcglobals.marked_in_current_gc.insert(cell); }
+-    do_mark_obj(cell);
++    do_mark_obj_with(cell, space->active_mark);
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += cell_size; }
+ 
+     if (frameclass == frame15kind::immix_smallmedium
+      || frameclass == frame15kind::immix_linebased) {
+         void* slot = (void*) cell;
+-        mark_lines_for_slots(slot, cell_size);
++        mark_lines_for_slots_with(slot, cell_size, make_mark_t(1));
+     } else if (frameclass == frame15kind::unknown || frameclass == frame15kind::staticdata) {
+       gcglobals.condemned_set.unframed_and_marked.insert(cell);
+     }
+@@ -2098,18 +2117,19 @@
+ 
+   void* line_allocate_array(immix_line_space* owner, typemap* elt_typeinfo, int64_t n, int64_t req_bytes, bool init) {
+     ensure_sufficient_lines(owner, req_bytes);
+-    return helpers::allocate_array_prechecked(&current_frame->line_bumper, elt_typeinfo, n, req_bytes, 0, init);
++    return helpers::allocate_array_prechecked(&current_frame->line_bumper, elt_typeinfo, n, req_bytes, 0, init,
++                                              invert_mark(((immix_heap*)owner)->active_mark));
+   }
+ 
+   void* line_allocate_cell(immix_line_space* owner, int64_t cell_size, typemap* typeinfo) {
+     ensure_sufficient_lines(owner, cell_size);
+-    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, 0);
++    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, invert_mark(((immix_heap*)owner)->active_mark), 0);
+   }
+ 
+   template <uint64_t cell_size>
+   void* line_allocate_cell_N(immix_line_space* owner, typemap* typeinfo) {
+     ensure_sufficient_lines(owner, cell_size);
+-    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, 0);
++    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, invert_mark(((immix_heap*)owner)->active_mark), 0);
+   }
+ 
+   bool owns(immix_line_frame15* f) { return f == current_frame; }
+@@ -2201,6 +2221,7 @@
+ 
+ public:
+   immix_line_space() : condemned_flag(false) {
++    this->active_mark = make_mark_t(1);
+     if (GCLOG_DETAIL > 2) {
+       fprintf(gclog, "new immix_line_space %p, current byte limit: %zd f15s\n", this,
+           gcglobals.space_limit->frame15s_left);
+@@ -2328,6 +2349,8 @@
+                            clocktimer<false>& gcstart) { // immix_line_sweep / sweep_line_space
+     laa.sweep_arrays();
+ 
++    mark_t flipped = invert_mark(this->active_mark);
++
+     // Split this space's lines into marked and unmarked buckets.
+     std::vector<used_linegroup> used(used_lines);
+     used_lines.clear();
+@@ -2345,7 +2368,7 @@
+       // we append one line at a time, in order, and let the helper do the merging.
+       for (int i = startline; i < endline; ++i) {
+         //fprintf(gclog, "looking at linemap entry %d for (%u)\n", i, usedgroup.associated_frame15_id());
+-        if (linemap[i].val == make_mark_t(1).val) {
++        if (linemap[i].val == 1) {
+           //fprintf(gclog, "immix_sweep for %p: line %d marked\n", usedgroup.base, i);
+           append_linegroup(used_lines, usedgroup.singleton(i - startline));
+         } else {
+@@ -2354,8 +2377,9 @@
+         }
+       }
+ 
+-      usedgroup.clear_line_and_object_mark_bits();
++      usedgroup.clear_line_and_object_mark_bits(flipped);
+     }
++    //this->active_mark = flipped;
+   }
+ 
+ 
+@@ -2795,7 +2819,7 @@
+     // within it become inaccessible.
+     heap_cell* handle_cell = handle->as_cell();
+     auto space = handle->body;
+-    if ((!obj_is_marked(handle_cell)) && space->is_empty()) {
++    if ((!obj_is_marked_with(handle_cell, heap_for(handle_cell)->active_mark)) && space->is_empty()) {
+       //fprintf(gclog, "DELETING SPACE %p\n", space);
+       //delete space;
+     } else {
+@@ -2805,7 +2829,7 @@
+ 
+   // Handles (and other unframed allocations) must be unmarked too.
+   for (auto c : unframed_and_marked) {
+-    do_unmark_granule(c);
++    flip_obj_mark(c);
+   }
+   unframed_and_marked.clear();
+ }
+@@ -2817,18 +2841,25 @@
+ uint8_t count_marked_lines_for_frame15(frame15* f15, mark_t* linemap_for_frame) {
+   uint8_t count = 0; // Note: Clang compiles this to straight-line code using vector ops.
+   if (frame15_is_marked(f15)) { // TODO-X
+-    for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { count += (linemap_for_frame[i].val == make_mark_t(1).val) ? 1 : 0; }
++    for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { count += linemap_for_frame[i].val; }
+   }
+   return count;
+ }
+ 
+-bool no_marked_lines_for_frame15(mark_t* linemap_for_frame) {
++bool no_marked_lines_for_frame15(mark_t* linemap_for_frame, mark_t active_mark) {
+   uint64_t* linemap64 = (uint64_t*) linemap_for_frame;
+-  uint64_t bits = 0; // Note: Clang compiles this to straight-line code using "or"s.
+-  for (int i = 0; i < (IMMIX_LINES_PER_BLOCK / sizeof(*linemap64)); ++i) { bits |= linemap64[i]; }
+-  return bits == 0;
++  if (active_mark.val == 1) {
++    uint64_t bits = 0; // Note: Clang compiles this to straight-line code using "or"s.
++    for (int i = 0; i < (IMMIX_LINES_PER_BLOCK / sizeof(*linemap64)); ++i) { bits |= linemap64[i]; }
++    return bits == 0;
++  } else {
++    uint64_t bits = 0x11111111ULL; // Note: Clang compiles this to straight-line code using "and"s.
++    for (int i = 0; i < (IMMIX_LINES_PER_BLOCK / sizeof(*linemap64)); ++i) { bits &= linemap64[i]; }
++    return bits != 0;
++  }
+ }
+ 
++#if 0
+ uint8_t count_holes_in_linemap_for_frame15(mark_t* linemap_for_frame) {
+   uint8_t numTransitions = 0;
+   mark_t currentState = linemap_for_frame[0];
+@@ -2839,25 +2870,28 @@
+     }
+   }
+ 
++  uint8_t endedOnAMarkedLine = (currentState.val == active_mark.val) ? 1 : 0;
++
+   // ddddddddddd : 0 holes, 0 transitions
+   // ___________ : 1 hole,  0 transitions
+-  if (numTransitions == 0) return 1 - currentState.val; // _ = 0 = unmarked = hole
++  if (numTransitions == 0) return 1 - endedOnAMarkedLine; // _ = 0 = unmarked = hole
+ 
+   // ddd________ : 1 hole,  1 transition
+   // ddd_____ddd : 1 hole,  2 transitions
+   // ____ddd____ : 2 holes, 2 transitions
+   // ____ddd__dd : 2 holes, 3 transitions
+-  return numTransitions - (currentState.val == make_mark_t(1).val);
++  return numTransitions - endedOnAMarkedLine;
+ }
+-
+-
+-
++#endif
++
++#if 0
+ bool is_linemap15_clear(frame15* f15) {
+   if (!frame15_is_marked(f15)) return true;
+ 
+   mark_t* linemap = linemap_for_frame15_id(frame15_id_of(f15));
+-  return no_marked_lines_for_frame15(linemap);
++  return no_marked_lines_for_frame15(linemap, active_mark);
+ }
++#endif
+ 
+ bool is_linemap_clear(frame21* f21) {
+     if (!frame21_is_marked(f21)) return true;
+@@ -2901,6 +2935,7 @@
+ class immix_space : public heap {
+ public:
+   immix_space() : condemned_flag(false) {
++    this->active_mark = make_mark_t(1);
+     if (GCLOG_DETAIL > 2) { fprintf(gclog, "new immix_space %p, current space limit: %zd f15s\n", this, gcglobals.space_limit->frame15s_left); }
+ 
+     incoming_ptr_addrs.set_empty_key(nullptr);
+@@ -2940,11 +2975,11 @@
+   // {{{ Prechecked allocation functions
+   template <int N>
+   tidy* allocate_cell_prechecked_N(const typemap* map) {
+-    return helpers::allocate_cell_prechecked(&small_bumper, map, N, 0);
++    return helpers::allocate_cell_prechecked(&small_bumper, map, N, invert_mark(this->active_mark), 0);
+   }
+ 
+   tidy* allocate_cell_prechecked(const typemap* map) {
+-    return helpers::allocate_cell_prechecked(&small_bumper, map, map->cell_size, 0);
++    return helpers::allocate_cell_prechecked(&small_bumper, map, map->cell_size, invert_mark(this->active_mark), 0);
+   }
+   // }}}
+ 
+@@ -3046,7 +3081,7 @@
+ 
+   bool can_alloc_for_defrag(int64_t needed_bytes) {
+     if (small_bumper.size() >= needed_bytes) return true;
+-    
++
+     frame15* f = global_frame15_allocator.try_get_frame15_for_defrag();
+     if (!f) {
+       // Make sure we short-circuit further attempts to defrag.
+@@ -3062,7 +3097,8 @@
+   }
+ 
+   tidy* defrag_copy_cell(heap_cell* cell, typemap* map, int64_t cell_size) {
+-    tidy* newbody = helpers::allocate_cell_prechecked(&small_bumper, map, cell_size, this->hash_for_object_headers());
++    tidy* newbody = helpers::allocate_cell_prechecked(&small_bumper, map, cell_size,
++                                invert_mark(this->active_mark), this->hash_for_object_headers());
+     heap_cell* mcell = heap_cell::for_tidy(newbody);
+     memcpy(mcell, cell, map->cell_size);
+     cell->set_forwarded_body(newbody);
+@@ -3072,14 +3108,14 @@
+     // is-forwarded check subsumes the obj_is_marked check.
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += cell_size; }
+-    mark_lines_for_slots(newbody, cell_size);
++    mark_lines_for_slots_with(newbody, cell_size, make_mark_t(1));
+ 
+     return newbody;
+   }
+ 
+   heap_array* defrag_copy_array(typemap* map, heap_array* arr, int64_t req_bytes) {
+     bool init = false;
+-    tidy* newbody = helpers::allocate_array_prechecked(&small_bumper, map, arr->num_elts(), req_bytes, 0, init);
++    tidy* newbody = helpers::allocate_array_prechecked(&small_bumper, map, arr->num_elts(), req_bytes, 0, init, invert_mark(this->active_mark));
+     heap_array* marr = heap_array::from_heap_cell(heap_cell::for_tidy(newbody));
+     memcpy(marr->elt_body(0, 0), arr->elt_body(0, 0), map->cell_size * arr->num_elts());
+     arr->set_forwarded_body(newbody);
+@@ -3087,7 +3123,7 @@
+     //do_mark_obj(heap_cell::for_tidy(newbody));
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
+     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += req_bytes; }
+-    mark_lines_for_slots(newbody, req_bytes);
++    mark_lines_for_slots_with(newbody, req_bytes, make_mark_t(1));
+     return marr;
+   }
+ 
+@@ -3185,7 +3221,7 @@
+ 
+   void* allocate_array_into_bumper(bump_allocator* bumper, typemap* elt_typeinfo, int64_t n, int64_t req_bytes, bool init) {
+     if (try_establish_alloc_precondition(bumper, req_bytes)) {
+-      return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, init, 0);
++      return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, init, 0, invert_mark(this->active_mark));
+     } else {
+       if (GCLOG_DETAIL > 2) { fprintf(gclog, "allocate_array_into_bumper triggering immix gc\n"); }
+       {
+@@ -3196,7 +3232,7 @@
+       if (try_establish_alloc_precondition(bumper, req_bytes)) {
+         //fprintf(gclog, "gc collection freed space for array, now have %lld\n", curr->free_size());
+         //fflush(gclog);
+-        return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, init, 0);
++        return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, init, 0, invert_mark(this->active_mark));
+       } else { helpers::oops_we_died_from_heap_starvation(); return NULL; }
+     }
+   }
+@@ -3265,6 +3301,9 @@
+     });
+     auto inspectFrame21Time_us = insp_ct.elapsed_us();
+ 
++    mark_t flipped = invert_mark(this->active_mark);
++    this->active_mark = flipped;
++
+     auto deltaPostMarkingCleanup_us = phase.elapsed_us();
+ 
+ 
+@@ -3344,17 +3383,18 @@
+     }
+   }
+ 
++  // Called via common_gc -> sweep_condemned -> immix_sweep
+   bool inspect_frame15_postgc(frame15_id fid, frame15* f15) {
+     // TODO-X benchmark impact of using frame15_is_marked
+     mark_t* linemap = linemap_for_frame15_id(fid);
+     int num_marked_lines = count_marked_lines_for_frame15(f15, linemap);
+     gcglobals.lines_live_at_whole_heap_gc += num_marked_lines;
+-    
+-    if (GCLOG_DETAIL > 2) {
+-      fprintf(gclog, "frame %u: ", fid);
+-      for(int i = 0;i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", (linemap[i].val == make_mark_t(0).val) ? '_' : 'd'); }
+-      fprintf(gclog, "\n");
+-    }
++
++    //if (GCLOG_DETAIL > 2) {
++    //  fprintf(gclog, "frame %u: ", fid);
++    //  for(int i = 0;i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", (linemap[i].val == make_mark_t(0).val) ? '_' : 'd'); }
++    //  fprintf(gclog, "\n");
++    //}
+ 
+     auto num_available_lines = (IMMIX_LINES_PER_BLOCK - num_marked_lines);
+ 
+@@ -3377,11 +3417,11 @@
+     while (num_lines_to_process > 0) {
+       // At least one available line means this loop will terminate before cursor == 0
+       // Precondition: cursor is marked
+-      while (line_is_marked(cursor - 1, linemap)) --cursor;
++      while (line_is_marked_with(cursor - 1, linemap, make_mark_t(1))) --cursor;
+       // Postcondition: cursor is marked; cursor - 1 is unmarked.
+       int rightmost_unmarked_line = --cursor;
+ 
+-      while (cursor >= 0 && line_is_unmarked(cursor, linemap)) --cursor;
++      while (cursor >= 0 && !line_is_marked_with(cursor, linemap, make_mark_t(1))) --cursor;
+       // Postcondition: line_is_marked(cursor), line_is_unmarked(cursor + 1), cursor >= -1
+       int leftmost_unmarked_line = cursor + 1;
+ 
+@@ -3411,8 +3451,12 @@
+     }
+ 
+     // Clear line and object mark bits.
++
++    int64_t t0 = __foster_getticks_start();
+     memset(linemap, 0, IMMIX_LINES_PER_BLOCK);
+-    clear_object_mark_bits_for_frame15(f15);
++    //set_object_mark_bits_for_frame15(f15, invert_mark(this->active_mark));
++    int64_t t1 = __foster_getticks_end();
++    gcglobals.resetting_ticks += __foster_getticks_elapsed(t0, t1);
+ 
+     // Increment mark histogram.
+     if (gcglobals.condemned_set.status == condemned_set_status::whole_heap_condemned) {
+@@ -3809,6 +3853,7 @@
+   gcglobals.num_gcs_triggered_involuntarily = 0;
+   gcglobals.num_big_stackwalks = 0;
+   gcglobals.subheap_ticks = 0.0;
++  gcglobals.resetting_ticks = 0.0;
+   gcglobals.num_allocations = 0;
+   gcglobals.num_alloc_bytes = 0;
+   gcglobals.in_non_default_subheap = false;
+@@ -4111,6 +4156,10 @@
+       fprintf(gclog, "'Avg_GC_Ticks': %s\n", v.c_str());
+     }
+   }
++    {
++      auto s = foster::humanize_s(gcglobals.resetting_ticks, "");
++      fprintf(gclog, "'Resetting_Ticks': %s\n", s.c_str());
++    }
+   {
+     auto s = foster::humanize_s(gcglobals.num_closure_calls, "");
+     fprintf(gclog, "'Num_Closure_Calls': %s\n", s.c_str());
+diff --git a/runtime/gc/foster_gc_utils.h b/runtime/gc/foster_gc_utils.h
+--- a/runtime/gc/foster_gc_utils.h
++++ b/runtime/gc/foster_gc_utils.h
+@@ -75,6 +75,8 @@
+ 
+ NEWTYPE(mark_t, uint8_t);
+ 
++inline mark_t invert_mark(mark_t m) { return make_mark_t(! m.val); }
++
+ // 4-byte alignment required for typeinfo structs.
+ const uint64_t HEADER_MARK_BITS = 0x01; // 0b000..00001
+ const uint64_t FORWARDED_BIT    = 0x02; // 0b000..00010
+@@ -90,12 +92,12 @@
+ // Cell header layout:
+ //   [  space id (32 bits)  | RC (flex) (8 bits) | typemap* (24 bits) ]
+ //                                                                   ^
+-//            (when fwd unset)                          fwd & mark bits
++//            (when fwd unset)                          fwd bit
+ //
+ // U [        fwd ptr (64 bits, 8+ byte aligned)   when fwd bit set * ]
+ //
+ // Mark and forwarded bits are only set during collection;
+-// the mutator doesn't see them.
++// the mutator doesn't see them. Mark bits are stored out-of-line.
+ 
+ inline uint32_t space_id_of_header(uint64_t header) { return uint32_t(header >> uint64_t(32)); }
+ inline uint8_t  flex_bits_of_header(uint64_t header) { return uint8_t(header >> uint64_t(24)); }
+@@ -126,6 +128,10 @@
+     header = build_header(data, space_id);
+   }
+ 
++  uint8_t mark_value() { return uint8_t(header & HEADER_MARK_BITS); }
++  void set_mark_value(mark_t value) { header |= value.val; }
++
++
+   bool is_forwarded() { return (header & FORWARDED_BIT) != 0; }
+   void set_forwarded_body(tidy* newbody) {
+     header = HEAP_CELL_HEADER_TYPE(newbody) | FORWARDED_BIT;
+diff --git a/test/speed/gc/minicache/minicache.foster b/test/speed/gc/minicache/minicache.foster
+--- a/test/speed/gc/minicache/minicache.foster
++++ b/test/speed/gc/minicache/minicache.foster
+@@ -12,8 +12,8 @@
+   // GC time
+   // MMU/max pause info
+ 
+-  b = cmdline-arg-or 1 128;
+-  n = cmdline-arg-or 2 256;
++  b = cmdline-arg-or 1 128; // number of buckets
++  n = cmdline-arg-or 2 256; // size of each bucket
+   k = cmdline-arg-or 3 10;
+   use_subheaps = "--subheaps" ==TextBytes (get_cmdline_arg_n 4);
+   use_small = "--small" ==TextBytes (get_cmdline_arg_n 4);

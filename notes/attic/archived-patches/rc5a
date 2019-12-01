@@ -1,0 +1,332 @@
+# HG changeset patch
+# Parent  bb12b87d54e9313c28d103c1e8a84558d2709799
+* Rename field of heap_handle from ``body`` to ``untraced``.
+* Have the backend emit a symbol for a typemap for heap_handle
+  so that the GC can use memalloc_cell() instead of malloc() for heap handles.
+* Rename the argument to prepare_for_collection() from ``sticky`` to the
+  more-informative ``ignoring_remsets``.
+* Make sure we only try deleting subheaps after whole-heap collections.
+
+diff --git a/compiler/passes/LLCodegen.cpp b/compiler/passes/LLCodegen.cpp
+--- a/compiler/passes/LLCodegen.cpp
++++ b/compiler/passes/LLCodegen.cpp
+@@ -548,6 +548,10 @@
+                                      llvm::GlobalVariable* typemap,
+                                      llvm::Constant* body,
+                                      const std::string& name);
++llvm::GlobalVariable* emitTypeMap(const TypeAST* typ, llvm::Type* ty,
++                            std::string name, ArrayOrNot arrayStatus, CtorRepr ctorRepr,
++                            llvm::Module* mod, std::vector<int> skippedIndexVector);
++
+ 
+ void LLModule::codegenModule(CodegenPass* pass) {
+   registerKnownDataTypes(datatype_decls, pass);
+@@ -611,6 +615,13 @@
+ 
+   codegenCoroPrimitives(pass);
+ 
++  { // Create a type map for heap handles for the GC to use.
++    CtorRepr ctorRepr; ctorRepr.smallId = 0;
++    auto gv = emitTypeMap(TypeAST::i(64), TypeAST::i(64)->getLLVMType(),
++                          "heap_handle", NotArray,
++                          ctorRepr, pass->mod, std::vector<int>());
++  }
++
+   createGCMapsSymbolIfNeeded(pass);
+   createCompilerFlagsGlobalString(pass);
+ }
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -513,7 +513,7 @@
+ 
+   int64_t approx_condemned_capacity_in_bytes(Allocator* active_space);
+ 
+-  void prepare_for_collection(Allocator* active_space, bool voluntary, bool sticky, immix_common* common, uint64_t*, uint64_t*);
++  void prepare_for_collection(Allocator* active_space, bool voluntary, bool ignoring_remsets, immix_common* common, uint64_t*, uint64_t*);
+ };
+ 
+ template<typename Allocator>
+@@ -3037,8 +3037,10 @@
+ 
+ void do_compactify_via_granule_marks(immix_space* default_subheap);
+ 
+-int64_t do_cycle_collection(immix_heap* active_space, clocktimer<false>& phase, clocktimer<false>& gcstart,
+-                         bool should_compact, immix_common* common) {
++int64_t do_cycle_collection(immix_heap* active_space,
++                            bool voluntary, bool was_sticky_collection,
++                            clocktimer<false>& phase, clocktimer<false>& gcstart,
++                            bool should_compact, immix_common* common) {
+   // Because we're tracing and will re-establish object RC values, we need not process inc/decs.
+   // However, we do need to unset the logged bit from logged objects.
+   for (auto cell : gcglobals.incbuf) {
+@@ -3051,8 +3053,12 @@
+   phase.start();
+ 
+   // Step one: reset line and object (granule) marks.
+-  active_space->prepare_for_collection(false);
+-  //immix_space* space = (immix_space*) active_space; // TODO fix
++  uint64_t numGenRoots = 0;
++  uint64_t numRemSetRoots = 0;
++  bool ignoring_remsets = !voluntary; // sticky??
++  gcglobals.condemned_set.prepare_for_collection(active_space, voluntary, ignoring_remsets, common, &numGenRoots, &numRemSetRoots);
++
++  fprintf(gclog, "# gen roots: %zd; # remset roots: %zd\n", numGenRoots, numRemSetRoots);
+ 
+   auto resettingMarkBits_us = phase.elapsed_us();
+   phase.start();
+@@ -3261,7 +3267,7 @@
+       }
+     }
+ 
+-    if (was_sticky_collection) {
++    if (was_sticky_collection && !voluntary) {
+       do_rc_collection(active_space, phase);
+     } else {
+       gcglobals.evac_disabled = true;
+@@ -3273,7 +3279,7 @@
+       bool should_compact = gcglobals.last_full_gc_compaction_headroom_estimate
+                             >= __foster_globals.compaction_threshold;
+ 
+-      auto num_lines_reclaimed = do_cycle_collection(active_space, phase, gcstart, should_compact, this);
++      auto num_lines_reclaimed = do_cycle_collection(active_space, voluntary, was_sticky_collection, phase, gcstart, should_compact, this);
+ 
+       auto bytes_marked = gcglobals.alloc_bytes_marked_total - bytes_marked_at_start;
+       auto bytes_used = global_frame15_allocator.heap_size_in_bytes_with_defrag_reserve() -
+@@ -3448,28 +3454,28 @@
+ template<typename Allocator>
+ void condemned_set<Allocator>::prepare_for_collection(Allocator* active_space,
+                                                       bool voluntary,
+-                                                      bool was_sticky,
++                                                      bool ignoring_remsets,
+                                                       immix_common* common,
+                                                       uint64_t* numGenRoots,
+                                                       uint64_t* numRemSetRoots) {
+ 
+   switch (this->status) {
+     case condemned_set_status::single_subheap_condemned: {
+-      *numGenRoots += active_space->prepare_for_collection(was_sticky);
++      *numGenRoots += active_space->prepare_for_collection(ignoring_remsets);
+       break;
+     }
+ 
+     case condemned_set_status::per_frame_condemned: {
+       for (auto space : spaces) {
+-        *numGenRoots += space->prepare_for_collection(was_sticky);
++        *numGenRoots += space->prepare_for_collection(ignoring_remsets);
+       }
+       break;
+     }
+ 
+     case condemned_set_status::whole_heap_condemned: {
+-      *numGenRoots += gcglobals.default_allocator->prepare_for_collection(was_sticky);
++      *numGenRoots += gcglobals.default_allocator->prepare_for_collection(ignoring_remsets);
+       for (auto handle : gcglobals.all_subheap_handles_except_default_allocator) {
+-        *numGenRoots += handle->body->prepare_for_collection(was_sticky);
++        *numGenRoots += handle->untraced->prepare_for_collection(ignoring_remsets);
+       }
+       break;
+     }
+@@ -3505,7 +3511,7 @@
+     case condemned_set_status::whole_heap_condemned: {
+       rv += gcglobals.default_allocator->approx_size_in_bytes();
+       for (auto handle : gcglobals.all_subheap_handles_except_default_allocator) {
+-        rv += handle->body->approx_size_in_bytes();
++        rv += handle->untraced->approx_size_in_bytes();
+       }
+       break;
+     }
+@@ -3528,7 +3534,7 @@
+     case condemned_set_status::whole_heap_condemned: {
+       int64_t rv = gcglobals.default_allocator->tally_line_footprint_in_bytes();
+       for (auto handle : gcglobals.all_subheap_handles_except_default_allocator) {
+-        rv += handle->body->tally_line_footprint_in_bytes();
++        rv += handle->untraced->tally_line_footprint_in_bytes();
+       }
+       return rv;
+     }
+@@ -3569,7 +3575,7 @@
+ 
+       if (GC_ASSERTIONS) {
+         std::set<immix_heap*> subheaps;
+-        for (auto handle : subheap_handles) { subheaps.insert(handle->body); }
++        for (auto handle : subheap_handles) { subheaps.insert(handle->untraced); }
+         if (subheaps.size() != subheap_handles.size()) {
+           fprintf(gclog, "INVARIANT VIOLATED: subheap handles contains duplicates!\n");
+         }
+@@ -3585,14 +3591,14 @@
+       //   * Allocation in A puts an arbitrary bit pattern in B's referent
+       //     (especially the header/typemap)
+       //   * Single-subheap GC of A follows the remset entry for B and goes off the rails.
+-      //gcglobals.default_allocator->trim_remset();
+-      //for (auto handle : subheap_handles) {
+-      //  handle->body->trim_remset();
+-      //}
++      gcglobals.default_allocator->trim_remset();
++      for (auto handle : subheap_handles) {
++        handle->untraced->trim_remset();
++      }
+ 
+       num_lines_reclaimed += gcglobals.default_allocator->immix_sweep(phase);
+       for (auto handle : subheap_handles) {
+-        num_lines_reclaimed += handle->body->immix_sweep(phase);
++        num_lines_reclaimed += handle->untraced->immix_sweep(phase);
+       }
+ 
+       break;
+@@ -3602,27 +3608,23 @@
+   // Invariant: line spaces have returned unmarked linegroups to the global line allocator.
+   global_immix_line_allocator.reclaim_frames();
+ 
+-  // Subheap deallocation effectively only happens for whole-heap collections.
+-  for (auto handle : subheap_handles) {
+-    // A space should be deallocated only if it is both inaccessible (meaning unmarked)
+-    // and empty. A marked space, empty or not, might be activated in the future.
+-    // A non-empty unmarked space won't be activated, but it's not dead until the objects
+-    // within it become inaccessible.
+-    heap_cell* handle_cell = handle->as_cell();
+-    auto space = handle->body;
+-    if ((!obj_is_marked(handle_cell)) && space->is_empty()) {
+-      //fprintf(gclog, "DELETING SPACE %p\n", space);
+-      //delete space;
+-    } else {
+-      gcglobals.all_subheap_handles_except_default_allocator.push_back(handle);
+-    }
+-  }
+-
+-  // Handles (and other unframed allocations) must be unmarked too.
+-  for (auto c : unframed_and_marked) {
+-    do_unmark_granule(c);
+-  }
+-  unframed_and_marked.clear();
++  if (this->status == condemned_set_status::whole_heap_condemned) {
++    // Subheap deallocation effectively only happens for whole-heap collections.
++    for (auto handle : subheap_handles) {
++      // A space should be deallocated only if it is both inaccessible (meaning unmarked)
++      // and empty. A marked space, empty or not, might be activated in the future.
++      // A non-empty unmarked space won't be activated, but it's not dead until the objects
++      // within it become inaccessible.
++      heap_cell* handle_cell = handle->as_cell();
++      auto space = handle->untraced;
++      if ((handle_cell->get_rc() == 0) && space->is_empty()) {
++        fprintf(gclog, "DELETING SPACE %p\n", space);
++        //delete space;
++      } else {
++        gcglobals.all_subheap_handles_except_default_allocator.push_back(handle);
++      }
++    }
++  }
+ 
+   return num_lines_reclaimed;
+ }
+@@ -3735,8 +3737,8 @@
+     });
+   }
+ 
+-  virtual uint64_t prepare_for_collection(bool sticky) {
+-    if (sticky) {
++  virtual uint64_t prepare_for_collection(bool ignoring_remsets) {
++    if (!ignoring_remsets) {
+       std::vector<tori**> roots = generational_remset.move_to_vector();
+       // Process generational remset.
+       // We must be careful not to process the same root more than once;
+@@ -5729,6 +5731,7 @@
+   *slot = val;
+ }
+ 
++extern "C" typemap __foster_typemap_heap_handle;
+ 
+ // We need a degree of separation between the possibly-moving
+ // traced immix heap, which does not currently support finalizers/destructors,
+@@ -5739,11 +5742,10 @@
+ void* foster_subheap_create_raw() {
+   ++gcglobals.num_subheaps_created;
+   immix_space* subheap = new immix_space();
+-  void* alloc = malloc(sizeof(heap_handle<immix_space>));
+-  heap_handle<immix_heap>* h = (heap_handle<immix_heap>*) realigned_for_heap_handle(alloc);
+-  h->header           = 32;
+-  h->unaligned_malloc = alloc;
+-  h->body             = subheap;
++  //void* alloc = malloc(sizeof(heap_handle<immix_space>));
++  auto body = memalloc_cell(&__foster_typemap_heap_handle);
++  auto h = heap_handle<immix_heap>::for_tidy(body);
++  h->untraced         = subheap;
+   gcglobals.all_subheap_handles_except_default_allocator.push_back(h);
+   return h->as_tidy();
+ }
+@@ -5751,11 +5753,8 @@
+ void* foster_subheap_create_small_raw() {
+   ++gcglobals.num_subheaps_created;
+   immix_line_space* subheap = new immix_line_space();
+-  void* alloc = malloc(sizeof(heap_handle<heap>));
+-  heap_handle<heap>* h = (heap_handle<heap>*) realigned_for_heap_handle(alloc);
+-  h->header           = 32;
+-  h->unaligned_malloc = alloc;
+-  h->body             = subheap;
++  auto h = heap_handle<immix_heap>::for_tidy(memalloc_cell(&__foster_typemap_heap_handle));
++  h->untraced         = subheap;
+   gcglobals.all_subheap_handles_except_default_allocator.push_back(h);
+   return h->as_tidy();
+ }
+@@ -5766,12 +5765,12 @@
+   //      a subheap that is created, installed, and then silently dropped
+   //      without explicitly being destroyed.
+   //fprintf(gclog, "subheap_activate: generic %p\n", generic_subheap); fflush(gclog);
+-  heap_handle<immix_heap>* handle = heap_handle<immix_heap>::for_tidy((tidy*) generic_subheap);
++  auto handle = heap_handle<immix_heap>::for_tidy(generic_subheap);
+   // Clang appears to assume handle is non-null; handle will be null if generic_subheap is
+   // the tidy pointer for the null heap cell.
+   immix_heap* subheap = (uintptr_t(generic_subheap) <= FOSTER_GC_DEFAULT_ALIGNMENT)
+                           ? gcglobals.default_allocator
+-                          : handle->body;
++                          : handle->untraced;
+   //fprintf(gclog, "subheap_activate: subheap %p)\n", subheap); fflush(gclog);
+   heap_handle<immix_heap>* prev = gcglobals.allocator_handle;
+   //fprintf(gclog, "subheap_activate(generic %p, handle %p, subheap %p, prev %p)\n", generic_subheap, handle, subheap, prev);
+@@ -5787,16 +5786,16 @@
+ }
+ 
+ void foster_subheap_collect_raw(void* generic_subheap) {
+-  heap_handle<immix_heap>* handle = heap_handle<immix_heap>::for_tidy((tidy*) generic_subheap);
+-  auto subheap = handle->body;
++  auto handle = heap_handle<immix_heap>::for_tidy(generic_subheap);
++  auto subheap = handle->untraced;
+   //fprintf(gclog, "collecting subheap %p\n", subheap);
+   subheap->force_gc_for_debugging_purposes();
+   //fprintf(gclog, "subheap-collect done\n");
+ }
+ 
+ void foster_subheap_condemn_raw(void* generic_subheap) {
+-  heap_handle<immix_heap>* handle = heap_handle<immix_heap>::for_tidy((tidy*) generic_subheap);
+-  auto subheap = handle->body;
++  auto handle = heap_handle<immix_heap>::for_tidy(generic_subheap);
++  auto subheap = handle->untraced;
+   //fprintf(gclog, "condemning subheap %p\n", subheap);
+   subheap->condemn();
+   //fprintf(gclog, "condemned subheap %p\n", subheap);
+diff --git a/runtime/gc/foster_gc_utils.h b/runtime/gc/foster_gc_utils.h
+--- a/runtime/gc/foster_gc_utils.h
++++ b/runtime/gc/foster_gc_utils.h
+@@ -215,16 +215,13 @@
+ 
+ template <typename T>
+ struct heap_handle {
+-  void* unaligned_malloc;
+-  HEAP_CELL_HEADER_TYPE header;
+-  T* body;
+-  uint8_t padding[16];
++  heap_cell header;
++  T* untraced;
+ 
+-  heap_cell* as_cell() { return (heap_cell*) &header; }
+-  tidy     * as_tidy() { return (tidy*)      &body; }
+-
+-  static heap_handle* for_tidy(tidy* ptr) {
+-    return (heap_handle*) offset((void*)ptr, -(intptr_t(sizeof(void*) + HEAP_CELL_HEADER_SIZE)));
++  heap_cell* as_cell() { return         &header; }
++  tidy     * as_tidy() { return (tidy*) &untraced; }
++  static heap_handle* for_tidy(void* ptr) {
++    return (heap_handle*) heap_cell::for_tidy((tidy*) ptr);
+   }
+ };
+ 

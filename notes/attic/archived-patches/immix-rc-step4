@@ -1,0 +1,127 @@
+# HG changeset patch
+# Parent  4011d6d6c17c54f95b6bd070b99a01b3a51bbc3a
+Implement a simpler heuristic for resizing the defrag reservation.
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -67,7 +67,6 @@
+ // a way of easily overriding-without-overwriting the defaults.
+ #include "gc/foster_gc_reconfig-inl.h"
+ 
+-const double kFosterDefragReserveFraction = 0.12;
+ const int kFosterGCMaxDepth = 250;
+ const ssize_t inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
+ 
+@@ -540,26 +540,6 @@
+ int num_avail_defrag_frame15s();
+ int num_assigned_defrag_frame15s();
+ 
+-int select_defrag_threshold() {
+-  int64_t reserved = int64_t(double(gcglobals.space_limit->max_size_in_lines) * kFosterDefragReserveFraction);
+-  // Be a little bit aggressive: the "required" count is inflated due to
+-  // internal fragmentation, and it's opportunistic anyways.
+-  int64_t avail = int64_t(double(reserved) * 1.25);
+-  int64_t required = 0;
+-
+-  int thresh = 128;
+-  while (thresh-- > 0) {
+-    required += gcglobals.marked_histogram[thresh];
+-    if (required > avail) {
+-      fprintf(gclog, "defrag threshold: %d; backing off from %zd to %zd lines assumed needed vs %zd lines assumed avail (%d/%d frames)\n",
+-        thresh + 1,
+-        required, required - gcglobals.marked_histogram[thresh], avail, num_avail_defrag_frame15s(), num_assigned_defrag_frame15s());
+-      return thresh + 1;
+-    }
+-  }
+-  return 0;
+-}
+-
+ // The worklist would be per-GC-thread in a multithreaded implementation.
+ immix_worklist_t immix_worklist;
+ 
+@@ -1072,7 +1052,12 @@
+ struct frame15_allocator {
+   frame15_allocator() : num_defrag_reserved_frames(0), next_frame15(nullptr) {}
+ 
+-  void set_defrag_reserved_frames(byte_limit* b) {
+-    this->num_defrag_reserved_frames =
+-            int(double(b->frame15s_left) * kFosterDefragReserveFraction) + 1;
++  void set_defrag_reserved_frames(int new_reserved_frames) {
++    fprintf(gclog, "defrag reserved frames going from %d to %d\n", num_defrag_reserved_frames, new_reserved_frames);
++    this->num_defrag_reserved_frames = new_reserved_frames;
++  }
++
++  void update_defrag_reserved_frames(byte_limit* b, double newFraction) {
++    b->frame15s_left += num_defrag_reserved_frames;
++    set_defrag_reserved_frames(int(double(b->frame15s_left) * newFraction) + 1);
+     b->frame15s_left -= num_defrag_reserved_frames;
+@@ -1078,4 +1063,10 @@
+     b->frame15s_left -= num_defrag_reserved_frames;
++    gcglobals.defrag_reserved_fraction = newFraction;
++  }
++
++  void set_aside_initial_defrag_reserved_frames(byte_limit* b) {
++    this->num_defrag_reserved_frames = 0;
++    this->update_defrag_reserved_frames(b, gcglobals.defrag_reserved_fraction);
+     for (int i = 0; i < num_defrag_reserved_frames; ++i) {
+       defrag_frame15s.push_back(get_frame15());
+     }
+@@ -1114,7 +1105,6 @@
+     if (MEMSET_FREED_MEMORY) { clear_frame15(f); }
+     if (defrag_frame15s.size() < num_defrag_reserved_frames) {
+       defrag_frame15s.push_back(f);
+-      
+     } else {
+       spare_frame15s.push_back(f);
+     }
+@@ -1243,6 +1233,28 @@
+ int num_avail_defrag_frame15s() { return global_frame15_allocator.defrag_frame15s.size(); }
+ int num_assigned_defrag_frame15s() { return global_frame15_allocator.num_defrag_reserved_frames; }
+ 
++int select_defrag_threshold() {
++  int64_t reserved = num_assigned_defrag_frame15s() * IMMIX_LINES_PER_FRAME15;
++  // Be a little bit aggressive: the "required" count is inflated due to
++  // internal fragmentation, and it's opportunistic anyways.
++  int64_t avail = int64_t(double(reserved) * 1.25);
++  int64_t required = 0;
++
++  int thresh = 128;
++  while (thresh-- > 0) {
++    required += gcglobals.marked_histogram[thresh];
++    if (required > avail) {
++      fprintf(gclog, "defrag threshold: %d; backing off from %zd to %zd lines assumed needed vs %zd lines assumed avail (%d/%d frames)\n",
++        thresh + 1,
++        required, required - gcglobals.marked_histogram[thresh], avail, num_avail_defrag_frame15s(), num_assigned_defrag_frame15s());
++      return thresh + 1;
++    }
++  }
++  return 0;
++}
++
++
++
+ // 64 * 32 KB = 2 MB  ~~~ 2^6 * 2^15 = 2^21
+ struct frame21_15_metadata_block {
+   union {
+@@ -3826,6 +3838,10 @@
+ #endif
+ 
+     tracking.release_clean_frames(gcglobals.space_limit);
++
++    int new_frame_reserve = int(double(num_lines_reclaimed * gcglobals.defrag_reserved_fraction * 0.9) / double(IMMIX_LINES_PER_FRAME15));
++    global_frame15_allocator.set_defrag_reserved_frames(new_frame_reserve);
++
+     return num_lines_reclaimed;
+   }
+ 
+@@ -4421,7 +4437,8 @@
+   gcglobals.allocator_handle = nullptr;
+   gcglobals.current_subheap_hash = gcglobals.allocator->hash_for_object_headers();
+ 
+-  global_frame15_allocator.set_defrag_reserved_frames(gcglobals.space_limit);
++  gcglobals.defrag_reserved_fraction = __foster_globals.rc_reserved_fraction;
++  global_frame15_allocator.set_aside_initial_defrag_reserved_frames(gcglobals.space_limit);
+ 
+   gcglobals.condemned_set.status = condemned_set_status::single_subheap_condemned;
+ 

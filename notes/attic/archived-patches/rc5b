@@ -1,0 +1,54 @@
+# HG changeset patch
+# Parent  4070b42c6cc58c6ecae43f69cb914889afbddb08
+Add a remove() method to remset_t.
+
+diff --git a/runtime/gc/foster_gc.cpp b/runtime/gc/foster_gc.cpp
+--- a/runtime/gc/foster_gc.cpp
++++ b/runtime/gc/foster_gc.cpp
+@@ -271,17 +271,28 @@
+   remset_t() { dhs.set_empty_key(nullptr); }
+ 
+   void insert(tori** slot) {
+-    buffer.push_back(slot);
+-    if (buffer.size() == 100) {
++    additions.push_back(slot);
++    if (additions.size() == 100) {
++      consolidate(); 
++    }
++  }
++
++  void remove(tori** slot) {
++    deletions.push_back(slot);
++    if (deletions.size() == 100) {
+       consolidate(); 
+     }
+   }
+ 
+   void consolidate() {
+-    for (auto slot : buffer) {
++    for (auto slot : additions) {
+       dhs.insert(slot);
+     }
+-    buffer.clear();
++    additions.clear();
++    for (auto slot : deletions) {
++      dhs.erase(slot);
++    }
++    deletions.clear();
+   }
+ 
+   std::vector<tori**> move_to_vector() {
+@@ -291,9 +302,11 @@
+     return slots;
+   }
+ 
+-  void clear() { dhs.clear(); buffer.clear(); }
++  void clear() { dhs.clear(); additions.clear(); }
++  bool empty() { return additions.empty() && dhs.empty(); }
+ private:
+-  std::vector<tori**> buffer;
++  std::vector<tori**> additions;
++  std::vector<tori**> deletions;
+   google::dense_hash_set<tori**> dhs;
+ };
+ 

@@ -1,0 +1,169 @@
+# HG changeset patch
+# Parent  6c96667811366f07d71d502d22f0ee2443c42db7
+Create a GC root relocator pass.
+
+(Trying to clean up after broken LLVM inlining).
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -467,6 +467,7 @@
+ add_library(fosterc_llvm STATIC
+   compiler/llvm/passes/GCBarrierOptimizer.cpp
+   compiler/llvm/passes/GCRootSafetyChecker.cpp
++  compiler/llvm/passes/GCRootRelocator.cpp
+   compiler/llvm/passes/EscapingAllocaFinder.cpp
+   compiler/llvm/passes/FosterMallocSpecializer.cpp
+   compiler/llvm/passes/CallingConventionChecker.cpp
+diff --git a/compiler/fosteroptc.cpp b/compiler/fosteroptc.cpp
+--- a/compiler/fosteroptc.cpp
++++ b/compiler/fosteroptc.cpp
+@@ -479,6 +479,10 @@
+ 
+   foster::runFunctionPassesOverModule(fpasses, mod);
+   passes.run(*mod);
++
++  legacy::FunctionPassManager finalfpasses(mod);
++  finalfpasses.add(foster::createGCRootRelocatorPass());
++  foster::runFunctionPassesOverModule(finalfpasses, mod);
+ }
+ 
+ void runInternalizePasses(Module* mod) {
+diff --git a/compiler/llvm/passes/FosterPasses.h b/compiler/llvm/passes/FosterPasses.h
+--- a/compiler/llvm/passes/FosterPasses.h
++++ b/compiler/llvm/passes/FosterPasses.h
+@@ -19,6 +19,7 @@
+ llvm::Pass* createGCMallocFinderPass();
+ llvm::Pass* createGCBarrierOptimizerPass();
+ llvm::Pass* createGCRootSafetyCheckerPass();
++llvm::Pass* createGCRootRelocatorPass();
+ llvm::Pass* createMemallocSpecializerPass();
+ llvm::Pass* createEscapingAllocaFinderPass();
+ llvm::Pass* createTimerChecksInsertionPass();
+diff --git a/compiler/llvm/passes/GCRootRelocator.cpp b/compiler/llvm/passes/GCRootRelocator.cpp
+new file mode 100644
+--- /dev/null
++++ b/compiler/llvm/passes/GCRootRelocator.cpp
+@@ -0,0 +1,122 @@
++// Copyright (c) 2019 Ben Karel. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
++
++#include "llvm/Pass.h"
++#include "llvm/IR/Function.h"
++#include "llvm/IR/LLVMContext.h"
++#include "llvm/IR/Intrinsics.h"
++#include "llvm/IR/Instructions.h"
++#include "llvm/IR/IRBuilder.h"
++#include "llvm/Support/raw_ostream.h"
++#include "llvm/ADT/StringSwitch.h"
++#include "llvm/IR/InstIterator.h"
++#include "llvm/IR/CallSite.h"
++
++#include "base/GenericGraph.h"
++
++#include <set>
++#include <map>
++
++using namespace llvm;
++
++// LLVM (at least as of 6.0) doesn't always relocate calls to llvm.gcroot() when inlining functions.
++// So: we clean up the mess, as needed.
++
++namespace {
++
++struct GCRootRelocator : public FunctionPass {
++  static char ID;
++  GCRootRelocator() : FunctionPass(ID) {}
++
++  llvm::StringRef getPassName() const { return "GCRootRelocator"; }
++
++  bool callSiteMayGC(llvm::Instruction* i) {
++    if (i->getMetadata("willnotgc")) {
++      return false;
++    }
++    return true;
++  }
++
++  // Look at each instruction in each basic block.
++  // For calls to llvm.gcroot which are not located in the entry block,
++  // relocate them to the entry block.
++
++  typedef std::set<llvm::Value*> ValueSet;
++  typedef std::map<llvm::Value*, llvm::Value*> ValueValueMap;
++
++  bool isGCRoot(const Instruction* v) {
++    return v && v->getMetadata("fostergcroot") != NULL;
++  }
++
++  virtual bool runOnFunction(Function& F) {
++    if (!F.hasGC()) return false;
++    if (!llvm::StringRef(F.getGC()).startswith("fostergc")) return false;
++
++    llvm::outs() << "Running GC root relocator on function "<< F.getName() << "\n";
++
++    // Collect gc roots
++    Instruction* gcrootCallInsertionPoint = nullptr;
++    for (Instruction& IP : F.getEntryBlock()) {
++      if (!llvm::isa<llvm::AllocaInst>(&IP)) {
++        gcrootCallInsertionPoint = &IP;
++        break;
++      }
++    }
++
++    std::vector<CallInst*> toMove;
++    std::vector<CallInst*> toRemove;
++
++    for (BasicBlock& bb : F) {
++      bool isEntry = (bb.getName() == "entry");
++
++      for (Instruction& iref : bb) {
++        Instruction* i = &iref;
++
++        if (auto ci = llvm::dyn_cast<CallInst>(i)) {
++          const llvm::Function* f = ci->getCalledFunction();
++          if (f && f->getIntrinsicID() == llvm::Intrinsic::gcroot && !isEntry) {
++            toMove.push_back(ci);
++          } else if (f && f->getIntrinsicID() == llvm::Intrinsic::lifetime_start) {
++            toRemove.push_back(ci);
++          } else if (f && f->getIntrinsicID() == llvm::Intrinsic::lifetime_end) {
++            toRemove.push_back(ci);
++          }
++        }
++
++      } // end basic block iteration
++    } // end function iteration
++
++    bool modified = !toMove.empty() || !toRemove.empty();
++
++    while (!toMove.empty()) {
++      auto ci = toMove.back(); toMove.pop_back();
++      if (auto bitcast = dyn_cast<llvm::Instruction>(ci->getArgOperand(0))) {
++        bitcast->moveBefore(gcrootCallInsertionPoint);
++        ci->moveAfter(bitcast);
++      }
++    }
++    for (auto ci : toRemove) {
++      ci->eraseFromParent();
++    }
++    return modified;
++  }
++};
++
++char GCRootRelocator::ID = 0;
++
++} // unnamed namespace
++
++namespace llvm {
++  void initializeGCRootRelocatorPass(llvm::PassRegistry&);
++}
++
++INITIALIZE_PASS(GCRootRelocator, "foster-gc-root-relocator",
++                "Relocation of improperly inlined calls to llvm.gcroot().",
++                true, false)
++
++namespace foster {
++
++Pass* createGCRootRelocatorPass() { return new GCRootRelocator(); }
++
++}
