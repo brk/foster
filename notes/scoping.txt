@@ -1,0 +1,43 @@
+Before:
+
+    b = pure_computation();
+    c = stateful_computation(b);
+    e = stateful_computation();
+    f = pure_computation(c);
+
+
+Then, make part C optional:
+
+    if (X) {
+      b = pure_computation();
+      c = stateful_computation(b);
+    }
+    e = stateful_computation();
+    f = pure_computation(?c?);
+
+Oops! Scoping issue. Mutable state?
+
+    c = null ref;
+    if (X) {
+      b = pure_computation();
+      c = stateful_computation(b);
+    }
+    e = stateful_computation();
+    if (X) {
+      f = pure_computation(c);
+      ...
+    }
+
+
+What if we could write this:
+    if (X) {
+      c = stateful_computation(b);
+    }
+    e = stateful_computation();
+    if (X) {
+      f = pure_computation(c);
+    }
+    where {
+      c;
+      b = pure_computation();
+    }

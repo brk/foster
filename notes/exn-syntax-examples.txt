@@ -1,0 +1,144 @@
+From http://ocamllabs.io/compiler-hacking/2014/02/04/handler-case.html
+ and https://blog.janestreet.com/pattern-matching-and-exception-handling-unite/
+
+OCaml (original)
+                    let rec iter_stream f s =
+                      match (try Some (MyStream.get s)
+                             with End_of_stream -> None) with
+                      | None -> ()
+                      | Some (x, s') ->
+                          f x;
+                          iter_stream f s'
+
+OCaml (4.02)
+                    let rec iter_stream f s =
+                      match MyStream.get s
+                      with (x, s') -> f x; iter_stream f s'
+                      | exception End_of_stream -> ()
+
+OCaml (handler-case)
+                    let rec iter_stream f s =
+                      try MyStream.get s
+                      with End_of_stream -> ()
+                        | val (x, s') -> f x; iter_stream f s'
+
+OCaml (delimcc)
+                    let rec iter_stream f s =
+                        let p = new_prompt () in
+                        match push_prompt p (fun () -> `Val (my_stream_get s p)) with
+                      | `Val (x, s') -> f x; iter_stream f s'
+                      | `End_of_stream -> ()
+
+OCaml (micmatch)
+                    let rec iter_stream f s =
+                      let try (x, s') = my_stream_get s
+                      in f x; iter_stream f s'
+                      with End_of_stream -> ()
+
+OCaml (static exceptions)
+                    let rec iter_stream f s =
+                      try raise (`Val (MyStream.get s))
+                      with End_of_stream -> ()
+                        | `Val (x, s') -> f x; iter_stream f s'
+
+SML (Benton/Kennedy)
+                    fun iter_stream f s =
+                      let val (x, s') <= MyStream.get s in
+                          f x; iter_stream f s'
+                      unless End_of_stream => ()
+                      end
+
+Eff
+                    let rec iter_stream f s =
+                      handle my_stream_get s
+                      with exn#end_of_stream _ _ -> ()
+                        | val (x, s') -> f x; iter_stream f s'
+
+
+Common Lisp:
+                    (defun iter-stream (f s)
+                      (handler-case (get-stream s)
+                          (end-of-stream (_) nil)
+                          (:no-error (x |s'|)
+                            (funcall f x)
+                            (iter-stream f |s'|))))
+
+
+Foster:
+                    iter-stream = { f => s =>
+                      case handle my_stream_get s |> Some
+                           of $EndOfStream        -> None end
+                        of $Some (x,n) -> f x; iter-stream f n
+                        of $None       -> ()
+                      end
+                    };
+
+                                        read-lines = { inc =>
+                                          REC loop = { acc =>
+                                            case handle input_line inc |> Some
+                                                     of $EndOfStream   -> None end
+                                            of $None   -> listRev acc
+                                            of $Some l -> loop (Cons l acc)
+                                          }; loop Nil
+                                        };
+
+                    // or:
+                    iter-stream = { f => s =>
+                      handle my_stream_get s
+                        of $EndOfStream -> ()
+                        as { (x,n) => f x; iter-stream f n }
+                      end
+                    };
+
+                                        read-lines = { inc => acc =>
+                                            handle input_line inc
+                                              of $EndOfStream -> listReverse acc
+                                              as { l => read-lines inc (Cons l acc) } // yes, tail call
+                                            end
+                                        };
+
+
+                    // Note: this version is (arguably?) syntactically nicer but doesn't tail recurse.
+                    iter-stream = { f => s =>
+                      handle (let (x, n) = my_stream_get s;
+                               f x; iter-stream f n
+                        of $EndOfStream        -> ()
+                      end
+                    };
+
+                                        read-lines = { inc =>
+                                          REC loop = { acc =>
+                                              handle (l = input_line inc;
+                                                      loop (Cons l acc) // note: not a tail call!
+                                                of $EndOfStream -> listReverse acc
+                                              end
+                                          }; loop Nil
+                                        };
+
+
+                    // Note: dynamically single handler vs sequence of handlers.
+                    iter-stream = { f => s =>
+                      REC loop = { s =>
+                        let (x, n) = my_stream_get s;
+                        f x;
+                        loop n;
+                      };
+                      handle loop s
+                        of $EndOfStream -> ()
+                      end
+                    };
+
+                                        // Note: the above doesn't work if we need access to intermediate state
+                                        // from the handled loop:
+                                        read-lines = { inc =>
+                                          REC loop = { acc =>
+                                            loop (Cons (input_line inc) acc)
+                                          };
+                                          handle loop s
+                                            of $EndOfStream -> ... acc ???
+                                          end
+                                        };
+
+
+
+
