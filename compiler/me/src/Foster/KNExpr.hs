@@ -103,7 +103,7 @@ kNormalizeModule m ctx = do
     return $ ModuleIL body' decls' dts' prims' effds' (moduleILsourceLines m)
       where
         wrapFns :: [FnExprIL] -> KNExpr -> KNExpr
-        wrapFns fs e = foldr (\f body -> KNLetFuns [fnIdent f] [f] body) e fs
+        wrapFns fs e = foldr (\f body -> KNLetFuns [fnIdent f] [f] body (rangeOf (fnAnnot f))) e fs
 
         wellFormedEffectDeclsTC :: [EffectDecl TypeTC] -> Tc ()
         wellFormedEffectDeclsTC effdecls = do mapM_ wellFormedEffectDeclTC effdecls
@@ -186,7 +186,7 @@ kNormalize st expr =
 
       AnnTuple annot _ kind es -> do nestedLets (map go es) (\vs ->
                                       KNTuple (TupleTypeIL kind (map tidType vs)) vs (rangeOf annot))
-      AnnAlloc _rng _t a amr  -> do nestedLets [go a] (\[x] -> KNAlloc (PtrTypeIL $ tidType x) x amr)
+      AnnAlloc  rng _t a amr  -> do nestedLets [go a] (\[x] -> KNAlloc (PtrTypeIL $ tidType x) x amr (rangeOf rng))
       AnnDeref _rng _t   a    -> do nestedLets [go a] (\[x] -> KNDeref (pointedToTypeOfVar x) x)
       AnnStore _rnt _t a b  -> do nestedLets [go a, go b] (\[x,y] -> KNStore unitTypeIL x y)
 
@@ -202,12 +202,12 @@ kNormalize st expr =
 
         nestedLets [go e] (\[x] -> KNTyApp ti x argtys)
 
-      AnnAllocArray _rng _ a aty mb_amr zi -> do
+      AnnAllocArray rng _ a aty mb_amr zi -> do
             t <- qt aty
             let amr = case mb_amr of
                         Just amr -> amr
                         Nothing  -> MemRegionGlobalHeap
-            nestedLets [go a] (\[x] -> KNAllocArray (ArrayTypeIL t) x amr zi)
+            nestedLets [go a] (\[x] -> KNAllocArray (ArrayTypeIL t) x amr zi (rangeOf rng))
 
       AnnArrayRead _rng t (ArrayIndex a b rng s) -> do
               checkArrayIndexer b
@@ -243,17 +243,17 @@ kNormalize st expr =
                           knFn <- kNormalizeFn st annFn
                           let t = tidType (fnVar knFn)
                           let fnvar = KNVar (TypedId t fn_id)
-                          return $ KNLetFuns [fn_id] [knFn] fnvar
+                          return $ KNLetFuns [fn_id] [knFn] fnvar (rangeOf (fnAnnot annFn))
 
       -- For bound function literals
       AnnLetVar _rng id (E_AnnFn annFn) b -> do
                           knFn <- kNormalizeFn st annFn
                           b' <- go b
-                          return $ KNLetFuns [id] [knFn] b'
+                          return $ KNLetFuns [id] [knFn] b' (rangeOf (fnAnnot annFn))
 
-      AnnLetFuns _rng ids fns a   -> do
+      AnnLetFuns rng ids fns a   -> do
                                 knFns <- mapM (kNormalizeFn st) fns
-                                liftM (KNLetFuns ids knFns) (go a)
+                                liftM (\a' -> KNLetFuns ids knFns a' (rangeOf rng)) (go a)
 
       AnnLetVar _rng id a b -> do liftM2 (buildLet id) (go a) (go b)
       AnnLetRec _rng ids exprs e  -> do
@@ -295,9 +295,10 @@ kNormalize st expr =
 
                 _else -> do knCall ti b args
 
-      AnnAppCtor _ t c es -> do let repr = lookupCtorRepr (lookupCtor c)
-                                t'  <- qt t
-                                nestedLets (map go es) (\vs -> KNAppCtor  t' (c, repr) vs)
+      AnnAppCtor annot t c es -> do
+        let repr = lookupCtorRepr (lookupCtor c)
+        t'  <- qt t
+        nestedLets (map go es) (\vs -> KNAppCtor  t' (c, repr) vs (rangeOf annot))
 
       AnnCompiles _rng _ty (CompilesResult ooe) -> do
         oox <- tcIntrospect (tcInject go ooe)
@@ -377,6 +378,7 @@ kNormalize st expr =
                   let pwild = PR_Atom $ P_Wildcard msr (tidType v)
                   return $ KNLetFuns [kid] [kont]
                           (KNCase t v (clump' ++ [CaseArm pwild callkont Nothing [] msr]))
+                          (MissingSourceRange "case-arms")
           if anyCaseArmIsGuarded arms
             then go arms'
             else return $ KNCase t v arms'
@@ -876,7 +878,7 @@ buildLet ident bound inexpr =
 
     -- Convert  let f = letfuns g = ... in g in <<f>>
     --     to   letfuns g = ... in let f = g in <<f>>
-    KNLetFuns ids fns a -> KNLetFuns ids fns (buildLet ident a inexpr)
+    KNLetFuns ids fns a sr -> KNLetFuns ids fns (buildLet ident a inexpr) sr
 
     -- Convert  let i = x in i
     --      to  x
@@ -912,9 +914,9 @@ nestedLetsDo exprActions g = do exprs <- sequence exprActions
           --    let var2 = (letfun var1 = {...} in var1) in e ...
           -- because it would be later flattened out to
           --    let var1 = fn in (let var2 = var1 in e...)
-          (KNLetFuns ids fns (KNVar v)) -> do
+          (KNLetFuns ids fns (KNVar v) sr) -> do
             innerlet <- nestedLets' es (v:vars) k
-            return $ KNLetFuns ids fns innerlet
+            return $ KNLetFuns ids fns innerlet sr
 
           _otherwise -> do
             x        <- knFresh (tmpForExpr e)
@@ -950,9 +952,9 @@ letsForArrayValues vals normalize mkArray = do
           --    let var2 = (letfun var1 = {...} in var1) in e ...
           -- because it would be later flattened out to
           --    let var1 = fn in (let var2 = var1 in e...)
-          Right (KNLetFuns ids fns (KNVar v)) -> do
+          Right (KNLetFuns ids fns (KNVar v) sr) -> do
             innerlet <- nestedLets' es (Right v:vars) k
-            return $ KNLetFuns ids fns innerlet
+            return $ KNLetFuns ids fns innerlet sr
 
           Right e -> do
             x        <- knFresh (tmpForExpr e)
@@ -989,6 +991,7 @@ kNormalCtors st dtype =
                 -> KN (FnExprIL)
     kNormalCtor _datatype (DataCtor _cname _tyformals _tys Nothing _lone _range) = do
       error "Cannot wrap a data constructor with no representation information."
+
     kNormalCtor datatype (DataCtor cname _tyformals tys (Just repr) _lone range) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
@@ -999,7 +1002,7 @@ kNormalCtors st dtype =
       let ret tid = return
                Fn { fnVar   = tid
                   , fnVars  = vars
-                  , fnBody  = KNAppCtor resty (cid, repr) vars
+                  , fnBody  = KNAppCtor resty (cid, repr) vars range
                   , fnIsRec = ()
                   , fnAnnot = annotForRange range
                   } where resty =
@@ -1065,7 +1068,7 @@ kNormalEffectWrappers st ed = map kNormalEffectWrapper (zip [0..] (effectDeclCto
           effb = case effty of
                    TyAppIL base _ -> base
                    other          -> other
-          body = mkKNLetVal opval (KNAppCtor effty (cid, repr) vars) -- (KNCallPrim range effty (PrimOp "effect_ctor" effty) vars)
+          body = mkKNLetVal opval (KNAppCtor effty (cid, repr) vars (MissingSourceRange "eff-ctor")) -- (KNCallPrim range effty (PrimOp "effect_ctor" effty) vars)
                    (mkKNLetVal coro (KNCallPrim range coroty (PrimOp "lookup_handler_for_effect" effb) [])
                     (KNCallPrim range outty (CoroPrim CoroYield outty effty)
                                             [TypedId coroty coro, TypedId effty opval]))
@@ -1158,7 +1161,7 @@ collectFunctions knf = go [] (fnBody knf)
           KNCase       _ _ arms       -> let es = concatMap caseArmExprs arms in
                                        foldl' go xs es
           KNLetRec     _ es b       -> foldl' go xs (b:es)
-          KNLetFuns    ids fns b ->
+          KNLetFuns    ids fns b _sr ->
                  let entries = map (\(id, f) -> (fnIdent knf, id, f)) (zip ids fns) in
                  let ys      = concatMap collectFunctions fns in
                  xs ++ entries ++ go ys b
@@ -1177,10 +1180,10 @@ collectMentions knf = go Set.empty (fnBody knf)
           KNDeref       {} -> xs
           KNArrayLit _ _ litsvars -> uu xs [v | Right v <- litsvars]
           KNTuple       _ vs _ -> uu xs vs
-          KNAppCtor     _ _ vs -> uu xs vs
+          KNAppCtor     _ _ vs _sr -> uu xs vs
           KNCallPrim  _ _ _ vs -> uu xs vs
           KNVar           v    -> vv xs v
-          KNAlloc       _ v _  -> vv xs v
+          KNAlloc       _ v _ _sr -> vv xs v
           KNTyApp       _ v _  -> vv xs v
           KNStore     _  v1 v2 -> vv (vv xs v1) v2
           KNCall        _ v vs -> vv (uu xs vs) v
@@ -1194,7 +1197,7 @@ collectMentions knf = go Set.empty (fnBody knf)
           KNCase        _ v arms    -> let es = concatMap caseArmExprs arms in
                                        foldl' go (vv xs v) es
           KNLetRec     _ es b ->       foldl' go xs (b:es)
-          KNLetFuns    _ fns b -> Set.union xs $ go (Set.unions $ map collectMentions fns) b
+          KNLetFuns    _ fns b _sr -> Set.union xs $ go (Set.unions $ map collectMentions fns) b
           KNCompiles _r _t e             -> go xs e
           KNRelocDoms  _  e -> go xs e
 
@@ -1225,12 +1228,12 @@ rebuildWith rebuilder e = q e
       KNLetRec      ids es   e       -> KNLetRec   ids (map q es) (q e)
       KNHandler _a ty fx ea arms mbe resumeid -> KNHandler _a ty fx (q ea) (map (fmapCaseArm id q id) arms) (fmap q mbe) resumeid
       KNCase        ty v arms        -> KNCase     ty v (map (fmapCaseArm id q id) arms)
-      KNLetFuns     ids fns e        -> mkLetFuns (rebuilder (zip ids fns)) (q e)
+      KNLetFuns     ids fns e sr     -> mkLetFuns (rebuilder (zip ids fns)) (q e) sr
       KNCompiles _r _t e             -> KNCompiles _r _t (q e)
       KNRelocDoms ids e -> KNRelocDoms ids (q e)
 
-mkLetFuns []       e = e
-mkLetFuns bindings e = KNLetFuns ids fns e where (ids, fns) = unzip bindings
+mkLetFuns []       e _sr = e
+mkLetFuns bindings e  sr = KNLetFuns ids fns e sr where (ids, fns) = unzip bindings
 
 knSinkBlocks :: (Pretty t, Show t) => ModuleIL (KNExpr' RecStatus t) t -> Compiled (ModuleIL (KNExpr' RecStatus t) t)
 knSinkBlocks m = do
@@ -1536,7 +1539,7 @@ knLoopHeaderCensus tailq activeids expr = go' tailq expr where
                                        _ -> return ()
                                      go e2
     KNLetRec      _   es  b    -> do mapM_ (go' NotTail) es ; go b
-    KNLetFuns     ids fns b -> do
+    KNLetFuns     ids fns b _sr -> do
       case () of
         _ | all mustCont ids -> do
           mapM_ (knLoopHeaderCensusFn activeids) (zip ids fns)
@@ -1626,7 +1629,7 @@ knLoopHeaders' expr addLoopHeadersForNonTailLoops = do
                                        then mkKNLetVal id knz e2' -- see {note 1}
                                        else mkKNLetVal id e1' e2'
     KNLetRec      ids es  b     -> KNLetRec ids (map (q NotTail) es) (q tailq b)
-    KNLetFuns     [id] [fn] b ->
+    KNLetFuns     [id] [fn] b sr ->
         case qv id of
           -- If we have a single recursive function (as detected earlier),
           -- we should wrap its body with a minimal loop,
@@ -1664,6 +1667,7 @@ knLoopHeaders' expr addLoopHeadersForNonTailLoops = do
                         body' = if tc
                                   then KNLetFuns [ id' ] [ fn'inr ]
                                         (KNCall (typeKN (fnBody fn)) v'inr (dropUselessArgs mt vs' ))
+                                        sr
                                   else body
                         fn'nt = Fn  { fnVar   = v''nt
                                     , fnVars  = vars
@@ -1678,21 +1682,22 @@ knLoopHeaders' expr addLoopHeadersForNonTailLoops = do
                 vars'' = renameUsefulArgs mt vs'
                 body'' = KNLetFuns [ id'mid ] [ fn'mid ]
                           (KNCall (typeKN (fnBody fn)) v'mid (dropUselessArgs mt vs' ))
+                          sr
                 fn' = Fn  { fnVar   = fnVar fn
                           , fnVars  = vars''
                           , fnBody  = body''
                           , fnIsRec = computeIsFnRec' (freeIdentsFn body'' vars'') [id]
                           , fnAnnot = fnAnnot fn
                           } in
-            KNLetFuns [id ] [ fn' ] (qq (Map.delete id info) r inScopeHeaders tailq b)
+            KNLetFuns [id ] [ fn' ] (qq (Map.delete id info) r inScopeHeaders tailq b) sr
               
           -- No loop summary, or summary with no wrapper to generate.
-          _ -> KNLetFuns [id] [fn { fnBody = (q YesTail $ fnBody fn) }] (q tailq b)
-    KNLetFuns     ids fns b     ->
+          _ -> KNLetFuns [id] [fn { fnBody = (q YesTail $ fnBody fn) }] (q tailq b) sr
+    KNLetFuns     ids fns b sr   ->
         -- If we have a nest of recursive functions,
         -- the replacements should only happen locally, not intra-function.
         -- This is handled by the inScopeHeaders state variable.
-        KNLetFuns ids (map (\fn -> fn { fnBody = q YesTail (fnBody fn) }) fns) (q tailq b)
+        KNLetFuns ids (map (\fn -> fn { fnBody = q YesTail (fnBody fn) }) fns) (q tailq b) sr
 
     -- If we see a *tail* call to a recursive function, replace it with
     -- the appropriate pre-computed call to the corresponding loop header.

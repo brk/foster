@@ -88,8 +88,8 @@ monoKN subst inTypeExpr e =
   KNTuple         t vs a   -> liftM3 KNTuple         (qt t) (mapM qv vs) (return a)
   KNKillProcess   t s      -> liftM2 KNKillProcess   (qt t) (return s)
   KNCallPrim   sr t p vs   -> liftM3(KNCallPrim sr)  (qt t) (qp p) (mapM qv vs)
-  KNAllocArray    t v amr zi -> liftM4 KNAllocArray    (qt t) (qv v) (return amr) (return zi)
-  KNAlloc         t v amr  -> liftM3 KNAlloc         (qt t) (qv v) (return amr)
+  KNAllocArray    t v amr zi sr -> do t' <- qt t; v' <- qv v; return $ KNAllocArray t' v' amr zi sr
+  KNAlloc         t v amr    sr -> liftM4 KNAlloc         (qt t) (qv v) (return amr) (return sr)
   KNDeref         t v      -> liftM2 KNDeref         (qt t) (qv v)
   KNStore         t v1 v2  -> liftM3 KNStore         (qt t) (qv v1) (qv v2)
   KNArrayRead     t ai     -> liftM2 KNArrayRead     (qt t) (qa ai)
@@ -195,7 +195,7 @@ monoKN subst inTypeExpr e =
                       (KNCase t' (TypedId resumeargty ylded)
                         pats'
                         -- TODO include 'other' branch?
-                        ))
+                        ) (MissingSourceRange "mono-handler"))
       -- Assume recursive, conservatively.
       liftIO $ putStrLn $ "line 201"
       return $ Fn (TypedId fnty gofnidG) vs body YesRec annot
@@ -207,23 +207,24 @@ monoKN subst inTypeExpr e =
         (mkKNLetVal gencoroid (KNCallPrim (rangeOf annot) coroty (CoroPrim CoroCreate inputargty resumeargty)
                           [TypedId (FnType [] t' FastCC FT_Func) actionid])
             (KNCall t' (TypedId fnty gofnidL) [TypedId coroty gencoroid, TypedId unitty unitid]))))
+        (MissingSourceRange "KNHandler")
 
   -- Here are the interesting bits:
-  KNAppCtor       t c vs   -> do
+  KNAppCtor       t c vs  sr -> do
     -- Turn (ForAll [('a,KindAnySizeType)]. (TyConAppIL Maybe 'a:KindAnySizeType))
     -- into                                   TyConApp "Maybe" [PtrTypeUnknown]
     t' <- qt t
     case t' of
       StructType {} -> do
         vs' <- mapM qv vs
-        return $ KNTuple t' vs' (MissingSourceRange $ "<unboxed ctor:" ++ show c ++ ">")
+        return $ KNTuple t' vs' sr
       TyApp (TyCon dtname) args -> do
         c' <- monoMarkDataType c dtname args
         vs' <- mapM qv vs
-        return $ KNAppCtor t' c' vs'
+        return $ KNAppCtor t' c' vs' sr
       _ -> error $ "monoKN of KNAppCtor saw unexpected type " ++ show t'
 
-  KNLetFuns     ids fns0 b  -> do
+  KNLetFuns     ids fns0 b sr -> do
     let fns = computeRecursivenessAnnotations fns0 ids
     let (monos, polys) = split (zip ids fns)
 
@@ -267,7 +268,7 @@ monoKN subst inTypeExpr e =
                   knFunMarker
                   mkKNLetFuns
             where mkKNLetFuns []  []  b = b
-                  mkKNLetFuns ids fns b = KNLetFuns ids fns b
+                  mkKNLetFuns ids fns b = KNLetFuns ids fns b sr
 
     -- We keep the polymorphic versions around in case they have been
     -- referenceed without being instantiated. If they are dead, they

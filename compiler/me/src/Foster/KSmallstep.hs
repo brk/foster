@@ -275,7 +275,7 @@ ssTermOfExpr expr =
     KNLiteral _ (LitByteArray bs) -> SSTmValue $ SSByteString bs
     KNVar        v         -> SSTmExpr  $ IVar (idOf v)
     KNTuple   _t vs _      -> SSTmExpr  $ ITuple (map idOf vs)
-    KNLetFuns ids funs e   -> SSTmExpr  $ ILetFuns   ids funs           (tr e)
+    KNLetFuns ids funs e _ -> SSTmExpr  $ ILetFuns   ids funs           (tr e)
     KNLetVal x b e _       -> SSTmExpr  $ ILetVal      x (tr b)         (tr e)
     KNLetRec ids exprs e   -> SSTmExpr  $ ILetRec    ids (map tr exprs) (tr e)
     KNCall     _t b vs     -> SSTmExpr  $ ICall (idOf b) (map idOf vs)
@@ -286,15 +286,15 @@ ssTermOfExpr expr =
     KNArrayPoke _t (ArrayIndex b i _ _) v
                            -> SSTmExpr  $ IArrayPoke (idOf v) (idOf b) (idOf i)
     KNArrayLit t arr vals  -> SSTmExpr  $ IArrayLit  (idOf arr) (map (arrEntry t) vals)
-    KNAllocArray _ety n _ _ -> SSTmExpr  $ IAllocArray (idOf n)
-    KNAlloc    _t a _rgn   -> SSTmExpr  $ IAlloc (idOf a)
+    KNAllocArray _ety n _ _ _sr -> SSTmExpr  $ IAllocArray (idOf n)
+    KNAlloc    _t a _rgn _ -> SSTmExpr  $ IAlloc (idOf a)
     KNDeref    _t a        -> SSTmExpr  $ IDeref (idOf a)
     KNStore    _t a b      -> SSTmExpr  $ IStore (idOf a) (idOf b)
     KNTyApp    _t v argtys -> SSTmExpr  $ ITyApp (idOf v) argtys
     KNCase _t a bs {-dt-}  -> SSTmExpr  $ ICase (idOf a) {-dt-} [CaseArm p (tr e) (fmap tr g) b r
                                                                 |CaseArm p e g b r <- bs] []
     KNHandler {} -> error $ "KSmallstep.hs: KNHandler not yet implemented"
-    KNAppCtor     _t cr vs -> SSTmExpr  $ IAppCtor (fst cr) (map idOf vs)
+    KNAppCtor     _t cr vs _sr -> SSTmExpr  $ IAppCtor (fst cr) (map idOf vs)
     KNKillProcess _t msg   -> SSTmExpr  $ error $ "prim kill-process: " ++ T.unpack msg
     KNCompiles {} -> SSTmValue $ SSBool True -- TODO maybe have __COMPILES__ take a default parameter for us to return?
     KNRelocDoms         _ e -> ssTermOfExpr e

@@ -225,9 +225,9 @@ alphaRenameMono fn = do
       KNTuple         t vs a   -> do vs' <- mapM qv vs; t' <- qt t ; return $ KNTuple t' vs' a
       KNCall          t v vs   -> do (v' : vs') <- mapM qv (v:vs); t' <- qt t; return $ KNCall t' v' vs'
       KNCallPrim   sr t p vs   -> do vs' <- mapM qv vs; t' <- qt t; return $ KNCallPrim   sr t' p vs'
-      KNAppCtor       t c vs   -> do vs' <- mapM qv vs; t' <- qt t; return $ KNAppCtor t' c vs'
-      KNAllocArray    t v amr zi -> liftM4 KNAllocArray (qt t) (qv v) (return amr) (return zi)
-      KNAlloc         t v amr  -> liftM3 KNAlloc      (qt t) (qv v) (return amr)
+      KNAppCtor       t c vs sr -> do vs' <- mapM qv vs; t' <- qt t; return $ KNAppCtor t' c vs' sr
+      KNAllocArray    t v amr zi sr -> do t' <- qt t; v' <- qv v; return $ KNAllocArray t' v' amr zi sr
+      KNAlloc         t v amr    sr -> liftM4 KNAlloc      (qt t) (qv v) (return amr) (return sr)
       KNDeref         t v      -> liftM2 KNDeref      (qt t) (qv v)
       KNStore         t v1 v2  -> liftM3 KNStore      (qt t) (qv v1) (qv v2)
       KNArrayRead     t ai     -> liftM2 KNArrayRead  (qt t) (renameArrayIndex ai)
@@ -251,10 +251,10 @@ alphaRenameMono fn = do
       KNLetRec     ids exprs e -> do ids' <- mapM renameI ids
                                      (e' : exprs' ) <- mapM renameKN (e:exprs)
                                      return $ KNLetRec ids' exprs'  e'
-      KNLetFuns     ids fns b  -> do ids' <- mapM renameI ids
-                                     fns' <- mapM renameFn fns
-                                     b'   <- renameKN b
-                                     return $ KNLetFuns ids' fns' b'
+      KNLetFuns     ids fns b sr -> do ids' <- mapM renameI ids
+                                       fns' <- mapM renameFn fns
+                                       b'   <- renameKN b
+                                       return $ KNLetFuns ids' fns' b' sr
       KNTyApp t v argtys       -> liftM3 KNTyApp (qt t) (qv v) (return argtys)
       KNCompiles r t e         -> liftM2 (KNCompiles r) (qt t) (renameKN e)
       KNRelocDoms ids e -> do liftM2 KNRelocDoms (mapM qi ids) (renameKN e)

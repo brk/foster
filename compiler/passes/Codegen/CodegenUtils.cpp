@@ -14,6 +14,7 @@
 #include "llvm/IR/LLVMContext.h"
 
 #include <string>
+#include <sstream>
 
 using namespace llvm;
 
@@ -237,11 +238,13 @@ Value* CodegenPass::getGlobalString(const std::string& s) {
 }
 
 void emitRecordMallocCallsite(llvm::Module* m,
+                              llvm::Value* mem,
                               llvm::Value* typemap,
-                              llvm::Value* srclines) {
+                              llvm::Value* srcloc,
+                              llvm::Value* typedesc) {
   llvm::Value* rmc = m->getFunction("record_memalloc_cell");
   ASSERT(rmc != NULL) << "NO record_memalloc_cell IN MODULE! :(";
-  markAsNonAllocating(builder.CreateCall(rmc, { typemap, srclines }));
+  markAsNonAllocating(builder.CreateCall(rmc, { mem, typemap, srcloc, typedesc }));
 }
 
 // |arg| is a 1-based index (0 is the fn return value).
@@ -253,7 +256,8 @@ llvm::Type* getFunctionTypeArgType(llvm::Type* fn_ptr_ty, int arg) {
 llvm::Value*
 CodegenPass::emitMalloc(TypeAST* typ,
                         CtorRepr ctorRepr,
-                        std::string srclines,
+                        std::string typedesc,
+                        std::string srcloc_str,
                         bool init) {
   llvm::Value* memalloc_cell = mod->getFunction("memalloc_cell");
   ASSERT(memalloc_cell != NULL) << "NO memalloc_cell IN MODULE! :(";
@@ -264,15 +268,19 @@ CodegenPass::emitMalloc(TypeAST* typ,
   llvm::Type* typemap_type = getFunctionTypeArgType(memalloc_cell->getType(), 1);
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
 
-  if (this->config.trackAllocSites) {
-    llvm::Value* linesgv = (srclines.empty())
-                ? llvm::ConstantPointerNull::get(builder.getInt8PtrTy())
-                : builder.CreateBitCast(this->getGlobalString(srclines),
-                                                 builder.getInt8PtrTy());
-    emitRecordMallocCallsite(mod, typemap, linesgv);
-  }
-
   llvm::CallInst* mem = builder.CreateCall(memalloc_cell, typemap, "mem");
+
+  if (this->config.trackAllocSites) {
+    llvm::Value* linesgv = (typedesc.empty())
+                ? llvm::ConstantPointerNull::get(builder.getInt8PtrTy())
+                : builder.CreateBitCast(this->getGlobalString(typedesc),
+                                                 builder.getInt8PtrTy());
+
+    llvm::Value* srcloc = 
+                 builder.CreateBitCast(this->getGlobalString(srcloc_str),
+                                                 builder.getInt8PtrTy());
+    emitRecordMallocCallsite(mod, mem, typemap, srcloc, linesgv);
+  }
 
   llvm::Type* ty = typ->getLLVMType();
   if (init) {
@@ -300,6 +308,13 @@ CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
   llvm::Value* num_elts = signExtend(n, builder.getInt64Ty());
   llvm::CallInst* mem = builder.CreateCall(memalloc, { typemap, num_elts,
                                                        builder.getInt8(init) }, "arrmem");
+
+  if (this->config.trackAllocSites) {
+    auto linesgv = llvm::ConstantPointerNull::get(builder.getInt8PtrTy());
+    auto srcloc  = llvm::ConstantPointerNull::get(builder.getInt8PtrTy());
+    emitRecordMallocCallsite(mod, mem, typemap, srcloc, linesgv);
+  }
+
   return builder.CreateBitCast(mem,
                   ArrayTypeAST::getZeroLengthTypeRef(elt_type), "arr_ptr");
 }
@@ -692,7 +707,7 @@ struct LLProcAllocDefaultCoro : public LLProcPrimBase {
     // The returned coro is uninitialized, but this should only be
     // called by the runtime, which will do the appropriate intialization.
     CtorRepr bogusCtor; bogusCtor.smallId = -1;
-    Value* dcoro = pass->emitMalloc(getSplitCoroTyp(getUnitType()), bogusCtor, "dcoro", /*init*/ true);
+    Value* dcoro = pass->emitMalloc(getSplitCoroTyp(getUnitType()), bogusCtor, "dcoro", "<default coro>", /*init*/ true);
     builder.CreateRet(builder.CreateBitCast(dcoro,
                   ptrTo(foster_generic_coro_ast->getLLVMType())));
   }

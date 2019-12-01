@@ -606,7 +606,8 @@ Value* CodegenPass::emitCoroCreateFn(
 
   CtorRepr bogusCtor; bogusCtor.smallId = -1;
   // foster_coro_i32_i32* fcoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
-  Value* fcoro      =                                   this->emitMalloc(getSplitCoroTyp(argTyps), bogusCtor, "fcoro", /*init*/ true);
+  Value* fcoro      =    this->emitMalloc(getSplitCoroTyp(argTyps), bogusCtor, "fcoro",
+                                              "<coro src?>", /*init*/ true);
 
   // TODO call memset on the full structs
 

@@ -144,7 +144,7 @@ struct CodegenPass {
   void markFosterFunction(llvm::Function* f);
 
   Value* emitMalloc(TypeAST* typ, CtorRepr ctorRepr,
-                                      std::string srclines, bool init);
+                    std::string typedesc, std::string srcloc, bool init);
 
   Value* emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init);
 

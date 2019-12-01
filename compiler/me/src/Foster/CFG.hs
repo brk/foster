@@ -152,18 +152,18 @@ instance Pretty t => Pretty (Letable t) where
       ILOccurrence  _ v occ -> prettyOccurrence v occ
       ILCallPrim  _ p vs    -> (text "prim" <+> pretty p <+> hsep (map prettyId vs))
       ILCall      _ v vs    -> pretty v <+> hsep (map pretty vs)
-      ILAppCtor   _ (c,r) vs ->(parens (text (ctorCtorName c)
+      ILAppCtor   _ (c,r) vs _sr -> (parens (text (ctorCtorName c)
                                         <>  text "~" <> text (show r)
                                         <+> hsep (map prettyId vs)))
-      ILAlloc     v rgn     -> text "(ref" <+> pretty v <+> comment (pretty rgn) <> text ")"
+      ILAlloc     v rgn _sr -> text "(ref" <+> pretty v <+> comment (pretty rgn) <> text ")"
       ILDeref     _ v       -> pretty v <> text "^"
       ILStore     v1 v2     -> text "store" <+> pretty v1 <+> text "to" <+> pretty v2
-      ILAllocArray _ _v _ _ -> text $ "ILAllocArray..."
+      ILAllocArray _ _v _ _ _sr -> text $ "ILAllocArray..."
       ILArrayRead  _t (ArrayIndex v1 v2 _rng _s)  -> text "ILArrayRead" <+> prettyId v1 <> text "[" <> prettyId v2 <> text "]"
       ILArrayPoke  (ArrayIndex _v1 _v2 _rng _s) _v3 -> text $ "ILArrayPoke..."
       ILArrayLit _ _v _vals -> text $ "ILArrayLit..."
       ILBitcast   t v       -> text "bitcast " <+> prettyTypedVar v <+> text "to" <+> pretty t
-      ILAllocate _info      -> text "allocate ..." -- <+> pretty (allocType info)
+      ILAllocate _info _sr  -> text "allocate ..." -- <+> pretty (allocType info)
 
 instance Pretty BasicBlockGraph where
  pretty bbg =

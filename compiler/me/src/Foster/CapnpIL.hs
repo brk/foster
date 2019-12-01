@@ -240,6 +240,7 @@ defaultLetable ty tag =
         , primopsize_of_Letable  = []
         , ctorinfo_of_Letable    = StrictlyNone
         , arraylit_of_Letable    = StrictlyNone
+        , sourceloc_of_Letable   = StrictlyNone
     }
 
 dumpLiteral ty lit =
@@ -270,6 +271,15 @@ isTraced ty = case ty of
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+sourceLoc (MissingSourceRange msg) =
+    SourceLocation 0 0 (u8fromString msg)
+sourceLoc (SourceRange startline startcol _ _ _ mb_file) =
+  let msg = case mb_file of
+              Just f  -> f
+              Nothing -> ""
+  in
+    SourceLocation (fromIntegral startline) (fromIntegral startcol) (u8fromString msg)
+
 -- |||||||||||||||||||||||| Expressions |||||||||||||||||||||||||{{{
 dumpExpr :: MayGC -> IL.Letable TypeLL -> FC.Letable
 dumpExpr _ (ILAlloc    {}) = error "ILAlloc should have been translated away!"
@@ -290,17 +300,19 @@ dumpExpr _ (ILTuple _kind vs allocsrc) =
 dumpExpr _ (ILOccurrence t v occ) =
     (defaultLetable t Iloccurrence) { occ_of_Letable = StrictlyJust $ dumpOccurrence v occ }
 
-dumpExpr _ (ILAllocate info) =
+dumpExpr _ (ILAllocate info sr) =
     (defaultLetable (allocType info) Ilallocate) {
-        allocinfo_of_Letable = StrictlyJust $ dumpAllocate info }
+        allocinfo_of_Letable = StrictlyJust $ dumpAllocate info,
+        sourceloc_of_Letable = StrictlyJust $ sourceLoc sr  }
 
-dumpExpr _  (ILAllocArray (LLArrayType elt_ty) size memregion zeroinit) =
+dumpExpr _  (ILAllocArray (LLArrayType elt_ty) size memregion zeroinit sr) =
     (defaultLetable  elt_ty Ilallocate) {
         allocinfo_of_Letable = StrictlyJust $ dumpAllocate
                        (AllocInfo elt_ty memregion "xarrayx"
-                                  Nothing (Just size)  "...array..." zeroinit) }
+                                  Nothing (Just size)  "...array..." zeroinit),
+        sourceloc_of_Letable = StrictlyJust $ sourceLoc sr }
 
-dumpExpr _  (ILAllocArray nonArrayType _ _ _) =
+dumpExpr _  (ILAllocArray nonArrayType _ _ _ _sr) =
          error $ "CapnpIL.hs: Can't dump ILAllocArray with non-array type "
               ++ show nonArrayType
 
@@ -387,7 +399,7 @@ dumpExpr _ (ILCallPrim t (PrimIntTrunc _from to) args)
         truncOp IWd = "trunc_w0"
         truncOp IDw = "trunc_w1"
 
-dumpExpr _ (ILAppCtor _ _cinfo _) = error $ "CapnpIL.hs saw ILAppCtor, which"
+dumpExpr _ (ILAppCtor _ _cinfo _ _sr) = error $ "CapnpIL.hs saw ILAppCtor, which"
                                        ++ " should have been translated away..."
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
