@@ -1,0 +1,528 @@
+snafuinclude SparseArray "data/sparse-array";
+
+snafuinclude Bitwise "bitwise";
+snafuinclude Maybe "maybe";
+snafuinclude Prelude "prelude";
+snafuinclude Text "text";
+snafuinclude List "list";
+
+snafuinclude KnuthLCG "prng/knuthLCG";
+snafuinclude RandomGen "random/gen";
+snafuinclude QC "random/quickcheck";
+
+main = {
+  test-sparsearray !;
+
+  testQPTrie32_1 !;
+  test-QPTrie32_2 !;
+  test-QPTrie32_3 !;
+  test-QPTrie32_4 !;
+
+  expect_text "canonical versions:";
+  print_text "canonical versions:";
+  test-QPTrie32_5 !;
+  test-QPTrie32_6 !;
+
+  test-QPTrie32_7 !;
+  test-QPTrie32_8 !;
+
+  quickcheck-QPTrie !;
+};
+
+test-sparsearray = {
+  sa0 = sparseArrayEmpty !;
+  sa1 = sparseArrayInsert sa0 0 0;
+  sa2 = sparseArrayInsert sa1 1 1;
+  sa3 = sparseArrayInsert sa2 2 2;
+
+  sa3b = sparseArrayInsert sa3 3 2;
+
+  expect_i32 0;
+  print_i32 (unMaybe (sparseArrayLookup sa1 0));
+
+  expect_i32 0;
+  print_i32 (unMaybe (sparseArrayLookup sa2 0));
+
+  expect_i32 0;
+  print_i32 (unMaybe (sparseArrayLookup sa3 0));
+
+  expect_i32 1;
+  print_i32 (unMaybe (sparseArrayLookup sa3 1));
+
+  expect_i32 2;
+  print_i32 (unMaybe (sparseArrayLookup sa3 2));
+
+  expect_i32 3;
+  print_i32 (unMaybe (sparseArrayLookup sa3b 2));
+
+  expect_i1 True;
+  print_i1 (isNone (sparseArrayLookup sa3 4));
+
+  expect_i1 True;
+  print_i1 (isNone (sparseArrayLookup sa0 0));
+
+  expect_i1 True;
+  print_i1 (isNone (sparseArrayLookup sa1 1));
+
+};
+
+
+
+testQPTrie32_1 = {
+    REC goX = { qp => acc =>
+        case qp
+            of $QPTrie32Leaf k2     -> Cons k2 acc
+            of $QPTrie32Branch sa _ -> sparseArrayFoldl sa goX acc
+        end
+    };
+
+    leaf1 = QPTrie32Leaf 0x`ABAB;
+    lst = goX leaf1 Nil;
+    ()
+};
+
+
+test-QPTrie32_2 = {
+    leaf1 = QPTrie32Leaf 0x`ABAB;
+    leaf2 = QPTrie32Leaf 0x`5BAB;
+    leaf3 = QPTrie32Leaf 0x`CAFE;
+
+    saA = sparseArrayEmpty !
+       |> { sa => sparseArrayInsert sa leaf1 0xA }
+       |> { sa => sparseArrayInsert sa leaf2 0x5 };
+    qpA = QPTrie32Branch saA (3 *Int8 4);
+
+    sa0 = sparseArrayEmpty !
+       |> { sa => sparseArrayInsert sa leaf3 0xE }
+       |> { sa => sparseArrayInsert sa qpA   0xB };
+    qp = QPTrie32Branch sa0 0;
+
+    lst = qpTrie32ToList qp;
+    expect_text "[0000cafe, 0000abab, 00005bab]";
+    print_text (listShow tmp_Text_16_of_UInt32 lst);
+};
+
+test-QPTrie32_3 = {
+    qp0 = qpTrie32Empty !;
+    qp1 = qpTrie32InsertQuestionable qp0 0x`ABAB;
+    qp2 = qpTrie32InsertQuestionable qp1 0x`5BAB;
+    qp3 = qpTrie32InsertQuestionable qp2 0x`AAFE;
+    qp4 = qpTrie32InsertQuestionable qp3 0x`AAF9;
+
+    expect_text "[]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp0));
+
+    expect_text "[0000abab]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp1));
+
+    expect_text "[0000abab, 00005bab]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp2));
+
+    expect_text "[0000aafe, 0000abab, 00005bab]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp3));
+
+    expect_text "[0000aafe, 0000abab, 0000aaf9, 00005bab]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp4));
+};
+
+test-QPTrie32_4 = {
+    qp0 = qpTrie32Empty !;
+    qp1 = qpTrie32InsertQuestionable qp0 0x`5BAB;
+    qp2 = qpTrie32InsertQuestionable qp1 0x`AAF9;
+    qp3 = qpTrie32InsertQuestionable qp2 0x`ABAB;
+    qp4 = qpTrie32InsertQuestionable qp3 0x`AAFE;
+
+    expect_text "[]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp0));
+
+    expect_text "[00005bab]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp1));
+
+    expect_text "[00005bab, 0000aaf9]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp2));
+
+    expect_text "[0000abab, 00005bab, 0000aaf9]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp3));
+
+    expect_text "[0000aafe, 0000abab, 00005bab, 0000aaf9]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp4));
+};
+
+test-QPTrie32_5 = {
+    qp0 = qpTrie32Empty !;
+    qp1 = qpTrie32InsertCanonical qp0 0x`ABAB;
+    qp2 = qpTrie32InsertCanonical qp1 0x`5BAB;
+    qp3 = qpTrie32InsertCanonical qp2 0x`AAFE;
+    qp4 = qpTrie32InsertCanonical qp3 0x`AAF9;
+
+    expect_text "[]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp0));
+
+    expect_text "[0000abab]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp1));
+
+    expect_text "[0000abab, 00005bab]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp2));
+
+    expect_text "[0000aafe, 0000abab, 00005bab]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp3));
+
+    expect_text "[0000aafe, 0000abab, 00005bab, 0000aaf9]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp4));
+};
+
+test-QPTrie32_6 = {
+    qp0 = qpTrie32Empty !;
+    qp1 = qpTrie32InsertCanonical qp0 0x`5BAB;
+    qp2 = qpTrie32InsertCanonical qp1 0x`AAF9;
+    qp3 = qpTrie32InsertCanonical qp2 0x`ABAB;
+    qp4 = qpTrie32InsertCanonical qp3 0x`AAFE;
+
+    expect_text "[]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp0));
+
+    expect_text "[00005bab]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp1));
+
+    expect_text "[00005bab, 0000aaf9]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp2));
+
+    expect_text "[0000abab, 00005bab, 0000aaf9]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp3));
+
+    expect_text "[0000aafe, 0000abab, 00005bab, 0000aaf9]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp4));
+};
+
+test-QPTrie32_7 = {
+    qp0 = qpTrie32Empty !;
+    qp1 = qpTrie32InsertQuestionable qp0 0x`0100;
+    qp2 = qpTrie32InsertQuestionable qp1 0x`F100;
+    qp3 = qpTrie32InsertQuestionable qp2 0x`010A;
+
+    expect_text "[]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp0));
+
+    expect_text "[00000100]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp1));
+
+    expect_text "[0000f100, 00000100]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp2));
+
+    expect_text "[0000f100, 0000010a, 00000100]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp3));
+
+    //print_text (qpTrie32Show qp2 tmp_Text_16_of_UInt32);
+    //print_text (qpTrie32Show qp3 tmp_Text_16_of_UInt32);
+
+    expect_i1 True;
+    print_i1 (qpTrie32Contains qp3 0x010A);
+    expect_i1 True;
+    print_i1 (qpTrie32Contains qp3 0x0100);
+    expect_i1 True;
+    print_i1 (qpTrie32Contains qp3 0xF100);
+};
+
+test-QPTrie32_8 = {
+    qp0 = qpTrie32Empty !;
+    qp1 = qpTrie32InsertCanonical qp0 0x`0100;
+    qp2 = qpTrie32InsertCanonical qp1 0x`F100;
+    qp3 = qpTrie32InsertCanonical qp2 0x`010A;
+
+    expect_text "[]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp0));
+
+    expect_text "[00000100]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp1));
+
+    expect_text "[0000f100, 00000100]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp2));
+
+    expect_text "[0000010a, 0000f100, 00000100]";
+    print_text (listShow tmp_Text_16_of_UInt32 (qpTrie32ToList qp3));
+
+    //print_text (qpTrie32Show qp3 tmp_Text_16_of_UInt32);
+
+    expect_i1 True;
+    print_i1 (qpTrie32Contains qp3 0x010A);
+    expect_i1 True;
+    print_i1 (qpTrie32Contains qp3 0x0100);
+    expect_i1 True;
+    print_i1 (qpTrie32Contains qp3 0xF100);
+};
+
+show_Int32 = { x : Int32 => tmp_Text_of_Int32 x };
+
+show_List :: forall (t:Type) { { t => Text } => { List t => Text } };
+show_List = { show_elt =>
+  { lst =>
+    elts = listFoldl lst { x => acc => show_elt x ++Text ", " ++Text acc } "";
+    "[" ++Text elts ++Text "]"
+  }
+};
+
+quickcheck-QPTrie = {
+  expect_text "quickchecking...";
+  print_text  "quickchecking...";
+
+  prng64 = kLCG1x64HOF 33223;
+  prng32 = { prng64 ! |> high32BitsOf64 };
+
+  arbListOfInt  = arb_List prng32 (arb_Int32 prng32);
+  showListOfInt = show_List show_Int32;
+  testable_list_to_bool = testableFunc arbListOfInt showListOfInt testableBool;
+
+  expect_text "prop_QPTrie_C_ContainsEach OK";
+  case quickCheck prng32 testable_list_to_bool
+                  prop_QPTrie_C_ContainsEach
+    of $QCTR_Success     -> print_text "prop_QPTrie_C_ContainsEach OK"
+    of $QCTR_Failure _ q -> print_text "prop_QPTrie_C_ContainsEach failed";
+                            _ = listMap print_text q;
+                            ()
+    of $QCTR_Exhausted _ -> print_text "prop_QPTrie_C_ContainsEach exhausted"
+  end;
+
+
+  expect_text "prop_QPTrie_Q_ContainsEach OK";
+  case quickCheck prng32 testable_list_to_bool
+                  prop_QPTrie_Q_ContainsEach
+    of $QCTR_Success     -> print_text "prop_QPTrie_Q_ContainsEach OK"
+    of $QCTR_Failure _ q -> print_text "prop_QPTrie_Q_ContainsEach failed";
+                            _ = listMap print_text q;
+                            ()
+    of $QCTR_Exhausted _ -> print_text "prop_QPTrie_Q_ContainsEach exhausted"
+  end;
+};
+
+prop_QPTrie_C_ContainsEach :: { List Int32 => Bool };
+prop_QPTrie_C_ContainsEach = { ints =>
+  trie = listFoldl ints { i => t => qpTrie32InsertCanonical t i } (qpTrie32Empty !);
+  listFoldl ints { i => b => { b } `andand` { qpTrie32Contains trie i } } True
+};
+
+prop_QPTrie_Q_ContainsEach :: { List Int32 => Bool };
+prop_QPTrie_Q_ContainsEach = { ints =>
+  trie = listFoldl ints { i => t => qpTrie32InsertQuestionable t i } (qpTrie32Empty !);
+  listFoldl ints { i => b => { b } `andand` { qpTrie32Contains trie i } } True
+};
+
+
+prop_QPTrie_CQ_Equiv_WRONG :: { List Int32 => Bool };
+prop_QPTrie_CQ_Equiv_WRONG = { ints =>
+  trieC = listFoldl ints { i => t => qpTrie32InsertCanonical t i } (qpTrie32Empty !);
+  trieQ = listFoldl ints { i => t => qpTrie32InsertQuestionable t i } (qpTrie32Empty !);
+  listEqual { x => y => x ==Int32 y } (qpTrie32ToList trieC) (qpTrie32ToList trieQ)
+};
+
+
+// Quad-bit Popcount Patricia Tries based on the design by Tony Finch:
+//      https://dotat.at/prog/qp/
+//
+// See also
+//      https://9vx.org/post/qp-tries/
+
+// QPTrie could have any bitstring-like key,
+// but we don't have any way of expressing such constraints yet.
+//
+type case QPTrie32
+    of $QPTrie32Branch  (SparseArray QPTrie32) Int8
+    of $QPTrie32Leaf    Int32
+    ;
+
+// Invariant: only the top-most sparse array can be empty.
+
+
+qpTrie32Empty = { QPTrie32Branch (sparseArrayEmpty !) 0 };
+
+qpTrie32Contains :: { QPTrie32 => Int32 => Bool };
+qpTrie32Contains = { qp => key : Int32 =>
+  case qp
+    of $QPTrie32Leaf k2 -> key ==Int32 k2
+    of $QPTrie32Branch sa nibble-bitoff ->
+      idx = bitfield-len-Int32 key (zext_i8_to_i32 nibble-bitoff) 4;
+      case sparseArrayLookup sa idx
+        of $None -> False
+        of $Some qpx -> qpTrie32Contains qpx key
+      end
+  end
+};
+
+qpTrie32ToList :: { QPTrie32 => List Int32 };
+qpTrie32ToList = { qp =>
+  REC go = { qp => acc =>
+    case qp
+        of $QPTrie32Leaf k2     -> Cons k2 acc
+        of $QPTrie32Branch sa _ -> sparseArrayFoldl sa go acc
+    end
+  };
+
+  go qp Nil
+};
+
+/*
+
+[ 0 | 0 | empty ]
+
+[ value | "foo" ]
+
+
+[ 0044 | 1 | twigs ] -> [    value | "bar" ]
+                        [    value | "foo" ]
+
+[ 0044 | 1 | twigs ] -> [ 0404 | 5 | twigs ] -> [ value | "bar" ]
+                        [    value | "foo" ]    [ value | "baz" ]
+
+[ 0244 | 1 | twigs ] -> [ 0404 | 5 | twigs ] -> [ value | "bar" ]
+                        [    value | "foo" ]    [ value | "baz" ]
+                        [    value | "qux" ]
+
+[ 0244 | 1 | twigs ] -> [ 0704 | 5 | twigs ] -> [ value | "bar" ]
+                        [    value | "foo" ]    [ value | "bay" ]
+                        [    value | "qux" ]    [ value | "baz" ]
+*/
+
+qpTrie32Show = { qp => sho =>
+  case qp
+    of $QPTrie32Leaf key ->
+        mkTextConcat "(QPTrie32Leaf "
+            (mkTextConcat (sho key) ")")
+    of $QPTrie32Branch sa nib-off ->
+        mkTextConcat "(QPTrie32Branch nib-off="
+         (mkTextConcat
+            (mkTextConcat (tmp_Text_of_Int8 nib-off) " ")
+            (mkTextConcat (sparseArrayShow sa
+                { qp => qpTrie32Show qp sho }) ")") )
+  end
+};
+
+nibble-at = { k : Int32 => o : Int8 =>
+  bitfield-len-Int32 k (zext_i8_to_i32 o) 4
+};
+
+// Precondition:
+//      q2 is a leaf with key k2.
+qpTrie32Pair = { k1 : Int32 => k2 => q2 =>
+    diffbits = bitxor-Int32 k1 k2;
+    REC first-differing-nibble = { nib : Int8 =>
+        if nibble-at diffbits nib ==Int32 0
+            then first-differing-nibble (nib +Int8 4)
+            else nib
+        end
+    };
+
+    n = first-differing-nibble 0;
+    sa = sparseArrayPair (QPTrie32Leaf k1) (nibble-at k1 n)
+                         q2                (nibble-at k2 n);
+    QPTrie32Branch sa n;
+};
+
+// This version does not maintain a strict ordering invariant on
+// the sequence of nibble offsets encountered when traversing the trie.
+// I'm not sure if this version actually constructs correct tries
+// or if it's broken!
+qpTrie32InsertQuestionable = { qp => key : Int32 =>
+  //print_text (qpTrie32Show qp tmp_Text_16_of_UInt32);
+
+  case qp
+    of $QPTrie32Leaf k2 ->
+      if k2 ==Int32 key
+        then qp
+        else qpTrie32Pair key k2 qp
+      end
+    of $QPTrie32Branch sa nibble-bitoff ->
+      if sparseArrayIsEmpty sa
+        then QPTrie32Leaf key
+        else
+             // We have a branch; look up the appropriate trie...
+             idx = nibble-at key nibble-bitoff;
+
+             case sparseArrayLookup sa idx
+               of $Some saqp ->
+                    // ... insert recursively...
+                    saqx = qpTrie32InsertQuestionable saqp key;
+                    // ... and rebuild.
+                    sax = sparseArrayInsert sa saqx idx;
+                    QPTrie32Branch sax nibble-bitoff
+               of $None ->
+                    sax = sparseArrayInsert sa (QPTrie32Leaf key) idx;
+                    QPTrie32Branch sax nibble-bitoff
+            end
+      end
+  end
+};
+
+qpTrie32AnyKey = { qp =>
+  case qp
+    of $QPTrie32Leaf   key  -> Some key
+    of $QPTrie32Branch sa _ ->
+      case sparseArrayElem sa
+        of $None     -> None
+        of $Some qpp -> qpTrie32AnyKey qpp
+      end
+  end
+};
+
+qpTrie32InsertCanonical :: { QPTrie32 => Int32 => QPTrie32 };
+qpTrie32InsertCanonical = { qp => key : Int32 =>
+  // A helper function to "push" the key through
+  // the given trie.
+  REC push = { qp => key => bitoff =>
+
+      case qp
+        of $QPTrie32Leaf k2 ->
+            if k2 ==Int32 key
+                then qp
+                else qpTrie32Pair key k2 qp
+            end
+
+        of $QPTrie32Branch sa nibble-bitoff ->
+            if sparseArrayIsEmpty sa
+            then QPTrie32Leaf key
+            else
+            if bitoff ==Int8 nibble-bitoff
+                then // Query the sparse array bitmap
+                    // to determine whether we wrap or push.
+                    idx = nibble-at key nibble-bitoff;
+                    case sparseArrayLookup sa idx
+                        of $None ->
+                          QPTrie32Branch (sparseArrayInsert sa (QPTrie32Leaf key) idx) nibble-bitoff
+                        of $Some saqp ->
+                          subqp = push saqp key (bitoff +Int8 4);
+                          QPTrie32Branch (sparseArrayInsert sa subqp idx) nibble-bitoff
+                    end
+                else
+                    // The trie has some shared prefix that
+                    // we may or may not share.
+                    // Extract a key to determine which case holds.
+                    k2 = unMaybe (qpTrie32AnyKey qp);
+                    
+
+                    // Either there will be a mismatch at some bit offset
+                    // between bitoff and nibble-bitoff,
+                    //   in which case we wrap at that level,
+                    // or the prefixes agree,
+                    //   in which case we continue pushing.
+
+                    // Invariant: the prefixes match up to but not including bo.
+                    REC go = { bo =>
+                        if bo ==Int8 nibble-bitoff
+                        then push qp key bo
+                        else
+                            if nibble-at k2 bo ==Int32 nibble-at key bo
+                            then go (bo +Int8 4)
+                            else QPTrie32Branch (sparseArrayPair
+                                                    (QPTrie32Leaf key) (nibble-at key bo)
+                                                    qp                 (nibble-at k2  bo))
+                                                bo
+                            end
+                        end
+                    };
+
+                    go bitoff
+                end
+            end
+        end
+  };
+
+  push qp key 0
+};
