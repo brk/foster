@@ -134,6 +134,13 @@ struct Letable {
   primopsize   @ 14 : List(Int64); # TODO use this # optional
   ctorinfo     @ 15 : PbCtorInfo $optional;
   arraylit     @ 16 : PbArrayLiteral $optional;
+  sourceloc    @ 17 : SourceLocation $optional;
+}
+
+struct SourceLocation {
+  line @ 0 : Int32;
+  col  @ 1 : Int32;
+  file @ 2 : Text;
 }
 
 struct PbCallInfo {

@@ -165,7 +165,7 @@ makeAllocationsExplicit bbgp prohibitAllocations procId = do
     (CCGCLoad  {}        ) -> return $ mkMiddle $ insn
     (CCGCInit  {}        ) -> return $ mkMiddle $ insn
     (CCGCKill  {}        ) -> return $ mkMiddle $ insn
-    (CCLetVal id (ILAlloc v memregion)) ->
+    (CCLetVal id (ILAlloc v memregion sr)) ->
       if prohibitAllocations
         then compiledThrowE [text "Unable to eliminate allocations from " <> pretty procId]
         else do
@@ -173,12 +173,12 @@ makeAllocationsExplicit bbgp prohibitAllocations procId = do
             let t = tidType v
             let info = AllocInfo t memregion "ref" Nothing Nothing ("ref-allocator:"++show t) NoZeroInit
             return $
-              (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
+              (mkMiddle $ CCLetVal id  (ILAllocate info sr)) <*>
               (mkMiddle $ CCLetVal id' (ILStore v (TypedId (LLPtrType t) id)))
     (CCLetVal _id (ILTuple _kind [] _allocsrc)) -> return $ mkMiddle $ insn
     (CCLetVal _id (ILTuple KindAnySizeType _vs _allocsrc)) -> do
             return $ mkMiddle $ insn
-    (CCLetVal  id (ILTuple KindPointerSized vs _allocsrc)) ->
+    (CCLetVal  id (ILTuple KindPointerSized vs allocsrc)) ->
       if prohibitAllocations
         then compiledThrowE [text "Unable to eliminate allocations from " <> pretty procId]
         else do
@@ -186,15 +186,15 @@ makeAllocationsExplicit bbgp prohibitAllocations procId = do
             let memregion = MemRegionGlobalHeap
             let info = AllocInfo t memregion "tup" Nothing Nothing ("tup-allocator:"++show vs) NoZeroInit
             return $
-              (mkMiddle $ CCLetVal id (ILAllocate info)) <*>
+              (mkMiddle $ CCLetVal id (ILAllocate info (rangeOf allocsrc))) <*>
               (mkMiddle $ CCTupleStore vs (TypedId (LLPtrType t) id) memregion)
-    (CCLetVal id (ILAppCtor genty (_cid, CR_Transparent) [v])) -> do
+    (CCLetVal id (ILAppCtor genty (_cid, CR_Transparent) [v] _sr)) -> do
             return $
               (mkMiddle $ CCLetVal id  (ILBitcast genty v))
-    (CCLetVal id (ILAppCtor _genty (_cid, CR_TransparentU) [v])) -> do
+    (CCLetVal id (ILAppCtor _genty (_cid, CR_TransparentU) [v] _sr)) -> do
             return $
               (mkMiddle $ CCRebindId (text "TransparentU") (TypedId (tidType v) id) v)
-    (CCLetVal id (ILAppCtor genty (cid, repr) vs)) -> do
+    (CCLetVal id (ILAppCtor genty (cid, repr) vs sr)) -> do
       if prohibitAllocations
         then compiledThrowE [text "Unable to eliminate allocations from " <> pretty procId]
         else do
@@ -205,7 +205,7 @@ makeAllocationsExplicit bbgp prohibitAllocations procId = do
             let memregion = MemRegionGlobalHeap
             let info = AllocInfo t memregion tynm (Just repr) Nothing ("ctor-allocator:"++show cid) NoZeroInit
             return $
-              (mkMiddle $ CCLetVal id' (ILAllocate info)) <*>
+              (mkMiddle $ CCLetVal id' (ILAllocate info sr)) <*>
               (mkMiddle $ CCTupleStore vs obj memregion)  <*>
               (mkMiddle $ CCLetVal id  (ILBitcast genty obj))
     (CCTupleStore   {}   ) -> return $ mkMiddle insn
@@ -273,7 +273,8 @@ makeClosureAllocationExplicit ids clos = do
            let t = LLStructType (map tidType vs) in
            let envvar = TypedId (LLPtrType t) envid in
            let ealloc = ILAllocate (AllocInfo t memregion "env" Nothing Nothing
-                          ("env-allocator:"++show (tidIdent (closureProcVar clo))) DoZeroInit) in
+                          ("env-allocator:"++show (tidIdent (closureProcVar clo))) DoZeroInit)
+                          (MissingSourceRange "env-allocator") in
            (CCLetVal envid ealloc , CCTupleStore vs envvar memregion, envvar)
   let cloAllocsAndStores cloid gen_proc_var clo env_gen_id =
            let bitcast = ILBitcast (tidType gen_proc_var) (closureProcVar clo) in
@@ -283,7 +284,8 @@ makeClosureAllocationExplicit ids clos = do
            let t' = fnty_of_procty (generic_procty (tidType (closureProcVar clo))) in
            let clovar = TypedId t' cloid in
            let calloc = ILAllocate (AllocInfo t memregion "clo" Nothing Nothing
-                         ("clo-allocator:"++show (tidIdent (closureProcVar clo))) DoZeroInit) in
+                         ("clo-allocator:"++show (tidIdent (closureProcVar clo))) DoZeroInit)
+                         (MissingSourceRange "clo-allocator") in
            (CCLetVal cloid calloc
            , [CCLetVal (tidIdent gen_proc_var) bitcast
              ,CCTupleStore vs clovar memregion])

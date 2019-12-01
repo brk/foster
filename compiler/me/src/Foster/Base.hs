@@ -531,6 +531,7 @@ instance Show ExprAnnot where show (ExprAnnot _ rng _) = show rng
 
 data AllocationSource = AllocationSource String SourceRange deriving (Show, Eq)
 
+instance SourceRanged AllocationSource where rangeOf (AllocationSource _ sr) = sr
 
 data Comments = C { leading :: [Formatting], trailing :: [Formatting] } deriving Show
 annotComments (ExprAnnot l _ t) = C l t

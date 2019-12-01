@@ -1314,7 +1314,8 @@ llvm::Value* LLKillProcess::codegen(CodegenPass* pass) {
 
 Value* allocateCell(CodegenPass* pass, TypeAST* type,
                     LLAllocate::MemRegion region,
-                    CtorRepr ctorRepr, std::string srclines, bool init) {
+                    CtorRepr ctorRepr, std::string typedesc,
+                    SourceLoc loc, bool init) {
   llvm::Type* ty = type->getLLVMType();
 
   switch (region) {
@@ -1346,8 +1347,12 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
     builder.CreateStore(ti, getPointerToIndex(cell, builder.getInt32(1), "stackref_meta"));
     return slot;
   }
-  case LLAllocate::MEM_REGION_GLOBAL_HEAP:
-    return pass->emitMalloc(type, ctorRepr, srclines, init);
+  case LLAllocate::MEM_REGION_GLOBAL_HEAP: {
+    std::string s;
+    std::stringstream ss(s);
+    ss << loc.file << ":" << loc.line << ":" << loc.col;
+    return pass->emitMalloc(type, ctorRepr, typedesc, ss.str(), init);
+  }
 
   default:
     ASSERT(false); return NULL;
@@ -1376,7 +1381,7 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
       // return null pointer, or'ed with ctor smallId, bitcast to appropriate result.
     } else {
       return allocateCell(pass, this->type, this->region, this->ctorRepr,
-                                this->srclines, this->zero_init);
+                                this->typedesc, this->loc, this->zero_init);
     }
   }
 }

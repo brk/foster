@@ -38,6 +38,8 @@ import Compiler.Hoopl(UniqueMonad(..), C, O, freshLabel, intToUnique,
 import Prelude hiding ((<$>))
 import Text.PrettyPrint.ANSI.Leijen
 
+import Debug.Trace(trace)
+
 -- Binding occurrences of variables, with link to a free occurrence (if not dead).
 data MKBound x = MKBound (TypedId x) (OrdRef (Maybe (FreeOcc x)))
 
@@ -344,7 +346,7 @@ subtermsOf term =
       MKIf          _u _ _ tru fls -> return $ [tru, fls]
       MKLetVal      _u   _      k  -> return $ [k]
       MKLetRec      _u   knowns k  -> return $ k : (map snd knowns)
-      MKLetFuns     _u   knowns k  -> do fns <- knownActuals knowns
+      MKLetFuns     _u   knowns k _-> do fns <- knownActuals knowns
                                          return $ k : map mkfnBody fns
       MKLetCont     _u   knowns k  -> do fns <- knownActuals knowns
                                          return $ k : map mkfnBody fns
@@ -362,14 +364,14 @@ data MKExpr ty =
           MKKillProcess (Uplink ty) ty T.Text
         | MKLiteral     (Uplink ty) ty Literal
         | MKTuple       (Uplink ty) ty [FreeVar ty] SourceRange
-        | MKAppCtor     (Uplink ty) ty (CtorId, CtorRepr) [FreeVar ty]
+        | MKAppCtor     (Uplink ty) ty (CtorId, CtorRepr) [FreeVar ty] SourceRange
         | MKCallPrim    (Uplink ty) ty (FosterPrim ty)    [FreeVar ty] SourceRange
         -- Mutable ref cells
-        | MKAlloc       (Uplink ty) ty (FreeVar ty) AllocMemRegion
+        | MKAlloc       (Uplink ty) ty (FreeVar ty) AllocMemRegion SourceRange
         | MKDeref       (Uplink ty) ty (FreeVar ty)
         | MKStore       (Uplink ty) ty (FreeVar ty) (FreeVar ty)
         -- Array operations
-        | MKAllocArray  (Uplink ty) ty (FreeVar ty) AllocMemRegion ZeroInit
+        | MKAllocArray  (Uplink ty) ty (FreeVar ty) AllocMemRegion ZeroInit SourceRange
         | MKArrayRead   (Uplink ty) ty (ArrayIndex (FreeVar ty))
         | MKArrayPoke   (Uplink ty) ty (ArrayIndex (FreeVar ty)) (FreeVar ty)
         | MKArrayLit    (Uplink ty) ty (FreeVar ty) [Either Literal (FreeVar ty)]
@@ -382,7 +384,7 @@ data MKTerm ty =
         -- Creation of bindings
           MKLetVal      (Uplink ty) (Known ty   (Subexpr ty)) (Subterm ty)
         | MKLetRec      (Uplink ty) [Known ty   (Subterm ty)] (Subterm ty)
-        | MKLetFuns     (Uplink ty) [Known ty (Link (MKFn (Subterm ty) ty))] (Subterm ty)
+        | MKLetFuns     (Uplink ty) [Known ty (Link (MKFn (Subterm ty) ty))] (Subterm ty) SourceRange
         | MKLetCont     (Uplink ty) [Known ty (Link (MKFn (Subterm ty) ty))] (Subterm ty)
         | MKRelocDoms   (Uplink ty) [FreeVar ty] (Subterm ty)
 
@@ -699,7 +701,7 @@ mkOfKN_Base expr k = do
             let rv = MKLetRec      nu knowns t
             lift $ backpatchT rv (t:ts)
 
-        KNLetFuns ids fns st -> do
+        KNLetFuns ids fns st sr -> do
             let vs = map (\(x,fn) -> (TypedId (fnType fn) x)) (zip ids fns)
             m <- get
             binders <- mapM mkBinder vs
@@ -716,7 +718,7 @@ mkOfKN_Base expr k = do
                   lift $ do selfLink <- newOrdRef Nothing
                             installLinks selfLink cfres
             put m
-            lift $ backpatchT (MKLetFuns nu fknowns crest) [crest]
+            lift $ backpatchT (MKLetFuns nu fknowns crest sr) [crest]
 
         e | Just (bindName, gen) <- isExprNotTerm e -> do
             genMKLetVal bindName (typeKN e) gen
@@ -743,21 +745,21 @@ isExprNotTerm expr = do
     KNCallPrim r ty p vs -> Just $ (,) ".cpr" $  \nu' -> do
                                   vs' <- qvs vs
                                   return $ MKCallPrim nu' ty p vs' r
-    KNAppCtor    ty c vs -> Just $ (,) ".app" $ \nu' -> do
+    KNAppCtor    ty c vs sr -> Just $ (,) ".app" $ \nu' -> do
                                   vs' <- qvs vs
-                                  return $ MKAppCtor nu' ty c vs'
-    KNAlloc      ty v mr -> Just $ (,) ".alo" $  \nu' -> do
+                                  return $ MKAppCtor nu' ty c vs' sr
+    KNAlloc      ty v mr sr -> Just $ (,) ".alo" $  \nu' -> do
                                   v' <- qv  v 
-                                  return $ MKAlloc   nu' ty v' mr
+                                  return $ MKAlloc   nu' ty v' mr sr
     KNDeref      ty v    -> Just $ (,) ".get" $  \nu' -> do
                                   v' <- qv  v
                                   return $ MKDeref   nu' ty v'
     KNStore      ty v v2 -> Just $ (,) ".sto" $  \nu' -> do
                                   [v', v2'] <- qvs [v,v2]
                                   return $ MKStore   nu' ty v' v2'
-    KNAllocArray ty v m z-> Just $ (,) ".ala" $  \nu' -> do
+    KNAllocArray ty v m z sr -> Just $ (,) ".ala" $  \nu' -> do
                                   v' <- qv  v
-                                  return $ MKAllocArray  nu' ty v' m z
+                                  return $ MKAllocArray  nu' ty v' m z sr
     KNArrayRead  ty a    -> Just $ (,) ".ari" $  \nu' -> do
                                   a' <- qa  a
                                   return $ MKArrayRead   nu' ty a'
@@ -853,11 +855,11 @@ parentLinkE expr =
     MKTuple       u     _t _s _r -> u
     MKKillProcess u     _ty _t    -> u
     MKCallPrim    u     _ty _ _s _ -> u
-    MKAppCtor     u     _ty _ _s -> u
-    MKAlloc       u     _ty _  _ -> u
+    MKAppCtor     u     _ty _ _s _sr -> u
+    MKAlloc       u     _ty _  _ _sr -> u
     MKDeref       u     _ty _    -> u
     MKStore       u     _ty _ _2 -> u
-    MKAllocArray  u     _ty _ _ _ -> u
+    MKAllocArray  u     _ty _ _ _ _sr -> u
     MKArrayRead   u     _ty _a    -> u
     MKArrayPoke   u     _ty _a _  -> u
     MKArrayLit    u _ty _v _elts  -> u
@@ -869,7 +871,7 @@ parentLinkT expr =
   case expr of
     MKLetVal      u   _known  _k -> u
     MKLetRec      u   _knowns _k -> u
-    MKLetFuns     u   _knowns _k -> u
+    MKLetFuns     u   _knowns _k _sr -> u
     MKLetCont     u   _knowns _k -> u
     MKRelocDoms   u _vs _k      -> u
     MKCase        u  _ty _ _arms  -> u
@@ -885,11 +887,11 @@ freeVarsE expr =
     MKTuple       _     _t vs _r -> vs
     MKKillProcess {} -> []
     MKCallPrim    _     _ty _ vs _ -> vs
-    MKAppCtor     _     _ty _ vs -> vs
-    MKAlloc       _     _ty v  _ -> [v]
+    MKAppCtor     _     _ty _ vs _sr -> vs
+    MKAlloc       _     _ty v  _ _sr -> [v]
     MKDeref       _     _ty v    -> [v]
     MKStore       _     _ty v1 v2 -> [v1,v2]
-    MKAllocArray  _     _ty v _ _ -> [v]
+    MKAllocArray  _     _ty v _ _ _sr -> [v]
     MKArrayRead   _     _ty ari    ->     freeVarsA ari
     MKArrayPoke   _     _ty ari v  -> v : freeVarsA ari
     MKArrayLit    _ _ty v elts  -> v : [x | Right x <- elts]
@@ -949,13 +951,13 @@ knOfMKExpr mb_retCont expr = do
     MKKillProcess _ ty txt     -> return $ KNKillProcess ty txt
     MKCallPrim    _ ty p vs r -> do vs' <- mapM qv vs
                                     return $ KNCallPrim r ty p vs'
-    MKAppCtor     _ ty cid vs -> do vs' <- mapM qv vs
-                                    return $ KNAppCtor ty cid vs'
-    MKAlloc       _ ty v amr  -> do v' <- qv v
-                                    return $ KNAlloc ty v' amr
+    MKAppCtor     _ ty cid vs sr -> do vs' <- mapM qv vs
+                                       return $ KNAppCtor ty cid vs' sr
+    MKAlloc       _ ty v amr sr -> do v' <- qv v
+                                      return $ KNAlloc ty v' amr sr
     MKDeref       _ ty v      -> qv v >>= \v' -> return $ KNDeref ty v'
     MKStore       _ ty v v2   -> mapM qv [v, v2] >>= \[v',v2'] -> return $ KNStore ty v' v2'
-    MKAllocArray  _ ty v amr zi -> qv v >>= \v' -> return $ KNAllocArray ty v' amr zi
+    MKAllocArray  _ ty v amr zi sr -> qv v >>= \v' -> return $ KNAllocArray ty v' amr zi sr
     MKArrayRead   _ ty ari    -> qa ari >>= \ari' -> return $ KNArrayRead ty ari'
     MKArrayPoke   _ ty ari v  -> qa ari >>= \ari' ->
                                  qv v   >>= \v' -> return $ KNArrayPoke ty ari' v'
@@ -1002,9 +1004,9 @@ knOfMK mb_retCont term0 = do
     MKLetRec      _u   knowns  k  -> do (xs', es')  <- qks (knOfMK mb_retCont) knowns
                                         k'  <- q k
                                         return $ mkKNLetRec xs' es' k'
-    MKLetFuns     _u   knowns  k  -> do (xs', fns') <- qks qf knowns
+    MKLetFuns     _u  knowns k sr -> do (xs', fns') <- qks qf knowns
                                         k'  <- q k
-                                        return $ mkKNLetFuns  xs' fns' k'
+                                        return $ mkKNLetFuns  xs' fns' k' sr
 
     MKCall        _u  ty v vs _c   -> do
       (v':vs') <- mapM qv (v:vs)
@@ -1021,7 +1023,7 @@ knOfMK mb_retCont term0 = do
     --      emit KNLetVar x = KNCall v vs
     MKLetCont     _u  knowns k -> do (xs', fns') <- qks qf knowns
                                      k'  <- q k
-                                     return $ mkKNLetFuns  xs' fns' k'
+                                     return $ mkKNLetFuns  xs' fns' k' (MissingSourceRange "letcont")
     
     MKCont        _u ty contvar vs -> do
           vs' <- mapM qv vs
@@ -1036,8 +1038,8 @@ knOfMK mb_retCont term0 = do
 mkKNLetRec [] [] k = k
 mkKNLetRec xs es k = KNLetRec xs es k
 
-mkKNLetFuns [] [] k = k
-mkKNLetFuns xs es k = KNLetFuns xs es k
+mkKNLetFuns [] [] k _  = k
+mkKNLetFuns xs es k sr = KNLetFuns xs es k sr
 
 
 isMainFnVar v =
@@ -1088,7 +1090,7 @@ collectRedexes ref valbindsref expbindsref funbindsref
                                                          return [k]
                       MKLetRec      _u   knowns k  -> do mapM_ markValBind knowns
                                                          return $ k : (map snd knowns)
-                      MKLetFuns     _u   knowns k  -> do markRedex subterm
+                      MKLetFuns     _u   knowns k _-> do markRedex subterm
                                                          mapM_ (markFunBind subterm) knowns
                                                          fns <- knownActuals knowns
                                                          return $ k : map mkfnBody fns
@@ -1293,16 +1295,16 @@ copyMKExpr expr = do
     --MKVar         _          _   -> u
     MKCallPrim    _ ty p vs r -> do vs' <- mapM qv vs
                                     withLinkE $ \u -> return $ MKCallPrim u   ty p  vs' r
-    MKAppCtor     _ ty cid vs -> do vs' <- mapM qv vs
-                                    withLinkE $ \u -> return $ MKAppCtor u ty cid vs'
-    MKAlloc       _ ty v amr  -> do v' <- qv v
-                                    withLinkE $ \u -> return $ MKAlloc u ty v' amr
+    MKAppCtor     _ ty cid vs sr -> do vs' <- mapM qv vs
+                                       withLinkE $ \u -> return $ MKAppCtor u ty cid vs' sr
+    MKAlloc       _ ty v amr  sr  -> do v' <- qv v
+                                        withLinkE $ \u -> return $ MKAlloc u ty v' amr sr
     MKDeref       _ ty v      -> qv v >>= \v' ->
                                     withLinkE $ \u -> return $ MKDeref u ty v'
     MKStore       _ ty v v2   -> mapM qv [v, v2] >>= \[v',v2'] ->
                                     withLinkE $ \u -> return $ MKStore u ty v' v2'
-    MKAllocArray  _ ty v amr zi -> qv v >>= \v' ->
-                                    withLinkE $ \u -> return $ MKAllocArray u ty v' amr zi
+    MKAllocArray  _ ty v amr zi sr -> qv v >>= \v' ->
+                                    withLinkE $ \u -> return $ MKAllocArray u ty v' amr zi sr
     MKArrayRead   _ ty ari    -> qa ari >>= \ari' ->
                                     withLinkE $ \u -> return $ MKArrayRead u ty ari'
     MKArrayPoke   _ ty ari v  -> qa ari >>= \ari' ->
@@ -1381,10 +1383,10 @@ copyMKTerm term = do
                                         withLinkT $ \u -> lift $ do
                                           let rv = MKLetRec u knowns' k'
                                           backpatchT rv [k']
-    MKLetFuns     _u   knowns  k  -> do knowns' <- mapM (qk qf) knowns
+    MKLetFuns     _u  knowns k sr -> do knowns' <- mapM (qk qf) knowns
                                         k'  <- q k
                                         withLinkT $ \u -> lift $ do
-                                          let rv = MKLetFuns u knowns' k'
+                                          let rv = MKLetFuns u knowns' k' sr
                                           backpatchT rv [k']
     MKLetCont     _u   knowns  k  -> do knowns' <- mapM (qk qf) knowns
                                         k'  <- q k
@@ -1486,7 +1488,7 @@ mknInline subterm mainCont mb_gas = do
              Nothing -> ccWhen ccVerbose $ do liftIO $ putDocLn $ text "... ran outta work"
              Just (_subterm, mredex, Nothing) -> do
                 case mredex of
-                  MKLetFuns _u [(bv,_)] _ | tidIdent (boundVar bv) == GlobalSymbol (T.pack "TextFragment") NoRename ->
+                  MKLetFuns _u [(bv,_)] _ _sr | tidIdent (boundVar bv) == GlobalSymbol (T.pack "TextFragment") NoRename ->
                     return () -- The top-most function binding will be parentless; don't print about it though.
                   _ -> do
                     do redex <- knOfMK (YesCont mainCont) mredex
@@ -1578,9 +1580,10 @@ mknInline subterm mainCont mb_gas = do
                                             
                                             knfn <- knOfMKFn NoCont $ fn'
 
-                                            kn' <- knLoopHeaders' (KNLetFuns [tidIdent $ fnVar knfn] [knfn] (KNVar $ fnVar knfn))
+                                            let sr = MissingSourceRange "CallOfDonatableFunction"
+                                            kn' <- knLoopHeaders' (KNLetFuns [tidIdent $ fnVar knfn] [knfn] (KNVar $ fnVar knfn) sr)
                                                                   True
-                                            let (KNLetFuns [id'] [knfn'] _) = kn'
+                                            let (KNLetFuns [id'] [knfn'] _ _sr) = kn'
                                             dbgDoc $ text $ "loop-headered fn is " ++ show (pretty knfn')
 
                                             (_, fn'') <- evalStateT (mkOfKNFn Nothing (id' , knfn')) $
@@ -1695,7 +1698,7 @@ mknInline subterm mainCont mb_gas = do
                             else return ()
                       go (gas - 1)
 
-                    MKLetFuns _u knowns fnrest -> do
+                    MKLetFuns _u knowns fnrest _sr -> do
                       dbgIf dbgCont $ (text "analyzing for contifiability:")
                           <+> align (vsep (map (pretty.tidIdent.boundVar.fst) knowns))
                       knownFns   <- liftIO $ readIORef fr
@@ -1980,7 +1983,7 @@ createLetFunAndCall fn outerBinder ty up args kv = do
   _ <- installLinks callLink $ MKCall up' ty callee args' kv'
 
   known <- mkKnown' outerBinder fn
-  letfuns <- backpatchT (MKLetFuns up [known] callLink) [callLink]
+  letfuns <- backpatchT (MKLetFuns up [known] callLink (MissingSourceRange "outerbinder")) [callLink]
   newOrdRef (Just letfuns)
 
 collectRedexesUsingFnRetCont oldret    wr fd = do
@@ -2275,8 +2278,10 @@ contOfCall bv occ = do
           else 
             do return $ HigherOrder
 
+{-
     Just (MKRelocDoms {}) -> do
       return FakeUsage
+      -}
 
     Just tm -> do
       do kn <- knOfMK NoCont tm
@@ -2411,7 +2416,8 @@ betaReduceOnlyCall fn args kv    wr fd = do
 
 
 baFresh :: String -> BlockAccum BlockId
-baFresh s = do u <- freshLabel ; return (s, u)
+baFresh s = do u <- freshLabel;
+               return (trace ("new label " ++ show u ++ " for string " ++ s) (s, u))
 
 baNewUniq :: BlockAccum Uniq
 baNewUniq = do (uref, _, _) <- get ; mutIORef uref (+1)
@@ -2464,7 +2470,7 @@ pccOfTopTerm uref subterm = do
             expr <- lift $ readLink "pccTopTerm" subexpr
             handleTopLevelBinding (tidIdent $ boundVar bv) expr k
           MKLetRec      {} -> do error $ "MKLetRec in pccTopTerm"
-          MKLetFuns     _u   knowns  k  -> do mapM_ grabFn knowns ; go k
+          MKLetFuns     _u   knowns  k _sr -> do mapM_ grabFn knowns ; go k
           MKCall        {}              -> return ()
           MKLetCont _ [(kb,c)] subterm2 -> do
             isDead  <- lift $ binderIsDead kb
@@ -2491,7 +2497,7 @@ pccOfTopTerm uref subterm = do
                                    put (fns, TopBindTuple id ty ids : topbinds)
                                    go k
 
-          MKAppCtor  _ ty (cid, crep) fvs -> do
+          MKAppCtor  _ ty (cid, crep) fvs _sr -> do
                                    !(fns, topbinds) <- get
                                    bvs <- lift $ mapM freeBinder fvs
                                    let ids = map (tidIdent . boundVar) bvs
@@ -2559,7 +2565,8 @@ cffnOfMKCont cv (MKFn _v vs _ subterm _isrec _annot) = do
                 else go k head (ILetVal (tidIdent $ boundVar bv) letable : insns)
           MKLetRec      _u  [_known] _k -> do error $ "MKNExpr.hs: no support yet for MKLetRec..."
           MKLetRec      _u  _knowns  _k -> do error $ "MKNExpr.hs: no support yet for multi-extended-letrec"
-          MKLetFuns     _u   knowns  k  -> do (uref, _, _) <- get
+          MKLetFuns     _u   knowns  k _sr -> do
+                                              (uref, _, _) <- get
                                               idsfnss <- lift $ mapM (\(bv,link) -> do
                                                   mb_mkfn <- readOrdRef link
                                                   case mb_mkfn of
@@ -2685,13 +2692,13 @@ letableOfSubexpr subexpr = do
     MKKillProcess _ ty txt     -> return $ ILKillProcess ty txt
     MKCallPrim    _ ty p vs _r -> do vs' <- mapM qv vs
                                      return $ ILCallPrim ty p vs'
-    MKAppCtor     _ ty cid vs -> do vs' <- mapM qv vs
-                                    return $ ILAppCtor ty cid vs'
-    MKAlloc       _ _ty v amr -> do v' <- qv v
-                                    return $ ILAlloc {-ty-} v' amr
+    MKAppCtor     _ ty cid vs sr -> do vs' <- mapM qv vs
+                                       return $ ILAppCtor ty cid vs' sr
+    MKAlloc       _ _ty v amr sr -> do v' <- qv v
+                                       return $ ILAlloc {-ty-} v' amr sr
     MKDeref       _ ty v      -> qv v >>= \v' -> return $ ILDeref ty v'
     MKStore       _ _t v v2   -> mapM qv [v, v2] >>= \[v',v2'] -> return $ ILStore v' v2'
-    MKAllocArray  _ ty v amr zi -> qv v >>= \v' -> return $ ILAllocArray ty v' amr zi
+    MKAllocArray  _ ty v amr zi sr -> qv v >>= \v' -> return $ ILAllocArray ty v' amr zi sr
     MKArrayRead   _ ty ari    -> qa ari >>= \ari' -> return $ ILArrayRead ty ari'
     MKArrayPoke   _ _ty ari v -> qa ari >>= \ari' ->
                                  qv v   >>= \v' -> return $ ILArrayPoke {-ty-} ari' v'
@@ -2808,7 +2815,7 @@ findMatchingArm replaceCaseWith ty v arms lookupVar = go arms NoPossibleMatchYet
                           else return pms
                         --trace ("matched tuple const against tuple pat " ++ show p ++ "\n, parts = " ++ show parts ++ " ;;; res = " ++ show res) res
 
-                    (MKAppCtor _ _ (kid, _) args, PR_Ctor _ _ pats (LLCtorInfo cid _ _ _)) | kid == cid -> do
+                    (MKAppCtor _ _ (kid, _) args _sr, PR_Ctor _ _ pats (LLCtorInfo cid _ _ _)) | kid == cid -> do
                       parts <- mapM (uncurry matchPatternAgainst) (zip pats args)
                       return $ concatMapStatuses parts
 

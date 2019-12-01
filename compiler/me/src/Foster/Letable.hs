@@ -9,6 +9,7 @@ module Foster.Letable where
 
 import Foster.Base(Literal(..), CtorId, CtorRepr(..), ArrayIndex(..),
                    AllocMemRegion, AllocInfo(..), Occurrence, AllocationSource,
+                   SourceRange,
                    FosterPrim(..), MayGC(..), memRegionMayGC,
                    TypedId(..), Ident(..), mapRight, ZeroInit,
                    TExpr(freeTypedIds), TypedWith(..))
@@ -33,15 +34,15 @@ data Letable ty =
         -- Varieties of applications
         | ILCallPrim    ty (FosterPrim ty) [TypedId ty]
         | ILCall        ty (TypedId    ty) [TypedId ty]
-        | ILAppCtor     ty (CtorId, CtorRepr) [TypedId ty]
+        | ILAppCtor     ty (CtorId, CtorRepr) [TypedId ty] SourceRange
         -- Stack/heap slot allocation
-        | ILAllocate    (AllocInfo ty)
+        | ILAllocate    (AllocInfo ty) SourceRange
         -- Mutable ref cells
-        | ILAlloc       (TypedId ty) AllocMemRegion
+        | ILAlloc       (TypedId ty) AllocMemRegion SourceRange
         | ILDeref       ty           (TypedId ty)
         | ILStore       (TypedId ty) (TypedId ty)
         -- Array operations
-        | ILAllocArray  ty (TypedId ty) AllocMemRegion ZeroInit
+        | ILAllocArray  ty (TypedId ty) AllocMemRegion ZeroInit SourceRange
         | ILArrayRead   ty (ArrayIndex (TypedId ty))
         | ILArrayPoke      (ArrayIndex (TypedId ty)) (TypedId ty)
         | ILArrayLit    ty (TypedId ty) [Either Literal (TypedId ty)]
@@ -57,16 +58,16 @@ instance TExpr (Letable ty) ty where
       ILOccurrence _ v _-> [v]
       ILCallPrim _ _ vs -> vs
       ILCall     _ v vs -> (v:vs)
-      ILAppCtor  _ _ vs -> vs
-      ILAlloc      v _  -> [v]
+      ILAppCtor  _ _ vs _sr -> vs
+      ILAlloc      v _  _sr -> [v]
       ILDeref    _ v    -> [v]
       ILStore      v v2 -> [v,v2]
       ILBitcast  _ v    -> [v]
-      ILAllocArray _ v _ _ -> [v]
+      ILAllocArray _ v _ _ _sr -> [v]
       ILArrayRead _ ai  -> freeTypedIds ai
       ILArrayPoke   ai v-> (v):(freeTypedIds ai)
       ILArrayLit _ arr vals -> arr:[val | Right val <- vals]
-      ILAllocate _      -> []
+      ILAllocate _ _sr     -> []
 
 instance TypedWith (Letable MonoType) MonoType where
   typeOf letable = case letable of
@@ -76,16 +77,16 @@ instance TypedWith (Letable MonoType) MonoType where
       ILOccurrence t _ _-> t
       ILCallPrim t _ _  -> t
       ILCall     t _ _  -> t
-      ILAppCtor  t _ _  -> t
-      ILAlloc      v _  -> PtrType (tidType v)
+      ILAppCtor  t _ _ _sr -> t
+      ILAlloc      v _ _sr -> PtrType (tidType v)
       ILDeref      t _  -> t
       ILStore       {}  -> TupleType []
       ILBitcast    t _  -> t
-      ILAllocArray t _ _ _ -> t
+      ILAllocArray t _ _ _ _sr -> t
       ILArrayRead  t _  -> t
       ILArrayPoke   {}  -> TupleType []
       ILArrayLit t _ _  -> t -- or arrayOf t?
-      ILAllocate info   -> PtrType (allocType info)
+      ILAllocate info _sr  -> PtrType (allocType info)
 
 instance TypedWith (Letable TypeLL) TypeLL where
   typeOf letable = case letable of
@@ -96,16 +97,16 @@ instance TypedWith (Letable TypeLL) TypeLL where
       ILOccurrence t _ _-> t
       ILCallPrim t _ _  -> t
       ILCall     t _ _  -> t
-      ILAppCtor  t _ _  -> t
-      ILAlloc      v _  -> LLPtrType (tidType v)
+      ILAppCtor  t _ _ _sr -> t
+      ILAlloc      v _ _sr -> LLPtrType (tidType v)
       ILDeref    t _    -> t
       ILStore      {}   -> LLPtrType (LLStructType [])
       ILBitcast  t _    -> t
-      ILAllocArray t _ _ _ -> t
+      ILAllocArray t _ _ _ _sr -> t
       ILArrayRead t _   -> t
       ILArrayPoke   _ _ -> LLPtrType (LLStructType [])
       ILArrayLit  t _ _ -> t
-      ILAllocate info   -> LLPtrType (allocType info)
+      ILAllocate info _sr  -> LLPtrType (allocType info)
 
 isPurePrim _ = False -- TODO: recognize pure primitives
 isPureFunc _ = False -- TODO: use effect information to refine this predicate.
@@ -119,12 +120,12 @@ substVarsInLetable s letable = case letable of
   ILOccurrence  t v occ                    -> ILOccurrence  t (s v) occ
   ILCallPrim    t p vs                     -> ILCallPrim    t p     (map s vs)
   ILCall        t v vs                     -> ILCall        t (s v) (map s vs)
-  ILAppCtor     t c vs                     -> ILAppCtor     t c     (map s vs)
-  ILAlloc       v rgn                      -> ILAlloc       (s v) rgn
+  ILAppCtor     t c vs sr                  -> ILAppCtor     t c     (map s vs) sr
+  ILAlloc       v rgn  sr                  -> ILAlloc       (s v) rgn sr
   ILDeref       t v                        -> ILDeref       t (s v)
   ILStore       v1 v2                      -> ILStore       (s v1) (s v2)
   ILBitcast     t v                        -> ILBitcast     t (s v)
-  ILAllocArray  t v amr zi                 -> ILAllocArray  t (s v) amr zi
+  ILAllocArray  t v amr zi sr              -> ILAllocArray  t (s v) amr zi sr
   ILArrayRead   t (ArrayIndex v1 v2 rng a) -> ILArrayRead   t (ArrayIndex (s v1) (s v2) rng a)
   ILArrayPoke  (ArrayIndex v1 v2 rng a) v3 -> ILArrayPoke  (ArrayIndex (s v1) (s v2) rng a) (s v3)
   ILArrayLit    t arr vals -> ILArrayLit t (s arr) (mapRight s vals)
@@ -173,10 +174,10 @@ isPure letable = case letable of
 canGC :: Map.Map Ident MayGC -> Letable ty -> MayGC
 canGC mayGCmap letable =
   case letable of
-         ILAppCtor _ (_, repr) _ -> canCtorReprAppGC repr
-         ILAlloc        _ amr    -> memRegionMayGC amr
-         ILAllocArray _ _ amr  _ -> memRegionMayGC amr
-         ILAllocate info  -> -- If the ctor is nullary, we won't GC...
+         ILAppCtor _ (_, repr) _ _sr -> canCtorReprAppGC repr
+         ILAlloc        _ amr    _sr -> memRegionMayGC amr
+         ILAllocArray _ _ amr  _ _sr -> memRegionMayGC amr
+         ILAllocate info  _sr -> -- If the ctor is nullary, we won't GC...
                              -- otherwise, we defer to the alloc region.
                         fmap canCtorReprAppGC (allocCtorRepr info)
                      `orMayGC` memRegionMayGC (allocRegion info)

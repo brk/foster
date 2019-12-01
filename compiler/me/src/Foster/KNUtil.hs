@@ -45,18 +45,18 @@ data KNExpr' r ty =
         | KNCase        ty (TypedId ty) [CaseArm PatternRepr (KNExpr' r ty) ty]
         | KNLetVal      Ident        (KNExpr' r ty)     (KNExpr' r ty) (Set Ident)
         | KNLetRec     [Ident]       [KNExpr' r ty]     (KNExpr' r ty)
-        | KNLetFuns    [Ident] [Fn r (KNExpr' r ty) ty] (KNExpr' r ty)
+        | KNLetFuns    [Ident] [Fn r (KNExpr' r ty) ty] (KNExpr' r ty) SourceRange
         -- Use of bindings
         | KNVar         (TypedId ty)
         | KNCallPrim    SourceRange ty (FosterPrim ty)    [TypedId ty]
         | KNCall        ty (TypedId ty)       [TypedId ty]
-        | KNAppCtor     ty (CtorId, CtorRepr) [TypedId ty]
+        | KNAppCtor     ty (CtorId, CtorRepr) [TypedId ty] SourceRange
         -- Mutable ref cells
-        | KNAlloc       ty (TypedId ty) AllocMemRegion
+        | KNAlloc       ty (TypedId ty) AllocMemRegion SourceRange
         | KNDeref       ty (TypedId ty)
         | KNStore       ty (TypedId ty) (TypedId ty)
         -- Array operations
-        | KNAllocArray  ty (TypedId ty) AllocMemRegion ZeroInit
+        | KNAllocArray  ty (TypedId ty) AllocMemRegion ZeroInit SourceRange
         | KNArrayRead   ty (ArrayIndex (TypedId ty))
         | KNArrayPoke   ty (ArrayIndex (TypedId ty)) (TypedId ty)
         | KNArrayLit    ty (TypedId ty) [Either Literal (TypedId ty)]
@@ -201,9 +201,9 @@ alphaRename' fn = do
       KNTuple         t vs a   -> do vs' <- mapM qv vs; t' <- qt t ; return $ KNTuple t' vs' a
       KNCall          t v vs   -> do (v' : vs') <- mapM qv (v:vs); t' <- qt t; return $ KNCall t' v' vs'
       KNCallPrim   sr t p vs   -> do vs' <- mapM qv vs; t' <- qt t; return $ KNCallPrim   sr t' p vs'
-      KNAppCtor       t c vs   -> do vs' <- mapM qv vs; t' <- qt t; return $ KNAppCtor t' c vs'
-      KNAllocArray    t v amr zi -> liftM4 KNAllocArray (qt t) (qv v) (return amr) (return zi)
-      KNAlloc         t v amr  -> liftM3 KNAlloc      (qt t) (qv v) (return amr)
+      KNAppCtor       t c vs sr-> do vs' <- mapM qv vs; t' <- qt t; return $ KNAppCtor t' c vs' sr
+      KNAllocArray    t v amr zi sr -> liftM2 (\t' v' -> KNAllocArray t' v' amr zi sr) (qt t) (qv v)
+      KNAlloc         t v amr    sr -> liftM4 KNAlloc      (qt t) (qv v) (return amr) (return sr)
       KNDeref         t v      -> liftM2 KNDeref      (qt t) (qv v)
       KNStore         t v1 v2  -> liftM3 KNStore      (qt t) (qv v1) (qv v2)
       KNArrayRead     t ai     -> liftM2 KNArrayRead  (qt t) (renameArrayIndex ai)
@@ -230,10 +230,10 @@ alphaRename' fn = do
       KNLetRec     ids exprs e -> do ids' <- mapM renameI ids
                                      (e' : exprs' ) <- mapM renameKN (e:exprs)
                                      return $ KNLetRec ids' exprs'  e'
-      KNLetFuns     ids fns b  -> do ids' <- mapM renameI ids
-                                     fns' <- mapM renameFn fns
-                                     b'   <- renameKN b
-                                     return $ KNLetFuns ids' fns' b'
+      KNLetFuns    ids fns b sr -> do ids' <- mapM renameI ids
+                                      fns' <- mapM renameFn fns
+                                      b'   <- renameKN b
+                                      return $ KNLetFuns ids' fns' b' sr
       KNRelocDoms ids e        -> liftM2 KNRelocDoms (mapM qi ids) (renameKN e)
       KNTyApp t v argtys       -> liftM3 KNTyApp (qt t) (qv v) (return argtys)
       KNCompiles r t e         -> liftM2 (KNCompiles r) (qt t) (renameKN e)
@@ -277,8 +277,8 @@ deriving instance (Show ty, Show rs) => Show (KNExpr' rs ty) -- used elsewhere..
 instance AExpr (KNExpr' rs t) where
     freeIdents e = case e of
         KNLetVal   id  b  _e efree -> freeIdents b `Set.union` (efree `sans` [id])
-        KNLetRec   ids xps e -> (combinedFreeIdents xps `Set.union` freeIdents e) `sans` ids
-        KNLetFuns  ids fns e -> (combinedFreeIdents fns `Set.union` freeIdents e) `sans` ids
+        KNLetRec   ids xps e   -> (combinedFreeIdents xps `Set.union` freeIdents e) `sans` ids
+        KNLetFuns  ids fns e _ -> (combinedFreeIdents fns `Set.union` freeIdents e) `sans` ids
         KNCase  _t v arms    -> Set.fromList [tidIdent v] `Set.union` Set.unions (map caseArmFreeIds arms)
         KNVar      v         -> Set.fromList [tidIdent v]
         _                    -> combinedFreeIdents (childrenOf e)
@@ -293,10 +293,10 @@ typeKN expr =
     KNKillProcess   t _      -> t
     KNCall          t _ _    -> t
     KNCallPrim    _ t _ _    -> t
-    KNAppCtor       t _ _    -> t
-    KNAllocArray    t _ _ _  -> t
+    KNAppCtor       t _ _ _  -> t
+    KNAllocArray    t _ _ _ _-> t
     KNIf            t _ _ _  -> t
-    KNAlloc         t _ _rgn -> t
+    KNAlloc         t _ _rgn _ -> t
     KNDeref         t _      -> t
     KNStore         t _ _    -> t
     KNArrayRead     t _      -> t
@@ -306,7 +306,7 @@ typeKN expr =
     KNHandler _ann t _ _ _ _ _ -> t
     KNLetVal        _ _ e _  -> typeKN e
     KNLetRec        _ _ e    -> typeKN e
-    KNLetFuns       _ _ e    -> typeKN e
+    KNLetFuns       _ _ e _  -> typeKN e
     KNVar                  v -> tidType v
     KNTyApp overallType _tm _tyArgs -> overallType
     KNCompiles _ t _           -> t
@@ -324,10 +324,10 @@ instance (Show ty, Show rs) => Summarizable (KNExpr' rs ty) where
             KNLiteral _ty (LitByteArray bs) -> text "KNBytes     " <> text "b" <> text (show bs)
             KNCall     t _ _    -> text $ "KNCall :: " ++ show t
             KNCallPrim _ t p  _ -> text $ "KNCallPrim  " ++ (show p) ++ " :: " ++ show t
-            KNAppCtor  t cid  _ -> text $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
+            KNAppCtor  t cid _ _ -> text $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
             KNLetVal   x b  _ _ -> text $ "KNLetVal    " ++ (show x) ++ " :: " ++ (show $ typeKN b) ++ " = ... in ... "
             KNLetRec   _ _    _ -> text $ "KNLetRec    "
-            KNLetFuns ids fns _ -> text $ "KNLetFuns   " ++ (show $ zip ids (map (tidIdent.fnVar) fns))
+            KNLetFuns ids fns _ _ -> text $ "KNLetFuns   " ++ (show $ zip ids (map (tidIdent.fnVar) fns))
             KNIf      t  _ _ _  -> text $ "KNIf        " ++ " :: " ++ show t
             KNAlloc      {}     -> text $ "KNAlloc     "
             KNDeref      {}     -> text $ "KNDeref     "
@@ -358,15 +358,15 @@ instance Structured (KNExpr' rs ty) where
             KNCase _ e arms         -> (var e):(concatMap caseArmExprs arms)
             KNHandler _ _ty _eff action arms mb_xform _resumeid ->
                 (maybeToList mb_xform)++(action:concatMap caseArmExprs arms)
-            KNLetFuns _ids fns e    -> map fnBody fns ++ [e]
+            KNLetFuns _ids fns e _  -> map fnBody fns ++ [e]
             KNLetVal _x b  e _      -> [b, e]
             KNLetRec _x bs e        -> bs ++ [e]
             KNCall     _t  v vs     -> [var v] ++ [var v | v <- vs]
             KNCallPrim _sr _t _v vs ->            [var v | v <- vs]
-            KNAppCtor  _t _c vs     ->            [var v | v <- vs]
+            KNAppCtor  _t _c vs _sr ->            [var v | v <- vs]
             KNIf       _t v b c     -> [var v, b, c]
-            KNAlloc _ v _rgn        -> [var v]
-            KNAllocArray _ v _ _    -> [var v]
+            KNAlloc _ v _rgn _sr    -> [var v]
+            KNAllocArray _ v _ _ _sr-> [var v]
             KNDeref      _ v        -> [var v]
             KNStore      _ v w      -> [var v, var w]
             KNArrayRead _t ari      -> map var $ childrenOfArrayIndex ari
@@ -386,7 +386,7 @@ knSize expr = go expr (0, 0) where
     KNCase        _ _ arms     -> foldl' (\ta e -> go e ta) ta (concatMap caseArmExprs arms)
     KNLetVal      _   e1 e2 _  -> go e2 (go e1 (t, a))
     KNLetRec     _ es b        -> foldl' (\ta e -> go e ta) (go b ta) es
-    KNLetFuns    _ fns b       -> let n = length fns in
+    KNLetFuns    _ fns b _     -> let n = length fns in
                                   let ta' @ (t', _ ) = go b ta in
                                   let (_, bodies) = foldl' (\ta fn -> go (fnBody fn) ta) ta' fns in
                                   (t' + n, n + bodies)
@@ -483,7 +483,7 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
             KNCall     t v [] -> showTyped (prettyId v <+> text "!") t
             KNCall     t v vs -> showTyped (prettyId v <+> hsep (map pretty vs)) t
             KNCallPrim _ t p vs -> showUnTyped (text "prim" <+> pretty p <+> hsep (map prettyId vs)) t
-            KNAppCtor  t cid  vs-> showUnTyped (text "~" <> parens (text (show cid)) <> hsep (map prettyId vs)) t
+            KNAppCtor  t cid vs _sr -> showUnTyped (text "~" <> parens (text (show cid)) <> hsep (map prettyId vs)) t
             KNLetVal   x b  k _ -> lkwd "let"
                                       <+> fill 8 (text (show x))
                                       <+> text "="
@@ -498,7 +498,7 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
                                                       ])
                                                       -}
                                    -- <$> indent 2 end
-            KNLetFuns ids fns k -> text "letfuns"
+            KNLetFuns ids fns k _sr -> text "letfuns"
                                    <$> indent 2 (vcat [text (show id) <+> text "="
                                                                       <+> pretty fn
                                                       | (id, fn) <- zip ids fns
@@ -518,7 +518,7 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
                                    <$> nest 2 (kwd "then" <+> (indent 0 $ pretty b1))
                                    <$> nest 2 (kwd "else" <+> (indent 0 $ pretty b2))
                                    <$> end
-            KNAlloc _ v rgn     -> text "(ref" <+> prettyId v <+> comment (pretty rgn) <> text ")"
+            KNAlloc _ v rgn _sr -> text "(ref" <+> prettyId v <+> comment (pretty rgn) <> text ")"
             KNDeref _ v         -> prettyId v <> text "^"
             KNStore _ v1 v2     -> text "store" <+> prettyId v1 <+> text "to" <+> prettyId v2
             KNCase _t v bnds    -> align $
@@ -564,9 +564,9 @@ knSubst m expr =
       KNTuple         t vs a   -> KNTuple t (map qv vs) a
       KNCall          t v vs   -> KNCall t (qv v) (map qv vs)
       KNCallPrim   sr t p vs   -> KNCallPrim   sr t p (map qv vs)
-      KNAppCtor       t c vs   -> KNAppCtor       t c (map qv vs)
-      KNAllocArray    t v amr zi -> KNAllocArray    t (qv v) amr zi
-      KNAlloc         t v amr  -> KNAlloc         t (qv v) amr
+      KNAppCtor       t c vs sr-> KNAppCtor       t c (map qv vs) sr
+      KNAllocArray    t v amr zi sr -> KNAllocArray    t (qv v) amr zi sr
+      KNAlloc         t v amr    sr -> KNAlloc         t (qv v) amr    sr
       KNDeref         t v      -> KNDeref         t (qv v)
       KNStore         t v1 v2  -> KNStore         t (qv v1) (qv v2)
       KNArrayRead     t ai     -> KNArrayRead     t (mapArrayIndex qv ai)
@@ -579,7 +579,7 @@ knSubst m expr =
       KNIf            t v e1 e2-> KNIf t (qv v) (knSubst m e1) (knSubst m e2)
       KNLetVal       id e  b _ -> let b' = knSubst m b in KNLetVal id (knSubst m e) b' (freeIdents b')
       KNLetRec     ids exprs e -> KNLetRec ids (map (knSubst m) exprs) (knSubst m e)
-      KNLetFuns   _ids _fns _b -> error "knSubst not yet implemented for KNLetFuns"
+      KNLetFuns   _ids _fns _b _sr -> error "knSubst not yet implemented for KNLetFuns"
       KNTyApp t v argtys       -> KNTyApp t (qv v) argtys
       KNCompiles r t e         -> KNCompiles r t (knSubst m e)
       KNRelocDoms ids e        -> KNRelocDoms ids (knSubst m e)

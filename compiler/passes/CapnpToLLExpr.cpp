@@ -197,7 +197,16 @@ LLAllocate::MemRegion parseMemRegion(const pb::PbAllocInfo::Reader& a) {
   return target_region;
 }
 
-LLAllocate* parseAllocInfo(const pb::PbAllocInfo::Reader& a) {
+SourceLoc parseSourceLoc(const pb::SourceLocation::Reader& b) {
+  return SourceLoc {
+    .line = b.getLine(),
+    .col  = b.getCol(),
+    .file = b.getFile()
+  };
+}
+
+LLAllocate* parseAllocInfo(const pb::PbAllocInfo::Reader& a,
+                           SourceLoc s) {
   LLVar* array_size = NULL;
   if (a.hasArraysize()) {
     array_size = parseTermVar(a.getArraysize());
@@ -215,12 +224,14 @@ LLAllocate* parseAllocInfo(const pb::PbAllocInfo::Reader& a) {
   }
   return new LLAllocate(TypeAST_from_pb(a.getType()), tynm, ctorRepr,
                         array_size, target_region, a.getAllocsite(),
-                        a.getZeroinit());
+                        a.getZeroinit(),
+                        s);
 }
 
 LLAllocate* parseAllocate(const pb::Letable::Reader& e) {
   ASSERT(e.hasAllocinfo());
-  return parseAllocInfo(e.getAllocinfo());
+  ASSERT(e.hasSourceloc());
+  return parseAllocInfo(e.getAllocinfo(), parseSourceLoc(e.getSourceloc()));
 }
 
 llvm::GlobalValue::LinkageTypes

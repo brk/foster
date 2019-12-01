@@ -324,7 +324,7 @@ runStaticChecks m = do
 checkModuleExprs :: KNMono -> Facts -> Compiled ()
 checkModuleExprs expr facts =
   case expr of
-    KNLetFuns     ids fns b -> do
+    KNLetFuns     ids fns b _sr -> do
         facts' <- foldlM (\facts (id, fn) -> recordIfHasFnPrecondition facts (TypedId (fnType fn) id))
                            facts (zip ids fns)
         mapM_ (\fn -> checkFn fn facts') fns
@@ -564,7 +564,7 @@ checkBody expr facts =
 
     KNArrayPoke _ty (ArrayIndex _a _i _ _) _v -> return Nothing
 
-    KNAllocArray _ty v _amr _zi ->
+    KNAllocArray _ty v _amr _zi _sr ->
         return $ withDecls facts $ \x -> do
                     return $ (smtArraySizeOf (smtId x) === sign_extend 32 (smtVar v))
 
@@ -761,14 +761,14 @@ checkBody expr facts =
                         newfact <- f id
                         checkBody e2 (addIdentFact facts' id newfact (typeKN e1))
 
-    KNLetFuns     [id] [fn] b | identPrefix id == T.pack "assert-invariants-thunk" -> do
+    KNLetRec      _ids _es _b   ->
+      error $ "KNStaticChecks.hs: checkBody can't yet support recursive non-function bindings."
+                  
+    KNLetFuns     [id] [fn] b _sr | identPrefix id == T.pack "assert-invariants-thunk" -> do
         _ <- checkFn'  fn facts
         do   checkBody b  facts
 
-    KNLetRec      _ids _es _b     ->
-        error $ "KNStaticChecks.hs: checkBody can't yet support recursive non-function bindings."
-
-    KNLetFuns     ids fns b     -> do
+    KNLetFuns     ids fns b _sr    -> do
         facts' <- foldlM (\facts (id, fn) -> recordIfHasFnPrecondition facts (TypedId (fnType fn) id))
                            facts (zip ids fns)
         mapM_ (\fn -> checkFn' fn facts') fns

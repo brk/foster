@@ -447,6 +447,12 @@ struct LLUnboxedTuple : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
+struct SourceLoc {
+  int32_t line;
+  int32_t col;
+  std::string file;
+};
+
 struct LLAllocate : public LLExpr {
   LLVar* arraySize; // NULL if not allocating an array
   CtorRepr ctorRepr;
@@ -456,17 +462,18 @@ struct LLAllocate : public LLExpr {
     , MEM_REGION_GLOBAL_HEAP
     , MEM_REGION_GLOBAL_DATA
   } region;
-  std::string srclines;
+  std::string typedesc;
   bool zero_init;
+  SourceLoc loc;
 
   bool isStackAllocated() const { return region == MEM_REGION_STACK; }
 
   explicit LLAllocate(TypeAST* t, std::string tynm,
                       CtorRepr cr, LLVar* arrSize, MemRegion m,
-                      std::string allocsite, bool zero_init)
+                      std::string allocsite, bool zero_init, SourceLoc loc)
      : LLExpr("LLAllocate"), arraySize(arrSize), ctorRepr(cr), type_name(tynm),
-                             region(m), srclines(allocsite),
-                             zero_init(zero_init) { this->type = t; }
+                             region(m), typedesc(allocsite),
+                             zero_init(zero_init), loc(loc) { this->type = t; }
   llvm::Value* codegenCell(CodegenPass* pass, bool init);
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
