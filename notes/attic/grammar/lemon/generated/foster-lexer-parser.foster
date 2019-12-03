@@ -1,0 +1,35 @@
+snafuinclude Parser "foster-parser";
+snafuinclude Tokenizer "foster-tokenizer";
+snafuinclude Prelude "prelude";
+
+// Imported API:
+// make-tokenizer :: { Array Int8 => { Token } };
+// ParseAlloc :: { YyParser };
+// Parse :: { YyParser => Int8 // major token number
+//                     => Token // token value (yyminor)
+//                     => () };
+
+
+main = {
+  arr = b"""
+main = {
+  0 +Int32 1
+};
+""";
+
+  lex = make-tokenizer arr;
+  p = ParseAlloc !;
+
+  REC loop = {
+    t = lex !;
+    if Tok_tok t ==Int32 1
+      then print_text "done";
+           print_i32 (yyerrcnt p);
+           ()
+      else print_i32 (Token_tok t);
+           Parse p (Token_tok t) t;
+           loop !
+    end
+  };
+  loop !
+};
