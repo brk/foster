@@ -1,0 +1,37 @@
+main = {
+  res = foo { x => x +Int32 1 } ();
+  ()
+};
+
+foo = { f => v => f v };
+
+/*
+Typecheck error:
+Failure when typechecking call
+
+  res = foo { x => x +Int32 1 } ();
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+subsCheckRho[(MetaTyVar(~(R)!18:.inferred))]
+├─AnnTuple
+
+Unable to unify
+	Int32
+and
+	()
+t1::
+├─PrimIntTC I32
+
+t2::
+├─TupleTypeTC
+
+	Context for AST below is:
+		FnAST        main ... C {leading = [], trailing = [BlankLine]}
+		LetAST       res ... C {leading = [BlankLine], trailing = []}
+		TupleAST
+Unification failure triggered when typechecking source line:
+<missing source file path>:2:32
+
+  res = foo { x => x +Int32 1 } ();
+                                ~~
+*/

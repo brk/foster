@@ -1,0 +1,73 @@
+main = {
+  dobig !;
+  f = if 0 ==Int32 opaquely_i32 0 then big5 else big6 end;
+  f { 0 };
+  ()
+};
+
+dobig = {
+  //big25 { opaquely_i32 25 };
+  big15 { opaquely_i32 15 };
+  //big10 { opaquely_i32 10 };
+  //big3 { opaquely_i32 8 };
+  //big7 { opaquely_i32 8 }
+};
+
+// Note: every ``t`` is called exactly once and is passed a (unique)
+// function literal. At runtime, without any optimization, this will
+// result in 25 allocations** and 25 function calls.
+// The "ideal" way to inline away those allocations and function calls
+// would be to only inline the right-side (``n``-branch) calls to big*.
+// The resulting code would look like::
+//
+//      case opaquely_i32 25 of 0 -> big24 { 0 }   of n25 ->
+//       case (n25 -Int32 1) of 0 -> big23 { 0 }   of n24 ->
+//       case (n24 -Int32 1) of 0 -> ...
+//
+// and would not trigger any allocations at runtime. The repeated ``{ 0 }``
+// function literals, with empty environments, could be CSE'd away.
+//
+// However, without profiling information, there is no a-priori reason
+// for the inliner to prefer inlining ``big24 { n -Int32 1 }`` over
+// inlining ``big24 { 0 }``.
+//
+// If we forcibly inline every call of bigK, the result will be an AST
+// of size roughly 2^(K+1). Under the Waddell/Dybvig scheme, inlining would
+// proceed as follows:
+//   See  big25 { opaquely_i32 25 }
+//     visitF: big25 has an un-processed definition
+//       knInlineFn' -> knInline' -> ...
+//         knInline' (big24 { 0 })
+//           visitF: big24 has an un-processed definition...
+//                visitF: big0 has an un-processed definition
+//                visitF: big0 is now (Visited { t => t } 1)
+//               visitF: big1 is now { t => case t !  of 0 -> { opaquely_i32 0 }
+//                                                    of n ->  { n -Int32 1 |> opaquely_i32 } end } 5
+//              visitF: big2 is now { t => case t !  of 0 ->  case opaquely_i32 0 of 0 -> { opaquely_i32 0 } of n ->  { n -Int32 1 |> opaquely_i32 } end }
+//                                                   of n ->  case opaquely_i32 (n -Int32 1) of 0 -> { opaquely_i32 0 } of n ->  { n -Int32 1 |> opaquely_i32 } end } end } 13
+//            ...
+//            ((bigX residualizes to be a bit over half the size limit))
+//            bigX+1 becomes { t => case t ! of 0 -> [[bigX]]
+//                                           of n -> [[bigX fails to inline, resid. call instead]] }
+// ** assuming a closure costs one allocation, not two.
+//big20 = { t20 => case t20 !  of 0 ->  f0_20x = { opaquely_i32 0 }; big19 f0_20x of n20 -> dcr_20x ={ n20 -Int32 1 |> opaquely_i32 };  big19 dcr_20x end };
+//big19 = { t19 => case t19 !  of 0 ->  f0_19x = { opaquely_i32 0 }; big18 f0_19x of n19 -> dcr_19x ={ n19 -Int32 1 |> opaquely_i32 };  big18 dcr_19x end };
+//big18 = { t18 => case t18 !  of 0 ->  f0_18x = { opaquely_i32 0 }; big17 f0_18x of n18 -> dcr_18x ={ n18 -Int32 1 |> opaquely_i32 };  big17 dcr_18x end };
+//big17 = { t17 => case t17 !  of 0 ->  f0_17x = { opaquely_i32 0 }; big16 f0_17x of n17 -> dcr_17x ={ n17 -Int32 1 |> opaquely_i32 };  big16 dcr_17x end };
+//big16 = { t16 => case t16 !  of 0 ->  f0_16x = { opaquely_i32 0 }; big15 f0_16x of n16 -> dcr_16x ={ n16 -Int32 1 |> opaquely_i32 };  big15 dcr_16x end };
+big15 = { t15 => case t15 !  of 0 ->  f0_15x = { opaquely_i32 0 }; big14 f0_15x of n15 -> dcr_15x ={ n15 -Int32 1 |> opaquely_i32 };  big14 dcr_15x end };
+big14 = { t14 => case t14 !  of 0 ->  f0_14x = { opaquely_i32 0 }; big13 f0_14x of n14 -> dcr_14x ={ n14 -Int32 1 |> opaquely_i32 };  big13 dcr_14x end };
+big13 = { t13 => case t13 !  of 0 ->  f0_13x = { opaquely_i32 0 }; big12 f0_13x of n13 -> dcr_13x ={ n13 -Int32 1 |> opaquely_i32 };  big12 dcr_13x end };
+big12 = { t12 => case t12 !  of 0 ->  f0_12x = { opaquely_i32 0 }; big11 f0_12x of n12 -> dcr_12x ={ n12 -Int32 1 |> opaquely_i32 };  big11 dcr_12x end };
+big11 = { t11 => case t11 !  of 0 ->  f0_11x = { opaquely_i32 0 }; big10 f0_11x of n11 -> dcr_11x ={ n11 -Int32 1 |> opaquely_i32 };  big10 dcr_11x end };
+big10 = { t10 => case t10 !  of 0 ->  f0_10x = { opaquely_i32 0 }; big9 f0_10x of n10 -> dcr_10x ={ n10 -Int32 1 |> opaquely_i32 };  big9 dcr_10x end };
+big9  = { t9 => case t9 !  of 0 -> f0_9x = { opaquely_i32 0 };   big8 f0_9x    of n9  -> dcr_9x = { n9  -Int32 1 |> opaquely_i32 };  big8 dcr_9x end };
+big8  = { t8 => case t8 !  of 0 -> f0_8x = { opaquely_i32 0 };   big7 f0_8x    of n8  -> dcr_8x = { n8 -Int32 1 |> opaquely_i32 };   big7 dcr_8x end };
+big7  = { t7 => case t7 !  of 0 -> f0_7x = { opaquely_i32 0 };   big6 f0_7x    of n7  -> dcr_7x = { n7 -Int32 1 |> opaquely_i32 };   big6 dcr_7x end };
+big6  = { t6 => case t6 !  of 0 -> f0_6x = { opaquely_i32 0 };   big5 f0_6x    of n6  -> dcr_6x = { n6 -Int32 1 |> opaquely_i32 };   big5 dcr_6x end };
+big5  = { t5 => case t5 !  of 0 -> f0_5x = { opaquely_i32 0 };   big4 f0_5x    of n5  -> dcr_5x = { n5 -Int32 1 |> opaquely_i32 };   big4 dcr_5x end };
+big4  = { t4 => case t4 !  of 0 -> f0_4x = { opaquely_i32 0 };   big3 f0_4x    of n4  -> dcr_4x = { n4 -Int32 1 |> opaquely_i32 };   big3 dcr_4x end };
+big3  = { t3 => case t3 !  of 0 -> f0_3x = { opaquely_i32 0 };   big2 f0_3x    of n3  -> dcr_3x = { n3 -Int32 1 |> opaquely_i32 };   big2 dcr_3x end };
+big2  = { t2 => case t2 !  of 0 -> f0_2x = { opaquely_i32 0 };   big1 f0_2x    of n2  -> dcr_2x = { n2 -Int32 1 |> opaquely_i32 };   big1 dcr_2x end };
+big1  = { t1 => case t1 !  of 0 -> f0_1x = { opaquely_i32 0 };   big0 f0_1x    of n1  -> dcr_1x = { n1 -Int32 1 |> opaquely_i32 };   big0 dcr_1x end };
+big0 = { t0 => if True then t0 ! else t0 ! end };
