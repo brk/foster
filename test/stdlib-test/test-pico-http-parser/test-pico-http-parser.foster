@@ -1,0 +1,360 @@
+snafuinclude Prelude "prelude";
+
+// Manual port of https://github.com/h2o/picohttpparser
+// (MIT licensed)
+
+// TODO port chunked encoding, response parsing.
+// TODO try using coroutines/effects -- should allow us to eliminate some CPS
+// TODO check to see how effective inlining is on this code.
+
+main = {
+  case simple-parse-request (bytesOfRawArray b"GET / HTTP/1.0\r\nfoo: \r\nfoo: b\r\n \tc\r\n\r\n")
+    of (failcode, $Failed) ->
+      print_text "request parsing failed";
+      print_i32 failcode;
+      ()
+    of (_, $Success (method, path, minorversion, headers)) ->
+      print_bytes method;
+      print_bytes path;
+      print_i32 minorversion;
+      listIter headers { w => hdr =>
+        let (k, v) = hdr;
+        print_text_bare "   header: "; print_bytes k;
+        print_text_bare "   value:  "; print_bytes v;
+      }
+  end
+};
+
+print_bytes = { b => print_text (textFromRawASCII (bytesFlattenRaw b)) };
+
+// (method, path, minorversion, headers)
+simple-parse-request :: { Bytes => (Int32, ParseResult) };
+simple-parse-request = { buf =>
+  r = prim ref 0;
+  lastlen = 0;
+  if False // both (reparsing) (is-incomplete buf lastlen r)
+    then (r^, Failed)
+    else mb = parse-request buf r;
+         (r^, mb)
+  end;
+};
+
+parse-request = { buf => ret =>
+  len = bytesLength32 buf;
+  idx = 0;
+
+  check-eof idx buf len ret Failed { c =>
+    case c
+      of 13 -> // CR
+        expect-char (idx +Int32 1) buf len ret 10 Failed { idx => parse-request-2 idx buf ret }
+      of 10 -> // LF
+         parse-request-2 (idx +Int32 1) buf ret
+      of _ ->
+         parse-request-2 idx buf ret
+    end
+  }
+};
+
+type case ParseResult
+  of $Failed
+  of $Success (Bytes, Bytes, Int32, List (Bytes, Bytes))
+  ;
+
+parse-request-2 = { idx => buf => ret =>
+  len = bytesLength32 buf;
+  advance-token buf idx ret { method => idx =>
+    advance-token buf idx ret { path => idx =>
+
+        parse-http-version buf idx len ret { idx => minorversion =>
+          case bytesGet32! idx buf
+            of 13 -> // CR
+              idx = idx +Int32 1;
+              expect-char idx buf len ret 10 Failed { idx => parse-headers idx buf ret method path minorversion };
+            of 10 -> // LF
+              idx = idx +Int32 1;
+              parse-headers idx buf ret method path minorversion
+            of _ ->
+              print_text "parse-request-2 failed line 67";
+              -1 >^ ret;
+              Failed
+          end
+        }
+
+    }
+  }
+};
+
+advance-token = { buf => idx => ret => contin =>
+  len = bytesLength32 buf;
+  start = idx;
+  REC loop = { idx =>
+    check-eof idx buf len ret Failed { c =>
+      if c ==Int8 " "
+        then contin (bytesSlice32 buf start (idx -Int32 start)) (idx +Int32 1)
+        else
+          if both (nonPrintableAscii c) (either (c <UInt8 32) (c ==Int8 127))
+            then 
+              print_text "advance-token failed line 88";
+            -1 >^ ret; Failed
+            else loop (idx +Int32 1)
+          end
+      end
+    }
+  };
+  loop idx
+};
+
+isWhite = { c : Int8 => either (c ==Int8 " ") (c ==Int8 "\t") };
+
+parse-headers = { idx => buf => ret => method => path => minorversion =>
+  len = bytesLength32 buf;
+
+  REC loop = { idx => hdrs : List (Bytes, Bytes) => hdrnum =>
+    check-eof idx buf len ret Failed { c =>
+        case c
+          of 13 -> // CR
+             idx = idx +Int32 1;
+             expect-char idx buf len ret 10 Failed { idx => Success (method, path, minorversion, listReverse hdrs) }
+          of 10 -> // LF
+             idx = idx +Int32 1;
+             Success (method, path, minorversion, listReverse hdrs)
+          of c ->
+            maxheaders = 100;
+            if hdrnum ==Int32 maxheaders
+              then
+                print_text "parse-headers failed line 116";
+                -1 >^ ret; Failed
+              else
+                if either (hdrnum ==Int32 0) (not (isWhite c))
+                  then
+                    nameStart = idx;
+                    REC inner = { idx =>
+                      c = bytesGet32! idx buf;
+                      if c ==Int8 ":"
+                        then
+
+                            nameLen = idx -Int32 nameStart;
+                            if nameLen ==Int32 0
+                              then
+                                print_text "empty header name, line 130";
+                                -1 >^ ret; Failed
+                              else
+                                name = bytesSlice32 buf nameStart nameLen;
+                                REC skipToNonWhite = { idx => fin =>
+                                  if idx >=SInt32 len
+                                    then print_text "line 130 failed";
+                                         -2 >^ ret; Failed
+                                    else c = bytesGet32! idx buf;
+                                        if isWhite c
+                                          then skipToNonWhite (idx +Int32 1) fin
+                                          else fin idx
+                                        end
+                                  end
+                                };
+
+                                skipToNonWhite (idx +Int32 1) { idx =>
+                                  get-token-to-eol buf len idx ret { idx => token => loop idx (Cons (name, token) hdrs) (hdrnum +Int32 1) }
+                                }
+                            end
+
+
+                        else
+                          if token-char-map[c] ==Int8 "0"
+                            then print_text "token-char-map failed, line 154";
+                                 -1 >^ ret; Failed
+                            else idx = idx +Int32 1;
+                                 check-eof idx buf len ret Failed { c => inner idx }
+                          end
+                      end
+                    };
+                    inner idx
+                  else
+                    get-token-to-eol buf len idx ret { idx => token => loop idx (Cons (bytesEmpty !, token) hdrs) (hdrnum +Int32 1) }
+                end
+            end
+        end
+    }
+  };
+
+  loop idx Nil 0
+};
+
+// Note: unlike C string literals (via juxtaposition),
+// there's not yet a convenient way in Foster
+// of getting a literal string with apparent newlines stripped out.
+
+token-char-map = b"00000000000000000000000000000000010111110011011011111111110000000111111111111111111111111110001111111111111111111111111111101010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+
+is-ctl-char = { c : Int8 =>
+  either (both (c <SInt8 " ")
+               (c !=Int8 "\t"))
+         (c ==Int8 127)
+};
+
+// slight subtlety: use unsigned comparison to compute c >= 32 && c < 127
+isPrintableAscii = { c : Int8 => (c -Int8 32) <UInt8 95 };
+
+nonPrintableAscii = { c => c |> isPrintableAscii |> not };
+
+get-token-to-eol = { buf => len => idx => ret => contin =>
+  start = idx;
+
+  foundCtl = { idx =>
+    c = bytesGet32! idx buf;
+    case c
+      of 13 -> // CR
+        idx = idx +Int32 1;
+        expect-char idx buf len ret 10 Failed { idx =>
+          tokenlen = ((idx -Int32 start) -Int32 2);
+          contin idx (bytesSlice32 buf start tokenlen)
+        };
+      of 10 -> // LF
+        tokenlen = (idx -Int32 start);
+        idx = idx +Int32 1;
+        contin idx (bytesSlice32 buf start tokenlen)
+      of _ ->
+        print_text "foundCtl failed, expected CR or LF, line 207";
+        -1 >^ ret; Failed
+    end
+  };
+  REC handleNonPrintable = { idx =>
+    c = bytesGet32! idx buf;
+    if is-ctl-char c
+      then foundCtl idx
+      else loop (idx +Int32 1)
+    end
+  };
+  REC loop = { idx =>
+    if (len -Int32 idx) >=SInt32 8
+      then
+        if nonPrintableAscii (bytesGet32! idx buf) then handleNonPrintable idx else idx = idx +Int32 1;
+        if nonPrintableAscii (bytesGet32! idx buf) then handleNonPrintable idx else idx = idx +Int32 1;
+        if nonPrintableAscii (bytesGet32! idx buf) then handleNonPrintable idx else idx = idx +Int32 1;
+        if nonPrintableAscii (bytesGet32! idx buf) then handleNonPrintable idx else idx = idx +Int32 1;
+        if nonPrintableAscii (bytesGet32! idx buf) then handleNonPrintable idx else idx = idx +Int32 1;
+        if nonPrintableAscii (bytesGet32! idx buf) then handleNonPrintable idx else idx = idx +Int32 1;
+        if nonPrintableAscii (bytesGet32! idx buf) then handleNonPrintable idx else idx = idx +Int32 1;
+        if nonPrintableAscii (bytesGet32! idx buf) then handleNonPrintable idx else idx = idx +Int32 1; loop idx
+        end
+        end
+        end
+        end
+        end
+        end
+        end
+        end
+      else
+        REC finish = { idx =>
+          check-eof idx buf len ret Failed { c =>
+            if both (nonPrintableAscii c) (is-ctl-char c)
+              then foundCtl idx
+              else finish (idx +Int32 1)
+            end
+          }
+        };
+
+        finish idx
+    end
+  };
+
+  loop idx;
+
+};
+
+parse-int = { forall a:Type, mul => idx => buf => len => ret => onfail : a => rest : { Int32 => Int32 => a } =>
+  c = bytesGet32! idx buf;
+  d = c -Int8 "0";
+  if oror { d <SInt8 0 } { d >SInt8 9 }
+    then 
+        print_text "parse-int failed, line 261";
+        -1 >^ ret; onfail
+    else rest (idx +Int32 1) (zext_i8_to_i32 d)
+  end
+};
+
+parse-http-version = { buf => idx => len => ret => rest =>
+  if (len -Int32 idx) <SInt32 9
+    then 
+ print_text "parse-http-version line 260 failed";
+    -2 >^ ret; Failed
+    else
+      expect-char-prechecked idx buf len ret ("H" as Int8) Failed { idx =>
+      expect-char-prechecked idx buf len ret ("T" as Int8) Failed { idx =>
+      expect-char-prechecked idx buf len ret ("T" as Int8) Failed { idx =>
+      expect-char-prechecked idx buf len ret ("P" as Int8) Failed { idx =>
+      expect-char-prechecked idx buf len ret ("/" as Int8) Failed { idx =>
+      expect-char-prechecked idx buf len ret ("1" as Int8) Failed { idx =>
+      expect-char-prechecked idx buf len ret ("." as Int8) Failed { idx =>
+        parse-int 1 idx buf len ret Failed rest
+      } } } } } } }
+  end
+};
+
+check-eof = { forall a:Type, idx : Int32 => buf : Bytes => len : Int32 => ret : Ref Int32 => onfail : a => rest : { Int8 => a } =>
+  if idx >=SInt32 len
+    then 
+ print_text "check-eof line 278 failed";
+    -2 >^ ret; onfail
+    else
+      bytesGet32! idx buf |> rest
+  end
+};
+
+expect-char-prechecked = { forall a:Type, idx : Int32 => buf : Bytes => len : Int32 => ret : Ref Int32 => e : Int8 => onfail : a => rest : { Int32 => a } =>
+    if bytesGet32! idx buf ==Int8 e
+      then rest (idx +Int32 1)
+      else
+          print_text "expect-char-prechecked failed, line 299";
+          print_text "expected vs saw at index";
+          print_i8 e;
+          print_i8 (bytesGet32! idx buf);
+          print_i32 idx;
+            -1 >^ ret; onfail
+    end
+};
+expect-char = { forall a:Type, idx : Int32 => buf : Bytes => len : Int32 => ret : Ref Int32 => e : Int8 => onfail : a => rest : { Int32 => a } =>
+  check-eof idx buf len ret onfail { c =>
+    if c ==Int8 e
+      then rest (idx +Int32 1)
+      else 
+          print_text "expect-char failed, line 308";
+        -1 >^ ret; onfail
+    end
+  }
+};
+
+is-incomplete :: { Bytes => Int32 => Ref Int32 => Bool };
+is-incomplete = { buf => lastlen => ret =>
+  adv = lastlen -Int32 3;
+  buf = if adv <=SInt32 0 then buf else bytesDrop32 buf adv end;
+  len = bytesLength32 buf;
+  idx = 0;
+  rets = prim ref 0;
+
+  REC loop = { idx : Int32 =>
+    check-eof idx buf len ret True { c =>
+        case c
+          of 13 -> // CR
+            idx = idx +Int32 1;
+            expect-char idx buf len ret 10 True { idx =>
+              (rets^ +Int32 1) >^ rets;
+              if rets^ ==Int32 2
+                then False
+                else loop idx
+              end
+            };
+         of 10 -> // LF
+              (rets^ +Int32 1) >^ rets;
+              if rets^ ==Int32 2
+                then False
+                else loop (idx +Int32 1)
+              end
+         of _ ->
+              0 >^ rets;
+              loop (idx +Int32 1)
+        end
+    }
+  };
+
+  loop idx
+};
