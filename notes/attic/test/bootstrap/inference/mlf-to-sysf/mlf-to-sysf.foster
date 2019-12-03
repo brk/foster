@@ -1,0 +1,73 @@
+main = {
+  zw = { zer };
+  z3 = combinY zw;
+  ()
+};
+
+combinY = { fa :   { { Int32 } } => () };
+zer = { 0 };
+
+
+/*
+poly = { f : (forall (x:Boxed) { x => x })
+           => (f { 1 }, f { True } ) };
+
+//polyL :: { { forall (x:Boxed) { x => x } } => ( { Int32 }, {Bool} ) };
+polyL = { xf : { forall (x:Boxed) { x => x } }
+             => poly (xf !) };
+
+// Without the type annotation, we get "type not polymorphic enough"
+// TODO improve the error message
+
+id :: forall (t:Boxed) { t => t };
+id = { v => v };
+
+//combine :: forall (t:Type) { { t } => { t } => { t => t => t } => t };
+//combine = { fa => fb => comb => comb (fa !) (fb !) };
+
+combine = { forall t:Boxed,
+            fa : { t } =>
+            fb : { t } =>
+            comb : { t => t => t }
+                => comb (fa !) (fb !) };
+
+combinX = { fa : { { { Int32 } => { Int32 } } } =>
+            comb : { { { Int32 } => { Int32 } } => { { Int32 } => { Int32 } } => { { Int32 } => { Int32 } } }
+                => comb (fa !) (fa !) };
+
+//combine = { fa => fb => comb => comb (fa !) (fb !) };
+
+//combine2 = { fa => comb => comb (fa !) };
+
+idI :: { { Int32 } => { Int32 } };
+idI = { f => f };
+
+// TODO improve error message when given this incorrect type
+//chainI :: { { Int32 } => { Int32 } => { Int32 } };
+chainI :: { { { Int32 } => { Int32 } } => { { Int32 } => { Int32 } } => { { Int32 } => { Int32 } } };
+chainI = { f => g => g };
+
+chainY :: { { Int32 } => { Int32 } };
+chainY = { g => g };
+combinY = { fa :   { { Int32 } } => (fa !) };
+
+//chainI2 = { f => f };
+
+idIw = { idI };
+zer = { 0 };
+
+ex2dot1 = {
+  ids = { id };
+  //(polyL ids, combine ids { idI } chainI)
+  //combine ids { idI } chainI
+  //z3 = combine { idI } { idI } chainI;
+  //z2 = combinX { f = ids; idI } chainI;
+
+  //z4 = combinY { f = ids; idI } chainY;
+  z4 = combinY { zer } ;
+
+  //z1 = combine2 { idI } chainI2;
+
+  ()
+};
+*/

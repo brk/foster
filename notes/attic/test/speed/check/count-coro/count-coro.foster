@@ -1,0 +1,35 @@
+snafuinclude Bench "bench/measure";
+snafuinclude Prelude "prelude";
+
+main = {
+  let (secs, ()) = elapsed-time (test_count_2 10`000`000);
+  print_text (foster_fmttime_secs secs);
+};
+
+test_count_2 = { n =>
+  {
+     r = (prim ref 0);
+     co = coro_create { x : () =>
+            REC loop = { v : Int32 =>
+              if v ==Int32 0 then 0 else coro_yield v ; loop (v -Int32 1); end
+            };
+            loop n;
+          };
+
+     REC loop = {
+       v = coro_invoke co ();
+       if v ==Int32 0 then () else v >^ r ; loop !; end
+     };
+
+     loop !;
+  }
+};
+
+test_count_1 = { n =>
+  {
+    REC loop = { x =>
+      if x ==Int32 0 then () else loop (x -Int32 1) end
+    };
+    loop n
+  }
+};

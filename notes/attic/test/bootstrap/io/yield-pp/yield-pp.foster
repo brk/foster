@@ -1,0 +1,378 @@
+snafuinclude Text "text";
+//snafuinclude Seq "data/seq";
+snafuinclude List "list";
+snafuinclude Prelude "prelude";
+snafuinclude Bench "bench/measure";
+
+// https://www.cs.indiana.edu/~sabry/papers/yield-pp.pdf
+
+main = {
+  doc1 = Dgroup (Dtext "A" `Dhcat` (Dline `Dhcat`
+        (Dgroup (Dtext "B" `Dhcat` (Dline `Dhcat`
+                 Dtext "C")))));
+  expect_text "A B C";
+  print_text (pretty1 6 doc1);
+
+  print_i32 3;
+  expect_i32 3;
+  expect_text "A\nB C";
+  print_text (pretty1 3 doc1);
+
+  print_i32 4;
+  expect_i32 4;
+  expect_text "A\nB C";
+  print_text (pretty1 4 doc1);
+
+  expect_text "A\nB\nC";
+  print_text (pretty1 2 doc1);
+
+  test-flist !;
+};
+
+type case Doc
+      of $Dtext Text
+      of $Dline
+      of $Dhcat Doc Doc
+      of $Dgroup Doc
+      ;
+
+pretty1 :: { Int32 => Doc => Text };
+pretty1 = { w => d =>
+  REC width = { dd =>
+    case dd
+      of $Dtext txt   -> textLength32 txt
+      of $Dline       -> 1
+      of $Dhcat d1 d2 -> width d1 +Int32 width d2
+      of $Dgroup dg   -> width dg
+    end
+  };
+
+  REC format = { f => r => dd =>
+    case (f, dd)
+      of (True, $Dline) -> (" ", r -Int32 1)
+      of (False, $Dline) -> ("\n", w)
+      of (_, $Dtext txt) -> (txt, r -Int32 textLength32 txt)
+      of (_, $Dhcat d1 d2) ->
+        let (s1, r1) = format f r d1;
+        let (s2, r2) = format f r1 d2;
+        (mkTextConcat s1 s2, r2)
+      of (_, $Dgroup dg) -> format (if f then True else width dg <=SInt32 r end) r dg
+    end
+  };
+
+  let (txt, _) = format False w d;
+  txt
+};
+
+// type FList a = { List a => List a };
+
+// Heap: none
+// Stack: O(depth of concat or cons nodes) assuming tail-call optimization.
+fListRun :: forall (a:Type) { { List a => List a } => List a => List a };
+fListRun = { flist => fnil => flist fnil };
+// FList a -> List a (when applied to nil)
+
+fListConcat :: forall (a:Type) { { List a => List a } => { List a => List a } => { List a => List a } };
+fListConcat = { fa => fb =>
+  { list => fa (fb list) }
+};
+
+fListSingleton :: forall (a:Type) { a => { List a => List a } };
+fListSingleton = { a =>
+  { list => Cons a list }
+};
+
+fListCons :: forall (a:Type) { a => { List a => List a } => { List a => List a } };
+fListCons = { a => flist =>
+  { list => Cons a (flist list) }
+};
+
+fListConsAlt :: forall (a:Type) { a => { List a => List a } => { List a => List a } };
+fListConsAlt = { a => flist =>
+  fListConcat (fListSingleton a) flist
+// => { list => (fListSingleton a) (flist list) }
+// => { list => { list => Cons a list } (flist list) }
+// => { list => Cons a (flist list) }
+};
+
+fListSnocAlt :: forall (a:Type) { a => { List a => List a } => { List a => List a } };
+fListSnocAlt = { a => flist =>
+  fListConcat flist (fListSingleton a)
+};
+
+fListSnoc :: forall (a:Type) { a => { List a => List a } => { List a => List a } };
+fListSnoc = { a => flist =>
+  { list => flist (Cons a list) }
+};
+
+fListNil :: forall (a:Type) { List a => List a };
+fListNil = { list => list };
+
+// {{{
+
+//fcListRun :: forall (a:Type) { Builder => Int32 => Array a };
+fcListRun = { b => arr =>
+  b arr 0 { finalbuf => finalidx => finalidx };
+};
+
+//fcListConcat :: forall (a:Type) { Builder => Builder => Builder };
+fcListConcat = { ba => bb =>
+  part1 = { buf => idx => k =>
+      part2 = { buf => idx => bb buf idx k };
+      ba buf idx part2
+  };
+  part1
+};
+
+//fcListSingleton :: forall (a:Type) { a => Builder };
+fcListSingleton = { a =>
+  { buf => idx => k =>
+        a >^ buf[idx]; k buf (idx +Int32 1) }
+};
+
+//fListCons :: forall (a:Type) { a => Builder => Builder };
+fcListCons = { a => b =>
+  fcListConcat (fcListSingleton a) b
+};
+
+//fcListNil :: forall (a:Type) { Array a => Int32 => { Array a => Int32 => () } => (} };
+fcListNil = { buf => idx => k => k buf idx };
+
+//    fcListConcat (fcListSingleton a) b
+/* => { buf => idx => k =>
+          (fcListSingleton a) buf idx { buf => idx => { buf => idx => k => k buf idx } buf idx k }
+      }
+=> { buf => idx => k =>
+          a >^ buf[idx];
+          k buf (idx +Int32 1)
+   }
+*/
+// }}}
+
+
+// {{{
+
+// type FNList a = { List a => { List a => List a } => List a };
+
+// Stack: O(concat depth), assuming that tail call optimization is enabled.
+// Heap: O(# conses)
+//fnListRun :: forall (a:Type) { FNList a => List a => List a };
+fnListRun = { flist => fnil => flist fnil fListNil };
+
+/*
+//fnListCons :: forall (a:Type) { a => FNList a => FNList a };j
+fnListCons = { a => flist =>
+  { list => cont => flist list { fin => cont (Cons a fin) } }
+};
+*/
+
+//fnListConcat :: forall (a:Type) { FNList a => FNList a => FNList a };
+/*
+fnListConcat = { fa => fb =>
+  { list => cont => fa (fb list fListNil) cont }
+};
+*/
+
+/*
+//fnListSingleton :: forall (a:Type) { a => FNList a };
+fnListSingleton = { a =>
+  { list => cont => cont (Cons a list) }
+};
+*/
+
+/*
+//fnListConsAlt :: forall (a:Type) { a => FNList a => FNList a };
+fnListConsAlt = { a => flist =>
+  fListConcat (fListSingleton a) flist
+};
+*/
+
+/*
+//fnListSnocAlt :: forall (a:Type) { a => FNList a => FNList a };
+fnListSnocAlt = { a => flist =>
+  fnListConcat flist (fnListSingleton a)
+};
+*/
+
+//fnListSnoc :: forall (a:Type) { a => FNList a => FNList a };
+fnListSnoc = { a => flist =>
+  { list => cont => flist (Cons a list) cont }
+};
+
+
+//fnListNil :: forall (a:Type) (FNList a);
+fnListNil = { list => cont => cont list };
+
+
+// }}}
+
+
+noinline_llvm_foo = { flist =>
+  print_text "mater flist again: ";
+  let (t_run, list)  = elapsed-time { fListRun flist Nil };
+  print_text (noinline_fmttime t_run);
+};
+
+noinline_llvm_foon = { fnlist =>
+  print_text "mater fnlist again: ";
+  let (t_run, list)  = elapsed-time { fnListRun fnlist Nil };
+  print_text (noinline_fmttime t_run);
+};
+
+
+noinline_fmttime = { t =>
+  foster_fmttime_secs t;
+};
+
+noinline_llvm_build_flist = { len =>
+
+  let (t_build, flist) = elapsed-time { foldRange 0 len fListNil fListSnoc };
+  print_text "running flist";
+  let (t_run, list)  = elapsed-time { fListRun flist Nil };
+
+  print_text "summing flist";
+  let (t_sum, sum1)  = elapsed-time { listFoldl list { a => b => a +Int32 b } 0 };
+  print_text "done";
+
+  noinline_llvm_foo flist;
+
+  expect_i1 True;
+  print_i1 (len ==Int32 listLength list);
+
+  print_text ("build flist: " `mkTextConcat` (noinline_fmttime t_build));
+  print_text ("mater flist: " `mkTextConcat` (noinline_fmttime t_run));
+  print_text ("sum    list: " `mkTextConcat` (noinline_fmttime t_sum));
+
+  sum1
+};
+
+
+noinline_llvm_build_fnlist = { len =>
+
+  let (t_build, fnlist) = elapsed-time { foldRange 0 len fnListNil fnListSnoc };
+  print_text "running fnlist";
+  let (t_run, list)  = elapsed-time { fnListRun fnlist Nil };
+
+  print_text "summing fnlist";
+  let (t_sum, sum1)  = elapsed-time { listFoldl list { a => b => a +Int32 b } 0 };
+  print_text "done";
+
+  noinline_llvm_foon fnlist;
+
+  expect_i1 True;
+  print_i1 (len ==Int32 listLength list);
+
+  print_text ("build fnlist: " `mkTextConcat` (noinline_fmttime t_build));
+  print_text ("mater fnlist: " `mkTextConcat` (noinline_fmttime t_run));
+  print_text ("sum     list: " `mkTextConcat` (noinline_fmttime t_sum));
+
+  sum1
+};
+
+
+test-flist = {
+  expect_text "[1, 2, 3]???";
+  print_text (listShow tmp_Text_of_Int32 (Cons 1 (Cons 2 (Cons 3 Nil))));
+
+  expect_text "[1, 2, 3]";
+  flist123 = fListCons 1 (fListCons 2 (fListCons 3 fListNil));
+  print_text (listShow tmp_Text_of_Int32 (fListRun flist123 Nil));
+
+  expect_text "[2, 3, 4, 5]";
+  flist123 = fListConcat (fListCons 2 (fListCons 3 fListNil)) (fListCons 4 (fListCons 5 fListNil));
+  print_text (listShow tmp_Text_of_Int32 (fListRun flist123 Nil));
+
+  len = (opaquely_i32 1000000);
+  print_text "building flist";
+
+  // Uses too much stack for len 1e6.
+  //sum1 = noinline_llvm_build_flist len;
+
+  sum1b = noinline_llvm_build_fnlist len;
+
+  force_gc_for_debugging_purposes !;
+
+  print_text "alloc arr";
+  let (t_alloc, arrval) = elapsed-time { allocDArray:[Int32] (len +Int32 1) };
+  print_text "building fbuf";
+  let (t_build, farr) = elapsed-time { foldRange 0 len fcListNil fcListCons };
+  print_text "running fbuf";
+  let (t_run, finalsz)  = elapsed-time { fcListRun farr arrval };
+  print_text "summing fbuf";
+  let (t_sumfold, sum2)  = elapsed-time { arrayFoldl arrval { a => b => (sext_i32_to_i64 a) +Int64 b } 0 };
+  print_text "summing fbuf bare";
+  let (t_sumbare ,sum3)  = elapsed-time {
+                                          REC go = { idx => sum =>
+                                            if idx >=SInt32 len then sum else
+                                              go (idx +Int32 1) (sum +Int64 (sext_i32_to_i64 arrval[idx]))
+                                            end
+                                          };
+                                          go 0 0
+                                        };
+  print_text "done";
+
+  print_i32 12345;
+  expect_i32 12345;
+
+  expect_i1 True;
+  print_i1 (len ==Int32 finalsz);
+  expect_i1 True;
+  print_i1 ((len +Int32 1) ==Int32 arrayLength32 arrval);
+
+  expect_i1 True;
+  print_i1 (sum3 ==Int64 sum2);
+
+  //expect_i1 True;
+  //print_i1 (sum1 ==Int32 sum1b);
+
+  print_text ("build arr: " `mkTextConcat`  (noinline_fmttime t_build));
+  print_text ("alloc arr: " `mkTextConcat`  (noinline_fmttime t_alloc));
+  print_text ("run   arr: " `mkTextConcat`  (noinline_fmttime t_run));
+  print_text ("sum (fold): " `mkTextConcat` (noinline_fmttime t_sumfold));
+  print_text ("sum (bare): " `mkTextConcat` (noinline_fmttime t_sumbare));
+
+};
+
+/*
+
+type case StreamB
+      of $TE Text
+      of $LE
+      of $GBeg
+      of $GEnd
+      ;
+
+type case StreamHPB
+      of $TEb Int32 Text
+      of $LEb Int32
+      of $GBegb Int32
+      of $GEndb Int32
+      ;
+
+type case HPP of $Small Int32 of $TooFar;
+
+type case StreamHPP
+    of $TEp Int32 Text
+    of $LEp Int32
+    of $GBegp HPP
+    of $GEndp Int32
+    ;
+
+type case BufferP m
+    of $BufferP (Int32, Seq (Int32, Buf StreamHPP))
+    ;
+
+type case Buf e
+    of $Buf (Seq e)
+    ;
+*/
+
+    /*
+trHPP :: { Int32 => Transducer StreamHPB StreamHPP };
+trHPP = { w =>
+
+};
+
+
+genB :: { Doc -> Producer StreamB };
+*/

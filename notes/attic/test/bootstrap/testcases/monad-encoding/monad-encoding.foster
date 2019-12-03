@@ -1,0 +1,221 @@
+snafuinclude List "list";
+snafuinclude Maybe "maybe";
+
+main = {
+
+  expect_i32 3;
+  print_i32 (fromMaybe (ex1 !) 99);
+
+  expect_i32 99;
+  print_i32 (fromMaybe (ex2 None) 99);
+
+  //maybeMonadInt32 = MonMBInt32 maybeMonadRet maybeMonadBnd;
+  maybeMonadInt32 = MonMBInt32 Some
+                               maybeMonadBndI32;
+  expect_i32 99;
+  print_i32 (fromMaybe (ex2s maybeMonadInt32 None) 99);
+
+  //expect_i32 5;
+  //print_i32 (fromMaybe (ex2g maybeMonad (Some 3)) 99);
+
+  //listMapM
+};
+
+fromMaybe = { forall a:Type, mba : Maybe a => defval : a =>
+  case mba
+    of $Some v -> v
+    of $None   -> defval
+  end
+};
+
+  // do x <- return 1
+  //    y <- return 2
+  //    return (x + y)
+ex1 = {
+  (maybeMonadRet 1) `maybeMonadBnd` { x =>
+  (maybeMonadRet 2) `maybeMonadBnd` { y =>
+    maybeMonadRet (x +Int32 y)
+  }
+  }
+};
+
+// do x <- return 1
+  //  y <- Nothing
+  //  return (x + y)
+ex2 = { mba : Maybe Int32 =>
+  (maybeMonadRet 1) `maybeMonadBnd` { x =>
+  mba               `maybeMonadBnd` { y =>
+    maybeMonadRet (x +Int32 y)
+  }
+  }
+};
+
+ex2s = { mon : MonadMaybeInt32 =>
+         mba : Maybe Int32 =>
+  case mon of $MonMBInt32 ret bnd ->
+      (ret 1) `bnd` { x =>
+      mba     `bnd` { y =>
+        ret (x +Int32 y)
+      }
+      }
+  end
+};
+maybeMonadBndI32 = { mba : Maybe Int32 => f : { Int32 => Maybe Int32 } =>
+  case mba
+    of $Some v -> f v
+    of $None   -> None
+  end
+};
+
+maybeMonadRet = { forall a:Type, v:a => Some v };
+maybeMonadBnd = { forall a:Type b:Type, mba : Maybe a => f : { a => Maybe b } =>
+  case mba
+    of $Some v -> f v
+    of $None   -> None
+  end
+};
+
+type case MonadMaybeInt32
+       of $MonMBInt32 { Int32 => Maybe Int32 }
+                      { Maybe Int32 => { Int32 => Maybe Int32 } => Maybe Int32 }
+       ;
+
+type case Monad (mm:Type /* => Boxed */)
+       of $Mon (forall ma:Type, { ma => mm ma })
+               (forall mb:Type, mc:Type, { mm mb => { mb => mm mc } => mm mc })
+       ;
+
+type case MonadMaybe
+       of $MonMB (forall ma:Type, { ma => Maybe ma })
+                 (forall mb:Type, mc:Type, { Maybe mb => { mb => Maybe mc } => Maybe mc })
+       ;
+
+// The interaction of kind-distinguished unboxing with dictionary-passing:
+//
+// The following code is the explicit/desugared representation of Haskell-style
+// type classes. The fundamental issue is: does the dictionary contain functions
+// abstracted over *all* types, or only over boxed types?
+// In Haskell, the answer is the latter.
+// If we want to abstract over *all* types, we run into an issue,
+// which is that it is not apparent at the call site what functions are
+// contained in the dictionary, and thus we cannot easily guarantee static
+// monomorphization.
+// For example, in ex2g below, ``ret`` will have a different ABI depending
+// on whether mba has type ``Maybe Int32`` or ``Maybe Float64``.
+// This in turn means that a single dictionary is not sufficient.
+//
+// Oleg lays out compilation strategies for type classes in
+// http://okmij.org/ftp/Computation/typeclass.html#dict
+// including natural examples involving polymorphic recursion
+// where the relevant dictionaries cannot be statically determined.
+//
+// He notes that bounded polymorphism can be monomorphized just like
+// unbounded polymorphism, with the same restriction against higher-rank
+// polymorphism and polymorphic recursion.
+//
+// We can, I think, monomorphize in certain situations -- but not all,
+// and it's unclear to me at the moment either
+// (A) what situations are covered and which are not, & whether it's
+//     a complete enough set, and
+// (B) what a sufficient/minimal static safety condition is to avoid
+//     generating ABI-mismatched code.
+
+ex2sg = { mon : MonadMaybe =>
+         mba : Maybe Int32 =>
+  case mon of $MonMB ret bnd ->
+      (ret 1) `bnd` { x =>
+      mba     `bnd` { y =>
+        ret (x +Int32 y)
+      }
+      }
+  end
+};
+
+// Suppose we define   pw = { forall t,  v : t => r : Ref t =>  v >^ r  }
+//             with type      forall t, { t => Ref t => () }.
+//
+// We might have two polymorphic instantations where pw is unknown:
+//   pw:[Int32] 0 (ref 1)
+//   pw:[f64] 0.0 (ref 1.0)
+// Since pw is unknown, the same code must execute for both calls
+//   (assuming that the instantiation has no run-time effect).
+//
+// Suppose that all polymorphic args are gathered into a (stack-allocated)
+// tuple, represented as a uniform pointer. Thus:
+//    pa_wr = { forall t, v : Ref t => pargs : (t, ()) =>
+//                   case pargs of (v, ()) -> v >^ r end }
+// Unfortunately, this doesn't work, because a different number of bytes must
+// be copied depending on the type used to instantiate t.
+//
+// The idea of intensional polymorphism is to instead have
+//   pw = { forall t, e : Repr t =>
+//            case e of $ReprInt32 -> { v : Int32 => r : Ref Int32 => v >^ r }
+//                   of $Reprf64   -> { v : f64   => r : Ref f64   => v >^ r }
+//                   of ...        -> ...
+//        };
+//   and the callsites become (pw $ReprInt32) 0 (ref 1)
+//                       and  (pw $Reprf64) 0.0 (ref 1.0) respectively
+// Operationally, the polymorphic application has the run-time effect of
+// dynamically returning a function of the correct ABI.
+//
+// This makes a great deal of sense; after all, the whole point of non-uniform
+// representations is that { Int32 => () } and { f64 => () } have different
+// ABIs, which implies that the various instantiations of a polymorphic function
+// must also have distinct ABIs.
+//
+// One issue is what representations must be present in the lookup "table".
+// In the presence of separate compilation, an appealing trick is to switch
+// on ABI-relevant properties of types (such as size) rather than the type
+// representations themselves. Unfortunately the LLVM "fastcc" calling
+// convention is not bound to any stable platform ABI, and cannot tolerate
+// *any* type mismatch without incurring undefined behavior.
+//
+// So, to recap:
+//
+//  * It's natural for programmers coming from the C tradition to expect that
+//    "simple" types like f64 are handled as machine-level primitives.
+//  * But processors have distinct registers for floats/vectors
+//    vs integers/pointers, which means that function ABIs differ, and distinct
+//    code is generated for e.g. reference cell writes.
+//  * Potential solutions:
+//     A) Polymorphic instantiations have different ABIs (and therefore
+//        different types) than non-polymorphic functions/code.
+//        This is ugly, non-composable madness, and it's very unclear how or
+//        even whether the boundary between the two worlds can be identified.
+//     B) Polymorphic instantiation has no run-time cost; this implies that we
+//        cannot abstract over unboxed types, which then firmly puts unboxed
+//        types in the second-class-citizen bucket. This might end up being
+//        acceptable if the "default" for Int/Float is boxed, and there are
+//        specialized, are-you-sure-you-need-this unboxed primitives... but
+//        those unboxed primitives would be necessary for interop with external
+//        formats, e.g. byte/int/float arrays...
+//     C) Polymorphic instantation has a run-time cost, dynamically selecting
+//        (or JIT compiling) the correct specialized variant. This runtime cost
+//        has not been measured, to my knowledge, but any non-trivial cost will
+//        effectively discourage use of fundamental polymorphic abstractions.
+//        On the other hand, the run-time cost only applies to polymorphic
+//        instantiations of unknown functions, and it's very unclear what the
+//        cost will be after CSE & inlining optimizations have been applied...
+//
+//        In systems without JIT compilers, it's also unclear how to guarantee
+//        that "enough" specializations are statically computed, especially in
+//        the presence of separate compilation.
+//
+
+       /*
+listMapM = { forall m a b, mon : Monad m =>
+                             f : { a => m b } =>
+                             xs : List a =>
+  case mon of $Mon ret bnd ->
+    case xs
+      of $Nil -> ret (Nil !)
+      of $Cons y ys -> f y `bnd` { z =>
+                       listMapM m f ys `bnd` { zs =>
+                       ret (Cons z zs)
+                       }
+                       }
+    end
+  end
+};
+*/
+
