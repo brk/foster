@@ -30,11 +30,11 @@ curl https://beyondgrep.com/ack-2.20-single-file > ~/.local/bin/ack && chmod 075
 
 
   # Python packages, mostly used by benchmarking infrastructure
-  pip install pyyaml jinja2 statsmodels mpld3 seaborn
+  pip3 install pyyaml jinja2 statsmodels mpld3 seaborn
 
   mkdir tmp
   cd tmp
-  wget http://thrysoee.dk/editline/libedit-20170329-3.1.tar.gz
+  wget http://thrysoee.dk/editline/libedit-20191025-3.1.tar.gz
   tar xf libedit*.gz
   rm libedit*.gz
   cd libedit*
@@ -49,21 +49,21 @@ curl https://beyondgrep.com/ack-2.20-single-file > ~/.local/bin/ack && chmod 075
   ./configure --prefix=$HOME/.local && make -j && make install
   cd ..
 
-  wget https://downloads.haskell.org/~ghc/8.4.3/ghc-8.4.3-x86_64-deb8-linux-dwarf.tar.xz
+  wget https://downloads.haskell.org/~ghc/8.8.1/ghc-8.8.1-x86_64-deb9-linux-dwarf.tar.xz
   tar xf ghc-*.xz
   rm ghc-*.xz
-  cd ghc-* && ./configure --prefix=$HOME/.local/ghc-8.4.3 && make -j install && cd ..
+  cd ghc-* && ./configure --prefix=$HOME/.local/ghc-8.8.1 && make -j install && cd ..
 
-  wget https://www.haskell.org/cabal/release/cabal-install-2.2.0.0/cabal-install-2.2.0.0-x86_64-unknown-linux.tar.gz
+  wget https://www.haskell.org/cabal/release/cabal-install-3.0.0.0/cabal-install-3.0.0.0-x86_64-unknown-linux.tar.gz
   tar xf cabal-*.gz
   rm cabal-*.gz
   mv cabal ~/.local/bin
 
-  curl -O https://capnproto.org/capnproto-c++-0.6.1.tar.gz
+  curl -O https://capnproto.org/capnproto-c++-0.7.0.tar.gz
   tar xf capnproto-*.gz
   rm     capnproto-*.gz
-  cd capnproto-c++-0.6.1
-  ./configure --prefix=$HOME/.local/capnp-c++-0.6.1
+  cd capnproto-c++-0.7.0
+  ./configure --prefix=$HOME/.local/capnp-c++-0.7.0
   make -j check
   make install
   cd ..
@@ -91,7 +91,7 @@ curl https://beyondgrep.com/ack-2.20-single-file > ~/.local/bin/ack && chmod 075
 	popd
 
 
-export PATH=$PATH:$HOME/.local/bin:$HOME/.local/capnp-c++-0.6.1/bin:$HOME/.local/ghc-8.4.2/bin
+export PATH=$PATH:$HOME/.local/bin:$HOME/.local/capnp-c++-0.7.0/bin:$HOME/.local/ghc-8.8.1/bin
 cabal update
 
 cat ~/.cabal/config | sed 's/-- library-profiling:/library-profiling: True/' > tmp.txt
