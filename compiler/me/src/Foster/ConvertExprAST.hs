@@ -96,9 +96,12 @@ convertExprAST f expr =
     E_TyCheck      rng a ty     -> liftM2 (E_TyCheck      rng)   (q a) (f ty)
     E_VarAST       rng v        -> liftM  (E_VarAST       rng) (convertEVar f v)
     E_TupleAST     rng bx exprs -> liftM  (E_TupleAST  rng bx) (mapM q exprs)
-    E_ArrayRead    rng (ArrayIndex a b rng2 s) -> do [x, y] <- mapM q [a, b]
+    E_ArrayRead    rng (ArrayIndex a b rng2 s) -> do x <- q a
+                                                     y <- q b
                                                      return $ E_ArrayRead rng (ArrayIndex x y rng2 s)
-    E_ArrayPoke    rng (ArrayIndex a b rng2 s) c -> do [x, y, z] <- mapM q [a, b, c]
+    E_ArrayPoke    rng (ArrayIndex a b rng2 s) c -> do x <- q a
+                                                       y <- q b
+                                                       z <- q c
                                                        return $ E_ArrayPoke rng (ArrayIndex x y rng2 s) z
     E_Handler      rng e arms mb_xform -> liftM3 (E_Handler rng) (q e) (mapM qa arms) (liftMaybe q mb_xform)
     E_Case         rng e arms   -> liftM2 (E_Case         rng) (q e) (mapM qa arms)

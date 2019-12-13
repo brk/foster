@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 import sys
 import fileinput
@@ -25,10 +25,10 @@ def process_block():
 
     for line in block:
         (before, after) = line.split(sep, 1)
-        print before,
-        print spaces(maxoffset - len(before)),
-        print sep,
-        print after,
+        print(before, end='')
+        print(spaces(maxoffset - len(before)), end='')
+        print(sep, end='')
+        print(after, end='')
 
     block = []
 
@@ -38,7 +38,7 @@ for line in lines:
         block.append(line)
     else:
         process_block()
-        print line,
+        print(line, end='')
 process_block()
 sys.stdout.flush()
 

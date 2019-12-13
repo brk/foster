@@ -1,10 +1,10 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 # Copyright (c) 2010 Ben Karel. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-from __future__ import with_statement
+
 
 import os
 import re
@@ -76,20 +76,20 @@ def aggregate_results(results):
     return result
 
 def print_result_table(res):
-    print "fpr:%4d | fme:%4d | flo:%4d | foc:%4d | as+ld:%4d | run:%4d | tot:%5d | %s" % (
+    print("fpr:%4d | fme:%4d | flo:%4d | foc:%4d | as+ld:%4d | run:%4d | tot:%5d | %s" % (
                 res['fp_elapsed'],  res['fm_elapsed'], res['fl_elapsed'], res['fc_elapsed'],
                 res['as_elapsed'] + res['ld_elapsed'], res['rn_elapsed'],
-                res['total_elapsed'], res['label'])
+                res['total_elapsed'], res['label']))
 
     # We compute times as a percentage of compile time instead of total time,
     # since these measurements target compilation time, not test case runtime.
-    print "fpr:%3.0f%% | fme:%3.0f%% | flo:%3.0f%% | foc:%3.0f%% | as+ld:%3.0f%%" % tuple(
+    print("fpr:%3.0f%% | fme:%3.0f%% | flo:%3.0f%% | foc:%3.0f%% | as+ld:%3.0f%%" % tuple(
       100.0*x/float(res['compile_elapsed'])
         for x in list((res['fp_elapsed'], res['fm_elapsed'], res['fl_elapsed'],
-                       res['fc_elapsed'], res['as_elapsed'] + res['ld_elapsed'])))
+                       res['fc_elapsed'], res['as_elapsed'] + res['ld_elapsed']))))
     if options.print_bytes_per_sec and 'inbytes' in res:
-      print """input CBOR %(inbytes)s (%(inbytes_per_sec)s/s); output capnp %(ckbytes)s (%(ckbytes_per_sec)s/s); object file %(outbytes)s (%(outbytes_per_sec)s/s)""" % res
-    print "".join("-" for x in range(60))
+      print("""input CBOR %(inbytes)s (%(inbytes_per_sec)s/s); output capnp %(ckbytes)s (%(ckbytes_per_sec)s/s); object file %(outbytes)s (%(outbytes_per_sec)s/s)""" % res)
+    print("".join("-" for x in range(60)))
 
 def run_diff(a, b):
   "Returns True if diff finds a difference between file a and file b."
@@ -99,16 +99,16 @@ def run_diff(a, b):
       # same
       if not options.quietish:
         numlines = len(open(a, 'r').readlines())
-        print """
+        print("""
 
         \m/_(>_<)_\m/    (%d lines)
 
-""" % numlines
+""" % numlines)
       return False
     else:
       if not options.quietish:
         cmd = ['diff', '--side-by-side', '--left-column', a, b]
-        print ' '.join(cmd)
+        print(' '.join(cmd))
         subprocess.call(cmd)
       return True
 
@@ -145,13 +145,13 @@ def run_one_test(testpath, tmpdir, progargs, paths, exe_cmd, elapseds):
     if (not did_fail) and options and options.interpret:
       did_fail = run_diff(act_filename, iact_filename)
       if did_fail:
-        print "Interpreter output differed!"
+        print("Interpreter output differed!")
   else:
     did_fail = True
 
   if options.show_stdout:
     with open(act_filename, 'r') as act:
-      print act.read(),
+      print(act.read(), end='')
 
   def elapsed_per_sec(b, e): return humanized(float(b)/(float(e) / 1000.0))
   (fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed, as_elapsed, ld_elapsed) = elapseds
@@ -171,7 +171,7 @@ def run_one_test(testpath, tmpdir, progargs, paths, exe_cmd, elapseds):
   infile.close()
 
   if rv != 0:
-    print testpath, "failed with non-zero return value", rv
+    print(testpath, "failed with non-zero return value", rv)
 
   return result
 
@@ -214,9 +214,9 @@ if __name__ == "__main__":
   (options, args) = test_parser_parse_and_fixup(parser)
 
   if len(args) != 1:
-    print args
-    print options
-    print parser.print_help()
+    print(args)
+    print(options)
+    print(parser.print_help())
     sys.exit(1)
 
   testpath = args[0]

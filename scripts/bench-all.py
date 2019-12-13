@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 # Copyright (c) 2013 Ben Karel. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
@@ -9,11 +9,11 @@ from collections import defaultdict
 try:
   from scripts.run_cmd import run_cmd, walltime, elapsed
   import fit
-except Exception, e:
-  print e
-  print
-  print "You'll probably need to add the foster/ dir to PYTHONPATH."
-  print
+except Exception as e:
+  print(e)
+  print()
+  print("You'll probably need to add the foster/ dir to PYTHONPATH.")
+  print()
   raise
 
 import os
@@ -60,13 +60,15 @@ def test_data_dir(testfrag, tags):
 def datapath(testfrag, tags, base):
   return os.path.join(test_data_dir(testfrag, tags), base)
 
-def distribute_tag((tag, vals)):
+def distribute_tag(pair):
+  (tag, vals) = pair
   return [(tag, val) for val in vals]
 
 def format_flag(keyval):
   return "%s=%s" % keyval
 
-def format_flags((tag, (short, flag))):
+def format_flags(tagshortflag):
+  (tag, (short, flag)) = tagshortflag
   return (format_flag((tag, short)), flag)
 
 def format_tags(tags_tup):
@@ -100,7 +102,7 @@ def shell_out(cmdstr, stdout=None, stderr=None, showcmd=False):
   end = walltime()
 
   if showcmd:
-      print "::^^^::", cmdstr
+      print("::^^^::", cmdstr)
 
   return (rv, elapsed(start, end))
 
@@ -147,7 +149,7 @@ def zip_dicts(ds):
   all_keys    = union_of_sets(raw_keys)
   uncommon_keys = all_keys - common_keys
   if len(uncommon_keys) > 0:
-    print "zip_dicts() saw uncommon keys: ", uncommon_keys
+    print("zip_dicts() saw uncommon keys: ", uncommon_keys)
   d = {}
   for k in common_keys:
     d[k] = [e[k] for e in ds]
@@ -189,13 +191,13 @@ def extract_foster_compile_stats(testpath, tags):
           }
 
 def print_timing_line(ms, n, k):
-  print "\r>>>> %d ms (%d/%d)" % (ms, n + 1, k),
+  print("\r>>>> %d ms (%d/%d)" % (ms, n + 1, k), end=' ')
   sys.stdout.flush()
 
 def do_runs_for_gotest(testpath, inputstr, runtimeparams, tags, flagsdict, total, options):
   exec_path = exec_for_testpath(testpath)
   if not os.path.exists(exec_path):
-    print "ERROR: compilation failed!"
+    print("ERROR: compilation failed!")
   else:
     compile_stats = extract_foster_compile_stats(testpath, tags)
     tj = { 'tags'  : tags,
@@ -206,16 +208,18 @@ def do_runs_for_gotest(testpath, inputstr, runtimeparams, tags, flagsdict, total
     }
     stats_seq = []
     os_stats_seq = []
-    print testpath, inputstr, tags
-    print
+    print(testpath, inputstr, tags)
+    print()
     for z in range(total):
       pause_before_test()
 
       stats_path = datapath(testpath, tags, "stats_%d.json" % z)
       os_stats_path = datapath(testpath, tags, "os_stats_%d.json" % z)
-      cmdstr = """time-json --output %s %s %s %s -foster-runtime '{ "dump_json_stats_path" : "%s" }'  > /dev/null""" \
+      cmdstr = """time-json --output %s %s %s %s --foster-json-stats "%s" > /dev/null""" \
                  % (os_stats_path, exec_path, inputstr, runtimeparams, stats_path)
-      #print ": $ " + cmdstr + " (%d of %d; tags=%s)" % (z + 1, total, tags)
+
+      print(": $ " + cmdstr + "         (%d of %d; tags=%s)" % (z + 1, total, tags))
+
       (rv, ms) = shell_out(cmdstr)
       assert rv == 0
       print_timing_line(ms, z, total)
@@ -242,7 +246,7 @@ def compile_and_run_test(testpathfragment, extra_compile_args, inputstr, runtime
 
 def flags_of_factors(all_factors):
   return list(itertools.chain(*
-           (itertools.product(*itertools.imap(distribute_tag, factors))
+           (itertools.product(*map(distribute_tag, factors))
                 for factors in all_factors)))
 
 # all_factors :: [ [ (tag, [(symbolic-tag-val, cmd-line-flag)] ) ] ]
@@ -258,7 +262,7 @@ def generate_all_combinations(all_factors, num_iters):
   # and  flagstrs would be ('--me-arg=--inline', '--backend-optimize', '')
   # and  tags     would be "[inline=yes,LLVMopt=O2,donate=yes]"
   for flags in allflags:
-    tags_tup, flagstrs = zip(*[format_flags(flgs) for flgs in flags])
+    tags_tup, flagstrs = list(zip(*[format_flags(flgs) for flgs in flags]))
     tags = format_tags(tags_tup)
     flagsdict = {}
     for (tag, (short, arg)) in flags:
@@ -272,7 +276,7 @@ def plan_fragments(plan, do_compile_and_run):
     def plan_fragment(planx=planinfo):
       (tags, flagstrs, flagsdict, num_iters) = planx
       do_compile_and_run(tags, flagstrs, flagsdict, num_iters)
-      print "Elapsed time:", str(datetime.timedelta(milliseconds=elapsed(script_start, walltime())))
+      print("Elapsed time:", str(datetime.timedelta(milliseconds=elapsed(script_start, walltime()))))
     fragments.append(plan_fragment)
   return fragments
 
@@ -297,14 +301,14 @@ other_third_party_benchmarks = [
 ]
 
 shootout_benchmarks = [
-   ('speed/micro/addtobits', '50000', []),
+   ('speed/micro/addtobits',                               '50000', '', []),
 
    ('speed/shootout/nbody',                               '350000', '', []),
    ('speed/shootout/nbody-loops',                         '350000', '', []),
 
    ('speed/shootout/mandelbrot',                          '1024', '', []),
 
-   ('speed/shootout/spectralnorm', '850'),
+   ('speed/shootout/spectralnorm',                         '850', '', []),
 
    ('speed/shootout/fannkuchredux',                         '10', '', []),
    ('speed/shootout/fannkuchredux-nogc',                    '10', '', []),
@@ -313,7 +317,7 @@ shootout_benchmarks = [
    ('speed/shootout/fannkuchredux-unchecked',               '10', '',  []),
 
 
-   ('speed/shootout/binarytrees', '14', """--foster-runtime '{"gc_semispace_size_kb":10000}'""", [('heapsize', [('10M', '')]),
+   ('speed/shootout/binarytrees', '14', """--foster-heap-MB=10""", [('heapsize', [('10M', '')]),
    ]),
 ]
 
@@ -328,7 +332,7 @@ def benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs,
         'compile': compile_stats
        }
   os_stats_seq = []
-  print sourcepath, argstr, tags
+  print(sourcepath, argstr, tags)
   for z in range(num_iters):
     pause_before_test()
 
@@ -390,14 +394,14 @@ def benchmark_third_party(third_party_benchmarks, options):
                                    num_iters, options, {})
         shell_out("rm " + exe)
 
-      if lang == 'ocaml':
+      if lang == 'ocaml' and False:
         shell_out("cp %s %s" % (' '.join(filepaths), datapath(sourcepath, tags, '')))
         (rv, ms) = shell_out("ocamlopt %s %s -o %s" % (' '.join(flagstrs), ' '.join(filepaths), exe))
         benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs,
                                    num_iters, options, {})
         shell_out("rm " + exe)
 
-      if lang == 'sml':
+      if lang == 'sml' and False:
         mlton = '/home/benkarel/mlton-git/build/bin/mlton'
         tmpfile = "_foster_tmp"
         shell_out("cp %s %s" % (' '.join(filepaths), datapath(sourcepath, tags, '')))
@@ -559,6 +563,7 @@ def benchmark_shootout_programs(options, num_iters=kNumIters):
         (testfrag, argstr, runtimeparams, bench_factors) = benchi
         compile_and_run_test(testfrag, '', argstr, runtimeparams,
                             tags, flagstrs, flagsdict, num_iters, options)
+      print(benchinfo)
       plan = generate_all_combinations(addfactors(foster_factors, benchinfo[3]), kNumIters)
 
       plan_lambdas.extend(plan_fragments(plan, compile_and_run))
@@ -569,7 +574,7 @@ def collect_all_timings():
   shell_out("echo [ > %s" % alltimings)
   shell_out("find %s -name 'timings.json' | xargs cat >> %s" % (data_dir(), alltimings))
   shell_out("echo ] >> %s" % alltimings)
-  print alltimings
+  print(alltimings)
 
 def fixup_pindir(options):
   if options.pindir is None:
@@ -606,17 +611,17 @@ def main():
 
   if options.randomized_order:
     import random
-    print "randomizing test order..."
+    print("randomizing test order...")
     random.shuffle(plan)
 
-  print "Plan has", len(plan), "items..."
+  print("Plan has", len(plan), "items...")
   for (n,f) in enumerate(plan):
-    print "[%d of %d]" % (n + 1, len(plan))
+    print("[%d of %d]" % (n + 1, len(plan)))
     f()
 
   collect_all_timings()
   end = datetime.datetime.utcnow()
-  print "Total elapsed time:", end - start
+  print("Total elapsed time:", end - start)
 
 if __name__ == '__main__':
   main()

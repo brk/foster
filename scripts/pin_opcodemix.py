@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 from optparse import OptionParser
 
@@ -37,7 +37,7 @@ def run_pin(options, args):
                          pinobjdirname(), shared('opcodemix'))
 
   if not os.path.exists(pinexe):
-    raise ("It look like " + pinexe + " does not exist... :-(")
+    raise Exception("It look like " + pinexe + " + does not exist ... :-(")
 
   with open(os.devnull, 'w') as devnull:
     run_cmd(' '.join([pinexe, '-injection', 'child', '-t', pintool, '--'] + args), stdout=devnull, stderr=devnull)
@@ -55,7 +55,7 @@ if __name__ == '__main__':
                     help="Name for the output (default: opcodemix.out)")
   (options, args) = parser.parse_args()
   if options.pindir is None:
-    print "`--pindir <path>` is required"
+    print("`--pindir <path>` is required")
     sys.exit(1)
 
   run_pin(options, args)

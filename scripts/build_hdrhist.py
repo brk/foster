@@ -1,10 +1,10 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 # Copyright (c) 2009 Ben Karel. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-from __future__ import with_statement
+
 import sys
 import re
 import os
@@ -26,7 +26,7 @@ def ensure_dir_exists(output):
   if not os.path.exists(output):
     os.mkdir(output)
   elif not os.path.isdir(output):
-    print "Error: %s must be a directory!" % output
+    print("Error: %s must be a directory!" % output)
     sys.exit(1)
 
 def transplant(path, newdir):
@@ -47,7 +47,7 @@ def compile_source(src):
   flags = debug_flag + " -O2 -march=native"
   cmd = "%s %s %s %s -emit-llvm -c -o %s" % (clang, src, includes, flags, outbc)
   if options.verbose:
-    print cmd
+    print(cmd)
   subprocess.call(cmd.split(" "))
   return outbc
 
@@ -55,7 +55,7 @@ def link_all(all_bcs):
   outbc  = os.path.join(bindir, "_bitcodelibs_", "foster_hdrhist.bc")
   cmd = "%s %s -o %s" % (llvmld, " ".join(all_bcs), outbc)
   if options.verbose:
-    print cmd
+    print(cmd)
   return subprocess.call(cmd.split(" "))
 
 def get_libfoster_parser(usage):

@@ -1,10 +1,10 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 # Copyright (c) 2009 Ben Karel. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-from __future__ import with_statement
+
 import sys
 import re
 import os
@@ -26,7 +26,7 @@ def ensure_dir_exists(output):
   if not os.path.exists(output):
     os.mkdir(output)
   elif not os.path.isdir(output):
-    print "Error: %s must be a directory!" % output
+    print("Error: %s must be a directory!" % output)
     sys.exit(1)
 
 def transplant(path, newdir):
@@ -54,7 +54,7 @@ def compile_source(src):
   flags = debug_flag + defines + " -std=c++14 -O2 -march=native"
   cmd = "%s %s %s %s -emit-llvm -c -o %s" % (clang, src, includes, flags, outbc)
   if options.verbose:
-    print cmd
+    print(cmd)
   subprocess.call(cmd.split(" "))
   return outbc
 
@@ -62,7 +62,7 @@ def compile_source(src):
 # (I don't know why), but we can apply a post-pass here to disable
 # frame pointer elimination, which is introduced by default with -O{1,2}.
 def finalpass(outbc, outbc0):
-  cmd = "%s -disable-fp-elim %s -o %s" % (llvmopt, outbc0, outbc)
+  cmd = "%s --frame-pointer=all %s -o %s" % (llvmopt, outbc0, outbc)
   return subprocess.call(cmd.split(" "))
 
 def link_all(all_bcs):
@@ -74,7 +74,7 @@ def link_all(all_bcs):
   bcs = [bc for bc in all_bcs if not (bc.endswith("libfoster_coro.bc") or bc.endswith(".h"))]
   cmd = "%s %s -o %s" % (llvmld, " ".join(bcs), outbc0)
   if options.verbose:
-    print cmd
+    print(cmd)
   subprocess.call(cmd.split(" "))
 
   return finalpass(outbc, outbc0)

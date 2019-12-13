@@ -7,7 +7,7 @@ sudo apt-get install --yes build-essential g++ g++-multilib git gnuplot \
                        python3-pygments python3-matplotlib  python3-scipy python3-sphinx \
                        python3-pandas python3-pip python3-numpy python3-pyqt4 \
                        z3 libdw-dev
-sudo apt-get install --yes mercurial vim libsparsehash-dev \
+sudo apt-get install --yes vim libsparsehash-dev \
               curl exuberant-ctags aptitude libcairo2-dev libc6-dev default-jdk
 sudo apt-get install --yes m4 ministat meld \
          linux-tools-virtual linux-tools-generic \
@@ -18,6 +18,14 @@ sudo apt-get install --yes m4 ministat meld \
   # GMP is needed for GHC to build Cabal from source.
   sudo apt-get install --yes libgmp3-dev libgmp-dev
 
+
+  # Mercurial from the Ubuntu repositories uses Python 2.7;
+  # we need a 3.0-compatible version to successfully build LLDB 9+.
+  pip3 install Mercurial dulwich
+  hg clone https://dev.heptapod.net/mercurial/hg-git ~/.local/hg-git
+  echo "" >> ~/.hgrc
+  echo "[extensions]" >> ~/.hgrc
+  echo "hggit = ~/.local/hg-git/hggit" >> ~/.hgrc
 
 
   # TortoiseHG from source, since the PPA packages have been taken down.
@@ -54,16 +62,18 @@ curl https://beyondgrep.com/ack-2.20-single-file > ~/.local/bin/ack && chmod 075
   rm ghc-*.xz
   cd ghc-* && ./configure --prefix=$HOME/.local/ghc-8.8.1 && make -j install && cd ..
 
-  wget https://www.haskell.org/cabal/release/cabal-install-3.0.0.0/cabal-install-3.0.0.0-x86_64-unknown-linux.tar.gz
-  tar xf cabal-*.gz
-  rm cabal-*.gz
+  wget https://downloads.haskell.org/~cabal/cabal-install-latest/cabal-install-3.0.0.0-x86_64-unknown-linux.tar.xz
+  tar xf cabal-*.tar.*
+  rm cabal-*.tar.*
   mv cabal ~/.local/bin
 
-  curl -O https://capnproto.org/capnproto-c++-0.7.0.tar.gz
+  # Capnp 0.7.0 exists but produces output that minuproto
+  # cannot yet parse, so for now we'll stick to the older version.
+  curl -O https://capnproto.org/capnproto-c++-0.6.1.tar.gz
   tar xf capnproto-*.gz
   rm     capnproto-*.gz
-  cd capnproto-c++-0.7.0
-  ./configure --prefix=$HOME/.local/capnp-c++-0.7.0
+  cd capnproto-c++-0.6.1
+  ./configure --prefix=$HOME/.local/capnp-c++-0.6.1
   make -j check
   make install
   cd ..
@@ -98,15 +108,22 @@ cat ~/.cabal/config | sed 's/-- library-profiling:/library-profiling: True/' > t
 mv tmp.txt ~/.cabal/config
 
 
-hg clone https://bitbucket.org/b/sw ~/sw
-hg clone https://bitbucket.org/b/foster ~/foster
-hg clone https://bitbucket.org/b/minuproto ~/sw/local/minuproto
+hg clone https://github.com/brk/sw.git ~/sw
+
+if [ ! -d ~/foster ]; then
+  hg clone https://github.com/brk/foster.git ~/foster
+fi
+#hg clone git+ssh://git@github.com/brk/foster.git ~/foster
+hg clone https://github.com/brk/minuproto.git ~/sw/local/minuproto
 
 cd ~/foster/compiler/me
-cabal sandbox init
-cabal update
-cabal sandbox add-source ~/sw/local/minuproto
-cabal install --only-dependencies
+cabal v1-sandbox init
+cabal v1-update
+cabal v1-sandbox add-source ~/sw/local/minuproto
+#If necessary, download source for hoopl and update its version and bounds.
+#cabal v1-sandbox add-source ~/sw/local/hoopl-3.10.2.2
+cabal v1-install happy alex
+cabal v1-install --only-dependencies
 
 echo Okay, starting to install LLVM...
 . ~/foster/scripts/install-llvm.sh

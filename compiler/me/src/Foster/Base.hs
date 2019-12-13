@@ -731,8 +731,7 @@ fmapIdent tt (GlobalSymbol t alt) = GlobalSymbol (tt t) alt
 
 data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
 
-prettyIdent i@(GlobalSymbol _ NoRename) = text "G:" <> text (show i)
-prettyIdent i@(GlobalSymbol _ (RenameTo alt)) = text "G:" <> text (show i ++ " ~> " ++ show alt)
+prettyIdent i@(GlobalSymbol _ _) = text "G:" <> text (show i)
 prettyIdent i = text (show i)
 
 prettyId (TypedId _ i) = prettyIdent i
@@ -874,19 +873,9 @@ pick t NoRename = t
 pick _ (RenameTo t) = t
 
 -- Give a distinct name to the Ord instance so that profiles get a more informative name.
-{-compareIdents (GlobalSymbol t1 alt1)
+compareIdents (GlobalSymbol t1 alt1)
               (GlobalSymbol t2 alt2) = compare (pick t1 alt1) (pick t2 alt2)
-              -}
-compareIdents (GlobalSymbol _ (RenameTo alt1))
-              (GlobalSymbol _ (RenameTo alt2)) = compare alt1 alt2
-compareIdents (GlobalSymbol t1 _)
-              (GlobalSymbol t2 _) = compare t1 t2
 compareIdents (Ident _t1 u1)  (Ident _t2 u2)   = compare u1 u2
-                                                    {-case compare u1 u2 of
-                                                      EQ -> let rv = compare t1 t2 in
-                                                            if rv == EQ then rv else
-                                                                error $ "Uniq ident failure! " ++ show ((Ident t1 u1) ,  (Ident t2 u2) )
-                                                      cr -> cr-}
 compareIdents (GlobalSymbol _ _)  (Ident _  _ )    = LT
 compareIdents (Ident _ _)       (GlobalSymbol _ _) = GT
 

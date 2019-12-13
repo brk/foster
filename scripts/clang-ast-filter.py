@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 import sys
 import re
@@ -25,5 +25,5 @@ if __name__ == '__main__':
       #print "shouldshow is now ", shouldshow, "for line: ", line,
 
     if shouldshow:
-      print line,
+      print(line, end='')
 

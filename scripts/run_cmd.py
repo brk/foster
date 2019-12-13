@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 # Copyright (c) 2010 Ben Karel. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
@@ -34,7 +34,7 @@ def run_cmd(cmd, showcmd=False, stdout=None, stderr=None, stdin=None):
     proc.terminate()
     raise e
   except OSError:
-    print ": error: Unable to execute ", cmd
+    print(": error: Unable to execute ", cmd)
     raise
   end = walltime()
 
@@ -45,7 +45,7 @@ def run_cmd(cmd, showcmd=False, stdout=None, stderr=None, stdin=None):
     cmdline += " > " + stdout.name
 
   if showcmd:
-      print "::^^^::", cmdline
+      print("::^^^::", cmdline)
 
   return (rv, elapsed(start, end))
 
@@ -75,10 +75,10 @@ def run_command(rawcmd, paths, inputfile, showcmd=False, stdout=None, stderr=Non
   if strictrv:
     if rv != 0:
       if showcmd is False and (stderr is not None):
-        print "((stderr has been redirected to ", stderr
-        print "  use --show-cmdlines to disable redirection))"
-      print "Failed to run:"
-      print "     ", ' '.join(cmd)
+        print("((stderr has been redirected to ", stderr)
+        print("  use --show-cmdlines to disable redirection))")
+      print("Failed to run:")
+      print("     ", ' '.join(cmd))
       raise TestFailed(cmd, inputfile)
     else:
       return ms

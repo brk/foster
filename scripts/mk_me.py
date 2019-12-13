@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 # Copyright (c) 2010 Ben Karel. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
@@ -52,7 +52,7 @@ if __name__ == "__main__":
       params['stackflags'].append('--executable-profiling')
       params['stackflags'].append('--library-profiling')
     else:
-      print "Warning: profiling disabled due to --optimize flag"
+      print("Warning: profiling disabled due to --optimize flag")
 
   if options.optimize:
     params['hsflags'].append('-O2')
@@ -87,7 +87,7 @@ if __name__ == "__main__":
                          " -Wall -fwarn-unused-do-bind -fwarn-tabs" +
                          " -fno-warn-missing-signatures -fno-warn-name-shadowing" +
                          " -fno-warn-type-defaults -fno-warn-orphans -fno-warn-redundant-constraints")
-    cmd = ("cabal exec -- %(ghcmake)s -i%(srcroot)s/compiler/me/src %(hsflags)s " +
+    cmd = ("cabal v1-exec -- %(ghcmake)s -i%(srcroot)s/compiler/me/src %(hsflags)s " +
            "%(srcroot)s/compiler/me/src/Main.hs -o %(bindir)s/me") % params
     os.chdir(os.path.join(options.srcroot, 'compiler', 'me'))
     run_command(cmd, {}, "")

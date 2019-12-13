@@ -4,7 +4,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-LLVM_VERSION=7.0.1
+LLVM_VERSION=9.0.0
 LLVM_V=${LLVM_VERSION}.src
 LLVM_ROOT=${HOME}/llvm
 

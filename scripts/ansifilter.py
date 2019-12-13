@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 import fileinput
 import re
@@ -8,4 +8,4 @@ def remove_ansi_escapes_from(line):
 
 if __name__ == '__main__':
   for line in fileinput.input():
-    print remove_ansi_escapes_from(line),
+    print(remove_ansi_escapes_from(line), end='')

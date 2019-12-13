@@ -32,7 +32,7 @@
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Analysis/CFG.h"
-#include "clang/Analysis/Analyses/FormatString.h"
+#include "clang/AST/FormatString.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Tooling/CommonOptionsParser.h"
@@ -1062,7 +1062,7 @@ public:
   // Returns an empty string if the text cannot be found.
   template <typename T>
   std::string getText(const T &Node) const {
-    return getText(Node.getLocStart(), Node.getLocEnd());
+    return getText(Node.getBeginLoc(), Node.getEndLoc());
   }
 
   const SourceManager& getSourceMgr() const { return SM; }
@@ -1480,7 +1480,7 @@ public:
 
   bool isEmptyFallthroughAdjacent(CFGBlock::AdjacentBlock* ab) {
     return ab->isReachable() && ab->getReachableBlock()->empty()
-                             && ab->getReachableBlock()->getTerminator() == nullptr;
+                             && !ab->getReachableBlock()->getTerminator().isValid();
   }
 
   bool stmtHasValue(const Stmt* s) {
@@ -2814,12 +2814,15 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
 
       if (srcTy == dstTy
        || isNestedCastThatCancelsOut(ce)
-       || isa<CharacterLiteral>(ce->getSubExpr())
-       || guaranteedNotToTruncate(ce->getSubExpr(), dstTy, exprTy(ce))) {
+       || isa<CharacterLiteral>(ce->getSubExpr())) {
         // don't print anything, no cast needed
       } else {
         cast = intCastFromTo(srcTy, dstTy, exprTy(ce->getSubExpr())->isSignedIntegerType());
       }
+
+      // TODO some non-failing casts are completely superfluous but others are needed
+      // just to preserve types; how to tell the difference...?
+      //   guaranteedNotToTruncate(ce->getSubExpr(), dstTy, exprTy(ce))
 
       if (cast == "") {
         if (isNestedCastThatCancelsOut(ce)) {
@@ -2856,11 +2859,10 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       }
     }
 
-
-    llvm::APSInt result;
-    if (!handledSpecially && lhs->EvaluateAsInt(result, *Ctx)) {
+    Expr::EvalResult evalResult;
+    if (!handledSpecially && lhs->EvaluateAsInt(evalResult, *Ctx)) {
       handledSpecially = true;
-      llvm::outs() << result.getSExtValue();
+      llvm::outs() << evalResult.Val.getInt().getSExtValue();
     }
 
 
@@ -2984,7 +2986,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
   }
 
   void visitStmt(const Stmt* stmt, ContextKind ctx = ExprContext) {
-    emitCommentsFromBefore(stmt->getLocStart());
+    emitCommentsFromBefore(stmt->getBeginLoc());
 
     // for array subscript expression handling
     Indices indices;
@@ -3482,7 +3484,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       vmpt.clear();
       voidPtrCasts.clear();
 
-      emitCommentsFromBefore((*b)->getLocStart());
+      emitCommentsFromBefore((*b)->getBeginLoc());
       if (shouldProcessTopLevelDecl(*b, FC)) {
         handleSingleTopLevelDecl(*b);
       }
@@ -3537,11 +3539,11 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
   void emitCommentsFromBefore(SourceLocation loc) {
     ArrayRef<RawComment*> comments = rawcomments->getComments();
     for (unsigned i = rawcomments_lastsize; i < comments.size(); ++i) {
-      if (FC.isFromMainFile(comments[i]->getLocStart())) {
-        if (FC.getSourceMgr().isBeforeInTranslationUnit(comments[i]->getLocStart(), loc)) {
+      if (FC.isFromMainFile(comments[i]->getBeginLoc())) {
+        if (FC.getSourceMgr().isBeforeInTranslationUnit(comments[i]->getBeginLoc(), loc)) {
           // If we don't have a last location, or if the comment comes
           // after the last location, emit it.
-          if (!lastloc.isValid() || FC.getSourceMgr().isBeforeInTranslationUnit(lastloc, comments[i]->getLocStart())) {
+          if (!lastloc.isValid() || FC.getSourceMgr().isBeforeInTranslationUnit(lastloc, comments[i]->getBeginLoc())) {
             llvm::outs() << FC.getText(*comments[i]) << "\n";
             rawcomments_lastsize = i + 1;
           }
@@ -3562,7 +3564,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     ArrayRef<RawComment*> comments = ctx.getRawCommentList().getComments();
     llvm::outs() << "HandleTranslationUnit: # comments = " << comments.size() << "\n";
     for (unsigned i = 0; i < comments.size(); ++i) {
-      if (isFromMainFile(comments[i]->getLocStart())) {
+      if (isFromMainFile(comments[i]->getBeginLoc())) {
         llvm::outs() << getText(R, *comments[i]) << "\n";
       }
     }
@@ -3626,7 +3628,9 @@ bool C2F_FormatStringHandler::HandlePrintfSpecifier(const analyze_printf::Printf
     llvm::outs() << ")";
   } else {
     std::string spec = fs.getConversionSpecifier().getCharacters();
-    if (spec == "d" || spec == "u" || spec == "c" || spec == "x") {
+    if (spec == "d" || spec == "u" || spec == "c" || spec == "x"
+       || spec == "X" // TODO properly handle uppercase vs lowercase printing.
+       ) {
       int8_t flag = 0;
       int32_t width = 0;
       int32_t precision = -1;

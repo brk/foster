@@ -1,0 +1,16 @@
+*.o
+*.so
+*.exe
+*.hi
+*.a
+*.swp
+*.swo
+.cabal-sandbox
+__pycache__
+_obj
+third_party/nacl-20110221/build
+runtime/gc/foster_gc_reconfig-inl.h
+compiler/me/cabal.sandbox.config
+compiler/me/src/Foster/Tokens.hs
+compiler/me/src/FosterIL_capnp.hs
+compiler/me/src/FosterIL_capnp.foster

@@ -75,7 +75,7 @@ struct EscapingAllocaFinder : public FunctionPass {
     // If any escaping terminator returns a tainted value, complain!
     bool wasTainted = false;
     for (BasicBlock& BB : F) {
-      TerminatorInst *ti = BB.getTerminator();
+      Instruction *ti = BB.getTerminator();
       if (!ti) {
         llvm::outs() << "WARNING: found block in " << F.getName()
                      << " without terminator!\n";

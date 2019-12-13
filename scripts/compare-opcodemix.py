@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 # A simple script to compare opcode mix logs generated from pin.
 
@@ -57,14 +57,14 @@ def compare_opcodemixes(p1, p2, options):
   m1 = parse_opcodemix(p1)
   m2 = parse_opcodemix(p2)
 
-  allkeys = set(m1.keys() + m2.keys())
+  allkeys = set(list(m1.keys()) + list(m2.keys()))
   print_key = {}
   for k in allkeys:
     try:
       v1 = int(m1[k])
       v2 = int(m2[k])
     except:
-      print k, ':', m1[k]
+      print(k, ':', m1[k])
       continue
 
     should_print = False
@@ -85,13 +85,13 @@ def compare_opcodemixes(p1, p2, options):
   (num_identical, num_trivial, num_nontrivial) = classify_keys(print_key, m1, m2)
 
   if num_nontrivial > 0:
-    print "{0:8s} {1:16s}\t{2:16s}".format('', p1, p2)
-    print "{0:16s} {1:16s} {2:16s} {3:11s} {4:11s}".format("opcode", 'file 1', 'file 2', '    diff', '   maxratio')
+    print("{0:8s} {1:16s}\t{2:16s}".format('', p1, p2))
+    print("{0:16s} {1:16s} {2:16s} {3:11s} {4:11s}".format("opcode", 'file 1', 'file 2', '    diff', '   maxratio'))
 
     def show(k):
        v1, v2 = int(m1[k]), int(m2[k])
        diff = v2 - v1
-       print "{0:16s} {1:16s} {2:16s} {3:11d} {4:11f}".format(k, human_readable(v1), human_readable(v2), diff, maxratio(v1, v2))
+       print("{0:16s} {1:16s} {2:16s} {3:11d} {4:11f}".format(k, human_readable(v1), human_readable(v2), diff, maxratio(v1, v2)))
 
     for k in [k for k in print_key if print_key[k]]:
       if not k[0] == '*':
@@ -102,7 +102,7 @@ def compare_opcodemixes(p1, p2, options):
         show(k)
 
   if num_nontrivial > 0 or options.summarize:
-    print "Pin metrics: %d identical; %d with trivial differences; %d with non-trivial differences" % (num_identical, num_trivial, num_nontrivial)
+    print("Pin metrics: %d identical; %d with trivial differences; %d with non-trivial differences" % (num_identical, num_trivial, num_nontrivial))
 
 
 if __name__ == '__main__':

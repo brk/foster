@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 # Copyright (c) 2015 Ben Karel. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
@@ -73,7 +73,7 @@ def diff_instance_outputs(oldoutputs, newoutputs, name, results):
     #  boot.write('old new\n')
     #  for ov, nv in zip( oldvals, newvals ):
     #    boot.write('%s %s\n' % (str(ov), str(nv)))
-    #subprocess.call('python2 bootstrap.py boot.txt --bootstrap', shell=True)
+    #subprocess.call('python3 bootstrap.py boot.txt --bootstrap', shell=True)
 
 class bcolors:
     OKGREEN = '\033[92m'
@@ -105,7 +105,7 @@ def maybe_compare_opcode_mixes(results, old_opcodemix, new_opcodemix):
 
   if os.path.exists(old_opcodemix):
     if os.path.exists(new_opcodemix):
-      output = subprocess.check_output(['python2',
+      output = subprocess.check_output(['python3',
                         os.path.join(_scripts_dir, 'compare-opcodemix.py'),
                         old_opcodemix, new_opcodemix,
                         '--ratio', '1.01'] + maybe_summarize)
@@ -165,16 +165,16 @@ def diff_instances(oi, olddir, ni, newdir, testname, tags):
       pin_nontrivials = parse_pin_metrics_line(lines[-1])
 
     if pin_nontrivials > 0 or len(ambig_metrics) > 0:
-      print "%-50s: %s" % (testname, tags)
+      print("%-50s: %s" % (testname, tags))
 
       for (colored, noncolored) in noisy_metrics:
-        print bcolors.OKGREEN, colored, bcolors.ENDC, noncolored
+        print(bcolors.OKGREEN, colored, bcolors.ENDC, noncolored)
 
       for (colored, noncolored) in ambig_metrics:
-        print bcolors.BOLD,    colored, bcolors.ENDC, noncolored
+        print(bcolors.BOLD,    colored, bcolors.ENDC, noncolored)
 
-      print '\n'.join(lines)
-      print
+      print('\n'.join(lines))
+      print()
 
 def diff_all_instances(newdir, newinsts, olddir, oldinsts):
   common_keys = list(set(newinsts.keys()).intersection(set(oldinsts.keys())))
@@ -184,7 +184,7 @@ def diff_all_instances(newdir, newinsts, olddir, oldinsts):
 
 def examine(inst):
   outputs = inst['outputs']
-  print outputs
+  print(outputs)
 
 if __name__ == "__main__":
   parser = get_test_parser("""usage: %prog [old path] [new path]\n""")
@@ -193,22 +193,22 @@ if __name__ == "__main__":
   if len(args) == 2:
     pass
   else:
-    print "Perhaps invoke with `find data -maxdepth 1 -mindepth 1 -type d | sort | tail -n 2`?"
+    print("Perhaps invoke with `find data -maxdepth 1 -mindepth 1 -type d | sort | tail -n 2`?")
     import sys
     sys.exit(1)
 
   olddir = args[0]
   newdir = args[1]
 
-  print 'loading...'
+  print('loading...')
   oldtimings = load(os.path.join(olddir, 'all_timings.json'))
   newtimings = load(os.path.join(newdir, 'all_timings.json'))
 
-  print 'reorganizing...'
+  print('reorganizing...')
   newinsts = reorganize(newtimings)
   oldinsts = reorganize(oldtimings)
 
-  print 'diffing...'
+  print('diffing...')
   diff_all_instances(newdir, newinsts, olddir, oldinsts)
 
 

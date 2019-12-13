@@ -418,8 +418,9 @@ llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
 
   Value* hstr_bytes; Value* len;
   if (tryBindArray(this, hstr, /*out*/ hstr_bytes, /*out*/ len)) {
-    markAsNonAllocating(builder.CreateMemCpy(hstr_bytes,
-                              cstr, sz, /*alignment*/ 4));
+    markAsNonAllocating(builder.CreateMemCpy(hstr_bytes, /* dst align */ 4,
+                                             cstr, /* src align */ 4,
+                                             sz));
   } else { ASSERT(false); }
 
   // TODO null terminate?
@@ -1531,8 +1532,9 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
       int64_t size_in_bytes = pass->mod->getDataLayout().getTypeAllocSize(elt_ty)
                                   * this->args.size();
       
-      builder.CreateMemCpy(heapmem, arrayVariableToPointer(arrayGlobal),
-                                    size_in_bytes, 1);
+      builder.CreateMemCpy(heapmem, 1,
+                           arrayVariableToPointer(arrayGlobal), 1,
+                           size_in_bytes);
 
       // Copy any non-constant values to the heap array
       //

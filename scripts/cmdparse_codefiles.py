@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 import sys
 import re
@@ -32,7 +32,7 @@ def arg(x):
 
 if __name__ == '__main__':
     fs, nf, cf = argsplit(sys.argv[1:])
-    print ' '.join(arg(f) for f in fs)
-    print ' '.join(arg(f) for f in nf)
-    print ' '.join(arg(f) for f in cf)
+    print(' '.join(arg(f) for f in fs))
+    print(' '.join(arg(f) for f in nf))
+    print(' '.join(arg(f) for f in cf))
 

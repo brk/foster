@@ -865,8 +865,8 @@ convertTermBinding (TermBinding evar expr) =
 attachFormatting :: ExprAST TypeP -> FmtState     (ExprAST TypeP)
 attachFormatting (E_SeqAST annot a b) = do
  a' <- attachFormatting a
- ExprAnnot pre  rng [] <- getPreFormatting annot
- ExprAnnot pre' _ post <- getPostFormatting (ExprAnnot pre (rangeSpanNextLine rng) [])
+ ExprAnnot pre  rng  z <- getPreFormatting annot -- assume z is nil
+ ExprAnnot pre' _ post <- getPostFormatting (ExprAnnot pre (rangeSpanNextLine rng) z)
  b' <- attachFormatting b
  return $ E_SeqAST (ExprAnnot pre' rng post) a' b'
 
@@ -896,10 +896,13 @@ attachFormatting expr = do
    E_LetAST       _ bnd e    -> liftM3' E_LetAST      ana (convertTermBinding bnd) (q e)
    E_CallAST      _ b exprs  -> liftM3' E_CallAST     ana (q b) (mapM q exprs)
    E_FnAST        _ fn       -> liftM2' E_FnAST       ana (attachFormattingFn fn)
-   E_ArrayRead    _ (ArrayIndex a b rng2 s) -> do [x, y] <- mapM q [a, b]
+   E_ArrayRead    _ (ArrayIndex a b rng2 s) -> do x <- q a
+                                                  y <- q b
                                                   an <- ana
                                                   return $ E_ArrayRead an (ArrayIndex x y rng2 s)
-   E_ArrayPoke    _ (ArrayIndex a b rng2 s) c -> do [x, y, z] <- mapM q [a, b, c]
+   E_ArrayPoke    _ (ArrayIndex a b rng2 s) c -> do x <- q a
+                                                    y <- q b
+                                                    z <- q c
                                                     an <- ana
                                                     return $ E_ArrayPoke an (ArrayIndex x y rng2 s) z
    E_Handler      _ e bs mbe -> do e' <- q e

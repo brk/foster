@@ -72,7 +72,12 @@ else
   read CONFIRM
   if [ "$CONFIRM" = "y" ]; then
     mkdir -p $D
-    ${EDITOR} ${T}
+    if [ "x$EDITOR" = "x"]; then
+      echo "(editor not set)"
+      echo $T 
+    else
+      ${EDITOR} ${T}
+    fi
   fi
 fi
 

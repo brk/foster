@@ -5,7 +5,6 @@
 // Based off of the example GC plugin from the LLVM documentation:
 // http://llvm.org/docs/GarbageCollection.html
 
-#include "llvm/CodeGen/GCs.h"
 #include "llvm/CodeGen/GCStrategy.h"
 #include "llvm/CodeGen/GCMetadata.h"
 #include "llvm/CodeGen/GCMetadataPrinter.h"
@@ -18,7 +17,7 @@
 #include "llvm/IR/Mangler.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/CodeGen/TargetLoweringObjectFile.h"
+#include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -50,8 +49,7 @@ class FosterGC : public llvm::GCStrategy {
 public:
   FosterGC() {
     UsesMetadata = true;
-    NeededSafePoints = 1 << llvm::GC::PostCall;
-    CustomWriteBarriers = true;
+    NeededSafePoints = true;
   }
 };
 
@@ -141,7 +139,7 @@ public:
     AP.EmitAlignment(AddressAlignLog);
     EmitSymbol(kFosterGCMapsSymbolName, AP, MAI);
     AP.OutStreamer->AddComment("number of function gc maps");
-    AP.EmitInt32(Info.funcinfo_end() - Info.funcinfo_begin());
+    AP.emitInt32(Info.funcinfo_end() - Info.funcinfo_begin());
 
     // For each function...
     for (auto FI = Info.funcinfo_begin(), FE = Info.funcinfo_end(); FI != FE; ++FI) {
@@ -180,10 +178,10 @@ public:
 
       // Emit PointClusterCount.
       AP.OutStreamer->AddComment("safe point cluster count");
-      AP.EmitInt32(clusters.size());
+      AP.emitInt32(clusters.size());
 
       AP.OutStreamer->AddComment("padding before PointClusters");
-      AP.EmitInt32(0);
+      AP.emitInt32(0);
 
       size_t i32sForThisFunction = 1; // above
       size_t voidPtrsForThisFunction = 0;
@@ -202,21 +200,21 @@ public:
 
         // Emit the stack frame size.
         AP.OutStreamer->AddComment("stack frame size");
-        AP.EmitInt32(frameSize);
+        AP.emitInt32(frameSize);
         i32sForThisFunction++;
 
         // Emit the count of addresses in the cluster.
         AP.OutStreamer->AddComment("count of addresses");
-        AP.EmitInt32(labels.size());
+        AP.emitInt32(labels.size());
         i32sForThisFunction++;
 
         // Emit the count of live roots in the cluster.
         AP.OutStreamer->AddComment("count of live roots with metadata");
-        AP.EmitInt32(offsetsWithMetadata.size());
+        AP.emitInt32(offsetsWithMetadata.size());
         i32sForThisFunction++;
 
         AP.OutStreamer->AddComment("count of live roots w/o metadata");
-        AP.EmitInt32(offsets.size());
+        AP.emitInt32(offsets.size());
         i32sForThisFunction++;
 
         unsigned IntPtrSize = AP.getDataLayout().getPointerSize();
@@ -238,20 +236,20 @@ public:
 
         for (auto rit : offsetsWithMetadata) {
           AP.OutStreamer->AddComment("stack offset for metadata-imbued root");
-          AP.EmitInt32(rit.first);
+          AP.emitInt32(rit.first);
           i32sForThisFunction++;
         }
 
         // Emit the stack offsets for the metadata-less roots in the cluster.
         for (auto rit : offsets) {
           AP.OutStreamer->AddComment("stack offset for no-metadata root");
-          AP.EmitInt32(rit);
+          AP.emitInt32(rit);
           i32sForThisFunction++;
         }
 
         if (((offsetsWithMetadata.size() + offsets.size()) % 2) != 0) {
           AP.OutStreamer->AddComment("padding for alignment...");
-          AP.EmitInt32(0);
+          AP.emitInt32(0);
           i32sForThisFunction++;
         }
       }

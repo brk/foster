@@ -359,7 +359,7 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
 
         ++NumInspected;
 
-        sort(indexes.begin(), indexes.end(), by_index_offset);
+        std::sort(indexes.begin(), indexes.end(), by_index_offset);
 
         if (0) {
           errs() << "\n";

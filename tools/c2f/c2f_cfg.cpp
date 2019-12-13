@@ -795,11 +795,14 @@ private:
     if (!areExprTypesCompatible(Expr1, Expr2))
       return TryResult();
 
-    llvm::APSInt L1, L2;
+    Expr::EvalResult eL1, eL2;
 
-    if (!Expr1->EvaluateAsInt(L1, *Context) ||
-        !Expr2->EvaluateAsInt(L2, *Context))
+    if (!Expr1->EvaluateAsInt(eL1, *Context) ||
+        !Expr2->EvaluateAsInt(eL2, *Context))
       return TryResult();
+
+    auto L1 = eL1.Val.getInt();
+    auto L2 = eL2.Val.getInt();
 
     // Can't compare signed with unsigned or with different bit width.
     if (L1.isSigned() != L2.isSigned() || L1.getBitWidth() != L2.getBitWidth())
@@ -1433,7 +1436,7 @@ void C2F_CFGBuilder::prependAutomaticObjDtorsWithTerminator(CFGBlock *Blk,
     = Blk->beginAutomaticObjDtorsInsert(Blk->end(), B.distance(E), C);
   for (LocalScope::const_iterator I = B; I != E; ++I)
     InsertPos = Blk->insertAutomaticObjDtor(InsertPos, *I,
-                                            Blk->getTerminator());
+                                            Blk->getTerminatorStmt());
 }
 
 /// Visit - Walk the subtree of a statement and add extra
@@ -1844,7 +1847,7 @@ static bool CanThrow(Expr *E, ASTContext &Ctx) {
   if (FT) {
     if (const FunctionProtoType *Proto = dyn_cast<FunctionProtoType>(FT))
       if (!isUnresolvedExceptionSpec(Proto->getExceptionSpecType()) &&
-          Proto->isNothrow(Ctx))
+          Proto->isNothrow())
         return false;
   }
   return true;
@@ -3584,8 +3587,8 @@ CFGBlock *C2F_CFGBuilder::VisitCXXNewExpr(CXXNewExpr *NE,
     Block = Visit(NE->getInitializer());
   if (BuildOpts.AddCXXNewAllocator)
     appendNewAllocator(Block, NE);
-  if (NE->isArray())
-    Block = Visit(NE->getArraySize());
+  if (NE->isArray() && *NE->getArraySize())
+    Block = Visit(*NE->getArraySize());
   for (CXXNewExpr::arg_iterator I = NE->placement_arg_begin(),
        E = NE->placement_arg_end(); I != E; ++I)
     Block = Visit(*I);
@@ -3840,7 +3843,8 @@ void C2F_CFGBuilder::InsertTempDtorDecisionBlock(const TempDtorContext &Context,
   }
   assert(Context.TerminatorExpr);
   CFGBlock *Decision = createBlock(false);
-  Decision->setTerminator(CFGTerminator(Context.TerminatorExpr, true));
+  Decision->setTerminator(CFGTerminator(Context.TerminatorExpr,
+                                        CFGTerminator::TemporaryDtorsBranch));
   addSuccessor(Decision, Block, !Context.KnownExecuted.isFalse());
   addSuccessor(Decision, FalseSucc ? FalseSucc : Context.Succ,
                !Context.KnownExecuted.isTrue());

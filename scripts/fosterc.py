@@ -1,10 +1,10 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 # Copyright (c) 2010-2015 Ben Karel. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-from __future__ import with_statement
+
 
 import os
 import re
@@ -171,7 +171,7 @@ def compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir):
       if 'quietish' in dir(options) and not options.quietish:
         if compilelog is not None:
             compilelog.seek(0)
-            print compilelog.read()
+            print(compilelog.read())
       raise StopAfterMiddle()
 
     for arg in options.bitcodelibs:
@@ -193,7 +193,7 @@ def compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir):
 
     if options.asm:
         import hashlib
-        print "\t\t\tmd5 of assembly file:", hashlib.md5(open(outpath).read()).hexdigest()
+        print("\t\t\tmd5 of assembly file:", hashlib.md5(open(outpath).read()).hexdigest())
 
     return (e1, e2, e3, e4)
 
@@ -261,8 +261,8 @@ def compile_foster_code(inputfile):
       if options.exepath is not None:
         exe_cmd = [options.exepath] + allprogargs
         shutil.copy2(exepath, options.exepath)
-        print "Try running:"
-        print '       ', ''.join(options.exepath)
+        print("Try running:")
+        print('       ', ''.join(options.exepath))
 
   return (paths, exe_cmd, (fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed, as_elapsed, ld_elapsed))
 
@@ -391,9 +391,9 @@ if __name__ == "__main__":
   (options, args) = fosterc_parser_parse_and_fixup(parser)
 
   if len(args) != 1:
-    print args
-    print options
-    print parser.print_help()
+    print(args)
+    print(options)
+    print(parser.print_help())
     sys.exit(1)
 
   inputfile = args[0]

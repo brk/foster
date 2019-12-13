@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
-from __future__ import with_statement
+
 import time
 import os
 import re
@@ -21,11 +21,11 @@ sys.path.append(os.path.normpath(os.path.join(sys.argv[0], '../../third_party/vs
 import cpu_utils
 
 def handle_StopAfterMiddle_test_result(testpath):
-    print testpath
+    print(testpath)
 
 def handle_successful_test_result(result, testpath):
     if opts.quietish:
-      print os.path.basename(testpath).ljust(50), ("%d ms" % result['total_elapsed']).rjust(10)
+      print(os.path.basename(testpath).ljust(50), ("%d ms" % result['total_elapsed']).rjust(10))
     else:
       run_test.print_result_table(result)
     run_test.classify_result(result, testpath)
@@ -67,7 +67,7 @@ def run_all_tests_fast(tests, bootstrap_dir, tmpdir):
   pool = multiprocessing.Pool(processes=ncpus)
   try:
     for result in pool.imap_unordered(worker_run_test,
-                itertools.izip(tests,
+                zip(tests,
                   itertools.repeat(tmpdir))):
        testpath, result = result
        if result == []:
@@ -91,23 +91,23 @@ def main(opts, bootstrap_dir, tmpdir):
   if not "--typecheck-only" in opts.meargs:
       run_test.print_result_table(run_test.aggregate_results(all_results))
 
-  print "Total (wall-clock) time: %d ms" % run_test.elapsed(walkstart, walkend)
+  print("Total (wall-clock) time: %d ms" % run_test.elapsed(walkstart, walkend))
 
-  print len(run_test.tests_passed), " tests passed"
+  print(len(run_test.tests_passed), " tests passed")
 
-  print len(run_test.tests_failed), " tests failed"
+  print(len(run_test.tests_failed), " tests failed")
   if len(run_test.tests_failed) > 0:
     for test in run_test.tests_failed:
       try:
         size = os.path.getsize(test)
-        print test + " (" + str(size) + " bytes)"
+        print(test + " (" + str(size) + " bytes)")
       except:
-        print test
+        print(test)
 
   num_tests_attempted = len(run_test.tests_passed) + len(run_test.tests_failed)
   num_tests_not_attempted = len(tests) - num_tests_attempted
   if num_tests_not_attempted > 0:
-    print num_tests_not_attempted, " tests not reached"
+    print(num_tests_not_attempted, " tests not reached")
 
   try:
     from stathat import StatHat
@@ -148,7 +148,7 @@ if __name__ == "__main__":
   (opts, args) = run_test.test_parser_parse_and_fixup(parser)
 
   if len(args) == 0:
-    print "Missing <bootstrap_test_dir>!"
+    print("Missing <bootstrap_test_dir>!")
     parser.print_help()
     sys.exit(1)
 

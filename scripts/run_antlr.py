@@ -1,10 +1,10 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 # Copyright (c) 2009 Ben Karel. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-from __future__ import with_statement
+
 import sys
 import re
 import os
@@ -54,7 +54,7 @@ def copy_and_rewrite(input, output, translate):
 
 if __name__  == '__main__':
   if len(sys.argv) != 4:
-    print USAGE
+    print(USAGE)
     sys.exit(1)
   invoke_antlr(sys.argv[1], sys.argv[2], sys.argv[3])
 

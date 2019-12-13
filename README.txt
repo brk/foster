@@ -41,7 +41,7 @@ Dependencies (non-exhaustive):
   Python (and several 3rd party Python libraries)
   Pin (optional, for benchmarking analysis)
 
-Ubuntu 17.10:
+Ubuntu 17.10 (likewise for 18.04):
   See   scripts/ubuntu-17.10.sh
 
   The lines in the above script related to installing ANTLR

@@ -1,14 +1,14 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
-import urllib
-import urllib2
+import urllib.request, urllib.parse, urllib.error
+import urllib.request, urllib.error, urllib.parse
 
 class StatHat:
 
         def http_post(self, path, data):
-                pdata = urllib.urlencode(data)
-                req = urllib2.Request('http://api.stathat.com' + path, pdata)
-                resp = urllib2.urlopen(req)
+                pdata = urllib.parse.urlencode(data)
+                req = urllib.request.Request('http://api.stathat.com' + path, pdata.encode('utf-8'))
+                resp = urllib.request.urlopen(req)
                 return resp.read()
 
         def post_value(self, user_key, stat_key, value):

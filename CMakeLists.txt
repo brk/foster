@@ -3,8 +3,8 @@ cmake_minimum_required (VERSION 3.4.3)
 # {{{ We need to set up the compiler paths before calling project()...
 # ~~~~~~~~~~~~~~~~~~~~
 
-set(PYTHON python2)
-set(LLVM_VERSION 6.0.0)
+set(PYTHON python3)
+set(LLVM_VERSION 9.0.0)
 
 find_program(LLVM_CONFIG NAMES llvm-config llvm-config-${LLVM_VERSION}
   PATHS

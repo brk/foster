@@ -183,7 +183,7 @@ int32_t foster_Float64_classify(double f) { return int32_t(fpclassify(f)); }
 
 void* foster_emit_string_of_cstring(const char*, int32_t); // defined by the Foster compiler
 
-void* foster_sprintf_i32(int32_t x, int8_t specifier, int8_t flag,
+void* foster_sprintf_i32__autowrap(int32_t x, int8_t specifier, int8_t flag,
                          int32_t width, int32_t precision) {
   char fmt[256];
   char buf[512];
@@ -198,7 +198,7 @@ void* foster_sprintf_i32(int32_t x, int8_t specifier, int8_t flag,
                 (flag == 12) ? "- " : 
                 (flag == 13) ? "-#" : 
                 (flag == 14) ? "-0" : "";
-  if (!(specifier == 'd' || specifier == 'x'
+  if (!(specifier == 'd' || specifier == 'x' || specifier == 'X'
      || specifier == 'u' || specifier == 'c')) { specifier = 'd'; }
 
   if (precision < 0) {
@@ -227,7 +227,7 @@ void* foster_sprintf_i32(int32_t x, int8_t specifier, int8_t flag,
   return foster_emit_string_of_cstring(buf, strlen(buf));
 }
 
-void* foster_sprintf_i64(int64_t x, int8_t specifier, int8_t flag,
+void* foster_sprintf_i64__autowrap(int64_t x, int8_t specifier, int8_t flag,
                          int32_t width, int32_t precision) {
   char fmt[256];
   char buf[512];
@@ -242,7 +242,7 @@ void* foster_sprintf_i64(int64_t x, int8_t specifier, int8_t flag,
                 (flag == 12) ? "- " : 
                 (flag == 13) ? "-#" : 
                 (flag == 14) ? "-0" : "";
-  if (!(specifier == 'd' || specifier == 'x'
+  if (!(specifier == 'd' || specifier == 'x' || specifier == 'X'
      || specifier == 'u' || specifier == 'c')) { specifier = 'd'; }
 
   if (precision < 0) {
@@ -253,7 +253,7 @@ void* foster_sprintf_i64(int64_t x, int8_t specifier, int8_t flag,
     //                         |  flags
     //                         ^^ literal percent sign
     if (status < 0 || status == 256) {
-      foster__assert(false, "error in foster_sprintf_i32");
+      foster__assert(false, "error in foster_sprintf_i64");
     }
   } else {
     int status = sprintf(fmt, "%%%s%d.%dll%c", flagc, width, precision, specifier);
@@ -264,7 +264,7 @@ void* foster_sprintf_i64(int64_t x, int8_t specifier, int8_t flag,
     //                         |  flags
     //                         ^^ literal percent sign
     if (status < 0 || status == 256) {
-      foster__assert(false, "error in foster_sprintf_i32");
+      foster__assert(false, "error in foster_sprintf_i64");
     }
   }
   int rv = snprintf(buf, 512, fmt, x);

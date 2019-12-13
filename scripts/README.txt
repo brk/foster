@@ -64,7 +64,6 @@ Internal utilities
 * gtest_wrapper.py
 * silent
 * stathat.py
-* ott.py -- script to download and build the Ott tool.
 
 watch.py
 --------

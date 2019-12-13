@@ -162,11 +162,13 @@ retOK x = return (OK x)
 
 instance Monad Tc where
     return = pure
-    fail err = Tc $ \_env -> return (Errors [outLn err])
     m >>= k  = Tc $ \ env -> do result <- unTc env m
                                 case result of
                                   OK expr -> unTc env (k expr)
                                   Errors ss -> return (Errors ss)
+
+instance MonadFail Tc where
+    fail err = Tc $ \_env -> return (Errors [outLn err])
 
 instance Functor     Tc where fmap  = liftM
 instance Applicative Tc where pure x = Tc $ \_env -> return (OK x)

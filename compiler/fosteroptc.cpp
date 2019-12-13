@@ -5,7 +5,7 @@
 #include "llvm/LinkAllPasses.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Config/llvm-config.h"
-#include "llvm/CodeGen/CommandFlags.def"
+#include "llvm/CodeGen/CommandFlags.inc"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/IR/DataLayout.h"
@@ -214,7 +214,6 @@ namespace  {
     } else {
       Builder.Inliner = createAlwaysInlinerLegacyPass();
     }
-    Builder.DisableUnitAtATime = false;
     Builder.DisableUnrollLoops = OptLevel == 0;
 
     MPM.add(createVerifierPass());                // Verify that input is correct
@@ -575,7 +574,8 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   }
 
   bool disableVerify = true;
-  if (tm->addPassesToEmitFile(passes, out, filetype,
+  auto dwarfObjectOut = nullptr;
+  if (tm->addPassesToEmitFile(passes, out, dwarfObjectOut, filetype,
 #ifndef LLVM_DEFAULT_TARGET_TRIPLE
                               cgOptLevel,
 #endif

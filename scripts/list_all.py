@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
-from __future__ import with_statement
+
 import os
 import os.path
 import sys
@@ -43,9 +43,9 @@ def _main(bootstrap_dir):
 
   for (info, testpath) in testpaths:
     if options.lines:
-      print info_lines(info), testpath
+      print(info_lines(info), testpath)
     else:
-      print testpath
+      print(testpath)
 
 def get_list_all_parser():
   parser = OptionParser()

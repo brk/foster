@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 # Copyright (c) 2013 Ben Karel. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
@@ -47,7 +47,7 @@ def load(jsonpath):
 
 def partition_into(lst, size):
   """Splits |lst| into a sequence of sublists of length at most |size|."""
-  return [lst[i:i+size] for i in xrange(0, len(lst), size)]
+  return [lst[i:i+size] for i in range(0, len(lst), size)]
 
 def matches(needle, haystack):
   return needle in haystack
@@ -61,11 +61,11 @@ def matches_any(subj, needles):
 def should_consider(test):
   if len(options.tests) > 0:
     if not matches_any(test['test'], options.tests):
-      print "dropping ", test['test'], " for not matching ", options.tests
+      print("dropping ", test['test'], " for not matching ", options.tests)
       return False
   if len(options.tags) > 0:
     if not matches_any(test['tags'], options.tags):
-      print "dropping ", test['test'], test['tags'], " for not matching ", options.tags
+      print("dropping ", test['test'], test['tags'], " for not matching ", options.tags)
       return False
   if len(options.argstrs) > 0:
     if not matches_any(test['input'], options.argstrs):
@@ -131,10 +131,10 @@ def coalesce_tests_inputs(raw_tests):
 
 def print_test(test):
   samples = test['samples']
-  print test['test'], test['tags']
+  print(test['test'], test['tags'])
   for sample in samples:
-    print "\t", "input:", sample['input']
-    print "\t", "metrics:", sample['outputs'].keys()
+    print("\t", "input:", sample['input'])
+    print("\t", "metrics:", list(sample['outputs'].keys()))
 
 def append_to(arr, key, val):
   if not key in arr:
@@ -288,7 +288,7 @@ def viz(tests):
   # With multiple tests and multiple inputs, show (independent) violin plots for the .
   if len(tests) == 1 and False:
     if len(tests[0]['samples']) == 1:
-      print "one test, one input"
+      print("one test, one input")
       pos  = [1]
       data = [tests[0]['samples'][0]['outputs']['py_run_ms']]
 
@@ -303,7 +303,7 @@ def viz(tests):
       show()
 
     else:
-      print "one test, multiple (integer?) inputs"
+      print("one test, multiple (integer?) inputs")
       # TODO: infer program growth order?
 
       pos  = [int(x) for x in proj(tests[0]['samples'], 'input')]
@@ -438,11 +438,11 @@ def viz_multiple_tests(unsorted_tests):
   dropped_inputs = union_of_sets(inputs) - common_inputs
   #print "common inputs:", common_inputs
   if len(dropped_inputs) > 0:
-    print "dropped inputs: ", dropped_inputs
+    print("dropped inputs: ", dropped_inputs)
   # same test, different tags: take intersection of inputs
 
   if len(common_inputs) == 0:
-    print "Skipping tests", names, "because there were no common inputs."
+    print("Skipping tests", names, "because there were no common inputs.")
     return
 
   #pos  = [int(x) for x in common_inputs]
@@ -482,8 +482,8 @@ def viz_multiple_tests(unsorted_tests):
   assert len(ministat_outputs) == len(common_inputs)
 
   unique_test_names = set(proj(tests, 'test'))
-  pos_for_test_names = compute_positions_for_names(unique_test_names, zip(tests, datas), 'test')
-  x_positions = pos_for_test_names.values()
+  pos_for_test_names = compute_positions_for_names(unique_test_names, list(zip(tests, datas)), 'test')
+  x_positions = list(pos_for_test_names.values())
   legend_labels = sorted(set(proj(tests, 'tags')))
 
   if options.normalize:
@@ -520,8 +520,8 @@ def viz_by_tags(tagnames, tests):
   # We don't include any ministat comparisons because
   # comparing results from different tests for the same tags
   # doesn't make any sense! (unlike the reverse situation)
-  pos_for_names = compute_positions_for_names(tagnames, zip(tests, datas), 'tags')
-  x_positions = pos_for_names.values()
+  pos_for_names = compute_positions_for_names(tagnames, list(zip(tests, datas)), 'tags')
+  x_positions = list(pos_for_names.values())
   legend_labels = list(set(proj(tests, 'test')))
   datasets = [
     {
@@ -546,7 +546,7 @@ def viz_by_tags(tagnames, tests):
 def title_for(labels, tests):
   valset = {}
   for d in proj(tests, 'flags'):
-    for (f, v) in d.iteritems():
+    for (f, v) in d.items():
       if not f in valset:
         valset[f] = [v]
       elif len(valset[f]) > 1:
@@ -554,11 +554,11 @@ def title_for(labels, tests):
       elif not v in valset[f]:
         valset[f].append(v)
   singletons = {}
-  for (k, vs) in valset.iteritems():
+  for (k, vs) in valset.items():
     if len(vs) == 1:
       singletons[k] = vs[0]
-  cs_tags = ','.join("%s=%s" % (k,v) for (k,v) in singletons.iteritems())
-  print "title_for: labels = ", labels
+  cs_tags = ','.join("%s=%s" % (k,v) for (k,v) in singletons.items())
+  print("title_for: labels = ", labels)
   title = 'varying: %s [common: %s]' % (testname_of(labels), cs_tags)
   return title
 
@@ -627,10 +627,10 @@ def display_compiletime_results(all_tests, output_file):
        'O2'], loc='upper right') # framealpha=0.6
 
     pyplot.savefig(outfile)
-    print >>output_file, Template("""
+    print(Template("""
       <center><h3>{{ title }}</h3></center>
       <img src="{{ outpng_name }}"/>
-      """).render( { 'outpng_name' : outfile , 'title':'Lines-per-second throughput' } )
+      """).render( { 'outpng_name' : outfile , 'title':'Lines-per-second throughput' } ), file=output_file)
 
   # Plot by optimization level
   if True:
@@ -673,15 +673,15 @@ def display_compiletime_results(all_tests, output_file):
     pyplot.legend(loc='upper left')
 
     pyplot.savefig(outfile)
-    print >>output_file, Template("""
+    print(Template("""
       <center><h3>{{ title }}</h3></center>
       <img src="{{ outpng_name }}"/>
-      """).render( { 'outpng_name' : outfile , 'title':'Inlining+O2 compile time' } )
+      """).render( { 'outpng_name' : outfile , 'title':'Inlining+O2 compile time' } ), file=output_file)
 
 def display_results(output_file):
-  print >>output_file, """
+  print("""
     <p>Command line: <pre>%s</pre></p>
-  """ % ' '.join(sys.argv)
+  """ % ' '.join(sys.argv), file=output_file)
   format_output(todisplay, output_file)
 
 def format_output(outputs, output_file):
@@ -693,7 +693,7 @@ def format_output(outputs, output_file):
                  o['legend_labels'], xaxis_labels,
                  o['outpng_name'], noshow=True)
 
-  print >>output_file, Template( """
+  print(Template( """
     {% for o in outputs %}
       <center><h3>{{ o.title }}</h3></center>
       <img src="{{ o.outpng_name }}"/>
@@ -702,7 +702,7 @@ def format_output(outputs, output_file):
       {% endfor %}
       <br>
     {% endfor %}
-""").render(outputs=outputs)
+""").render(outputs=outputs), file=output_file)
 
 def compute_positions_for_names(names, testsdatas, key):
   """Given a list of (distinct) names,
@@ -714,7 +714,7 @@ def compute_positions_for_names(names, testsdatas, key):
   for (t,d) in testsdatas:
     m = max(max(xs) for xs in d)
     maxes[t[key]] = max(m, maxes.get(t[key], m))
-  sorted_pairs = sorted(maxes.items(), key=lambda p: p[1], reverse=True)
+  sorted_pairs = sorted(list(maxes.items()), key=lambda p: p[1], reverse=True)
   sorted_names = [p[0] for p in sorted_pairs]
   assert set(sorted_names) == set(names)
 
@@ -757,23 +757,23 @@ def _organize_by(d, t):
     return r
   elif type(d) == dict:
     r = {}
-    for k,v in d.iteritems():
+    for k,v in d.items():
       r[k] = _organize_by(v, t)
     return r
   else:
-    raise ("Unknown type for " + d)
+    raise "Unknown type for "
 
 def give_overview(all_tests):
   raw_tests = collect_relevant_tests(all_tests)
   d = organize_by(raw_tests, ['test', 'tags'])
   last_tst = None
-  for tst, rst in d.iteritems():
-    for tgs, rst2 in rst.iteritems():
+  for tst, rst in d.items():
+    for tgs, rst2 in rst.items():
       if tst == last_tst:
         ptst = ' '*len(tst)
       else:
         ptst = tst
-      print ptst, tgs, {'inputs': proj(rst2, 'input')}
+      print(ptst, tgs, {'inputs': proj(rst2, 'input')})
       last_tst = tst
 
 def accumulate_results(all_tests):
@@ -788,30 +788,30 @@ def accumulate_results(all_tests):
   elif 'byname' in organized:
     byname = organized['byname']
     for name in byname:
-      print name
+      print(name)
       tests = byname[name]
       print_tests(tests)
-      print
+      print()
       viz(tests)
   elif 'bytags' in organized:
     bytags = organized['bytags']
     nontrivials = {}
     for tags in bytags:
-      print 'tags:', tags
+      print('tags:', tags)
       tests = bytags[tags]
       print_tests(tests)
       if len(tests) > 1:
         nontrivials[tags] = tests
-    tagnames = nontrivials.keys()
+    tagnames = list(nontrivials.keys())
     tests = []
-    for tagtests in nontrivials.values():
+    for tagtests in list(nontrivials.values()):
       tests.extend(tagtests)
     if len(tests) > 0:
       viz_by_tags(tagnames, tests)
     else:
-      print "No tags had more than one associated test!"
+      print("No tags had more than one associated test!")
   else:
-    print "organized by '%s', not sure what to do!" % str(organized)
+    print("organized by '%s', not sure what to do!" % str(organized))
 
 def get_test_parser(usage):
   parser = OptionParser(usage=usage)
@@ -873,7 +873,7 @@ if __name__ == "__main__":
   (options, args) = parser.parse_args()
 
   assert len(args) > 0
-  all_tests = list(itertools.chain.from_iterable(map(load, args)))
+  all_tests = list(itertools.chain.from_iterable(list(map(load, args))))
 
   if options.overview:
     give_overview(all_tests)
@@ -889,4 +889,4 @@ if __name__ == "__main__":
       accumulate_results(all_tests)
       display_results(output_file)
       display_compiletime_results(all_tests, output_file)
-      print "Output written to '%s'" % output_file.name
+      print("Output written to '%s'" % output_file.name)

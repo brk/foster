@@ -7,7 +7,7 @@ license:             BSD3
 --license-file:        LICENSE
 author:              Ben Karel
 maintainer:          eschew@gmail.com
-copyright:           2010-2017 Ben Karel
+copyright:           2010-2019 Ben Karel
 category:            Languages
 build-type:          Simple
 cabal-version:       >=1.24
@@ -26,9 +26,7 @@ executable me
                        TypeSynonymInstances DeriveFunctor BangPatterns
   other-extensions:    GADTs RankNTypes ScopedTypeVariables StandaloneDeriving
                        PatternGuards NoMonoLocalBinds RecursiveDo FlexibleContexts
-  build-depends: alex -any,
-                 happy -any,
-                 array -any,
+  build-depends: array -any,
                  ansi-wl-pprint -any,
                  attoparsec -any,
                  binary -any,

@@ -453,10 +453,14 @@ simplifyCFG bbgp =
      mapBlockM :: Monad m => (forall e x. i e x -> m [i e x]) -> Block i C C -> m (Block i C C)
      mapBlockM a b = do
        let (f, ms, l) = unblock ( blockSplit b )
-       [ f' ]  <- a f
-       ms'     <- mapM a ms
-       [ l' ]  <- a l
-       return $ blockJoin f' (blockFromList $ concat ms' ) l'
+       f's  <- a f
+       ms'  <- mapM a ms
+       l's  <- a l
+       case (f's, l's) of
+          ([f'] , [l']) ->
+            return $ blockJoin f' (blockFromList $ concat ms' ) l'
+          _ ->
+             error $ "mapBlockM found wrong number of blocks"
       where unblock (f, ms_blk, l) = (f, blockToList ms_blk, l)
 
      substIn' :: Insn' e x -> State (Map LLVar LLVar) [Insn' e x]

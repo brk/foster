@@ -157,7 +157,9 @@ struct CommentWriter : public llvm::AssemblyAnnotationWriter {
 
 void dumpModuleToFile(llvm::Module* mod, const std::string& filename) {
   std::error_code errInfo;
-  llvm::raw_fd_ostream LLpreASM(filename.c_str(), errInfo, llvm::sys::fs::OpenFlags::F_RW);
+  llvm::raw_fd_ostream LLpreASM(filename.c_str(), errInfo,
+                           llvm::sys::fs::FileAccess::FA_Write
+                         | llvm::sys::fs::FileAccess::FA_Read);
   if (!errInfo) {
     CommentWriter cw;
     mod->print(LLpreASM, &cw);
@@ -174,7 +176,7 @@ void dumpModuleToBitcode(llvm::Module* mod, const std::string& filename) {
   std::string errInfoStr;
   sys::RemoveFileOnSignal(filename, &errInfoStr);
 
-  raw_fd_ostream out(filename.c_str(), errInfo, llvm::sys::fs::OpenFlags::F_RW);
+  raw_fd_ostream out(filename.c_str(), errInfo, llvm::sys::fs::FileAccess::FA_Write);
   if (errInfo) {
     std::string s; std::stringstream ss(s); ss << errInfo;
     foster::EDiag() << "when preparing to write bitcode to " << filename
@@ -182,7 +184,7 @@ void dumpModuleToBitcode(llvm::Module* mod, const std::string& filename) {
     exit(1);
   }
 
-  WriteBitcodeToFile(mod, out);
+  WriteBitcodeToFile(*mod, out);
 }
 
 } // namespace foster

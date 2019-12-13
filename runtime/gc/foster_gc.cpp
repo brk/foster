@@ -4567,6 +4567,7 @@ void gclog_time(const char* msg, double secs, FILE* json) {
   if (json) {
   fprintf(json, "'%s_s' : %f\n", msg, secs);
   fprintf(json, "'%s_ms': %f\n", msg, secs * 1000.0);
+  fprintf(json, ",");
   }
 }
 

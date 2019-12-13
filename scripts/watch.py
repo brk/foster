@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # Python port of Ian Piumarta's watch.c
 # BSD Licensed - http://eschew.org/txt/bsd.txt
 
@@ -28,8 +28,8 @@ def try_get_mtime(path):
     try:
       buf = os.stat(path)
     except OSError:
-      print "%(watch)s: %(file)s: file not found" % {
-          'watch': sys.argv[0], 'file': path }
+      print("%(watch)s: %(file)s: file not found" % {
+          'watch': sys.argv[0], 'file': path })
       sys.exit(1)
   return buf.st_mtime
 
@@ -39,9 +39,9 @@ def execute_commands(commands, filename):
     cmd_pieces = re.split('\s+', cmd)
     try:
       subprocess.Popen(cmd_pieces)
-    except Exception, e:
-      print "Command failed: ", cmd
-      print e
+    except Exception as e:
+      print("Command failed: ", cmd)
+      print(e)
 
 def main():
   files = []
@@ -56,14 +56,14 @@ def main():
       commands.append(part)
 
   if len(commands) == 0:
-    print usage()
+    print(usage())
     sys.exit(1)
 
   if len(files) > maxfiles:
-    print "%(watch)s: too many files to watch" % { 'watch' : sys.argv[0] }
+    print("%(watch)s: too many files to watch" % { 'watch' : sys.argv[0] })
     sys.exit(1)
 
-  print "Watching files: ", files
+  print("Watching files: ", files)
 
   mtimes = dict([(f, try_get_mtime(f)) for f in files])
   done = False
@@ -76,10 +76,10 @@ def main():
         mtimes[f] = new_mtime
         mod_files.append(f)
     if len(mod_files) > 0:
-      print "Modified files:", mod_files
+      print("Modified files:", mod_files)
       for f in mod_files:
         execute_commands(commands, f)
-      print "---------------------------------------------------"
+      print("---------------------------------------------------")
     time.sleep(2)
 
 if __name__ == '__main__':
