@@ -32,8 +32,6 @@ namespace runtime {
   //                                               not -foster-runtime-X=ARG!
   void parse_runtime_options(int argc, char** argv) {
     __foster_globals.semispace_size = 1024 * 1024;
-    __foster_globals.compaction_threshold = 3.0;
-    __foster_globals.disable_sticky = false;
 
     int args_to_skip = 0;
 
@@ -46,10 +44,6 @@ namespace runtime {
       if (!is_foster_runtime_flag(arg)) {
         __foster_globals.args.push_back(arg);
       } else {
-        if (streq("--foster-disable-sticky", arg)) {
-          __foster_globals.disable_sticky = true;
-        }
-
         if (i == argc - 1) continue; // no more to look at!
         if (streq("--foster-heap-KB", arg)) { args_to_skip += 1;
           __foster_globals.semispace_size = ssize_t(parse_double(argv[i + 1], 1024.0) * 1024.0);
@@ -59,10 +53,6 @@ namespace runtime {
           __foster_globals.semispace_size = ssize_t(parse_double(argv[i + 1], 0.001) * 1024.0 * 1024.0 * 1024.0);
         } else if (streq("--foster-json-stats", arg)) { args_to_skip += 1;
           __foster_globals.dump_json_stats_path = argv[i + 1];
-        } else if (streq("--foster-compaction-threshold", arg)) { args_to_skip += 1;
-          __foster_globals.compaction_threshold = parse_double(argv[i + 1], 3.0);
-        } else if (streq("--foster-sticky-threshold", arg)) { args_to_skip += 1;
-          __foster_globals.sticky_base_threshold = parse_double(argv[i + 1], 5.0);
         }
       }
     }

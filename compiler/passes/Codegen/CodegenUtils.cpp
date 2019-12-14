@@ -723,116 +723,6 @@ struct LLProcAllocDefaultCoro : public LLProcPrimBase {
 };
 
 
-struct LLProcSubheapCreatePrim : public LLProcPrimBase {
-  explicit LLProcSubheapCreatePrim() {
-      this->name = "foster_subheap_create";
-      std::vector<TypeAST*> argTypes;
-      std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
-      this->type = new FnTypeAST(foster::ParsingContext::lookupType("Subheap"),
-                                 argTypes, annots);
-  }
-  virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
-    pass->markFosterFunction(F);
-    return codegenCall0ToFunction(F,
-             pass->lookupFunctionOrDie("foster_subheap_create_raw"));
-  }
-};
-
-struct LLProcSubheapCreateSmallPrim : public LLProcPrimBase {
-  explicit LLProcSubheapCreateSmallPrim() {
-      this->name = "foster_subheap_create_small";
-      std::vector<TypeAST*> argTypes;
-      std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
-      this->type = new FnTypeAST(foster::ParsingContext::lookupType("Subheap"),
-                                 argTypes, annots);
-  }
-  virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
-    pass->markFosterFunction(F);
-    return codegenCall0ToFunction(F,
-             pass->lookupFunctionOrDie("foster_subheap_create_small_raw"));
-  }
-};
-
-struct LLProcSubheapActivatePrim : public LLProcPrimBase {
-  explicit LLProcSubheapActivatePrim() {
-      this->name = "foster_subheap_activate";
-      this->argnames.push_back("handle");
-      std::vector<TypeAST*> argTypes;
-      argTypes.push_back(foster::ParsingContext::lookupType("Subheap"));
-      std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
-      this->type = new FnTypeAST(foster::ParsingContext::lookupType("Subheap"),
-                                 argTypes, annots);
-  }
-  virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
-    pass->markFosterFunction(F);
-    Function::arg_iterator AI = F->arg_begin();
-    Value* n = &*(AI++);
-    codegenCall1ToFunctionWithArg(F, pass->lookupFunctionOrDie("foster_subheap_activate_raw"),
-      builder.CreateBitCast(n, builder.getInt8PtrTy()));
-  }
-};
-
-
-struct LLProcSubheapCollectPrim : public LLProcPrimBase {
-  explicit LLProcSubheapCollectPrim() {
-      this->name = "foster_subheap_collect";
-      this->argnames.push_back("handle");
-      std::vector<TypeAST*> argTypes;
-      argTypes.push_back(foster::ParsingContext::lookupType("Subheap"));
-      std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
-      this->type = new FnTypeAST(VoidTypeAST::get(),
-                                 argTypes, annots);
-  }
-  virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
-    pass->markFosterFunction(F);
-
-    Function::arg_iterator AI = F->arg_begin();
-    Value* n = &*(AI++);
-    codegenCall1ToFunctionWithArg(F, pass->lookupFunctionOrDie("foster_subheap_collect_raw"),
-      builder.CreateBitCast(n, builder.getInt8PtrTy()));
-  }
-};
-
-struct LLProcSubheapCondemnPrim : public LLProcPrimBase {
-  explicit LLProcSubheapCondemnPrim() {
-      this->name = "foster_subheap_condemn";
-      this->argnames.push_back("handle");
-      std::vector<TypeAST*> argTypes;
-      argTypes.push_back(foster::ParsingContext::lookupType("Subheap"));
-      std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
-      this->type = new FnTypeAST(VoidTypeAST::get(),
-                                 argTypes, annots);
-  }
-  virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
-    pass->markFosterFunction(F);
-
-    Function::arg_iterator AI = F->arg_begin();
-    Value* n = &*(AI++);
-    codegenCall1ToFunctionWithArg(F, pass->lookupFunctionOrDie("foster_subheap_condemn_raw"),
-      builder.CreateBitCast(n, builder.getInt8PtrTy()));
-  }
-};
-
-struct LLProcSubheapIgnorePrim : public LLProcPrimBase {
-  explicit LLProcSubheapIgnorePrim() {
-      this->name = "foster_subheap_ignore";
-      this->argnames.push_back("handle");
-      std::vector<TypeAST*> argTypes;
-      argTypes.push_back(foster::ParsingContext::lookupType("Subheap"));
-      std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
-      this->type = new FnTypeAST(VoidTypeAST::get(),
-                                 argTypes, annots);
-  }
-  virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
-    pass->markFosterFunction(F);
-
-    Function::arg_iterator AI = F->arg_begin();
-    Value* n = &*(AI++);
-    codegenCall1ToFunctionWithArg(F, pass->lookupFunctionOrDie("foster_subheap_ignore_raw"),
-      builder.CreateBitCast(n, builder.getInt8PtrTy()));
-  }
-};
-
 void extendWithImplementationSpecificProcs(CodegenPass* _pass,
                                            std::vector<LLProc*>& procs) {
   // These functions are useful to the runtime (and should therefore
@@ -843,13 +733,6 @@ void extendWithImplementationSpecificProcs(CodegenPass* _pass,
   procs.push_back(new LLProcFmtTimePrim());
 
   procs.push_back(new LLProcAllocDefaultCoro());
-
-  procs.push_back(new LLProcSubheapCreatePrim());
-  procs.push_back(new LLProcSubheapCreateSmallPrim());
-  procs.push_back(new LLProcSubheapActivatePrim());
-  procs.push_back(new LLProcSubheapCollectPrim());
-  procs.push_back(new LLProcSubheapCondemnPrim());
-  procs.push_back(new LLProcSubheapIgnorePrim());
 }
 
 

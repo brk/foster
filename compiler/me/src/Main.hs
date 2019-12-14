@@ -64,7 +64,7 @@ import Codec.CBOR.Read (deserialiseFromBytes)
 
 import Text.Printf(printf)
 import Foster.Output
-import Text.PrettyPrint.ANSI.Leijen((<+>), (<>), (<$>), pretty, text, line,
+import Text.PrettyPrint.ANSI.Leijen((<+>), (<$>), pretty, text, line,
                                      hsep, fill, parens, vcat, list, red,
                                      dullyellow)
 import qualified Criterion.Measurement as Criterion(initializeTime, secs)

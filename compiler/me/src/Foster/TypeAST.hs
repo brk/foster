@@ -129,7 +129,6 @@ instance Structured TypeAST where
 
 fosBoolType = PrimIntAST I1
 fosStringType = TyAppAST (TyConAST "Text") []
-fosSubheapType = TyAppAST (TyConAST "Subheap") []
 
 minimalTupleAST []    = TupleTypeAST KindPointerSized []
 minimalTupleAST [arg] = arg
@@ -258,13 +257,6 @@ primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     ,(,) "foster_fmttime_secs"     $ mkProcType [f64] [fosStringType]
     ,(,) "foster_gettime_microsecs"    $ mkProcType [] [i64]
     ,(,) "foster_gettime_elapsed_secs" $ mkProcType [i64, i64] [f64]
-
-    ,(,) "foster_subheap_create"   $ mkProcType [] [fosSubheapType]
-    ,(,) "foster_subheap_create_small" $ mkProcType [] [fosSubheapType]
-    ,(,) "foster_subheap_activate" $ mkProcType [fosSubheapType] [fosSubheapType]
-    ,(,) "foster_subheap_ignore"   $ mkProcType [fosSubheapType] []
-    ,(,) "foster_subheap_collect"  $ mkProcType [fosSubheapType] []
-    ,(,) "foster_subheap_condemn"  $ mkProcType [fosSubheapType] []
     ]
 
 primopDecls = map (\(name, (ty, _op)) -> (name, ty, NotForeign)) $ Map.toList gFosterPrimOpsTable

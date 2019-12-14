@@ -169,26 +169,6 @@ optPrintLLVMImports("foster-print-llvm-imports",
   cl::desc("Print imported symbols from imported LLVM modules"),
   cl::cat(FosterOptCat));
 
-static cl::opt<bool>
-optUseGenInitBarriers("use-gen-init-barriers",
-  cl::desc("Emit extra generational barriers for giggles"),
-  cl::cat(FosterOptCat));
-
-static cl::opt<bool>
-optNoGenerationalBarriers("no-generational-barriers",
-  cl::desc("(Unsafe) disable emission of generational barriers"),
-  cl::cat(FosterOptCat));
-
-static cl::opt<bool>
-optNoSubheapBarriers("no-subheap-barriers",
-  cl::desc("(Unsafe) disable emission of subheap barriers"),
-  cl::cat(FosterOptCat));
-
-static cl::opt<bool>
-optNoGCBarrierOpt("no-gc-barrier-opt",
-  cl::desc("Disable all optimization of GC write barriers"),
-  cl::cat(FosterOptCat));
-
 static cl::list<std::string>
 linkAgainstBCs("link-against",
   cl::desc("Link against the provided bitcode module(s)"),
@@ -501,9 +481,6 @@ int main(int argc, char** argv) {
     config.countClosureCalls = optCountClosureCalls;
     config.killDeadSlots     = !optDontKillDeadSlots;
     config.emitLifetimeInfo  = optEnableLifetimeInfo;
-    config.useGenBarriers    = !optNoGenerationalBarriers;
-    config.useGenInitBarriers = optUseGenInitBarriers;
-    config.useSubheapBarriers = !optNoSubheapBarriers;
     config.disableAllArrayBoundsChecks
                              = optDisableAllArrayBoundsChecks;
     config.disableInliningOnAllFosterFunctions
@@ -520,7 +497,7 @@ int main(int argc, char** argv) {
 
   // Run cleanup passes on newly-generated code,
   // rather than wastefully on post-linked code.
-  foster::runCleanupPasses(*module, optNoGCBarrierOpt);
+  foster::runCleanupPasses(*module);
 
   if (optDumpPreLinkedIR) {
     dumpModuleToFile(module,

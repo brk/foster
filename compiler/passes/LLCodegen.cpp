@@ -127,7 +127,7 @@ llvm::Value* emitBitcast(llvm::Value* v, llvm::Type* dstTy, llvm::StringRef msg 
   return builder.CreateBitCast(v, dstTy, msg);
 }
 
-llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot, bool gen, bool subheap) {
+llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot) {
   if (!base) base = getNullOrZero(builder.getInt8PtrTy());
   auto gcwrite_fn = pass->mod->getFunction("foster_write_barrier_with_obj_generic");
 
@@ -139,9 +139,7 @@ llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot
     Value* base_generic = builder.CreateBitCast(base, builder.getInt8PtrTy());
     Value* slot_generic = builder.CreateBitCast(slot, builder.getInt8PtrTy()->getPointerTo(0));
     Value*  val_generic = builder.CreateBitCast(val,  builder.getInt8PtrTy());
-    Value* need_gen     = builder.getInt8(gen     ? 1 : 0);
-    Value* need_subheap = builder.getInt8(subheap ? 1 : 0);
-    return builder.CreateCall(gcwrite_fn, { val_generic, base_generic, slot_generic, need_gen, need_subheap });
+    return builder.CreateCall(gcwrite_fn, { val_generic, base_generic, slot_generic });
   }
 }
 
@@ -161,7 +159,6 @@ llvm::Value* emitGCWriteOrStore(CodegenPass* pass,
                        llvm::Value* val,
                        llvm::Value* base,
                        llvm::Value* ptr,
-                       bool needGen, bool needSubheap,
                        WriteSelector w = WriteUnspecified) {
   //llvm::outs() << "logging write of " << *val <<
   //              "\n              to " << *ptr <<
@@ -174,7 +171,7 @@ llvm::Value* emitGCWriteOrStore(CodegenPass* pass,
 
   if (isPointerToType(ptr->getType(), val->getType())) {
     if (useBarrier) {
-      return emitGCWrite(pass, val, base, ptr, needGen, needSubheap);
+      return emitGCWrite(pass, val, base, ptr);
     } else {
       return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
     }
@@ -206,7 +203,6 @@ llvm::Value* emitStore(CodegenPass* pass,
                        llvm::Value* val,
                        llvm::Value* ptr,
                        llvm::Value* base,
-                       bool needGen, bool needSubheap,
                        WriteSelector w = WriteUnspecified) {
   if (val->getType()->isVoidTy()) {
     val = getUnitValue();
@@ -216,7 +212,7 @@ llvm::Value* emitStore(CodegenPass* pass,
     val = emitBitcast(val, eltTy, "specSgen");
   }
 
-  return emitGCWriteOrStore(pass, val, base, ptr, needGen, needSubheap, w);
+  return emitGCWriteOrStore(pass, val, base, ptr, w);
 }
 
 Value* emitCallToInspectPtr(CodegenPass* pass, Value* ptr) {
@@ -479,9 +475,6 @@ void createCompilerFlagsGlobalString(CodegenPass* pass) {
   ss << "'useGC':" << pass->config.useGC << ",";
   ss << "'killDeadSlots':" << pass->config.killDeadSlots << ",";
   ss << "'emitLifetimeInfo':" << pass->config.emitLifetimeInfo << ",";
-  ss << "'useGenBarriers':" << pass->config.useGenBarriers << ",";
-  ss << "'useGenInitBarriers':" << pass->config.useGenInitBarriers << ",";
-  ss << "'useSubheapBarriers':" << pass->config.useSubheapBarriers << ",";
   ss << "'disableAllArrayBoundsChecks':" << pass->config.disableAllArrayBoundsChecks;
   ss << "}";
   auto gv = builder.CreateGlobalString(ss.str(), "__foster_fosterlower_config");
@@ -1033,7 +1026,7 @@ void LLGCRootInit::codegenMiddle(CodegenPass* pass) {
     markAsNonAllocating(builder.CreateLifetimeStart(slot));
   }
 
-  emitStore(pass, v, slot, nullptr, false, false, WriteKnownNonGC);
+  emitStore(pass, v, slot, nullptr, WriteKnownNonGC);
 }
 
 void LLGCRootKill::codegenMiddle(CodegenPass* pass) {
@@ -1080,10 +1073,9 @@ llvm::Value* LLStore::codegen(CodegenPass* pass) {
   llvm::Value* val  = v->codegen(pass);
   llvm::Value* slot = r->codegen(pass);
   if (isTraced && pass->config.useGC) {
-    return emitGCWrite(pass, val, slot, slot, pass->config.useGenBarriers,
-                                              pass->config.useSubheapBarriers);
+    return emitGCWrite(pass, val, slot, slot);
   } else {
-    return emitStore(pass, val, slot, slot, false, false, WriteKnownNonGC);
+    return emitStore(pass, val, slot, slot, WriteKnownNonGC);
   }
 }
 
@@ -1466,7 +1458,7 @@ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
     val = emitBitcast(val, eltTy, "specSgen");
   }
 
-  emitGCWriteOrStore(pass, val, base, slot, true, true);
+  emitGCWriteOrStore(pass, val, base, slot);
   return getNullOrZero(getUnitType()->getLLVMType());
 }
 
@@ -1546,9 +1538,7 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
         bool useBarrier = val->getType()->isPointerTy() && pass->config.useGC;
         //maybeEmitCallToLogPtrWrite(pass, slot, val, useBarrier);
         if (useBarrier) {
-          bool gen = false;
-          bool subheap = false;
-          emitGCWrite(pass, val, heapmem, slot, gen, subheap);
+          emitGCWrite(pass, val, heapmem, slot);
         } else {
           builder.CreateStore(val, slot, /*isVolatile=*/ false);
         }
@@ -1578,11 +1568,7 @@ void copyValuesToStruct(CodegenPass* pass,
 
   for (size_t i = 0; i < vals.size(); ++i) {
     Value* dst = builder.CreateConstGEP2_32(nullptr, tup_ptr, 0, i, "gep");
-    bool needGen = pass->config.useGenInitBarriers;
-                          // Target is newly allocated; can't be old yet.
-                          // (Assuming no pretenuring...).
-    bool needSubheap = pass->config.useSubheapBarriers;
-    emitStore(pass, vals[i], dst, tup_ptr, needGen, needSubheap, WriteUnspecified);
+    emitStore(pass, vals[i], dst, tup_ptr, WriteUnspecified);
   }
 }
 

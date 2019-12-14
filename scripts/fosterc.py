@@ -193,7 +193,7 @@ def compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir):
 
     if options.asm:
         import hashlib
-        print("\t\t\tmd5 of assembly file:", hashlib.md5(open(outpath).read()).hexdigest())
+        print("\t\t\tmd5 of assembly file:", hashlib.md5(open(outpath).read().encode('utf-8')).hexdigest())
 
     return (e1, e2, e3, e4)
 

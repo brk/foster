@@ -115,10 +115,8 @@ inline bool header_is_new(uint64_t header) { return flex_bits_of_header(header) 
 // so we only see non-zero reference counts when the old bit is set.
 inline bool hit_max_rc(uint64_t header) { return flex_bits_of_header(header) == 255; }
 
-inline HEAP_CELL_HEADER_TYPE build_header(const typemap* data, uint32_t space_id) {
-  //if ((uintptr_t(data) >> 24) != 0) { exit(3); }
-  return   HEAP_CELL_HEADER_TYPE(data)
-        | (HEAP_CELL_HEADER_TYPE(space_id) << 32);
+inline HEAP_CELL_HEADER_TYPE build_header(const typemap* data) {
+  return   HEAP_CELL_HEADER_TYPE(data);
 }
 
 struct heap_cell {
@@ -135,8 +133,8 @@ struct heap_cell {
   // Precondition: not forwarded
   const typemap* get_meta() { return typemap_of_header(raw_header()); }
 
-  void set_header(const typemap* data, uint32_t space_id) {
-    header = build_header(data, space_id);
+  void set_header(const typemap* data) {
+    header = build_header(data);
   }
 
   bool is_marked_inline() { return (header & HEADER_MARK_BITS) != 0; }
@@ -183,8 +181,8 @@ struct heap_array {
   const typemap* get_meta() {
     return reinterpret_cast<const typemap*>(get_unmarked_header());
   }
-  void set_header(const typemap* data, uint32_t space_id) {
-    header = build_header(data, space_id);
+  void set_header(const typemap* data) {
+    header = build_header(data);
   }
   static heap_array* from_heap_cell(heap_cell* ptr) {
     return reinterpret_cast<heap_array*>(ptr);
