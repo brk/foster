@@ -31,10 +31,6 @@ extern "C" char* __foster_fosterlower_config;
 #define PREFETCH_FOR_WRITES(addr) __builtin_prefetch(addr, 1, 3)
 #define PREFETCH_FOR_MARKING(addr) __builtin_prefetch(addr, 0, 0)
 
-// These are defined as compile-time constants so that the compiler
-// can do effective dead-code elimination. If we were JIT compiling
-// the GC we could (re-)specialize these config vars at runtime...
-#define ENABLE_OPPORTUNISTIC_EVACUATION 0
 // TODO: we currently don't evacuate, but when we do, we must first set up lazy_mapped_line_pins.
 #define GCLOG_DETAIL 0
 #define GCLOG_PRINT_LINE_MARKS 0
@@ -64,7 +60,6 @@ extern "C" char* __foster_fosterlower_config;
 // a way of easily overriding-without-overwriting the defaults.
 #include "gc/foster_gc_reconfig-inl.h"
 
-const double kFosterDefragReserveFraction = 0.01;
 const ssize_t inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
 
 extern void* foster__typeMapList[];
@@ -429,8 +424,6 @@ struct GCGlobals {
   struct hdr_histogram* hist_gc_alloc_large;
   uint64_t enum_gc_alloc_small[129];
 
-  double last_full_gc_fragmentation_percentage;
-  int evac_threshold;
   int64_t marked_histogram[128];
   int64_t marked_histogram_frames[128];
   int64_t residency_histogram[128];
@@ -489,31 +482,6 @@ void reset_marked_histogram() {
   for (int i = 0; i < 128; ++i) { gcglobals.marked_histogram[i] = 0; }
   for (int i = 0; i < 128; ++i) { gcglobals.marked_histogram_frames[i] = 0; }
   for (int i = 0; i < 128; ++i) { gcglobals.residency_histogram[i] = 0; }
-}
-
-int num_avail_defrag_lines();
-int num_assigned_defrag_lines();
-
-int select_defrag_threshold(double defrag_pad_factor) {
-  int64_t reserved = num_avail_defrag_lines();
-  int64_t avail = int64_t(double(reserved) * defrag_pad_factor);
-  int64_t required = 0;
-
-  int thresh = 128;
-  while (thresh-- > 0) {
-    required += gcglobals.marked_histogram[thresh];
-    if (required > avail) {
-      if (GCLOG_DETAIL > 0) {
-        fprintf(gclog, "defrag threshold: %d; backing off from %zd to %zd lines assumed needed vs %zd lines assumed avail (%d/%d lines)\n",
-          thresh + 1,
-          required, required - gcglobals.marked_histogram[thresh], avail,
-          num_avail_defrag_lines(), num_assigned_defrag_lines());
-      }
-      
-      return thresh + 1;
-    }
-  }
-  return 0;
 }
 
 // The worklist would be per-GC-thread in a multithreaded implementation.
@@ -888,8 +856,8 @@ namespace helpers {
   tidy* tidy_for(tori* t) { return (tidy*) t; }
 
   // Note: in conservative operation, all roots (including those from coros)
-  // must be collected before tracing. Otherwise, evacuation might move an
-  // object pointed to by a heap-allocated stack root.
+  // must be collected before tracing. Otherwise, evacuation (if we re-implemented
+  // it) might move an object pointed to by a heap-allocated stack root.
   void consider_conservative_root(unchecked_ptr* root) {
     gc_assert(root != NULL, "someone passed a NULL root addr!");
     auto maybe_obj = unchecked_ptr_val(*root);
@@ -961,45 +929,6 @@ void deallocate_frame21(frame21* f) {
   pages_unmap(f, 1 << 21);
 }
 
-// We prefer to use empty frames for the defrag reserve, but in tight heaps we're often
-// stuck with linegroups.
-struct defrag_reserve_t {
-  int32_t reserved_lines_target;
-  int32_t reserved_lines_current;
-
-  //std::vector<frame15*> defrag_frame15s; // TODOX
-  std::vector<free_linegroup*> defrag_lines; // TODOX
-
-  defrag_reserve_t() : reserved_lines_target(0), reserved_lines_current(0) {}
-
-  bool full() { return reserved_lines_current >= reserved_lines_target; }
-
-  void freeze_target_line_count() { reserved_lines_target = reserved_lines_current; }
-
-  void give_lines(free_linegroup* g) {
-    auto size = linegroup_size_in_lines(g);
-    //fprintf(gclog, "defrag reserve getting linegroup %p +> %d (%u)\n", g, size, frame15_id_of(g));
-    reserved_lines_current += size;
-    defrag_lines.push_back(g);
-  }
-
-  free_linegroup* try_get_lines_for_defrag() {
-    if (defrag_lines.empty()) return nullptr;
-    free_linegroup* g = defrag_lines.back();
-    defrag_lines.pop_back();
-    auto size = linegroup_size_in_lines(g);
-    reserved_lines_current -= size;
-    //fprintf(gclog, "defrag reserve giving out linegroup %p +> %d\n", g, size);
-    return g;
-  }
-};
-
-defrag_reserve_t defrag_reserve;
-
-// TODOX
-int num_avail_defrag_lines() { return defrag_reserve.reserved_lines_current; }
-int num_assigned_defrag_lines() { return defrag_reserve.reserved_lines_target; }
-
 void display_linemap_for_frame15_id(frame15_id fid);
 
 struct space_allocator_t {
@@ -1025,16 +954,6 @@ public:
 
   void reset_scan(int64_t lines_reclaimed) {
     reset_marked_histogram();
-
-    int64_t num_lines_left_to_give = lines_reclaimed / 4; // at most...
-    //fprintf(gclog, "Reclaimed %zd lines, willing to give at most %zd for defrag reserve.\n", lines_reclaimed,  num_lines_left_to_give);
-    while (num_lines_left_to_give > 0 && !defrag_reserve.full()) {
-      auto fg = grab_free_linegroup<true>(1, IMMIX_LINES_PER_FRAME15);
-      if (fg) {
-        num_lines_left_to_give -= linegroup_size_in_lines(fg);
-        defrag_reserve.give_lines(fg);
-      } else break;
-    }
   }
 
   void display_heap_linemaps() {
@@ -1049,14 +968,6 @@ public:
     auto fb = foster::humanize_s(double(frame15s_left * (1 << 15)), "B");
     fprintf(gclog, "byte_limit: maxbytes = %s, maxframe15s = %ld, framebytes=%s, maxlines=%ld\n",
           mb.c_str(), frame15s_left, fb.c_str(), frame15s_left * IMMIX_LINES_PER_FRAME15);
-
-    // At 10M, 1% + 4 == 4 + 4 = 2%; at 1000M, 1% + 4 = 400 + 4 = 1.01%
-    auto num_defrag_reserved_frames =
-          ENABLE_OPPORTUNISTIC_EVACUATION
-            ? int(double(frame15s_left) * kFosterDefragReserveFraction) + 4 // + 6;
-            : 0;
-
-    frame15s_left -= num_defrag_reserved_frames;
 
     while (frame15s_left >= IMMIX_F15_PER_F21) {
       frame15s_left -= IMMIX_F15_PER_F21;
@@ -1074,29 +985,6 @@ public:
         mark_as_smallmedium(frame15_for_frame15_id(frame15s.back()));
       }
     }
-
-    for (int i = 0; i < num_defrag_reserved_frames; ++i) {
-      defrag_reserve.give_lines(grab_free_linegroup<false>(IMMIX_LINES_PER_FRAME15, IMMIX_LINES_PER_FRAME15));
-    }
-    defrag_reserve.freeze_target_line_count();
-  }
-
-  //           [                                 |     excess       ]
-  // g: *----- ^                             rv: ^                  ^
-  // g->bound:------------------------------------------------------+
-  free_linegroup* trim_linegroup(free_linegroup* g, int size,
-                                 int num_lines_needed, int max_lines_wanted) {
-    // Return a tombstone if no excess to trim.
-    if (num_lines_needed > max_lines_wanted) return nullptr;
-    int excess_lines = size - max_lines_wanted;
-    if (excess_lines <= 0) {
-      return nullptr;
-    }
-
-    free_linegroup* rv = (free_linegroup*) offset(g->bound, -excess_lines * IMMIX_BYTES_PER_LINE);
-    rv->bound = g->bound;
-    g->bound = rv;
-    return rv;
   }
 
   template<bool small>
@@ -1128,8 +1016,6 @@ public:
         if (!g) continue;
         auto size = linegroup_size_in_lines(g);
         if (size < num_lines) continue;
-
-        //biggers[i] = trim_linegroup(g, size, num_lines, max_lines_wanted);
         
           if (size > IMMIX_LINES_PER_FRAME15) {
             fprintf(gclog, "OOPS bigger linegroup %p was oversized of size %d\n", g, size);
@@ -1365,9 +1251,6 @@ void mark_lines_for_slots(void* slot, uint64_t cell_size) {
   }
 }
 
-bool should_opportunistically_evacuate(heap_cell* obj);
-
-
 template <typename CellThunk>
 void apply_thunk_to_child_slots_of_cell(intr* body, const typemap* map, uint8_t ptrMap, CellThunk thunk) {
   switch (ptrMap & 7) {
@@ -1429,27 +1312,6 @@ void for_each_child_slot(heap_cell* cell, CellThunk thunk) {
 // This struct contains per-frame state and code shared between
 // regular and line-based immix frames.
 namespace immix_common {
-
-  void* evac_with_map_and_arr(heap_cell* cell, const typemap* map,
-                             heap_array* arr, int64_t cell_size,
-                             immix_space* tospace);
-
-  // Precondition: cell is part of the condemned set.
-  // Precondition: cell is not forwarded.
-  void* scan_and_evacuate_to(immix_space* tospace, heap_cell* cell) {
-
-    heap_array* arr = NULL;
-    const typemap* map = NULL;
-    int64_t cell_size;
-    get_cell_metadata(cell, arr, map, cell_size);
-
-    // Without metadata for the cell, there's not much we can do...
-    if (map && gcglobals.typemap_memory.contains((void*) map)) {
-      return evac_with_map_and_arr(cell, map, arr, cell_size, tospace);
-    }
-    return nullptr;
-  }
-
   // Precondition: cell is part of the condemned set and not yet marked.
   void scan_cell(heap_cell* cell) {
     heap_array* arr = NULL;
@@ -1506,14 +1368,7 @@ namespace immix_common {
     //                        |       ...          ...
     //                        \-*root->|            |
     //                                 |------------|
-
-    if (ENABLE_OPPORTUNISTIC_EVACUATION &&
-        should_opportunistically_evacuate(obj)) {
-      auto tidyn = scan_and_evacuate_to((immix_space*)gcglobals.allocator, obj);
-      *root = make_unchecked_ptr((tori*) tidyn);
-    } else {
-      scan_cell(obj);
-    }
+    scan_cell(obj);
   }
 
   // Returns true if we should immediately retry GC (e.g. to switch to full-heap non-sticky collection).
@@ -1740,32 +1595,6 @@ void immix_common::common_gc() {
     // Make sure no line groups persist between collections.
     global_space_allocator.reset_allocator_cache();
 
-    if (gcglobals.last_full_gc_fragmentation_percentage > 0.0) {
-      // This dynamically corrects for the (a priori unknown) density
-      // of lines on defragmented frames. A factor of 2.0 implies that
-      // lines selected for defragmentation are, on average, half full.
-      // The density of lines on defragmentation-candidate frames is
-      // a priori unknown. We assume lines are 50% full. Note: the goal
-      // of this guess is not to maximize the amount of data copied into
-      // our defrag reserve; the ideal is to defrag just enough that
-      // (rare) medium allocations don't cause premature triggering of GC.
-      // A runtime-adaptive scheme to adjust the pad factor can consistently
-      // use more of the defrag reserve, but doing so usually just degrades
-      // performance, since the extra copying has more cost than benefit.
-      double defrag_pad_factor = 2.0;
-      gcglobals.evac_threshold = select_defrag_threshold(defrag_pad_factor);
-      reset_marked_histogram();
-    } else {
-      if (GCLOG_DETAIL > 0) {
-        // Disable evacuation because there isn't much fragmentation to eliminate.
-        fprintf(gclog, "disabling evacuation because there isn't much fragmentation to eliminate (%.1f).\n",
-            gcglobals.last_full_gc_fragmentation_percentage);
-        gcglobals.evac_threshold = 0;
-      }
-    }
-
-    fprintf(gclog, "Before gathering roots, validity mark X was %d\n", gcglobals.lazy_mapped_granule_validity[7623017691832]);
-
     phase.start();
     collect_all_potential_roots();
     auto rootCollection_us = phase.elapsed_us();
@@ -1774,10 +1603,6 @@ void immix_common::common_gc() {
     gcglobals.condemned_set.prepare_for_tracing();
     auto markResetting_us = phase.elapsed_us();
 
-    fprintf(gclog, "Before tracing, validity mark X was %d...\n", gcglobals.lazy_mapped_granule_validity[7623017691832]);
-
-    if (ENABLE_OPPORTUNISTIC_EVACUATION && GCLOG_DETAIL > 1) { fprintf(gclog, "    THRESHOLD IS %d\n", gcglobals.evac_threshold); }
-  
     phase.start();
     process_worklists();
     auto recursiveMarking_us = phase.elapsed_us();
@@ -1806,9 +1631,6 @@ void immix_common::common_gc() {
 
     double byte_level_fragmentation_percentage =
       ((double(line_footprint_in_bytes) / double(bytes_marked)) - 1.0) * 100.0;
-
-    gcglobals.last_full_gc_fragmentation_percentage =
-        byte_level_fragmentation_percentage;
 
     if (GCLOG_DETAIL > 0) {
       fprintf(gclog, "Byte level fragmentation percentage: %.1f\n",
@@ -2026,37 +1848,6 @@ public:
       return IMMIX_LINES_PER_FRAME15;
   }
 
-  // Precondition: needed_bytes is less than one line.
-  bool can_alloc_for_defrag(int64_t needed_bytes) {
-    if (small_bumper.size() >= needed_bytes) return true;
-
-    free_linegroup* g = defrag_reserve.try_get_lines_for_defrag();
-    if (!g) {
-      // Make sure we short-circuit further attempts to defrag.
-      gcglobals.evac_threshold = 0;
-      return false;
-    } else {
-      // Invariant(FREEMETACLEAR): defrag reserve is populated with free linegroups so no need to clear metadata.
-      tracking.add_and_install_free_group(g, small_bumper);
-      return true;
-    }
-  }
-
-  tidy* defrag_copy_cell(heap_cell* cell, typemap* map, int64_t cell_size) {
-    tidy* newbody = helpers::allocate_cell_prechecked(&small_bumper, map, cell_size);
-    heap_cell* mcell = heap_cell::for_tidy(newbody);
-    //fprintf(gclog, "defrag copying cell %p to %p\n", cell, mcell);
-    memcpy(mcell, cell, cell_size);
-    cell->set_forwarded_body(newbody);
-
-    if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
-    if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += cell_size; }
-    mark_lines_for_slots(newbody, cell_size);
-    do_mark_obj_of_size(mcell, cell_size);
-
-    return newbody;
-  }
-
   // Quick benchmark suggests we can use the line-mark map
   // to skip full blocks at a rate of 3 microseconds per 2 MB.
   // Use of SIMD could probably reduce that to ~100 ns per MB.
@@ -2209,15 +2000,12 @@ public:
       }
       fprintf(gclog, "    global yield rate: %f\n", 100.0 * yield_rate);
       fprintf(gclog, "     local yield rate: %f\n", 100.0 * local_yield);
-      //fprintf(gclog, "                                     defrag frame15s left: %zd (before reclaiming clean frames)\n",
-      //  defrag_reserve.defrag_frame15s.size());
 
       fprintf(gclog, "Reclaimed %.2f%% (%zd) of %zd lines.\n", yield_percentage, num_lines_reclaimed, lines_tracked);
 
 #endif
 
     approx_lines_allocated_since_last_collection = 0;
-    //tracking.release_clean_frames();
     return num_lines_reclaimed;
   }
 
@@ -2437,44 +2225,6 @@ void immix_worklist_t::drain() {
   initialize();
 }
 
-
-bool should_opportunistically_evacuate(heap_cell* obj) {
-  if (gcglobals.evac_threshold == 0) return false;
-
-  auto f15info = frame15_info_for((void*) obj);
-  bool want_to_opportunistically_evacuate =
-             f15info->num_holes_at_last_full_collection >= gcglobals.evac_threshold
-          && f15info->frame_classification == frame15kind::immix_smallmedium;
-
-  if (want_to_opportunistically_evacuate) {
-    heap_array* arr; const typemap* map; int64_t cell_size;
-    get_cell_metadata(obj, arr, map, cell_size);
-    if (cell_size < IMMIX_BYTES_PER_LINE) {
-      bool can = gcglobals.allocator->can_alloc_for_defrag(cell_size);
-      if (!can) { fprintf(gclog, "unable to continue opportunistic evacuation...\n"); }
-      return can;
-    }
-  }
-  return false;
-}
-
-void* immix_common::evac_with_map_and_arr(heap_cell* cell, const typemap* map,
-                            heap_array* arr, int64_t cell_size,
-                            immix_space* tospace) {
-  // We have separate functions for allocating arrays vs non-array cells in order
-  // to initialize the number-of-elements field. But here, the field is already
-  // there; all we need to do is copy the whole blob and trace is as usual.
-  tidy* newbody = tospace->defrag_copy_cell(cell, (typemap*)map, cell_size);
-  heap_cell* newcell = heap_cell::for_tidy(newbody);
-  heap_array* newarr = arr ? heap_array::from_heap_cell(newcell) : nullptr;
-  for_each_child_slot_with(newcell, newarr, map, cell_size, [](intr* slot) {
-      if (!non_markable_addr_toosmall(* (void**)slot)) {
-        immix_worklist.add_root((unchecked_ptr*) slot);
-      }
-  });
-  return newbody;
-}
-
 #include "foster_gc_backtrace_x86-inl.h"
 
 // {{{ Walks the call stack and inserts roots into immix_worklist.
@@ -2687,8 +2437,7 @@ void initialize(void* stack_highest_addr) {
   (*gcglobals.lazy_mapped_markable_handles) = offset(gcglobals.lazy_mapped_markable_handles, sizeof(heap_handle<immix_space>));
 
   gcglobals.lazy_mapped_frame15info             = allocate_lazily_zero_mapped<frame15info>(     size_t(1) << (address_space_prefix_size_log() - 15));
-  //gcglobals.lazy_mapped_frame15info_associated  = allocate_lazily_zero_mapped<void*>(      size_t(1) << (address_space_prefix_size_log() - 15));
-  //
+
   gcglobals.lazy_mapped_granule_marks           = allocate_lazily_zero_mapped<uint8_t>(lazy_mapped_granule_marks_size()); // byte marks
   gcglobals.lazy_mapped_granule_validity        = allocate_lazily_zero_mapped<uint8_t>(lazy_mapped_granule_marks_size());
   gcglobals.lazy_mapped_frame_liveness          = allocate_lazily_zero_mapped<uint16_t>(     size_t(1) << (address_space_prefix_size_log() - 15));
@@ -2715,8 +2464,6 @@ void initialize(void* stack_highest_addr) {
   gcglobals.alloc_bytes_marked_total = 0;
   gcglobals.max_bytes_live_at_whole_heap_gc = 0;
   gcglobals.num_closure_calls = 0;
-  gcglobals.evac_threshold = 0;
-  gcglobals.last_full_gc_fragmentation_percentage = 0.0;
 
   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_frames);
   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_roots);
@@ -2967,7 +2714,7 @@ FILE* print_timing_stats() {
   }
 
   fprintf(gclog, "'FosterlowerConfig': %s\n", (const char*)&__foster_fosterlower_config);
-  fprintf(gclog, "'FosterGCConfig': {'FifoSize': %d, 'DefragReserveFraction: %.2f}\n", USE_FIFO_SIZE, kFosterDefragReserveFraction);
+  fprintf(gclog, "'FosterGCConfig': {'FifoSize': %d}\n", USE_FIFO_SIZE);
 
   fprintf(gclog, "sizeof immix_space: %lu\n", sizeof(immix_space));
   fprintf(gclog, "sizeof bump_allocator: %lu\n", sizeof(bump_allocator));
