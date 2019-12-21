@@ -92,11 +92,6 @@ optTrackAllocSites("gc-track-alloc-sites",
   cl::cat(FosterOptCat));
 
 static cl::opt<bool>
-optDontKillDeadSlots("dont-kill-dead-slots",
-  cl::desc("Disable nulling-out of statically dead GC root slots"),
-  cl::cat(FosterOptCat));
-
-static cl::opt<bool>
 optCountClosureCalls("count-closure-calls",
   cl::desc("Emit code to count the number of dynamic closure calls made."),
   cl::cat(FosterOptCat));
@@ -474,12 +469,10 @@ int main(int argc, char** argv) {
     }
 
     CodegenPassConfig config;
-    config.useGC             = !optDisableGC;
     config.useNSW            = optForceNSW;
     config.useNUW            = optForceNUW;
     config.trackAllocSites   = optTrackAllocSites;
     config.countClosureCalls = optCountClosureCalls;
-    config.killDeadSlots     = !optDontKillDeadSlots;
     config.emitLifetimeInfo  = optEnableLifetimeInfo;
     config.disableAllArrayBoundsChecks
                              = optDisableAllArrayBoundsChecks;

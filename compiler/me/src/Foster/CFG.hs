@@ -32,7 +32,6 @@ import Foster.Kind
 import Foster.MonoType
 import Foster.Letable(Letable(..))
 
-import Control.Monad(ap)
 import qualified Control.Applicative as AP(Applicative(..))
 
 import Compiler.Hoopl

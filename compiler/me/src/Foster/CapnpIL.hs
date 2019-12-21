@@ -140,24 +140,12 @@ dumpBlock predmap (IL.Block (id, phis) mids illast) =
 defaultMiddle =     BlockMiddle {
           letval_of_BlockMiddle     = StrictlyNone
         , rebind_of_BlockMiddle     = StrictlyNone
-        , gcrootkill_of_BlockMiddle = StrictlyNone
-        , gcrootinit_of_BlockMiddle = StrictlyNone
         , tuplestore_of_BlockMiddle = StrictlyNone
     }
 
 dumpMiddle :: ILMiddle -> FC.BlockMiddle
 dumpMiddle (ILLetVal id letable maygc) =
     defaultMiddle { letval_of_BlockMiddle = StrictlyJust (dumpLetVal id letable maygc) }
-dumpMiddle (ILGCRootKill v continuationMayGC) =
-    defaultMiddle { gcrootkill_of_BlockMiddle = StrictlyJust $ RootKill {
-           rootkillroot_of_RootKill = (dumpVar v)
-         , rootkillnull_of_RootKill = continuationMayGC
-      } }
-dumpMiddle (ILGCRootInit src root) =
-    defaultMiddle { gcrootinit_of_BlockMiddle = StrictlyJust $ RootInit {
-           rootinitsrc_of_RootInit  = (dumpVar src)
-         , rootinitroot_of_RootInit = (dumpVar root)
-    } }
 dumpMiddle (ILRebindId id var) =
     defaultMiddle { rebind_of_BlockMiddle = StrictlyJust $
          RebindId { fromid_of_RebindId = dumpIdent id , tovar_of_RebindId  = dumpVar var } }
@@ -583,7 +571,7 @@ dumpProgramToModule (ILProgram procdefs vals extern_decls datatypes (SourceLines
         , modlines_of_Module       = map u8fromText (toList lines)
     }
   where
-    dumpProc (ILProcDef p predmap gcroots)
+    dumpProc (ILProcDef p predmap)
       = Proc {
               proctype_of_Proc = dumpProcType (preProcType p)
             , inargs_of_Proc   = [dumpIdent (tidIdent v) | v <- CC.procVars p]
@@ -591,7 +579,6 @@ dumpProgramToModule (ILProgram procdefs vals extern_decls datatypes (SourceLines
             , blocks_of_Proc   = map (dumpBlock predmap) (CC.procBlocks p)
             , lines_of_Proc    = StrictlyJust $ u8fromString (showSourceRange . rangeOf $ CC.procAnnot p)
             , linkage_of_Proc  = Internal
-            , gcroots_of_Proc  = map dumpVar' gcroots
         }
     preProcType proc =
         let retty = CC.procReturnType proc in

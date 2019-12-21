@@ -265,16 +265,6 @@ LLExpr* parseBitcast(const pb::Letable::Reader& e) {
   return new LLBitcast(parseTermVar(e.getParts()[0]));
 }
 
-LLMiddle* parseGCRootInit(const pb::RootInit::Reader& r) {
-  return new LLGCRootInit(parseTermVar(r.getRootinitsrc()),
-                          parseTermVar(r.getRootinitroot()));
-}
-
-LLMiddle* parseGCRootKill(const pb::RootKill::Reader& r) {
-  return new LLGCRootKill(parseTermVar(r.getRootkillroot()),
-                          r.getRootkillnull());
-}
-
 LLMiddle* parseRebindId(const pb::RebindId::Reader& r) {
   return new LLRebindId(r.getFromid(), parseTermVar(r.getTovar()));
 }
@@ -304,8 +294,6 @@ LLMiddle* parseMiddle(const pb::BlockMiddle::Reader& b) {
   if (b.hasTuplestore()) { return parseTupleStore(b.getTuplestore()); }
   if (b.hasLetval()) { return parseLetVal(b.getLetval()); }
   if (b.hasRebind())  { return parseRebindId(b.getRebind()); }
-  if (b.hasGcrootkill()) { return parseGCRootKill(b.getGcrootkill()); }
-  if (b.hasGcrootinit()) { return parseGCRootInit(b.getGcrootinit()); }
   ASSERT(false) << "parseMiddle unhandled case!"; return NULL;
 }
 
@@ -338,15 +326,10 @@ LLProc* parseProc(const pb::Proc::Reader& e) {
     blocks.push_back(parseBlock(b));
   }
 
-  std::vector<LLVar*> gcroots;
-  for (auto r : e.getGcroots()) {
-    gcroots.push_back(parseTermVar(r));
-  }
-
   foster::sgProcLines[e.getName()] = e.getLines();
   return new LLProcCFG(proctype, e.getName(), args,
                        parseLinkage(e.getLinkage()),
-                       blocks, gcroots);
+                       blocks);
 }
 
 LLArrayIndex* parseArrayIndex(const pb::Letable::Reader& e) {

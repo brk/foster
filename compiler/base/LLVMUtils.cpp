@@ -331,6 +331,6 @@ llvm::PointerType* getHeapPtrTo(llvm::Type* t) {
 }
 
 bool isFosterFunction(llvm::Function& F) {
-  return F.hasGC() && F.getGC() == std::string("fostergc");
+  return F.hasFnAttribute("foster");
 }
 

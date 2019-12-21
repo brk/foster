@@ -57,9 +57,7 @@ struct Block {
 struct BlockMiddle {
   letval       @ 0 : LetVal $optional;
   rebind       @ 1 : RebindId $optional;
-  gcrootkill   @ 2 : RootKill $optional;
-  gcrootinit   @ 3 : RootInit $optional;
-  tuplestore   @ 4 : TupleStore $optional;
+  tuplestore   @ 2 : TupleStore $optional;
 }
 
 struct RebindId {
@@ -71,16 +69,6 @@ struct TupleStore {
   storedvars     @ 0 : List(TermVar); # repeated
   storage        @ 1 : TermVar;
   storageindir   @ 2 : Bool;
-}
-
-struct RootInit {
-  rootinitsrc    @ 0 : TermVar;
-  rootinitroot   @ 1 : TermVar;
-}
-
-struct RootKill {
-  rootkillroot   @ 0 : TermVar;
-  rootkillnull   @ 1 : Bool;
 }
 
 struct LetVal {
@@ -218,7 +206,6 @@ struct Proc {
   blocks     @ 3 : List(Block); # repeated
   lines      @ 4 : Text $optional;
   linkage    @ 5 : Linkage;
-  gcroots    @ 6 : List(TermVar); # repeated
 }
 
 struct PBInt {

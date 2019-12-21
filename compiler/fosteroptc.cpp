@@ -47,10 +47,6 @@ using foster::ScopedTimer;
 using foster::SourceRange;
 using foster::EDiag;
 
-namespace foster {
-  void linkFosterGC(); // defined in llmv/plugins/FosterGC.cpp
-}
-
 using std::string;
 
 void printUsage () {
@@ -191,7 +187,6 @@ namespace  {
     auto PreserveThese = [=](const GlobalValue& GV) {
       return GV.getName() == "foster__runtime__main__wrapper"
           || GV.getName() == "foster__main"
-          || GV.getName() == "foster__gcmaps"
           || GV.getName() == "foster_coro_delete_self_reference";
     };
     passes.add(createInternalizePass(PreserveThese));
@@ -607,7 +602,6 @@ void calculateOutputNames() {
 
 int main(int argc, char** argv) {
   int program_status = 0;
-  foster::linkFosterGC(); // statically, not dynamically
   sys::PrintStackTraceOnErrorSignal(argv[0]);
   PrettyStackTraceProgram X(argc, argv);
   llvm_shutdown_obj Y;

@@ -76,9 +76,5 @@ TODO
 ----
 
 * fit.py
-* inspect-fn.py -- A little tool to dump some stats about LLVM assembly;
-                   it currently just dumps gcroot-related info.
-                   See also ``extract-fn.sh`` as a wrapper around
-                   llvm-extract, to look at a specific bit of LLVM assembly.
 * install-llvm.sh
 * parse_args.py -- Just an example code snippet, not a real tool.

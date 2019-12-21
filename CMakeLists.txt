@@ -358,7 +358,6 @@ set(LIBFOSTER_CPP_SOURCES
         ${PROJECT_SOURCE_DIR}/runtime/libfoster_coro.cpp
         ${PROJECT_SOURCE_DIR}/runtime/libfoster_posix.cpp
         ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc.cpp
-        ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_stackmaps.cpp
         ${PROJECT_SOURCE_DIR}/runtime/foster_globals.cpp
         ${PROJECT_SOURCE_DIR}/third_party/jemalloc_pages/src/pages.cpp
 )
@@ -471,7 +470,6 @@ add_library(fosterc_llvm STATIC
   compiler/llvm/passes/TimerCheckerInsertion.cpp
   compiler/llvm/passes/BitcastLoadRecognizer.cpp
   compiler/llvm/passes/FosterPasses.cpp
-  compiler/llvm/plugins/FosterGC.cpp
 )
 add_dependencies(fosterc_llvm fosterc_base)
 

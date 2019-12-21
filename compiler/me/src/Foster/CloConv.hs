@@ -74,9 +74,6 @@ data Insn' e x where
         CCLabel      :: BlockEntryL                        -> Insn' C O
         CCLetVal     :: Ident   -> Letable TypeLL          -> Insn' O O
         CCLetFuns    :: [Ident] -> [Closure]               -> Insn' O O
-        CCGCLoad     :: LLVar   -> LLRootVar -> LLVar      -> Insn' O O
-        CCGCInit     :: LLVar   -> LLVar -> LLRootVar      -> Insn' O O
-        CCGCKill     :: Enabled -> Set      LLRootVar      -> Insn' O O
         CCTupleStore :: [LLVar] -> LLVar -> AllocMemRegion -> Insn' O O
         CCRebindId   :: Doc     -> LLVar -> LLVar          -> Insn' O O
         CCLast       :: BlockId ->          CCLast -> Insn' O C -- first arg is block entry label id
@@ -595,12 +592,6 @@ instance Pretty (Insn' e x) where
                                   indent 4 (align $
                                    vcat [red (text recfun) <+> text (show id) <+> text "=" <+> pretty fn
                                         | (id,fn) <- zip ids fns])
-  pretty (CCGCLoad  lded root _org) = indent 4 $ dullwhite $ text "load from" <+> pretty root <+> text "to" <+> pretty lded
-  pretty (CCGCInit  _  srcvar root) = indent 4 $ dullgreen $ text "init root" <+> pretty root <+> text ":=" <+> pretty srcvar
-  pretty (CCGCKill  Disabled roots) = indent 4 $ (dullwhite $ text "kill roots") <+> prettyR roots <+> pretty Disabled
-  pretty (CCGCKill  enabled  roots) | Set.size roots == 0
-                                    = indent 4 $ (dullwhite $ text "kill roots") <+> prettyR roots <+> pretty enabled
-  pretty (CCGCKill  enabled  roots) = indent 4 $ (dullred  $ text "kill roots") <+> prettyR roots <+> pretty enabled
   pretty (CCTupleStore vs tid _memregion) = indent 4 $ text "stores " <+> pretty vs <+> text "to" <+> pretty tid
   pretty (CCRebindId d v1 v2) = indent 4 $ text "REPLACE " <+> pretty v1 <+> text "WITH" <+> pretty v2 <+> parens d
   pretty (CCLast _  cclast     ) = pretty cclast

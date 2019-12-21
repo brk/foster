@@ -38,12 +38,10 @@ struct LLTupleStore;
 
 struct CodegenPass;
 struct CodegenPassConfig {
-  bool useGC;
   bool useNSW;
   bool useNUW;
   bool trackAllocSites;
   bool countClosureCalls;
-  bool killDeadSlots;
   bool emitLifetimeInfo;
   bool disableAllArrayBoundsChecks;
   bool disableInliningOnAllFosterFunctions;
@@ -62,18 +60,6 @@ struct LLTerminator {
 struct LLMiddle {
   virtual void codegenMiddle(CodegenPass* pass) = 0;
   virtual ~LLMiddle() {}
-};
-
-struct LLGCRootInit : public LLMiddle {
-  LLVar* src; LLVar* root;
-  explicit LLGCRootInit(LLVar* src, LLVar* root) : src(src), root(root) {}
-  virtual void codegenMiddle(CodegenPass* pass);
-};
-
-struct LLGCRootKill : public LLMiddle {
-  LLVar* root; bool doNullOutSlot;
-  explicit LLGCRootKill(LLVar* root, bool n) : root(root), doNullOutSlot(n) {}
-  virtual void codegenMiddle(CodegenPass* pass);
 };
 
 struct LLRebindId : public LLMiddle {
@@ -188,16 +174,13 @@ private:
   llvm::GlobalValue::LinkageTypes functionLinkage;
   std::vector<std::string> argnames;
   std::vector<LLBlock*> blocks;
-  std::vector<LLVar*> gcroots;
 
 public:
   explicit LLProcCFG(FnTypeAST* procType, const string& name,
                      const std::vector<std::string>& argnames,
                      llvm::GlobalValue::LinkageTypes linkage,
-                     std::vector<LLBlock*> blocks,
-                     std::vector<LLVar*> roots)
-  : name(name), functionLinkage(linkage), argnames(argnames), blocks(blocks),
-    gcroots(roots) {
+                     std::vector<LLBlock*> blocks)
+  : name(name), functionLinkage(linkage), argnames(argnames), blocks(blocks) {
       this->type = procType;
   }
   virtual ~LLProcCFG() {}

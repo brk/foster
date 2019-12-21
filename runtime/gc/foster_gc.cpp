@@ -39,12 +39,13 @@ extern "C" char* __foster_fosterlower_config;
 // can do effective dead-code elimination. If we were JIT compiling
 // the GC we could (re-)specialize these config vars at runtime...
 #define ENABLE_OPPORTUNISTIC_EVACUATION 0
-#define GCLOG_DETAIL 3
-#define GCLOG_PRINT_LINE_MARKS 1
-#define GCLOG_PRINT_LINE_HISTO 1
-#define GCLOG_PRINT_USED_GROUPS 1
+// TODO: we currently don't evacuate, but when we do, we must first set up lazy_mapped_line_pins.
+#define GCLOG_DETAIL 0
+#define GCLOG_PRINT_LINE_MARKS 0
+#define GCLOG_PRINT_LINE_HISTO 0
+#define GCLOG_PRINT_USED_GROUPS 0
 #define GCLOG_MUTATOR_UTILIZATION 0
-#define ENABLE_GCLOG_PREP 1
+#define ENABLE_GCLOG_PREP 0
 #define ENABLE_GCLOG_ENDGC 1
 #define PRINT_STDOUT_ON_GC 0
 #define FOSTER_GC_ALLOC_HISTOGRAMS    0
@@ -52,23 +53,21 @@ extern "C" char* __foster_fosterlower_config;
 #define FOSTER_GC_EFFIC_HISTOGRAMS    0
 #define ENABLE_GC_TIMING              1
 #define GC_ASSERTIONS 1
-#define UNSAFE_ASSUME_F21_UNMARKED    false
 #define TRACK_NUM_ALLOCATIONS         1
 #define TRACK_NUM_ALLOC_BYTES         1
 #define TRACK_NUM_REMSET_ROOTS        1
 #define TRACK_NUM_OBJECTS_MARKED      1
-#define TRACK_NUM_ROOTS_CONSIDERED    1
 #define TRACK_WRITE_BARRIER_COUNTS    1
 #define TRACK_BYTES_KEPT_ENTRIES      0
 #define TRACK_BYTES_ALLOCATED_ENTRIES 0
 #define TRACK_BYTES_ALLOCATED_PINHOOK 0
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
 #define USE_FIFO_SIZE 0
-#define DEBUG_VERIFY_MARK_BITS        1
+#define DEBUG_VERIFY_MARK_BITS        0
 #define DEBUG_PRINT_ALLOCATIONS  0
 #define DEBUG_INITIALIZE_ALLOCATIONS  0 // Initialize even when the middle end doesn't think it's necessary
 #define ELIDE_INITIALIZE_ALLOCATIONS  0 // Unsafe: ignore requests to initialize allocated memory.
-#define MEMSET_FREED_MEMORY           0 || GC_ASSERTIONS
+#define MEMSET_FREED_MEMORY           0
 // This included file may un/re-define these parameters, providing
 // a way of easily overriding-without-overwriting the defaults.
 #include "gc/foster_gc_reconfig-inl.h"
@@ -211,10 +210,18 @@ public:
 
 struct freelist { freelist* next; };
 
+int address_space_prefix_size_log() {
+  if (sizeof(void*) == 4) { return 32; }
+  if (sizeof(void*) == 8) { return 47; }
+  exit(3); return 0;
+}
+
+size_t lazy_mapped_frame15_condemned_size() { return (size_t(1) << (address_space_prefix_size_log() - 15)); }
+size_t lazy_mapped_granule_marks_size() {     return (size_t(1) <<  address_space_prefix_size_log()     ) / (16 * 1); }
 
 // On a 64-bit machine, physical address space will only be 48 bits usually.
 // If we use 47 of those bits, we can drop the low-order 15 bits and be left
-// with 32 bits!
+// with 32 bits! (47 bits gives 140 TB of usable virtual address space.)
 typedef uint32_t frame15_id;
 typedef uint32_t frame21_id;
 
@@ -266,7 +273,7 @@ struct used_linegroup {
 
   bool contains(void* slot) const { return slot > base && distance(base, slot) < size_in_bytes(); }
 
-  void clear_line_and_object_mark_bits();
+  void clear_line_and_object_mark_and_validity_bits();
 };
 
 used_linegroup used_group_of_free_group(free_linegroup* g) {
@@ -278,7 +285,6 @@ used_linegroup used_group_of_free_group(free_linegroup* g) {
 
 typedef void* ret_addr;
 typedef void* frameptr;
-typedef std::map<frameptr, const stackmap::PointCluster*> ClusterMap;
 // }}}
 
 
@@ -301,7 +307,7 @@ struct immix_space;
 
 struct immix_worklist_t {
     void       initialize()      { roots.clear(); }
-    void       process();
+    void       process(bool conservatively);
     bool       empty()           { return roots.empty(); }
     unchecked_ptr* pop_root()  { auto root = roots.back(); roots.pop_back(); return root; }
     void       add_root(unchecked_ptr* root) { PREFETCH_FOR_MARKING(*(void**)root); roots.push_back(root); }
@@ -403,7 +409,7 @@ struct condemned_set {
 
   int64_t lines_live;
 
-  void prepare_for_collection(uint64_t*, uint64_t*);
+  void prepare_for_tracing();
 };
 
 struct GCGlobals {
@@ -411,7 +417,6 @@ struct GCGlobals {
 
   condemned_set condemned_set;
 
-  ClusterMap clusterForAddress;
   memory_range typemap_memory;
 
   bool had_problems;
@@ -427,20 +432,12 @@ struct GCGlobals {
   clocktimer<true> init_start;
 
   int num_gcs_triggered;
-  int num_gcs_triggered_nurseryonly;
   int num_big_stackwalks;
-
-  double involuntary_ticks;
 
   uint64_t num_allocations;
   uint64_t num_alloc_bytes;
-  uint64_t num_subheaps_created;
-  uint64_t num_subheap_activations;
-  uint64_t num_roots_considered;
 
   uint64_t num_closure_calls;
-
-  uint64_t num_alloc_bytes_in_subheaps;
 
   uint64_t write_barrier_phase0_hits;
   uint64_t write_barrier_phase0b_hits;
@@ -455,12 +452,25 @@ struct GCGlobals {
   void**            lazy_mapped_markable_handles;
 
   frame15info*      lazy_mapped_frame15info;
-  uint8_t*          lazy_mapped_coarse_marks;
 
+  // Granule marks are set for objects which were live at last collection.
+  // Rather than a simple bitset, we encode object sizes in granule marks.
+  // Small and medium-sized objects (< 128 granules, or 2 KB) store their
+  // granule count in a single byte. Larger objects have the high bit set in
+  // their first granule mark.
   uint8_t*          lazy_mapped_granule_marks;
+
+  // Granule validity is set for objects which might be live:
+  //    those live at the last collection,
+  //    or those which have been subsequently allocated.
+  // In the literature, this is sometimes called an object map.
+  uint8_t*          lazy_mapped_granule_validity;
+
+  // Count of live bytes (per line) traced, used for defragmentation/evacuation.
   uint16_t*         lazy_mapped_frame_liveness;
 
   uint8_t*          lazy_mapped_line_marks;
+  uint8_t*          lazy_mapped_line_pins;
 
   struct hdr_histogram* hist_gc_stackscan_frames;
   struct hdr_histogram* hist_gc_stackscan_roots;
@@ -471,8 +481,6 @@ struct GCGlobals {
   struct hdr_histogram* hist_gc_alloc_large;
   uint64_t enum_gc_alloc_small[129];
 
-  int64_t evac_candidates_found;
-
   double last_full_gc_fragmentation_percentage;
   int evac_threshold;
   int64_t marked_histogram[128];
@@ -481,8 +489,6 @@ struct GCGlobals {
 };
 
 GCGlobals gcglobals;
-
-int64_t g_bytes_marked = 0;
 
 uint32_t fold_64_to_32(uint64_t x) {
   return uint32_t(x) ^ uint32_t(x >> uint64_t(32));
@@ -568,6 +574,7 @@ int select_defrag_threshold(double defrag_pad_factor) {
 
 // The worklist would be per-GC-thread in a multithreaded implementation.
 immix_worklist_t immix_worklist;
+std::vector<tori*> conservative_roots; // Invariant: contains valid tidy pointers.
 
 template <typename T>
 inline T num_granules(T size_in_bytes) { return size_in_bytes / T(16); }
@@ -618,19 +625,33 @@ void set_associated_for_frame15_id(frame15_id fid, void* v) {
 }
 
 inline bool obj_is_marked(heap_cell* obj) {
-  // Young objects aren't marked, but generally we only take shortcuts for
-  // marked objects, not unmarked ones, so checking the young bit is pointless.
   uint8_t* markbyte = &gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)];
+  if (*markbyte != 0) {
+    fprintf(gclog, "obj %p marked with 0x%x (markbyte addr %p)\n", obj, *markbyte, markbyte);
+  }
   return *markbyte != 0;
 }
 inline bool arr_is_marked(heap_array* obj) { return obj_is_marked((heap_cell*)obj); }
 
+inline bool is_actually_tidy(void* ptr) {
+  uint8_t* markbyte = &gcglobals.lazy_mapped_granule_validity[global_granule_for(ptr)];
+  return *markbyte != 0;
+}
+
+inline void designate_as_valid_object_start_addr(void* ptr) {
+  gcglobals.lazy_mapped_granule_validity[global_granule_for(ptr)] = 1;
+}
+
 // Roughly 3% degredation to incorporate size bits..
 inline void do_mark_obj_of_size(heap_cell* obj, int64_t cell_size) {
-  obj->mark_not_young();
-  if (GCLOG_DETAIL > 3) { fprintf(gclog, "setting granule bit  for object %p in frame %u\n", obj, frame15_id_of(obj)); }
+  //obj->mark_not_young();
+
+  designate_as_valid_object_start_addr(obj->body_addr());
+
   uintptr_t g0 = global_granule_for(obj);
-  int64_t size_in_granules = cell_size / 16;
+  int64_t size_in_granules = (cell_size + 15) / 16;
+
+  if (GCLOG_DETAIL > 3) { fprintf(gclog, "designated valid, now setting granule mark for object %p in frame %u; granule %zd ; #grans %d\n", obj, frame15_id_of(obj), g0, int(size_in_granules)); }
   //fprintf(gclog, "setting granule bits (%zd) for size-%zd object %p in frame %u with header %zx\n", size_in_granules, cell_size, obj, frame15_id_of(obj), obj->raw_header());
   if (size_in_granules < 128) {
       gcglobals.lazy_mapped_granule_marks[g0] = uint8_t(size_in_granules) + 128;
@@ -648,37 +669,15 @@ inline void do_mark_obj_of_size(heap_cell* obj, int64_t cell_size) {
   }
 }
 
-#if 0
-inline void do_mark_obj(heap_cell* obj) {
-  obj->mark_not_young();
-  if (GCLOG_DETAIL > 3) { fprintf(gclog, "setting granule bit  for object %p in frame %u\n", obj, frame15_id_of(obj)); }
-  gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)] = 1;
-}
-#endif
-
 inline void do_unmark_granule(void* obj) {
   gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)] = 0;
 }
 
-void clear_object_mark_bits_for_group(free_linegroup* g) {
-  auto num_freed_lines = linegroup_size_in_lines(g);
-  //fprintf(gclog, "Clearing object mark bits for free group %p (size %d)\n", g, num_freed_lines); fflush(gclog);
-  memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(g)], 0, num_freed_lines * IMMIX_GRANULES_PER_LINE);
+void clear_object_mark_and_validity_bits_for_used_group(used_linegroup& g) {
+  fprintf(gclog, "Clearing object mark and validity bits for used group @ %p (size %d lines)\n", g.base, g.count); fflush(gclog);
+  memset(&gcglobals.lazy_mapped_granule_marks   [global_granule_for(g.base)], 0, g.count * IMMIX_GRANULES_PER_LINE);
+  memset(&gcglobals.lazy_mapped_granule_validity[global_granule_for(g.base)], 0, g.count * IMMIX_GRANULES_PER_LINE);
 }
-
-void clear_object_mark_bits_for_used_group(used_linegroup& g) {
-  //fprintf(gclog, "Clearing object mark bits for used group @ %p (size %d)\n", g.base, g.count); fflush(gclog);
-  memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(g.base)], 0, g.count * IMMIX_GRANULES_PER_LINE);
-}
-
-#if 1
-void clear_object_mark_bits_for_frame15(void* f15) {
-  if (GCLOG_DETAIL > 2) { fprintf(gclog, "clearing granule bits for frame %p (%u)\n", f15, frame15_id_of(f15)); }
-  memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)], 0, IMMIX_GRANULES_PER_BLOCK);
-
-  gcglobals.lazy_mapped_frame_liveness[frame15_id_of(f15)] = 0;
-}
-#endif
 
 bool line_is_marked(  int line, uint8_t* linemap) { return linemap[line] != 0; }
 bool line_is_unmarked(int line, uint8_t* linemap) { return linemap[line] == 0; }
@@ -717,6 +716,7 @@ struct large_array_allocator {
       (init && !ELIDE_INITIALIZE_ALLOCATIONS)) { memset((void*) base, 0x00, total_bytes + 8); }
     allot->set_header(arr_elt_map);
     allot->set_num_elts(num_elts);
+    designate_as_valid_object_start_addr(allot->body_addr());
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
     if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
     if (TRACK_NUM_ALLOC_BYTES) { gcglobals.num_alloc_bytes += total_bytes; }
@@ -830,14 +830,10 @@ void mark_as_smallmedium(frame15* f) {
 
 // Markable objects live in the upper bits of address space;
 // the low 4 GB is for constants, (immutable) globals, etc.
+bool non_markable_addr_toosmall(void* addr) { return uintptr_t(addr) <   uintptr_t(0x100000000ULL); }
+bool non_markable_addr_toobig(void* addr) {   return uintptr_t(addr) >= (uintptr_t(1) << address_space_prefix_size_log()); }
 bool non_markable_addr(void* addr) {
-  return uintptr_t(addr) < uintptr_t(0x100000000ULL);
-}
-
-bool non_kosher_addr(void* addr) {
-  // The signed test catches negative values, which we assume are the
-  // result of looking at data that was supposed to be a pointer but isn't.
-  return intptr_t(addr) < 0x1000000;
+  return non_markable_addr_toosmall(addr) || non_markable_addr_toobig(addr); 
 }
 
 tidy* assume_tori_is_tidy(tori* p) { return (tidy*) p; }
@@ -855,6 +851,10 @@ const typemap* tryGetTypemap(heap_cell* cell);
 
 uint8_t* linemap_for_frame15_id(frame15_id fid) {
   return &gcglobals.lazy_mapped_line_marks[size_t(fid) * IMMIX_LINES_PER_FRAME15];
+}
+
+uint8_t* markmap_for_frame15_id(frame15_id fid) {
+  return &gcglobals.lazy_mapped_granule_marks[size_t(fid) * IMMIX_LINES_PER_FRAME15 * IMMIX_GRANULES_PER_LINE];
 }
 
 namespace helpers {
@@ -888,6 +888,7 @@ namespace helpers {
     }
     allot->set_header(arr_elt_map);
     allot->set_num_elts(num_elts);
+    designate_as_valid_object_start_addr(allot->body_addr());
     //if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(total_bytes); }
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
     if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
@@ -938,6 +939,7 @@ namespace helpers {
     if (TRACK_NUM_ALLOC_BYTES) { gcglobals.num_alloc_bytes += cell_size; }
     if (FOSTER_GC_ALLOC_HISTOGRAMS) { allocate_cell_prechecked_histogram((int) cell_size); }
     allot->set_header(map);
+    designate_as_valid_object_start_addr(allot->body_addr());
 
     if (GC_ASSERTIONS && line_for_slot_is_marked(allot)) {
       fprintf(gclog, "INVARIANT VIOLATED: allocating cell (%p) on a pre-marked line?!?\n", allot);
@@ -956,63 +958,54 @@ namespace helpers {
     return allot->body_addr();
   }
 
-#if 1
-  bool remset_entry_is_externally_stale(tori** slot) {
-    return !line_for_slot_is_marked(slot);
-  }
+  tidy* tidy_for(tori* t) { return (tidy*) t; }
 
-  bool remset_entry_is_internally_stale(tori** slot) {
-    tori* ptr = *slot;
-    if (non_kosher_addr(ptr)) { return true; }
-    frame15kind fk = classification_for_frame15_id(frame15_id_of(ptr));
-    if (fk == frame15kind::unknown) { return true; }
-
-    heap_cell* cell = heap_cell::for_tidy((tidy*) ptr);
-    /*
-    fprintf(gclog, "considering remset      ptr %p: body line marked %d, cell line marked %d, cell granule marked %d\n",
-      ptr, line_for_slot_is_marked(ptr ),
-           line_for_slot_is_marked(cell), obj_is_marked(cell)); fflush(gclog);
-           */
-    if (!obj_is_marked(cell)) { return true; }
-    // TODO check to make sure that the space ownership hasn't changed?
-    return false;
-  }
-
-  // Precondition: line marks have been established and not yet cleared.
-  bool remset_entry_is_externally_or_internally_stale(tori** slot) {
-    if (remset_entry_is_externally_stale(slot)) { return true; }
-    return remset_entry_is_internally_stale(slot);
-  }
-#endif
-
-  void visit_root(unchecked_ptr* root, const char* slotname) {
+  // Note: in conservative operation, all roots (including those from coros)
+  // must be collected before tracing. Otherwise, evacuation might move an
+  // object pointed to by a heap-allocated stack root.
+  void consider_conservative_root(unchecked_ptr* root) {
     gc_assert(root != NULL, "someone passed a NULL root addr!");
+    auto maybe_obj = unchecked_ptr_val(*root);
+    bool trivially_unmarkable = non_markable_addr(maybe_obj);
+
     if (GCLOG_DETAIL > 1) {
-      fprintf(gclog, "\t\tgc %d: STACK SLOT slot %s (%p) holds %p\n",
+      fprintf(gclog, "\t\tgc %d: STACK SLOT slot (%p) holds %p; might be markable? %d [tidy %d]\n",
                         gcglobals.num_gcs_triggered,
-                        (slotname ? slotname : "<unknown slot>"),
                         root,
-                        unchecked_ptr_val(*root)
+                        maybe_obj,
+                        trivially_unmarkable ? 0 : 1,
+                        (!trivially_unmarkable && is_actually_tidy(maybe_obj)) ? 1 : 0
                         );
-      /*
-      fprintf(gclog, "\t\tSTACK SLOT %p (in (%u)) contains ptr %p, slot name = %s\n", root, frame15_id_of(root),
-                        unchecked_ptr_val(*root),
-                        (slotname ? slotname : "<unknown slot>"));
-                        */
     }
 
-    if (!non_markable_addr(unchecked_ptr_val(*root))) {
-      immix_worklist.add_root(root);
+    if (trivially_unmarkable) { return; }
+
+    if ((uintptr_t(maybe_obj) & 0xF) == 0) {
+      if (is_actually_tidy(maybe_obj)) {
+        conservative_roots.push_back(maybe_obj);
+      }
+    } else {
+      // In case we get a pointer that isn't properly aligned to be tidy,
+      // we'll act as though it could be either of the nearest two tidy pointers.
+      auto tidy_obj = (tori*) ((uintptr_t(maybe_obj) + 15) & ~0xF);
+      maybe_obj     = (tori*) ((uintptr_t(maybe_obj)     ) & ~0xF);
+
+      if (is_actually_tidy(maybe_obj)) {
+        conservative_roots.push_back(maybe_obj);
+      }
+      if (is_actually_tidy(tidy_obj)) {
+        conservative_roots.push_back(tidy_obj);
+      }
     }
   }
 
-  void clear_line_and_object_mark_bits_for_used_group(used_linegroup g) {
+  void clear_line_and_object_mark_and_validity_bits_for_used_group(used_linegroup g) {
     auto fid = frame15_id_of(g.base);
     uint8_t* linemap = linemap_for_frame15_id(fid);
 
     //fprintf(gclog, "clearing linemap of size %zd\n", g.size_in_lines());
     memset(&linemap[g.startline()], 0, g.size_in_lines());
-    clear_object_mark_bits_for_used_group(g);
+    clear_object_mark_and_validity_bits_for_used_group(g);
   }
 
 } // namespace helpers
@@ -1094,19 +1087,6 @@ private:
   std::vector<free_linegroup*> biggers;
 
 public:
-  size_t num_cached_groups() { return singles.size() + biggers.size(); }
-  void reuse_big_linegroup(free_linegroup* fg) {
-    // fprintf(gclog, "reusing bigger linegroup %p of size %d\n",
-    //   fg, linegroup_size_in_lines(fg));
-    biggers.push_back(fg); }
-  void reuse_linegroup(free_linegroup* fg) {
-    // fprintf(gclog, "reusing linegroup @ %p of size %d\n", fg, linegroup_size_in_lines(fg));
-    if (linegroup_size_in_lines(fg) == 1) {
-      singles.push_back(fg);
-    } else {
-      biggers.push_back(fg);
-    }
-  }
   size_t get_curr_frame_idx() { return curr_frame15; }
   void reset_allocator_cache() {
     // fprintf(gclog, "resetting available line cache...\n");
@@ -1119,10 +1099,9 @@ public:
     reset_marked_histogram();
 
     int64_t num_lines_left_to_give = lines_reclaimed / 4; // at most...
-    //fprintf(gclog, "Reclaimed %zd lines, willing to give at most %zd for defrag reserve.\n", lines_reclaimed,  num_lines_left_to_give);
+    fprintf(gclog, "Reclaimed %zd lines, willing to give at most %zd for defrag reserve.\n", lines_reclaimed,  num_lines_left_to_give);
     while (num_lines_left_to_give > 0 && !defrag_reserve.full()) {
       auto fg = grab_free_linegroup<true>(1, IMMIX_LINES_PER_FRAME15);
-      // Invariant: slots marked used.
       if (fg) {
         num_lines_left_to_give -= linegroup_size_in_lines(fg);
         defrag_reserve.give_lines(fg);
@@ -1200,8 +1179,9 @@ public:
       if (small) {
         if (!singles.empty()) {
           auto g = singles.back(); singles.pop_back();
-          //fprintf(gclog, "marking single allocated line (size %zd) at %p\n", distance(g, g->bound), g);
-          //clear_object_mark_bits_for_group(g);
+          fprintf(gclog, "marking single allocated line (size %zd) at %p\n", distance(g, g->bound), g);
+          // Invariant(FREEMETACLEAR): metadata for free linegroups has already been cleared.
+          //    (cleared pre-collection, and by definition left unmodified)
           if (linegroup_size_in_lines(g) != 1) {
             fprintf(gclog, "OOPS singleton linegroup %p had non-1 size\n", g);
           }
@@ -1227,11 +1207,10 @@ public:
             fprintf(gclog, "OOPS bigger linegroup %p was oversized of size %d\n", g, size);
           }
 
-        // TODO trim on switch, not on allocation.
         if (size >= num_lines) {
           biggers[i] = nullptr;
           // fprintf(gclog, "grab_free_linegroup marking slots used from %p to %p stored at %p\n", g, g->bound, &g->bound);
-          //clear_object_mark_bits_for_group(g);
+          // Invariant(FREEMETACLEAR): metadata for free linegroups has already been cleared.
           return g;
         }
       }
@@ -1277,7 +1256,10 @@ public:
       }
       num_available_lines += (i - i0);
       g->bound = offset(f15, i * IMMIX_BYTES_PER_LINE);
-      helpers::clear_line_and_object_mark_bits_for_used_group(used_group_of_free_group(g));
+
+      // Validity bits must persist after collections.
+      // Mark bits could be cleared either before or after collection;
+      // we clear before, so no need to clear here too.
 
       if (i == i0 + 1) {
         singles.push_back(g);
@@ -1332,6 +1314,18 @@ void display_linemap_for_frame15_id(frame15_id fid) {
   fprintf(gclog, "\n");
 }
 
+void display_markmap_for_frame15_id(frame15_id fid) {
+  uint8_t* markmap = markmap_for_frame15_id(fid);
+  fprintf(gclog, "frame %u:              ", fid);
+  for (int i = 0; i < IMMIX_LINES_PER_FRAME15 * IMMIX_GRANULES_PER_LINE; ++i) {
+    fprintf(gclog, "%c", markmap[i] ? 'm' : '_');
+    if ((i % IMMIX_LINES_PER_FRAME15) == (IMMIX_LINES_PER_FRAME15 - 1)) {
+      fprintf(gclog, "\n                            ");
+    }
+  }
+  fprintf(gclog, "\n");
+}
+
 void display_used_linegroup_linemap(used_linegroup* g, uint8_t* linemap) {
   if (g->count == IMMIX_LINES_PER_FRAME15) {
     auto fid = frame15_id_of(g->base);
@@ -1348,7 +1342,7 @@ void display_used_linegroup_linemap(used_linegroup* g, uint8_t* linemap) {
 }
 
 
-void used_linegroup::clear_line_and_object_mark_bits() {
+void used_linegroup::clear_line_and_object_mark_and_validity_bits() {
   uint8_t* linemap = linemap_for_frame15_id(associated_frame15_id());
   auto lineframe = associated_lineframe();
 
@@ -1362,8 +1356,7 @@ void used_linegroup::clear_line_and_object_mark_bits() {
   gc_assert(startline() >= 0, "invalid startline when clearing bits");
   gc_assert(endline() <= IMMIX_LINES_PER_BLOCK, "invalid endline when clearing bits");
   gc_assert(startline() < endline(), "invalid: startline after endline when clearing bits");
-  //clear_object_mark_bits_for_frame15(lineframe, startline(), (endline() - startline()) + 1);
-  clear_object_mark_bits_for_used_group(*this);
+  clear_object_mark_and_validity_bits_for_used_group(*this);
 }
 
 // {{{ metadata helpers
@@ -1557,6 +1550,9 @@ namespace immix_common {
     heap_array* arr = NULL;
     const typemap* map = NULL;
     int64_t cell_size;
+
+    fprintf(gclog, "Scanning cell %p; body marked as valid? %d\n", cell, is_actually_tidy(cell->body_addr())); fflush(gclog);
+
     get_cell_metadata(cell, arr, map, cell_size);
 
     do_mark_obj_of_size(cell, cell_size);
@@ -1576,7 +1572,8 @@ namespace immix_common {
     }
 
     for_each_child_slot_with(cell, arr, map, cell_size, [cell](intr* slot) {
-      if (!non_markable_addr(* (void**)slot)) {
+      // We only need to filter non-markable constants; type safety ensures we won't see un-allocated pointer values.
+      if (!non_markable_addr_toosmall(* (void**)slot)) {
         if (0) {
         fprintf(gclog, "gc %d: adding to worklist slot %p of cell %p holding ptr %p\n",
                         gcglobals.num_gcs_triggered,
@@ -1605,7 +1602,6 @@ namespace immix_common {
   }
 
   // Jones/Hosking/Moss refer to this function as "process(fld)".
-  // Returns 1 if root was located in a condemned space; 0 otherwise.
   // Precondition: root points to an unmarked, unforwarded, markable object.
   void immix_trace(unchecked_ptr* root, heap_cell* obj) {
     //       |------------|       obj: |------------|
@@ -1791,7 +1787,44 @@ void append_linegroup(std::vector<used_linegroup>& lines, used_linegroup u) {
 std::set<heap_cell*> g_marked_this_cycle;
 #endif
 
-void process_worklist();
+void process_worklists();
+
+void collect_all_potential_roots() {
+  // Caller-saved registers will be on the stack already, but we may need to
+  // inspect/collect callee-saved registers. We collect the union of SysV and
+  // Microsoft's calling convention saved registers, except for RBP and RSP.
+  void* registers[7] = { 0 };
+  __asm__ (
+        "movq %%rbx,   (%0)\n\t"
+        "movq %%r12,  8(%0)\n\t"
+        "movq %%r13, 16(%0)\n\t"
+        "movq %%r14, 24(%0)\n\t"
+        "movq %%r15, 32(%0)\n\t"
+        "movq %%rdi, 40(%0)\n\t"
+        "movq %%rsi, 48(%0)\n\t"
+    : // no output
+    : "r" (registers) // store in any register
+    // nothing clobbered
+  );
+  for (int i = 0; i < 7; ++i) {
+    helpers::consider_conservative_root((unchecked_ptr*) &registers[i]);
+  }
+
+  collect_roots_from_stack(__builtin_frame_address(0));
+
+  // TODO: should keep a list of dirty coros and scan them before tracing.
+  foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
+  foster_bare_coro*  coro = *coro_slot;
+  if (coro) {
+    if (GCLOG_DETAIL > 1) {
+      fprintf(gclog, "==========visiting current coro: %p\n", coro); fflush(gclog);
+    }
+    helpers::consider_conservative_root((unchecked_ptr*)coro_slot);
+    if (GCLOG_DETAIL > 1) {
+      fprintf(gclog, "==========visited current coro: %p\n", coro); fflush(gclog);
+    }
+  }
+}
 
 void immix_common::common_gc() {
 #if DEBUG_VERIFY_MARK_BITS
@@ -1837,44 +1870,29 @@ void immix_common::common_gc() {
       }
     }
 
-    phase.start();
-    uint64_t numGenRoots = 0;
-    uint64_t numRemSetRoots = 0;
-    gcglobals.condemned_set.prepare_for_collection(&numGenRoots, &numRemSetRoots);
-    auto markResettingAndRemsetCollection_us = phase.elapsed_us();
+    fprintf(gclog, "Before gathering roots, validity mark X was %d\n", gcglobals.lazy_mapped_granule_validity[7623017691832]);
 
     phase.start();
-
-    collect_roots_from_stack(__builtin_frame_address(0));
-
+    collect_all_potential_roots();
     auto rootCollection_us = phase.elapsed_us();
 
-    //hdr_record_value(gcglobals.hist_gc_stackscan_roots, gNumRootsScanned);
     phase.start();
-    foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
-    foster_bare_coro*  coro = *coro_slot;
-    if (coro) {
-      if (GCLOG_DETAIL > 1) {
-        fprintf(gclog, "==========visiting current coro: %p\n", coro); fflush(gclog);
-      }
-      helpers::visit_root((unchecked_ptr*)coro_slot, NULL);
-      if (GCLOG_DETAIL > 1) {
-        fprintf(gclog, "==========visited current coro: %p\n", coro); fflush(gclog);
-      }
-    }
+    gcglobals.condemned_set.prepare_for_tracing();
+    auto markResetting_us = phase.elapsed_us();
 
-    if (GCLOG_DETAIL > 1) { fprintf(gclog, "    THRESHOLD IS %d\n", gcglobals.evac_threshold); }
+    fprintf(gclog, "Before tracing, validity mark X was %d...\n", gcglobals.lazy_mapped_granule_validity[7623017691832]);
 
-    process_worklist();
-
-    auto deltaRecursiveMarking_us = phase.elapsed_us();
+    if (ENABLE_OPPORTUNISTIC_EVACUATION && GCLOG_DETAIL > 1) { fprintf(gclog, "    THRESHOLD IS %d\n", gcglobals.evac_threshold); }
+  
+    phase.start();
+    process_worklists();
+    auto recursiveMarking_us = phase.elapsed_us();
 
     if (GCLOG_PRINT_LINE_MARKS) { global_space_allocator.display_heap_linemaps(); }
 
     phase.start();
 
     auto bytes_marked = gcglobals.alloc_bytes_marked_total - bytes_marked_at_start;
-    g_bytes_marked = bytes_marked;
 
     gcglobals.condemned_set.lines_live = 0;
     int64_t num_lines_tracked = 0;
@@ -1939,17 +1957,17 @@ void immix_common::common_gc() {
 
       if (ENABLE_GC_TIMING) {
         double delta_us = gcstart.elapsed_us();
-        double other_us = delta_us - (rootCollection_us + deltaRecursiveMarking_us + sweep_us + markResettingAndRemsetCollection_us);
+        double other_us = delta_us - (rootCollection_us + recursiveMarking_us + sweep_us + markResetting_us);
         fprintf(gclog, "\ttook %zd us which was %.2f%% stack root collection, %.2f%% (%.1f us) from remsets & mark resetting, %.2f%% marking, %.2f%% sweeping (%.1f us), %.2f%% other (%.1f us)\n",
                           int64_t(delta_us),
                           (rootCollection_us * 100.0)/delta_us,
-                          (markResettingAndRemsetCollection_us * 100.0)/delta_us, markResettingAndRemsetCollection_us,
-                          (deltaRecursiveMarking_us * 100.0)/delta_us,
+                          (markResetting_us * 100.0)/delta_us, markResetting_us,
+                          (recursiveMarking_us * 100.0)/delta_us,
                           (sweep_us * 100.0)/delta_us, sweep_us,
                           (other_us * 100.0)/delta_us, other_us
                           );
 
-        //double collection_us = deltaRecursiveMarking_us + sweep_us;
+        //double collection_us = recursiveMarking_us + sweep_us;
         //g_sweeping_total_us += sweep_us;
         double lines_per_us = double(num_lines_reclaimed) / delta_us;
         double ns_per_line = (delta_us * 1000.0) / double(num_lines_reclaimed);
@@ -2034,31 +2052,32 @@ public:
     if (GCLOG_DETAIL > 2) { fprintf(gclog, "new immix_space %p\n", this); }
   }
 
-  virtual void dump_stats(FILE* json) {
+  void dump_stats(FILE* json) {
     return;
   }
 
-  virtual uint64_t prepare_for_collection() {
-    // Since we're not doing a sticky collection, we want to clear prior marks.    
-    clear_line_and_object_mark_bits();
+  void prepare_for_tracing() {  
+    clear_line_and_object_mark_and_validity_bits();
 
-    // ... and also discard the remembered set, since our "nursery" will be promoted.
-    //generational_remset.clear();
-    return 0;
+    // Note: the object map is used before tracing starts, to identify
+    // valid references from conservative roots. We clear the object map
+    // here, and tracing re-establishes validity for live objects.
+
+    // In a generational collector, we'd also discard the remembered set here.
   }
 
-  void clear_line_and_object_mark_bits() {
-      laa.reset_large_array_marks();
+  void clear_line_and_object_mark_and_validity_bits() {
+    laa.reset_large_array_marks();
 
-      tracking.iter_used_lines_void([this](used_linegroup g) {
-          /*
-          fprintf(gclog, "GCPREP: clearing linegroup at line %d of (%u)(+%d)\n",
-              line_offset_within_f15(g.base),
-              frame15_id_of(g.base),
-              g.count);
-              */
-        helpers::clear_line_and_object_mark_bits_for_used_group(g);
-      });
+    tracking.iter_used_lines_void([this](used_linegroup g) {
+        /*
+        fprintf(gclog, "GCPREP: clearing linegroup at line %d of (%u)(+%d)\n",
+            line_offset_within_f15(g.base),
+            frame15_id_of(g.base),
+            g.count);
+            */
+      helpers::clear_line_and_object_mark_and_validity_bits_for_used_group(g);
+    });
   }
 
   void clear_current_blocks() {
@@ -2075,7 +2094,7 @@ public:
     medium_bumper.base = medium_bumper.bound;
   }
 
-  virtual void force_gc_for_debugging_purposes() {
+  void force_gc_for_debugging_purposes() {
     if (GCLOG_DETAIL > 2) { fprintf(gclog, "force_gc_for_debugging_purposes triggering immix gc\n"); }
     immix_common::common_gc();
   }
@@ -2103,6 +2122,8 @@ public:
 
   template <bool small>
   bool try_prep_allocatable_block(bump_allocator* bumper, int64_t cell_size) __attribute__((noinline)) {
+    fprintf(gclog, "trying to prep allocatable block of size %d (small=%d) from bumper %p\n", int(cell_size), int(small), bumper);
+
     // Note the implicit policy embodied below in the preference between
     // using recycled frames, clean used frames, or fresh/new frames.
     //
@@ -2113,12 +2134,12 @@ public:
     auto lines_needed = small ? 1 : ((cell_size + (IMMIX_BYTES_PER_LINE - 1)) / IMMIX_BYTES_PER_LINE);
     free_linegroup* g = global_space_allocator.grab_free_linegroup<small>(lines_needed, 128);
     if (!g) {
-      // fprintf(gclog, "grab_free_linegroup(for %zd bytes = %d lines) returned null\n", cell_size, lines_needed);
+      fprintf(gclog, "grab_free_linegroup(for %zd bytes = %d lines) returned null\n", cell_size, lines_needed);
       return false;
     }
 
     approx_lines_allocated_since_last_collection += linegroup_size_in_lines(g);
-    // fprintf(gclog, "try_prep_allocable_block installing free group of size %d\n", linegroup_size_in_lines(g));
+    fprintf(gclog, "try_prep_allocable_block installing free group of size %d\n", linegroup_size_in_lines(g));
     tracking.add_and_install_free_group(g, *bumper);
 
     if (ENABLE_GCLOG_PREP) {
@@ -2128,15 +2149,13 @@ public:
           line_offset_within_f15(g),
           frame15_id_of(g), this,
           global_space_allocator.get_curr_frame_idx());
-      //display_linemap_for_frame15_id(frame15_id_of(g));
+      display_linemap_for_frame15_id(frame15_id_of(g));
     }
 
     if (MEMSET_FREED_MEMORY) {
       auto dist = distance(g, g->bound);
-      memset(offset(g, 16), 0xef, dist - 16);
-      /*
       if (dist > 16) {
-        fprintf(gclog, "INFO: prepared block from %p to %p; size %d\n",
+        fprintf(gclog, "INFO: prepared block from %p to %p; size %d bytes\n",
           g, g->bound, dist);
         fflush(gclog);
         
@@ -2148,7 +2167,7 @@ public:
         fflush(gclog);
         return false;
       }
-      */
+      memset(offset(g, 16), 0xef, dist - 16);
     }
     return true;
   }
@@ -2177,11 +2196,10 @@ public:
       gcglobals.evac_threshold = 0;
       return false;
     } else {
-      //memset(&linemap[g.startline()], 0, g.size_in_lines());
-      helpers::clear_line_and_object_mark_bits_for_used_group(used_group_of_free_group(g));
+      // Invariant(FREEMETACLEAR): defrag reserve is populated with free linegroups so no need to clear metadata.
       tracking.add_and_install_free_group(g, small_bumper);
+      return true;
     }
-    return true;
   }
 
   tidy* defrag_copy_cell(heap_cell* cell, typemap* map, int64_t cell_size) {
@@ -2225,9 +2243,9 @@ public:
     }
   }
 
-  virtual void* allocate_cell_16(typemap* typeinfo) { return allocate_cell_N<16>(typeinfo); }
-  virtual void* allocate_cell_32(typemap* typeinfo) { return allocate_cell_N<32>(typeinfo); }
-  virtual void* allocate_cell_48(typemap* typeinfo) { return allocate_cell_N<48>(typeinfo); }
+  void* allocate_cell_16(typemap* typeinfo) { return allocate_cell_N<16>(typeinfo); }
+  void* allocate_cell_32(typemap* typeinfo) { return allocate_cell_N<32>(typeinfo); }
+  void* allocate_cell_48(typemap* typeinfo) { return allocate_cell_N<48>(typeinfo); }
 
   void* allocate_cell_slowpath(typemap* typeinfo) __attribute__((noinline))
   {
@@ -2290,11 +2308,9 @@ public:
 
   // }}}
 
-  virtual tidy* tidy_for(tori* t) { return (tidy*) t; }
+  bool is_empty() { return laa.empty() && tracking.num_lines_tracked() == 0; }
 
-  virtual bool is_empty() { return laa.empty() && tracking.num_lines_tracked() == 0; }
-
-  virtual uint64_t approx_size_in_bytes() {
+  uint64_t approx_size_in_bytes() {
     return (tracking.num_lines_tracked() * IMMIX_BYTES_PER_LINE)
            + laa.approx_size_in_bytes();
   }
@@ -2394,29 +2410,21 @@ public:
       display_used_linegroup_linemap(&g, linemap);
     }
 
-    free_linegroup* fg = nullptr;
-    // fprintf(gclog, "g.count is %d\n", g.count);
+    free_linegroup* fg = nullptr; // TODO remove?
+
     if (g.count > IMMIX_LINES_PER_FRAME15) {
       fprintf(gclog, "OOPS: watch *%p\n", &g.count);
     }
+
+    fprintf(gclog, "g.count is %d for %p\n", g.count, g.base);
+
     for (int i = 0; i < g.count; ++i) {
       bool is_marked = line_is_marked(g.startline() + i, linemap);
       if (is_marked) {
         ++num_marked_lines;
 
         if (was_free) { // start new used group
-          if (fg) { // finalize previous free group
-            if (linegroup_size_in_lines(fg) >= 16) {
-              // Immediately reuse large line groups; this balances fragmentation
-              // from coalescing with locality for high-frequency reclamation.
-              //fprintf(gclog, "reusing linegroup %p of size %d lines\n", fg, linegroup_size_in_lines(fg));
-              global_space_allocator.reuse_big_linegroup(fg);
-            } else {
-              //fprintf(gclog, "dropping smaller linegroup of %d lines\n", linegroup_size_in_lines(fg));
-              global_space_allocator.reuse_linegroup(fg);
-            }
-            fg = nullptr;
-          }
+          fg = nullptr;
           if (ug.count > 0) {
             tracking.note_used_group(ug); // return used group
           }
@@ -2436,14 +2444,17 @@ public:
         }
 
         if (GCLOG_DETAIL > 2) {
-          fprintf(gclog, "gc %d: INFO: clearing line %d of frame %u @ %p; space=%p\n",
+          fprintf(gclog, "gc %d: INFO: clearing contents of line %d of frame %u @ %p; space=%p\n",
               gcglobals.num_gcs_triggered,
             line_offset_within_f15(offset(g.base, i * IMMIX_BYTES_PER_LINE)),
             frame15_id_of(offset(g.base, i * IMMIX_BYTES_PER_LINE)),
             offset(g.base, i * IMMIX_BYTES_PER_LINE), this);
         }
         if (MEMSET_FREED_MEMORY) {
-          memset(offset(g.base, i * IMMIX_BYTES_PER_LINE), 0xdf, IMMIX_BYTES_PER_LINE);
+          // Be careful not to overwrite the metadata in `fg` that we just computed!
+          memset(offset(g.base, (i * IMMIX_BYTES_PER_LINE) + sizeof(free_linegroup)),
+                 0xdf,
+                 IMMIX_BYTES_PER_LINE - sizeof(free_linegroup));
         }
         // Nothing to do!
         #if 0
@@ -2460,18 +2471,6 @@ public:
         #endif
       }
       was_free = !is_marked;
-    }
-
-    if (fg) {
-      if (linegroup_size_in_lines(fg) >= 16) {
-        // Immediately reuse large line groups; this balances fragmentation
-        // from coalescing with locality for high-frequency reclamation.
-        global_space_allocator.reuse_big_linegroup(fg);
-        //fprintf(gclog, "reusing bigger linegroup of %d lines\n", linegroup_size_in_lines(fg));
-      } else {
-        global_space_allocator.reuse_linegroup(fg);
-        //fprintf(gclog, "dropping smaller linegroup of %d lines\n", linegroup_size_in_lines(fg));
-      }
     }
     
     if (ug.count > 0) {
@@ -2571,34 +2570,6 @@ public:
 #endif
   }
 
-#if 0
-  void copy_frame15_ids(std::vector<frame15_id>& ids) {
-    return tracking.copy_frame15_ids(ids);
-  }
-#endif
-
-  int trim_bumper(bump_allocator& b) {
-    int n = 0;
-    if (free_linegroup* g = b.trim_trailing_lines()) {
-      n = linegroup_size_in_lines(g);
-      if (n > 0) {
-        //fprintf(gclog, "trimming group %d by %d lines\n", b.group, n);
-        approx_lines_allocated_since_last_collection -= n;
-        tracking.trim_ith_group_by(b.group, n);
-        global_space_allocator.reuse_linegroup(g);
-      }      
-    }
-    return n;
-  }
-
-  void relinquish_unused_capacity() {
-    int sm_n  = trim_bumper(small_bumper);
-    (void) sm_n;
-    //int med_n = trim_bumper(medium_bumper);
-    //fprintf(gclog, "reqlinquishing %d lines\n", sm_n);
-    //fprintf(gclog, "reqlinquishing %d = %d = %d lines\n", sm_n, med_n, sm_n + med_n);
-  }
-
 private:
   // These bumpers point into particular frame15s.
   bump_allocator small_bumper;
@@ -2607,15 +2578,14 @@ private:
   large_array_allocator laa;
 
   immix_space_tracking tracking;
-
+ 
   uint64_t approx_lines_allocated_since_last_collection;
   // immix_space_end
 };
 
 
-void condemned_set::prepare_for_collection( uint64_t* numGenRoots,
-                                            uint64_t* numRemSetRoots) {
-  *numGenRoots += gcglobals.allocator->prepare_for_collection();
+void condemned_set::prepare_for_tracing() {
+  gcglobals.allocator->prepare_for_tracing();
 }
 
 int64_t condemned_set::sweep_condemned(
@@ -2634,16 +2604,24 @@ int64_t condemned_set::sweep_condemned(
   return num_lines_reclaimed;
 }
 
-bool was_zero_mark(uintptr_t g) { return gcglobals.lazy_mapped_granule_marks[g] == 0; }
-bool was_continuation_granule_mark(uintptr_t g) { return (gcglobals.lazy_mapped_granule_marks[g] & 0x80) == 0; }
+void process_worklists() {
+  if (GCLOG_DETAIL > 0) { fprintf(gclog, "Before processing, had %zd conservative roots\n", conservative_roots.size()); }
 
+  for (auto tidyptr : conservative_roots) {
+    auto obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(tidyptr));
+    #if DEBUG_VERIFY_MARK_BITS
+      g_marked_this_cycle.insert(obj);
+    #endif
+    immix_common::scan_cell(obj);
+  }
+  conservative_roots.clear();
 
-void process_worklist() {
-  if (GCLOG_DETAIL > 0) { fprintf(gclog, "Before processing, immix worklist contained %zd roots\n", immix_worklist.size()); }
-  immix_worklist.process();
+  if (GCLOG_DETAIL > 0) { fprintf(gclog, "DONE PROCESSING CONSERVATIVE ROOTS.\n"); }
+  immix_worklist.process(false);
+  if (GCLOG_DETAIL > 0) { fprintf(gclog, "After processing, had %zd conservative roots\n", conservative_roots.size()); }
 }
 
-void immix_worklist_t::process() {
+void immix_worklist_t::process(bool conservatively) {
   while (true) {
     unchecked_ptr* root;
 #if USE_FIFO_SIZE > 0
@@ -2682,16 +2660,17 @@ void immix_worklist_t::process() {
     root = pop_root();
 #endif
 
-    tori* body = unchecked_ptr_val(*root); // TODO drop the assumption that body is a tidy pointer.
+    tori* body = unchecked_ptr_val(*root);
+    // ASSUMPTION: no language-level interior pointers
     heap_cell* obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(body));
 
-    if (0) {
-      fprintf(gclog, "gc %d: root %p contains object %p (line %d of frame %u)\n", // with header %zx\n",
+    if (1) {
+      fprintf(gclog, "gc %d: root %p contains object %p (body %p) (line %d of frame %u) with header %zx\n",
           gcglobals.num_gcs_triggered,
-          root, obj,
+          root, obj, body,
           line_offset_within_f15(root),
                   frame15_id_of(root)
-          //, obj->raw_header()
+          , obj->raw_header()
           );
     }
 
@@ -2701,7 +2680,9 @@ void immix_worklist_t::process() {
     } else if (obj_is_marked(obj)) {
 #if DEBUG_VERIFY_MARK_BITS
       if (g_marked_this_cycle.count(obj) == 0) {
-        fprintf(gclog, "WARN: mark bits not properly cleared for obj %p\n", obj);
+        fprintf(gclog, "WARN: mark bits not properly cleared for obj %p (body %p granule %zd)\n", obj, body, global_granule_for(obj->body_addr()));
+        fprintf(stderr, "WARN: mark bits not properly cleared for obj %p (body %p granule %zd)\n", obj, body, global_granule_for(obj->body_addr())); fflush(stderr);
+        g_marked_this_cycle.insert(obj);
       }
 #endif
       // Skip marked objects.
@@ -2747,7 +2728,7 @@ void* immix_common::evac_with_map_and_arr(heap_cell* cell, const typemap* map,
   heap_cell* newcell = heap_cell::for_tidy(newbody);
   heap_array* newarr = arr ? heap_array::from_heap_cell(newcell) : nullptr;
   for_each_child_slot_with(newcell, newarr, map, cell_size, [](intr* slot) {
-      if (!non_markable_addr(* (void**)slot)) {
+      if (!non_markable_addr_toosmall(* (void**)slot)) {
         immix_worklist.add_root((unchecked_ptr*) slot);
       }
   });
@@ -2799,10 +2780,6 @@ void collect_roots_from_stack(void* start_frame) {
     }
   }
 
-  // Use the collected return addresses to look up a safe point
-  // cluster map, which gives offsets from the corresponding
-  // frame pointer at which we will find pointers to be scanned.
-
   // For now, we must disable frame pointer elimination
   // to ensure that we can calculate the stack pointer
   // (which requires that we have a frame pointer).
@@ -2813,7 +2790,7 @@ void collect_roots_from_stack(void* start_frame) {
   // the performance gain from FPE is only on the order of
   // 1 to 3%, so it's not a critical optimization.
   //
-  // Note that while LLVM's GC plugin architecture tells us
+  // Note that while LLVM's GC plugin architecture can tell us
   // frame sizes for Foster functions, and thus lets us
   // theoretically reconstruct frame boundaries once we
   // reach the land of Foster, we still need "a few"
@@ -2822,46 +2799,22 @@ void collect_roots_from_stack(void* start_frame) {
   // If we were willing to accept a dependency on libgcc,
   // we could reuse the _Unwind_Backtrace function to unwind
   // past libfoster frames and then use LLVM's computed
-  // stack frame sizes to crawl the rest of the stack.
+  // stack frame sizes to crawl the rest of the stack
+  // (assuming no interspersed foreign frames...).
 
   for (int i = 0; i < nFrames; ++i) {
-    ret_addr safePointAddr = frames[i].retaddr;
     frameptr fp = (frameptr) frames[i].frameptr;
     frameptr sp = (i == 0) ? fp : offset(frames[i - 1].frameptr, 2 * sizeof(void*));
 
-    const stackmap::PointCluster* pc = gcglobals.clusterForAddress[safePointAddr];
-    if (!pc) {
-      if (GCLOG_DETAIL > 3) {
-        fprintf(gclog, "no point cluster for address %p with frame ptr%p\n", safePointAddr, fp);
-      }
-      continue;
-    }
+    // Iterate over all (aligned) potential root slots in the frame.
+    frameptr lower = std::min(fp, sp);
+    frameptr upper = std::max(fp, sp);
 
-    if (GCLOG_DETAIL > 3) {
-      fprintf(gclog, "\nframe %d: retaddr %p, frame ptr %p: live count w/meta %d, w/o %d\n",
-        i, safePointAddr, fp,
-        pc->liveCountWithMetadata, pc->liveCountWithoutMetadata);
+    while (lower <= upper) {
+      fprintf(gclog, "considering potential root %p in frame %d\n", lower, i);
+      helpers::consider_conservative_root((unchecked_ptr*) lower);
+      lower = offset(lower, sizeof(void*));
     }
-
-    const void* const* ms = pc->getMetadataStart();
-    const int32_t    * lo = pc->getLiveOffsetWithMetaStart();
-    int32_t frameSize = pc->frameSize;
-    if (TRACK_NUM_ROOTS_CONSIDERED) { gcglobals.num_roots_considered += pc->liveCountWithMetadata; }
-    for (int a = 0; a < pc->liveCountWithMetadata; ++a) {
-      int32_t     off = lo[a];
-      const void*   m = ms[a];
-      void*  rootaddr = (off <= 0) ? offset(fp, off)
-                                   : offset(sp, off);
-      helpers::visit_root((unchecked_ptr*) rootaddr, (const char*) m);
-/*
-      if (!non_markable_addr(*(void**)rootaddr)) {
-        immix_worklist.add_root((unchecked_ptr*) rootaddr);
-      }
-      */
-    }
-
-    gc_assert(pc->liveCountWithoutMetadata == 0,
-                  "TODO: scan pointer w/o metadata");
   }
 }
 // }}}
@@ -2964,13 +2917,6 @@ void collect_roots_from_stack_of_coro(foster_bare_coro* coro) {
 //////////////////////////////////////////////////////////////}}}
 
 // {{{ GC startup & shutdown
-void register_stackmaps(ClusterMap&); // see foster_gc_stackmaps.cpp
-
-int address_space_prefix_size_log() {
-  if (sizeof(void*) == 4) { return 32; }
-  if (sizeof(void*) == 8) { return 47; }
-  exit(3); return 0;
-}
 
 template<typename T>
 T* allocate_lazily_zero_mapped(size_t num_elts) {
@@ -2987,9 +2933,6 @@ T* allocate_lazily_zero_mapped(size_t num_elts) {
 #endif
 }
 
-size_t lazy_mapped_frame15_condemned_size() { return (size_t(1) << (address_space_prefix_size_log() - 15)); }
-size_t lazy_mapped_granule_marks_size() {     return (size_t(1) <<  address_space_prefix_size_log()     ) / (16 * 1); } 
-
 extern "C" void* opaquely_ptr(void*);
 
 void initialize(void* stack_highest_addr) {
@@ -3004,13 +2947,14 @@ void initialize(void* stack_highest_addr) {
   (*gcglobals.lazy_mapped_markable_handles) = offset(gcglobals.lazy_mapped_markable_handles, sizeof(heap_handle<immix_space>));
 
   gcglobals.lazy_mapped_frame15info             = allocate_lazily_zero_mapped<frame15info>(     size_t(1) << (address_space_prefix_size_log() - 15));
-  gcglobals.lazy_mapped_coarse_marks            = allocate_lazily_zero_mapped<uint8_t>(         size_t(1) << (address_space_prefix_size_log() - COARSE_MARK_LOG));
   //gcglobals.lazy_mapped_coarse_condemned        = allocate_lazily_zero_mapped<condemned_status>(size_t(1) << (address_space_prefix_size_log() - COARSE_MARK_LOG));
   //gcglobals.lazy_mapped_frame15info_associated  = allocate_lazily_zero_mapped<void*>(      size_t(1) << (address_space_prefix_size_log() - 15));
   //
   gcglobals.lazy_mapped_granule_marks           = allocate_lazily_zero_mapped<uint8_t>(lazy_mapped_granule_marks_size()); // byte marks
+  gcglobals.lazy_mapped_granule_validity        = allocate_lazily_zero_mapped<uint8_t>(lazy_mapped_granule_marks_size());
   gcglobals.lazy_mapped_frame_liveness          = allocate_lazily_zero_mapped<uint16_t>(     size_t(1) << (address_space_prefix_size_log() - 15));
   gcglobals.lazy_mapped_line_marks              = allocate_lazily_zero_mapped<uint8_t>(      size_t(1) << (address_space_prefix_size_log() - IMMIX_LINE_SIZE_LOG));
+  gcglobals.lazy_mapped_line_pins               = allocate_lazily_zero_mapped<uint8_t>(      size_t(1) << (address_space_prefix_size_log() - IMMIX_LINE_SIZE_LOG));
   
 
   global_space_allocator.set_heap_size(gSEMISPACE_SIZE());
@@ -3019,19 +2963,11 @@ void initialize(void* stack_highest_addr) {
   gcglobals.had_problems = false;
   gcglobals.logall = false;
 
-  register_stackmaps(gcglobals.clusterForAddress);
-
   gcglobals.gc_time_us = 0.0;
   gcglobals.num_gcs_triggered = 0;
-  gcglobals.num_gcs_triggered_nurseryonly = 0;
   gcglobals.num_big_stackwalks = 0;
-  gcglobals.involuntary_ticks = 0.0;
   gcglobals.num_allocations = 0;
   gcglobals.num_alloc_bytes = 0;
-  gcglobals.num_alloc_bytes_in_subheaps = 0;
-  gcglobals.num_subheaps_created = 0;
-  gcglobals.num_subheap_activations = 0;
-  gcglobals.num_roots_considered = 0;
   gcglobals.write_barrier_phase0_hits = 0;
   gcglobals.write_barrier_phase0b_hits = 0;
   gcglobals.write_barrier_phase1_hits = 0;
@@ -3040,7 +2976,6 @@ void initialize(void* stack_highest_addr) {
   gcglobals.alloc_bytes_marked_total = 0;
   gcglobals.max_bytes_live_at_whole_heap_gc = 0;
   gcglobals.num_closure_calls = 0;
-  gcglobals.evac_candidates_found = 0;
   gcglobals.evac_threshold = 0;
   gcglobals.last_full_gc_fragmentation_percentage = 0.0;
 
@@ -3215,8 +3150,6 @@ FILE* print_timing_stats() {
   auto gc_elapsed = gcglobals.gc_time_us / 1e6;
   auto mut_elapsed = total_elapsed - gc_elapsed;
 
-  fprintf(gclog, "'F21_UnsafeAssumedClean': %s\n", UNSAFE_ASSUME_F21_UNMARKED ? "true" : "false");
-
   FILE* json = __foster_globals.dump_json_stats_path.empty()
                 ? NULL
                 : fopen(__foster_globals.dump_json_stats_path.c_str(), "w");
@@ -3261,15 +3194,6 @@ FILE* print_timing_stats() {
 
   fprintf(gclog, "'Num_Big_Stackwalks': %d\n", gcglobals.num_big_stackwalks);
   fprintf(gclog, "'Num_GCs_Triggered': %d\n", gcglobals.num_gcs_triggered);
-  fprintf(gclog, "'Num_GCs_NurseryOnly': %d\n", gcglobals.num_gcs_triggered_nurseryonly);
-  {
-    auto s = foster::humanize_s(double(gcglobals.num_subheaps_created), "");
-    fprintf(gclog, "'Num_Subheaps_Created': %s\n", s.c_str());
-  }
-  {
-    auto s = foster::humanize_s(double(gcglobals.num_subheap_activations), "");
-    fprintf(gclog, "'Num_Subheap_Activations': %s\n", s.c_str());
-  }
   if (TRACK_NUM_ALLOCATIONS) {
     auto s = foster::humanize_s(double(gcglobals.num_allocations), "");
     fprintf(gclog, "'Num_Allocations': %s\n", s.c_str());
@@ -3277,10 +3201,6 @@ FILE* print_timing_stats() {
   if (TRACK_NUM_ALLOC_BYTES) {
     auto s = foster::humanize_s(double(gcglobals.num_alloc_bytes), "B");
     fprintf(gclog, "'Num_Alloc_Bytes': %s\n", s.c_str());
-  }
-  if (TRACK_NUM_ALLOC_BYTES) {
-    auto s = foster::humanize_s(double(gcglobals.num_alloc_bytes_in_subheaps), "B");
-    fprintf(gclog, "'Num_Alloc_Bytes_In_Subheaps': %s\n", s.c_str());
   }
   if (TRACK_NUM_OBJECTS_MARKED && gcglobals.max_bytes_live_at_whole_heap_gc > 0) {
     auto s = foster::humanize_s(double(gcglobals.max_bytes_live_at_whole_heap_gc), "B");
@@ -3306,9 +3226,6 @@ FILE* print_timing_stats() {
     fprintf(gclog, "'Num_Write_Barriers_Started': %lu\n",  gcglobals.write_barrier_phase0_hits);
     fprintf(gclog, "'Num_Write_Barriers_NonNull': %lu\n",  gcglobals.write_barrier_phase0b_hits);
     fprintf(gclog, "'Num_Write_Barriers_Null': %lu\n", gcglobals.write_barrier_phase0_hits - gcglobals.write_barrier_phase0b_hits);
-  }
-  if (TRACK_NUM_ROOTS_CONSIDERED) {
-    fprintf(gclog, "'Num_Roots_Considered': %lu\n",  gcglobals.num_roots_considered);
   }
   {
     auto s = foster::humanize_s(gcglobals.num_closure_calls, "");
@@ -3456,6 +3373,11 @@ const typemap* tryGetTypemap(heap_cell* cell) {
   if (uint64_t(cell->cell_size()) < uint64_t(1<<16)) return nullptr;
   // Reminder: cell_size() and map are the same bit pattern.
   const typemap* map = cell->get_meta();
+
+  if (!gcglobals.typemap_memory.contains((void*) map)) {
+    return nullptr;
+  }
+
   if (GC_ASSERTIONS) {
     bool is_corrupted = (
           ((map->isCoro  != 0) && (map->isCoro  != 1))
@@ -3468,10 +3390,6 @@ const typemap* tryGetTypemap(heap_cell* cell) {
       inspect_typemap(map);
       gc_assert(!is_corrupted, "tryGetTypemap() found corrupted typemap");
     }
-  }
-  
-  if (!gcglobals.typemap_memory.contains((void*) map)) {
-    return nullptr;
   }
 
   return map;
@@ -3536,7 +3454,7 @@ void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot) {
   *slot = val;
 
   if (TRACK_WRITE_BARRIER_COUNTS > 3) { ++gcglobals.write_barrier_phase0_hits; }
-  if (non_markable_addr(val)) { return; }
+  if (non_markable_addr_toosmall(val)) { return; }
   if (TRACK_WRITE_BARRIER_COUNTS > 3) { ++gcglobals.write_barrier_phase0b_hits; }
 }
 

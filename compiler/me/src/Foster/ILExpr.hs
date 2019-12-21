@@ -21,21 +21,19 @@ import Foster.CFG
 import Foster.CloConv
 import Foster.TypeLL
 import Foster.Letable
-import Foster.GCRoots
 import Foster.Avails
 import Foster.Output(putDocLn)
-import Foster.MainOpts (getNonMovingGC, getNoGcAtAll,
-                        getStripGCKills, getNoPreAllocOpt)
+import Foster.MainOpts (getNoPreAllocOpt)
 import Data.Map(Map)
 import Data.List(zipWith4, foldl' )
 import Data.Maybe(maybeToList, fromMaybe)
 import Control.Monad.State(evalState, execState, State, get, gets, modify)
 import Control.Monad.IO.Class(liftIO)
-import qualified Data.Set as Set(toList, map, union, unions, difference,
+import qualified Data.Set as Set(toList, union, unions, difference,
                                  member, Set, empty, size, fromList, insert)
 import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
                                  adjust, insert, findWithDefault, toList)
-import qualified Data.Text as T(pack, unpack, isInfixOf)
+import qualified Data.Text as T(pack, isInfixOf)
 import qualified Data.Graph as Graph(stronglyConnComp)
 import Data.Graph(SCC(..))
 
@@ -65,15 +63,13 @@ data ILProgram = ILProgram [ILProcDef]
                            SourceLines
 
 data ILExternDecl = ILDecl String TypeLL
-data ILProcDef = ILProcDef (Proc [ILBlock]) NumPredsMap [RootVar]
+data ILProcDef = ILProcDef (Proc [ILBlock]) NumPredsMap
 type NumPredsMap = Map BlockId Int
 
 -- The standard definition of a basic block and its parts.
 -- This is equivalent to MinCaml's make_closure ...
 data ILBlock  = Block BlockEntryL [ILMiddle] ILLast
 data ILMiddle = ILLetVal      Ident   (Letable TypeLL) MayGC
-              | ILGCRootKill  LLVar    Bool -- continuation may GC
-              | ILGCRootInit  LLVar    RootVar
               | ILTupleStore  [LLVar]  LLVar    AllocMemRegion
               | ILRebindId    Ident    LLVar
               deriving Show
@@ -133,25 +129,11 @@ prepForCodegen m mayGCconstraints0 = do
 
    deHooplize :: Map Ident MayGC -> Proc BasicBlockGraph' -> Compiled ILProcDef
    deHooplize mayGCmap p = do
+     let (cfgBlocks , numPreds) = flattenGraph (procBlocks p) mayGCmap
+     return $ ILProcDef (p { procBlocks = cfgBlocks }) numPreds
 
-     flagVals <- gets ccFlagVals
-
-     (g , liveRoots) <- if getNoGcAtAll flagVals
-        then do
-          return (procBlocks p, [])
-        else do
-          wantedFns <- gets ccDumpFns
-          (g', liveRoots) <- insertSmartGCRoots (procIdent p) (procBlocks p) mayGCmap (want p wantedFns)
-          --(g', liveRoots) <- insertDumbGCRoots' (procBlocks p) (want p wantedFns)
-          g <- if getStripGCKills flagVals
-                then stripKills g'
-                else return     g'
-          return (g, liveRoots)
-
-     let (cfgBlocks , numPreds) = flattenGraph g mayGCmap (getNonMovingGC flagVals)
-     return $ ILProcDef (p { procBlocks = cfgBlocks }) numPreds liveRoots
-
-   want p wantedFns = T.unpack (identPrefix (procIdent p)) `elem` wantedFns
+fnty_of_procty pt@(LLProcType (env:_args) _rets _cc) = LLPtrType (LLStructType [pt, env])
+fnty_of_procty other = error $ "ILExpr.hs: fnty_of_procty undefined for " ++ show other
 
 -- ||||||||||||||||||||||||| Allocation Explication  ||||||||||||{{{
 makeAllocationsExplicit :: BasicBlockGraph' -> Bool -> Ident -> Compiled BasicBlockGraph'
@@ -162,9 +144,6 @@ makeAllocationsExplicit bbgp prohibitAllocations procId = do
   explicate :: forall e x. Insn' e x -> Compiled (Graph Insn' e x)
   explicate insn = case insn of
     (CCLabel   {}        ) -> return $ mkFirst $ insn
-    (CCGCLoad  {}        ) -> return $ mkMiddle $ insn
-    (CCGCInit  {}        ) -> return $ mkMiddle $ insn
-    (CCGCKill  {}        ) -> return $ mkMiddle $ insn
     (CCLetVal id (ILAlloc v memregion sr)) ->
       if prohibitAllocations
         then compiledThrowE [text "Unable to eliminate allocations from " <> pretty procId]
@@ -355,9 +334,6 @@ collectMayGCConstraints_Proc proc m = foldGraphNodes go (bbgpBody $ procBlocks p
   where
         go :: forall e x. Insn' e x -> MayGCMap -> MayGCMap
         go (CCLabel        {}   ) m = m
-        go (CCGCLoad       {}   ) m = m
-        go (CCGCInit       {}   ) m = m
-        go (CCGCKill       {}   ) m = m
         go (CCTupleStore   {}   ) m = m
         go (CCRebindId     {}   ) m = m
         go (CCLast _ (CCCont {} ) ) m = m
@@ -393,8 +369,8 @@ withGraphBlocks bbgp f =
    let jumpTo bg = case bbgpEntry bg of (bid, _) -> CCLast bid $ CCCont bid [] in
    f $ preorder_dfs $ mkLast (jumpTo bbgp) |*><*| bbgpBody bbgp
 
-flattenGraph :: BasicBlockGraph' -> MayGCMap -> Bool -> ( [ILBlock] , NumPredsMap )
-flattenGraph bbgp mayGCmap assumeNonMovingGC = -- clean up any rebindings from gc root optz.
+flattenGraph :: BasicBlockGraph' -> MayGCMap -> ( [ILBlock] , NumPredsMap )
+flattenGraph bbgp mayGCmap = -- clean up any rebindings from gc root optz.
    withGraphBlocks (simplifyCFG bbgp) (\blocks ->
      ( map (deHooplizeBlock (bbgpRetK bbgp)) blocks
      , computeNumPredecessors (bbgpEntry bbgp) blocks ))
@@ -406,22 +382,13 @@ flattenGraph bbgp mayGCmap assumeNonMovingGC = -- clean up any rebindings from g
          Block (frs f) (concatMap midmany (blockToList ms) ++ lastmids) last
    where
      midmany :: Insn' O O -> [ILMiddle]
-     --midmany (CCGCKill Disabled     _root) = error $ "Invariant violated: saw disabled root kill pseudo-insn!"
-     midmany (CCGCKill Disabled     _root) = []
-     midmany (CCGCKill (Enabled cgc) roots) = [ILGCRootKill root cgc | root <- Set.toList roots]
      midmany insn = [mid insn]
 
      mid :: Insn' O O -> ILMiddle
      mid (CCLetVal id letable   ) = ILLetVal id letable (canGC mayGCmap letable)
-     mid (CCGCLoad v root orig  ) =
-        if assumeNonMovingGC
-          then ILRebindId (tidIdent v) orig
-          else ILLetVal   (tidIdent v) (ILDeref (tidType v) root) WillNotGC
-     mid (CCGCInit _ src toroot)  = ILGCRootInit src toroot
      mid (CCTupleStore vs tid r)  = ILTupleStore vs tid r
      mid (CCRebindId {}         ) = error $ "Invariant violated: CCRebindId not eliminated!"
      mid (CCLetFuns {}          ) = error $ "Invariant violated: CCLetFuns should have been eliminated!"
-     mid (CCGCKill  {}          ) = error $ "Invariant violated: GCKill should have been handled by `midmany`..."
 
      frs :: Insn' C O -> BlockEntryL
      frs (CCLabel be) = be
@@ -474,9 +441,6 @@ simplifyCFG bbgp =
      substIn :: VarSubstFor (Insn' e x)
      substIn s insn  = case insn of
           (CCLabel   {}        ) -> insn
-          (CCGCLoad  v root org) -> CCGCLoad        (s v) (s   root) (s org)
-          (CCGCInit vr v toroot) -> CCGCInit (s vr) (s v) (s toroot)
-          (CCGCKill enabld roots) -> CCGCKill enabld (Set.map s roots)
           (CCTupleStore vs  v r) -> CCTupleStore (map s vs) (s v) r
           (CCLetVal id letable ) -> CCLetVal id (substVarsInLetable s letable)
           (CCLetFuns ids fns   ) -> CCLetFuns ids $ map (substForInClo s) fns
@@ -642,10 +606,6 @@ liveness = mkBTransfer go
     go (CCLabel  {} ) s = s
     go (CCLetVal  id letable ) s = Set.union   (without s [id]) (Set.fromList $ freeIdentsL letable)
     go (CCLetFuns ids clzs   ) s = Set.unions ((without s ids):(map (Set.fromList . freeIdentsC) clzs))
-    go (CCGCLoad     v rv _  ) s = insert (without s [tidIdent v]) [rv]
-    go (CCGCInit   _ v rv    ) s = insert (without s [tidIdent v]) [rv]
-    go (CCGCKill (Enabled _) vs) s = insert s (Set.toList vs)
-    go (CCGCKill Disabled   _vs) s = s
     go (CCTupleStore vs v _) s = insert s (v:vs)
     go (CCRebindId   _ v1 v2) s = insert (without s [tidIdent v1]) [v2]
     go node@(CCLast _ last) fdb =
@@ -737,9 +697,6 @@ collectMayGCConstraints_CFG bbgp fnid = let (bid,_) = bbgpEntry bbgp in
                      CCCont {}      -> return ()
                      CCCase {}      -> return ()
 
-        go (CCGCLoad     {}) = return ()
-        go (CCGCInit     {}) = return ()
-        go (CCGCKill     {}) = return ()
         go (CCTupleStore {}) = return ()
         go (CCRebindId   {}) = return ()
 
@@ -763,11 +720,10 @@ showILProgramStructure (ILProgram procdefs vals _decls _dtypes _lines) =
         vcat (map pretty vals)
     <$> vcat (map showProcStructure procdefs)
   where
-    showProcStructure (ILProcDef proc _ roots) =
+    showProcStructure (ILProcDef proc _) =
         text (show $ procIdent proc) <+> (text "//")
             <+> (text $ show $ map procVarDesc (procVars proc))
             <+> (text "==>") <+> (text $ show $ procReturnType proc)
-          <$> text (unlines (map show roots))
           <$> vcat (map showBlock $ procBlocks proc)
           <$> text "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^"
 

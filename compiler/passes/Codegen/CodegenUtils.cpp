@@ -130,52 +130,9 @@ Constant* getSlotName(llvm::AllocaInst* stackslot, CodegenPass* pass) {
 ////////////////////////////////////////////////////////////////////
 Type* getSlotType(llvm::Value* v) { return v->getType()->getPointerElementType(); }
 
-void markGCRootWithMetadata(llvm::Instruction* stackslot, CodegenPass* pass,
-                            llvm::Constant* meta) {
-  // If the original stack slot holds a bare struct type, we'll need to
-  // insert an additional slot to point to it, and we'll mark the second slot...
-  if (getSlotType(stackslot)->isStructTy()) {
-    // We're assuming that someone else (in particular, LLCodegen:allocateSlot())
-    // has taken care of wrapping the original struct with its typemap.
-
-    llvm::Value* in_stackslot = getPointerToIndex(stackslot, builder.getInt32(2), "in_stackslot");
-    llvm::AllocaInst* ptr_stackslot = CreateEntryAlloca(in_stackslot->getType(), "ptr_to_stackslot");
-    builder.CreateStore(in_stackslot, ptr_stackslot);
-
-    stackslot = ptr_stackslot;
-  }
-
-  llvm::Metadata* cmeta = ConstantAsMetadata::get(meta);
-  llvm::MDNode* metamdnode = llvm::MDTuple::get(stackslot->getContext(),
-                                llvm::makeArrayRef(cmeta));
-  stackslot->setMetadata("fostergcroot", metamdnode);
-
-  llvm::Function* F = builder.GetInsertBlock()->getParent();
-  llvm::BasicBlock& entryBlock = F->getEntryBlock();
-  ASSERT(pass->getCurrentAllocaPoint() != NULL) << F->getName();
-
-  // Make sure that all the calls to llvm.gcroot() happen in the entry block.
-  llvm::IRBuilder<> tmpBuilder(&entryBlock, pass->getCurrentAllocaPoint()->getIterator());
-  ASSERT(getSlotType(stackslot)->isPointerTy()) << "\n"
-              << "gc root slots must be pointers, not structs or such; had "
-              << "non-pointer type " << str(getSlotType(stackslot));
-  llvm::Value* root = tmpBuilder.CreateBitCast(stackslot,
-                         ptrTo(tmpBuilder.getInt8PtrTy()), "gcroot");
-
-  llvm::Constant* llvm_gcroot = llvm::Intrinsic::getDeclaration(pass->mod,
-                                               llvm::Intrinsic::gcroot);
-  ASSERT(llvm_gcroot) << "unable to mark GC root, llvm.gcroot not found";
-  tmpBuilder.CreateCall(llvm_gcroot, { root, meta });
-}
-
-void markGCRoot(llvm::AllocaInst* stackslot, CodegenPass* pass) {
-  markGCRootWithMetadata(stackslot, pass, getSlotName(stackslot, pass));
-}
-
 extern char kFosterMain[];
 void CodegenPass::markFosterFunction(Function* f) {
   f->setAttributes(this->fosterFunctionAttributes);
-  if (this->config.useGC) { f->setGC("fostergc"); }
 
   // We must not inline foster__main, which is marked with our gc,
   // into its caller, which is a gc-less function!
@@ -213,22 +170,6 @@ llvm::AllocaInst* stackSlotWithValue(llvm::Value* val, const std::string& suffix
   llvm::AllocaInst* valptr = CreateEntryAlloca(val->getType(), val->getName().str() + suffix);
   builder.CreateStore(val, valptr, /*isVolatile=*/ false);
   return valptr;
-}
-
-// Unlike markGCRoot, this does not require the root be an AllocaInst
-// (though it should still be a pointer).
-// This function is intended for marking intermediate values. It stores
-// the value into a new stack slot, and marks the stack slot as a root.
-//
-//      TODO need to guarantee that the val passed to us is either
-//      a pointer to memalloc-ed memory, or a value that does not escape.
-llvm::AllocaInst*
-CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val) {
-  ASSERT(val->getType()->isPointerTy());
-  // allocate a slot for a T* on the stack
-  llvm::AllocaInst* stackslot = stackSlotWithValue(val, ".gcroot");
-  if (this->config.useGC) { markGCRoot(stackslot, this); }
-  return stackslot;
 }
 
 Value* CodegenPass::getGlobalString(const std::string& s) {

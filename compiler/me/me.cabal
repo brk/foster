@@ -69,7 +69,6 @@ executable me
       Foster.Context
       Foster.ConvertExprAST
       Foster.ExprAST
-      Foster.GCRoots
       Foster.ILExpr
       Foster.Infer
       Foster.KNExpr

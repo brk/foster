@@ -153,9 +153,6 @@ struct CodegenPass {
 
   Value* getGlobalString(const std::string&);
 
-  Value* allocateMPInt();
-
-  llvm::AllocaInst* storeAndMarkPointerAsGCRoot(llvm::Value*);
   Value* getCurrentCoroParent();
   Value* emitCoroCreateFn(TypeAST* retType, TypeAST* argTypes);
   Value* emitCoroInvokeFn(llvm::Type* retTy,

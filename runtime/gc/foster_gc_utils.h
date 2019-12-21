@@ -128,7 +128,8 @@ struct heap_cell {
 
   uint64_t raw_header() { return header; }
 
-  void mark_not_young() { header |= HEADER_MARK_BITS;  }
+  //void mark_not_young() { header |= HEADER_MARK_BITS;  }
+  //bool is_marked_inline() { return (header & HEADER_MARK_BITS) != 0; }
 
   // Precondition: not forwarded
   const typemap* get_meta() { return typemap_of_header(raw_header()); }
@@ -136,8 +137,6 @@ struct heap_cell {
   void set_header(const typemap* data) {
     header = build_header(data);
   }
-
-  bool is_marked_inline() { return (header & HEADER_MARK_BITS) != 0; }
 
   bool is_forwarded() { return (header & FORWARDED_BIT) != 0; }
   void set_forwarded_body(tidy* newbody) {
@@ -219,54 +218,4 @@ struct typemap {
   int32_t     offsets[0];
 };
 
-struct stackmap {
-  // A safe point is a location in the code stream where it is
-  // safe for garbage collection to happen (that is, where the
-  // code generator guarantees that any registers which might
-  // hold references to live objects have been stored on the stack).
-  //
-  // A point cluster is a collection of safe points which share
-  // the same layout of live pointers. Because LLVM does not (as of
-  // this writing) calculate liveness information, all safe points
-  // in the same function wind up with the same "live" variables.
-  int32_t pointClusterCount;
-  int32_t _padding;
-  struct PointCluster {
-    // register_stackmaps() assumes it knows the layout of this struct!
-    int32_t frameSize;
-    int32_t addressCount;
-    int32_t liveCountWithMetadata;
-    int32_t liveCountWithoutMetadata;
-    void*   safePointAddresses[0];
-    void*   metadata[0];
-    int32_t liveOffsetsWithMetadata[0];
-    int32_t liveOffsetsWithoutMetadata[0];
-    // maybe one int32_t for padding...
-
-    const void* const* getMetadataStart() const {
-      return &((void**)safePointAddresses)[addressCount];
-    }
-
-    const int32_t* getLiveOffsetWithMetaStart() const {
-      return (int32_t*) &(getMetadataStart())[liveCountWithMetadata];
-    }
-
-    const int32_t* getLiveOffsetWithoutMetaStart() const {
-      return (int32_t*) &(getLiveOffsetWithMetaStart())[liveCountWithMetadata];
-    }
-  };
-  PointCluster pointClusters[0];
-};
-
-struct stackmap_table {
-  int32_t numStackMaps;
-  stackmap stackmaps[0];
-};
-
 } } } // namespace foster::runtime::gc
-
-// This symbol is emitted by the fostergc LLVM GC plugin to the
-// final generated assembly.
-extern "C" {
-  extern foster::runtime::gc::stackmap_table foster__gcmaps;
-}

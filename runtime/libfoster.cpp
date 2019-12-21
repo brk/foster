@@ -661,7 +661,6 @@ int foster__runtime__main__wrapper(int argc, char** argv) {
 
   if (!tru) {
     // kung-fu grip to prevent LTO from being too mean.
-    foster_coro_delete_self_reference((void*)&foster__gcmaps);
     printf("%p\n", &foster_write_barrier_with_obj_generic);
   }
 

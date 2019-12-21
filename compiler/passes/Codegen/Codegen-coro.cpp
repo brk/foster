@@ -222,7 +222,7 @@ Value* generateInvokeYield(bool isYield,
                          llvm::Type* retTy,
                          llvm::Type* argTypes,
                          const std::vector<llvm::Value*>& inputArgs) {
-  llvm::Value* coro_slot = pass->storeAndMarkPointerAsGCRoot(coro);
+  llvm::Value* coro_slot = stackSlotWithValue(coro, "coroslot");
 
   Value* current_coro_slot = codegenCurrentCoroSlot(pass->mod);
   Value* current_coro = builder.CreateLoad(current_coro_slot);
@@ -499,7 +499,7 @@ Value* emitCoroWrapperFn(
   Value* fc  = builder.CreateBitCast(ptr_f_c, getHeapPtrTo(getSplitCoroType(argTypes)));
   Value* fcg = gep(fc, 0, 0, "fc_gen");
 
-  llvm::Value* coro_slot = pass->storeAndMarkPointerAsGCRoot(fcg);
+  llvm::Value* coro_slot = stackSlotWithValue(fcg, "coroslot");
 
   Value* fn_addr = gep(fcg, 0, coroField_Fn(), "fnaddr");
   Value* fn_gen  = builder.CreateLoad(fn_addr, "fn_gen");

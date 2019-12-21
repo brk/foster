@@ -165,8 +165,7 @@ llvm::Value* emitGCWriteOrStore(CodegenPass* pass,
   //              "\n     isNonGC = " << (w == WriteKnownNonGC) << "; val is ptr ty? " << val->getType()->isPointerTy() << "\n";
   bool useBarrier = val->getType()->isPointerTy()
         && !llvm::isa<llvm::AllocaInst>(ptr)
-        && w != WriteKnownNonGC
-        && pass->config.useGC;
+        && w != WriteKnownNonGC;
   //maybeEmitCallToLogPtrWrite(pass, ptr, val, useBarrier);
 
   if (isPointerToType(ptr->getType(), val->getType())) {
@@ -383,6 +382,12 @@ CodegenPass::CodegenPass(llvm::Module* m, CodegenPassConfig config)
   toremove.addAttribute(
       llvm::Attribute::get(f->getContext(), "stack-protector-buffer-size", "8"));
   attrs = attrs.removeAttributes(f->getContext(), FI, toremove);
+
+  llvm::AttrBuilder toadd;
+  toadd.addAttribute(
+      llvm::Attribute::get(f->getContext(), "foster-fn"));
+  attrs = attrs.addAttributes(f->getContext(), FI, toadd);
+
   this->fosterFunctionAttributes = attrs;
 }
 
@@ -452,28 +457,10 @@ void registerKnownDataTypes(const std::vector<LLDecl*> datatype_decls,
   }
 }
 
-void createGCMapsSymbolIfNeeded(CodegenPass* pass) {
-  if (!pass->config.useGC && !pass->config.standalone) {
-    // The runtime needs a "foster__gcmaps" symbol for linking to succeed.
-    // If we're not letting the GC plugin run, we'll need to emit it ourselves.
-    new llvm::GlobalVariable(
-    /*Module=*/      *(pass->mod),
-    /*Type=*/        builder.getInt32Ty(),
-    /*isConstant=*/  true,
-    /*Linkage=*/     llvm::GlobalValue::ExternalLinkage,
-    /*Initializer=*/ llvm::ConstantInt::get(builder.getInt32Ty(), 0),
-    /*Name=*/        "foster__gcmaps",
-    /*InsertBefore=*/NULL,
-    /*ThreadLocal=*/ llvm::GlobalVariable::NotThreadLocal);
-  }
-}
-
 void createCompilerFlagsGlobalString(CodegenPass* pass) {
   std::string s;
   std::stringstream ss(s);
   ss << "{";
-  ss << "'useGC':" << pass->config.useGC << ",";
-  ss << "'killDeadSlots':" << pass->config.killDeadSlots << ",";
   ss << "'emitLifetimeInfo':" << pass->config.emitLifetimeInfo << ",";
   ss << "'disableAllArrayBoundsChecks':" << pass->config.disableAllArrayBoundsChecks;
   ss << "}";
@@ -603,7 +590,6 @@ void LLModule::codegenModule(CodegenPass* pass) {
 
   codegenCoroPrimitives(pass);
 
-  createGCMapsSymbolIfNeeded(pass);
   createCompilerFlagsGlobalString(pass);
 }
 
@@ -761,7 +747,6 @@ llvm::Value* allocateSlot(CodegenPass* pass, LLVar* rootvar) {
   llvm::Type* ty = getLLVMType(rootvar->type);
   if (ty->isPointerTy()) {
     llvm::AllocaInst* slot = CreateEntryAlloca(ty, rootvar->getName());
-    if (pass->config.useGC) { markGCRoot(slot, pass); }
     return slot;
   } else {
     // We need to wrap the non-pointer type with its metadata so the GC will
@@ -775,7 +760,6 @@ llvm::Value* allocateSlot(CodegenPass* pass, LLVar* rootvar) {
                                             { builder.getInt64Ty(), builder.getInt64Ty(), ty });
     llvm::AllocaInst* slot = CreateEntryAlloca(padded_ty, rootvar->getName());
     slot->setAlignment(16);
-    if (pass->config.useGC) { markGCRoot(slot, pass); }
     builder.CreateStore(builder.CreatePtrToInt(typemap, builder.getInt64Ty()),
                         getPointerToIndex(slot, builder.getInt32(1), ""));
     return getPointerToIndex(slot, builder.getInt32(2), "past_tymap");
@@ -785,12 +769,6 @@ llvm::Value* allocateSlot(CodegenPass* pass, LLVar* rootvar) {
 
 void LLProcCFG::codegenToFunction(CodegenPass* pass, llvm::Function* F) {
   pass->fosterBlocks.clear();
-
-  // Pre-allocate all our GC roots.
-  for (size_t i = 0; i < gcroots.size(); ++i) {
-    Value* slot = allocateSlot(pass, gcroots[i]);
-    pass->insertScopedValue(gcroots[i]->getName(), slot);
-  }
 
   // Create all the basic blocks before codegenning any of them.
   for (size_t i = 0; i < blocks.size(); ++i) {
@@ -1019,25 +997,6 @@ llvm::Value* LLBitcast::codegen(CodegenPass* pass) {
   } else return (v->getType() == tgt) ? v : emitBitcast(v, tgt);
 }
 
-void LLGCRootInit::codegenMiddle(CodegenPass* pass) {
-  llvm::Value* v    = src->codegen(pass);
-  llvm::Value* slot = root->codegen(pass);
-  if (pass->config.emitLifetimeInfo) {
-    markAsNonAllocating(builder.CreateLifetimeStart(slot));
-  }
-
-  emitStore(pass, v, slot, nullptr, WriteKnownNonGC);
-}
-
-void LLGCRootKill::codegenMiddle(CodegenPass* pass) {
-  llvm::Value* slot = root->codegen(pass);
-  if (this->doNullOutSlot &&
-      pass->config.killDeadSlots) { storeNullPointerToSlot(slot); }
-  if (pass->config.emitLifetimeInfo) {
-     markAsNonAllocating(builder.CreateLifetimeEnd(slot));
-  }
-}
-
 void LLRebindId::codegenMiddle(CodegenPass* pass) {
   pass->insertScopedValue(from, to->codegen(pass));
 }
@@ -1047,22 +1006,12 @@ void LLRebindId::codegenMiddle(CodegenPass* pass) {
 /////////////////////////////////////////////////////////////////{{{
 
 llvm::Value* emitGCRead(CodegenPass* pass, Value* base, Value* slot) {
-  if (!base) base = getNullOrZero(builder.getInt8PtrTy());
-  llvm::Constant* llvm_gcread = llvm::Intrinsic::getDeclaration(pass->mod,
-                                                      llvm::Intrinsic::gcread);
-  llvm::outs() << "emitting GC read" << "\n";
-  llvm::outs() << "  base is " << *base << "\n";
-  llvm::outs() << "  slot is " << *slot << "\n";
-
-  Value* base_generic = builder.CreateBitCast(base, builder.getInt8PtrTy());
-  Value* slot_generic = builder.CreateBitCast(slot, builder.getInt8PtrTy()->getPointerTo(0));
-  Value* val_generic = builder.CreateCall(llvm_gcread, { base_generic, slot_generic });
-  return builder.CreateBitCast(val_generic, slot->getType()->getPointerElementType());
+  return emitNonVolatileLoad(slot, "deref");
 }
 
 llvm::Value* LLDeref::codegen(CodegenPass* pass) {
   llvm::Value* ptr = base->codegen(pass);
-  if (isTraced && !llvm::isa<llvm::AllocaInst>(ptr) && pass->config.useGC) {
+  if (isTraced && !llvm::isa<llvm::AllocaInst>(ptr)) {
     return emitGCRead(pass, nullptr, ptr);
   } else {
     return emitNonVolatileLoad(ptr, "deref");
@@ -1072,7 +1021,7 @@ llvm::Value* LLDeref::codegen(CodegenPass* pass) {
 llvm::Value* LLStore::codegen(CodegenPass* pass) {
   llvm::Value* val  = v->codegen(pass);
   llvm::Value* slot = r->codegen(pass);
-  if (isTraced && pass->config.useGC) {
+  if (isTraced) {
     return emitGCWrite(pass, val, slot, slot);
   } else {
     return emitStore(pass, val, slot, slot, WriteKnownNonGC);
@@ -1535,7 +1484,7 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
         unsigned k  = ncvals[i].second;
         Value* val  = ncvals[i].first;
         Value* slot = getPointerToIndex(heapmem, llvm::ConstantInt::get(i32, k), "arr_slot");
-        bool useBarrier = val->getType()->isPointerTy() && pass->config.useGC;
+        bool useBarrier = val->getType()->isPointerTy();
         //maybeEmitCallToLogPtrWrite(pass, slot, val, useBarrier);
         if (useBarrier) {
           emitGCWrite(pass, val, heapmem, slot);
