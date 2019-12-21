@@ -23,11 +23,7 @@ bool  pages_boot(void);
 void* pages_map(void* addr, size_t size, size_t alignment, bool* commit);
 void  pages_unmap(void* addr, size_t size);
 
-#include <immintrin.h>
 
-extern "C" int64_t __foster_getticks_start();
-extern "C" int64_t __foster_getticks_end();
-extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 
 extern "C" char* __foster_fosterlower_config;
 
@@ -46,20 +42,16 @@ extern "C" char* __foster_fosterlower_config;
 #define GCLOG_PRINT_USED_GROUPS 0
 #define GCLOG_MUTATOR_UTILIZATION 0
 #define ENABLE_GCLOG_PREP 0
-#define ENABLE_GCLOG_ENDGC 1
+#define ENABLE_GCLOG_ENDGC 0
 #define PRINT_STDOUT_ON_GC 0
 #define FOSTER_GC_ALLOC_HISTOGRAMS    0
 #define FOSTER_GC_TIME_HISTOGRAMS     1 // Adds ~300 cycles per collection
-#define FOSTER_GC_EFFIC_HISTOGRAMS    0
 #define ENABLE_GC_TIMING              1
-#define GC_ASSERTIONS 1
+#define GC_ASSERTIONS 0
 #define TRACK_NUM_ALLOCATIONS         1
 #define TRACK_NUM_ALLOC_BYTES         1
-#define TRACK_NUM_REMSET_ROOTS        1
 #define TRACK_NUM_OBJECTS_MARKED      1
 #define TRACK_WRITE_BARRIER_COUNTS    1
-#define TRACK_BYTES_KEPT_ENTRIES      0
-#define TRACK_BYTES_ALLOCATED_ENTRIES 0
 #define TRACK_BYTES_ALLOCATED_PINHOOK 0
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
 #define USE_FIFO_SIZE 0
@@ -88,31 +80,17 @@ extern void* foster__typeMapList[];
 #include <map>
 #include <set>
 
-//std::map<uint32_t, int> refPatterns;
-
-#define IMMIX_LINE_SIZE     256
 #define IMMIX_LINE_SIZE_LOG 8
 #define IMMIX_LINES_PER_FRAME15_LOG 7 /*15 - 8*/
 #define IMMIX_LINES_PER_FRAME15   128
 
-#define IMMIX_LINE_FRAME15_START_LINE 5
-#define IMMIX_LINES_PER_LINE_FRAME15 (IMMIX_LINES_PER_FRAME15 - IMMIX_LINE_FRAME15_START_LINE)
-
-#define COARSE_MARK_LOG 21
-
 #define IMMIX_F15_PER_F21 64
 #define IMMIX_BYTES_PER_LINE 256
-#define IMMIX_LINES_PER_BLOCK 128
 #define IMMIX_GRANULES_PER_LINE (IMMIX_BYTES_PER_LINE / 16)
 #define IMMIX_GRANULES_PER_BLOCK (128 * IMMIX_GRANULES_PER_LINE)
-#define IMMIX_ACTIVE_F15_PER_F21 (IMMIX_F15_PER_F21 - 1)
 
 static_assert(IMMIX_GRANULES_PER_LINE == 16,    "documenting expected values");
 static_assert(IMMIX_GRANULES_PER_BLOCK == 2048, "documenting expected values");
-
-uint64_t g_approx_lines_allocated_since_last_collection = 0;
-
-int num_free_lines = 0; // TODO move to gcglobals
 
 extern "C" {
   void foster_pin_hook_memalloc_cell(uint64_t nbytes);
@@ -158,7 +136,7 @@ void* realigned_for_heap_handle(void* bump) {
 }
 
 void* realigned_to_line_flat(void* bump) {
- return roundUpToNearestMultipleWeak(bump, IMMIX_LINE_SIZE);
+ return roundUpToNearestMultipleWeak(bump, IMMIX_BYTES_PER_LINE);
 }
 
 // The pointer itself is the base pointer of the equivalent memory_range.
@@ -200,8 +178,6 @@ public:
     free_linegroup* fg = (free_linegroup*) line_after_base;
     fg->bound = this->bound;
 
-    //int num_lines_trimmed = distance(line_after_base, this->bound) / IMMIX_LINE_SIZE;
-
     this->bound = line_after_base;
     
     return fg;
@@ -230,18 +206,10 @@ frame21_id frame21_id_of(void* p) { return frame21_id(uintptr_t(p) >> 21); }
 
 uintptr_t low_n_bits(uintptr_t val, uintptr_t n) { return val & ((1 << n) - 1); }
 
-uintptr_t line_offset_within_heap(void* slot) {
-  return uintptr_t(slot) >> 8;
-}
-uintptr_t line_offset_within_f21(void* slot) {
-  return low_n_bits(uintptr_t(slot) >> 8, 21 - 8);
-}
-
 int line_offset_within_f15(void* slot) {
   return int(low_n_bits(uintptr_t(slot) >> 8, 15 - 8));
 }
 
-struct immix_line_frame15;
 class frame15;
 class frame21;
 
@@ -262,9 +230,6 @@ struct used_linegroup {
   size_t size_in_lines() const { return count; }
 
   frame15_id associated_frame15_id() const { return frame15_id_of(base); }
-  immix_line_frame15* associated_lineframe() const {
-    return (immix_line_frame15*) frame15_for_frame15_id(associated_frame15_id());
-  }
 
   used_linegroup singleton(int i) const {
     return used_linegroup { .base  = offset(base,  i      * IMMIX_BYTES_PER_LINE),
@@ -287,27 +252,11 @@ typedef void* ret_addr;
 typedef void* frameptr;
 // }}}
 
-
-uint32_t refPattern(const typemap* map) {
-  uint32_t rv = 0;
-  for (int i = 0; i < map->numOffsets; ++i) {
-    int refoff = map->offsets[i] / 8;
-    if (refoff < 28) {
-      rv |=  (1 << refoff);
-    } else {
-      rv =  (1 << 30);
-      break;
-    }
-  }
-  return rv;
-}
-
 struct immix_space;
-
 
 struct immix_worklist_t {
     void       initialize()      { roots.clear(); }
-    void       process(bool conservatively);
+    void       drain();
     bool       empty()           { return roots.empty(); }
     unchecked_ptr* pop_root()  { auto root = roots.back(); roots.pop_back(); return root; }
     void       add_root(unchecked_ptr* root) { PREFETCH_FOR_MARKING(*(void**)root); roots.push_back(root); }
@@ -330,7 +279,6 @@ enum class frame15kind : uint8_t {
 struct frame15info {
   void*            associated;
   frame15kind      frame_classification;
-  uint8_t          num_available_lines_at_last_collection; // TODO these two fields are mutually exclusively used...
   uint8_t          num_holes_at_last_full_collection;
 };
 
@@ -490,10 +438,6 @@ struct GCGlobals {
 
 GCGlobals gcglobals;
 
-uint32_t fold_64_to_32(uint64_t x) {
-  return uint32_t(x) ^ uint32_t(x >> uint64_t(32));
-}
-
 void reset_marked_histogram() {
   if (GCLOG_PRINT_LINE_HISTO) {
     int64_t sum_x = 0;
@@ -503,7 +447,7 @@ void reset_marked_histogram() {
     for (int i = 0; i < 128; ++i) {
       auto x = gcglobals.marked_histogram[i];
       auto f = gcglobals.marked_histogram_frames[i];
-      auto u = (f * IMMIX_LINES_PER_BLOCK) - x;
+      auto u = (f * IMMIX_LINES_PER_FRAME15) - x;
       sum_x += x;
       sum_f += f;
       sum_u += u;
@@ -516,11 +460,11 @@ void reset_marked_histogram() {
     int64_t cumf = 0;
     int64_t cumu = 0;
     int64_t cumv = 0;
-    int64_t all = sum_f * IMMIX_LINES_PER_BLOCK;
+    int64_t all = sum_f * IMMIX_LINES_PER_FRAME15;
     for (int i = 127; i >= 0; --i) {
       auto x = gcglobals.marked_histogram[i];
       auto f = gcglobals.marked_histogram_frames[i];
-      auto u = (f * IMMIX_LINES_PER_BLOCK) - x;
+      auto u = (f * IMMIX_LINES_PER_FRAME15) - x;
       auto v = gcglobals.residency_histogram[i];
       cumx += x;
       cumf += f;
@@ -581,18 +525,7 @@ inline T num_granules(T size_in_bytes) { return size_in_bytes / T(16); }
 
 uintptr_t global_granule_for(void* p) { return num_granules(uintptr_t(p)); }
 
-// Precondition: x >= 15
-uint32_t frameX_id_of(void* p, uintptr_t x) { return uint32_t(uintptr_t(p) >> x); }
-
 frame21* frame21_of_id(frame21_id x) { return (frame21*) (uintptr_t(x) << 21); }
-
-void clear_linemap(uint8_t* linemap) {
-  memset(linemap, 0, IMMIX_LINES_PER_BLOCK);
-}
-
-void clear_frame15(frame15* f15) { memset(f15, 0xDD, 1 << 15); fprintf(gclog, "cleared frame15 %p (%u)\n", f15, frame15_id_of(f15)); }
-void clear_frame21(frame21* f21) { memset(f21, 0xDD, 1 << 21); }
-void do_clear_line_frame15(immix_line_frame15* f);
 
 inline
 frame15info* frame15_info_for_frame15_id(frame15_id fid) {
@@ -626,9 +559,6 @@ void set_associated_for_frame15_id(frame15_id fid, void* v) {
 
 inline bool obj_is_marked(heap_cell* obj) {
   uint8_t* markbyte = &gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)];
-  if (*markbyte != 0) {
-    fprintf(gclog, "obj %p marked with 0x%x (markbyte addr %p)\n", obj, *markbyte, markbyte);
-  }
   return *markbyte != 0;
 }
 inline bool arr_is_marked(heap_array* obj) { return obj_is_marked((heap_cell*)obj); }
@@ -743,7 +673,7 @@ struct large_array_allocator {
     // If b == e, we've already set the framekind.
     // If the line offset isn't the last one in the block, we must assume that
     // another allocation can happen, so we'll leave the framekind unset.
-    if ((b != e) && (line_offset_within_f15(last) == IMMIX_LINES_PER_BLOCK - 1)) {
+    if ((b != e) && (line_offset_within_f15(last) == IMMIX_LINES_PER_FRAME15 - 1)) {
       set_framekind_malloc_continue(e, allot);
     }
     // Any blocks in between the start and end should be marked as continuations.
@@ -824,7 +754,6 @@ intr* from_tidy(tidy* t) { return (intr*) t; }
 
 void mark_as_smallmedium(frame15* f) {
   auto finfo = frame15_info_for_frame15_id(frame15_id_of(f));
-  finfo->num_available_lines_at_last_collection = 0;
   finfo->frame_classification = frame15kind::immix_smallmedium;
 }
 
@@ -889,7 +818,6 @@ namespace helpers {
     allot->set_header(arr_elt_map);
     allot->set_num_elts(num_elts);
     designate_as_valid_object_start_addr(allot->body_addr());
-    //if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(total_bytes); }
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
     if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
     if (TRACK_NUM_ALLOC_BYTES) { gcglobals.num_alloc_bytes += total_bytes; }
@@ -933,7 +861,6 @@ namespace helpers {
     //          How much overhead on a benchmark that's mixed, like sac-qsort?
 
     if (GC_ASSERTIONS) { gc_assert(frame15_id_of(allot) == frame15_id_of(allot->body_addr()), "cell prechecked: metadata and body address on different frames!"); }
-    //if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(map->cell_size); }
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_cell(cell_size); }
     if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
     if (TRACK_NUM_ALLOC_BYTES) { gcglobals.num_alloc_bytes += cell_size; }
@@ -980,6 +907,7 @@ namespace helpers {
 
     if (trivially_unmarkable) { return; }
 
+    // Tidy objects are 16-byte aligned and thus have four zero low bits.
     if ((uintptr_t(maybe_obj) & 0xF) == 0) {
       if (is_actually_tidy(maybe_obj)) {
         conservative_roots.push_back(maybe_obj);
@@ -1099,7 +1027,7 @@ public:
     reset_marked_histogram();
 
     int64_t num_lines_left_to_give = lines_reclaimed / 4; // at most...
-    fprintf(gclog, "Reclaimed %zd lines, willing to give at most %zd for defrag reserve.\n", lines_reclaimed,  num_lines_left_to_give);
+    //fprintf(gclog, "Reclaimed %zd lines, willing to give at most %zd for defrag reserve.\n", lines_reclaimed,  num_lines_left_to_give);
     while (num_lines_left_to_give > 0 && !defrag_reserve.full()) {
       auto fg = grab_free_linegroup<true>(1, IMMIX_LINES_PER_FRAME15);
       if (fg) {
@@ -1269,13 +1197,11 @@ public:
       }
     }
 
-    int num_marked_lines = IMMIX_LINES_PER_FRAME15 - num_available_lines;
-    auto finfo = frame15_info_for(f15);
-
     //fprintf(gclog, "LSFA: ");
     //display_linemap_for_frame15_id(fid);
 
-    finfo->num_available_lines_at_last_collection = num_available_lines;
+    int num_marked_lines = IMMIX_LINES_PER_FRAME15 - num_available_lines;
+    auto finfo = frame15_info_for(f15);
     finfo->num_holes_at_last_full_collection = num_holes_found;
     gcglobals.marked_histogram[num_holes_found] += num_marked_lines;
     gcglobals.marked_histogram_frames[num_holes_found] += 1;
@@ -1288,13 +1214,7 @@ public:
   double  full_heap_line_count() { return double(frame15s.size() * IMMIX_LINES_PER_FRAME15); }
 };
 
-class immix_line_space;
-immix_line_space* get_owner_for_immix_line_frame15(immix_line_frame15* f, int line);
-
 space_allocator_t global_space_allocator;
-
-// Returns a number between zero and 63.
-//uint8_t frame15_id_within_f21(frame15_id global_fid) { return uint8_t(low_n_bits(global_fid, 21 - 15)); }
 
 uint8_t count_marked_lines_for_frame15(frame15* f15, uint8_t* linemap_for_frame);
 
@@ -1311,18 +1231,6 @@ void display_linemap_for_frame15_id(frame15_id fid) {
     fprintf(gclog, (i < byte_residency_out_of_32) ? "-" :
                   ((i < line_residency_out_of_32) ? "=" : " ")); }
   fprintf(gclog, "|");
-  fprintf(gclog, "\n");
-}
-
-void display_markmap_for_frame15_id(frame15_id fid) {
-  uint8_t* markmap = markmap_for_frame15_id(fid);
-  fprintf(gclog, "frame %u:              ", fid);
-  for (int i = 0; i < IMMIX_LINES_PER_FRAME15 * IMMIX_GRANULES_PER_LINE; ++i) {
-    fprintf(gclog, "%c", markmap[i] ? 'm' : '_');
-    if ((i % IMMIX_LINES_PER_FRAME15) == (IMMIX_LINES_PER_FRAME15 - 1)) {
-      fprintf(gclog, "\n                            ");
-    }
-  }
   fprintf(gclog, "\n");
 }
 
@@ -1344,7 +1252,6 @@ void display_used_linegroup_linemap(used_linegroup* g, uint8_t* linemap) {
 
 void used_linegroup::clear_line_and_object_mark_and_validity_bits() {
   uint8_t* linemap = linemap_for_frame15_id(associated_frame15_id());
-  auto lineframe = associated_lineframe();
 
   gc_assert(startline() != endline(), "used linegroup had same start and end line...?");
 
@@ -1354,7 +1261,7 @@ void used_linegroup::clear_line_and_object_mark_and_validity_bits() {
     do_unmark_line(i, linemap);
   }
   gc_assert(startline() >= 0, "invalid startline when clearing bits");
-  gc_assert(endline() <= IMMIX_LINES_PER_BLOCK, "invalid endline when clearing bits");
+  gc_assert(endline() <= IMMIX_LINES_PER_FRAME15, "invalid endline when clearing bits");
   gc_assert(startline() < endline(), "invalid: startline after endline when clearing bits");
   clear_object_mark_and_validity_bits_for_used_group(*this);
 }
@@ -1483,8 +1390,6 @@ void for_each_child_slot_with(heap_cell* cell, heap_array* arr, const typemap* m
                               int64_t cell_size, CellThunk thunk) {
   if (!map) { return; }
 
-  //refPatterns[refPattern(map)]++;
-
   uint8_t ptrMap = map->ptrMap;
   if (ptrMap == 0) { return; }
 
@@ -1550,9 +1455,6 @@ namespace immix_common {
     heap_array* arr = NULL;
     const typemap* map = NULL;
     int64_t cell_size;
-
-    fprintf(gclog, "Scanning cell %p; body marked as valid? %d\n", cell, is_actually_tidy(cell->body_addr())); fflush(gclog);
-
     get_cell_metadata(cell, arr, map, cell_size);
 
     do_mark_obj_of_size(cell, cell_size);
@@ -1563,13 +1465,6 @@ namespace immix_common {
       fprintf(gclog, "   header was %zx\n", cell->raw_header());
     }
 #endif
-
-    if (0) {
-      auto it = gcglobals.alloc_site_locs.find(cell->body_addr());
-      if (it != gcglobals.alloc_site_locs.end()) {
-        fprintf(gclog, "body srcloc: %s ;; typedesc: %s\n", it->second.first, it->second.second);
-      }
-    }
 
     for_each_child_slot_with(cell, arr, map, cell_size, [cell](intr* slot) {
       // We only need to filter non-markable constants; type safety ensures we won't see un-allocated pointer values.
@@ -1831,7 +1726,6 @@ void immix_common::common_gc() {
     g_marked_this_cycle.clear();
 #endif
 
-    g_approx_lines_allocated_since_last_collection = 0;
     auto num_marked_at_start   = gcglobals.num_objects_marked_total;
     auto bytes_marked_at_start = gcglobals.alloc_bytes_marked_total;
 
@@ -1996,53 +1890,14 @@ void immix_common::common_gc() {
 }
 // }}}
 
-// Invariant: IMMIX_LINES_PER_BLOCK <= 256
+// Invariant: IMMIX_LINES_PER_FRAME15 <= 256
 // Invariant: marked lines have value 1, unmarked are 0.
 uint8_t count_marked_lines_for_frame15(frame15* f15, uint8_t* linemap_for_frame) {
   uint8_t count = 0; // Note: Clang compiles this to straight-line code using vector ops.
-  for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { count += linemap_for_frame[i]; }
+  for (int i = 0; i < IMMIX_LINES_PER_FRAME15; ++i) { count += linemap_for_frame[i]; }
   return count;
 }
 
-#if 0
-bool is_linemap_clear(frame21* f21) {
-    if (!frame21_is_marked(f21)) return true;
-
-    auto mdb = metadata_block_for_frame21(f21);
-#if 1
-    uint64_t linehash = 0;
-    for (int i = 1; i < IMMIX_F15_PER_F21; ++i) {
-      uint64_t* lines = (uint64_t*) &mdb->linemap[i][0];
-      #pragma clang loop vectorize(enable)
-      for (int j = 0; j < IMMIX_LINES_PER_BLOCK / 8; ++j) {
-        linehash |= lines[j];
-      }
-      if (linehash != 0) break;
-    }
-    return linehash == 0;
-#else
-    __m256i linehash = _mm256_setzero_si256();
-    for (int i = 1; i < IMMIX_F15_PER_F21; ++i) {
-      __m256i* lines = (__m256i*) &mdb->linemap[i][0];
-      for (int j = 0; j < IMMIX_LINES_PER_BLOCK / sizeof(*lines); ++j) {
-        //linehash |= lines[j];
-        linehash = _mm256_or_si256(linehash, lines[j]);
-      }
-      //if (linehash != 0) break; (skipped for cleaner vectorization)
-    }
-    //return linehash == 0;
-    return _mm256_testz_si256(linehash, linehash);
-
-
-
-    /*
-    auto pstart = &mdb->linemap[1][0];
-    auto pend   = &mdb->linemap[IMMIX_F15_PER_F21 - 1][IMMIX_LINES_PER_BLOCK - 1];
-    return memchr(pstart, 1, pend - pstart) == nullptr;
-    */
-#endif
-}
-#endif
 
 
 class immix_space {
@@ -2122,8 +1977,6 @@ public:
 
   template <bool small>
   bool try_prep_allocatable_block(bump_allocator* bumper, int64_t cell_size) __attribute__((noinline)) {
-    fprintf(gclog, "trying to prep allocatable block of size %d (small=%d) from bumper %p\n", int(cell_size), int(small), bumper);
-
     // Note the implicit policy embodied below in the preference between
     // using recycled frames, clean used frames, or fresh/new frames.
     //
@@ -2134,12 +1987,12 @@ public:
     auto lines_needed = small ? 1 : ((cell_size + (IMMIX_BYTES_PER_LINE - 1)) / IMMIX_BYTES_PER_LINE);
     free_linegroup* g = global_space_allocator.grab_free_linegroup<small>(lines_needed, 128);
     if (!g) {
-      fprintf(gclog, "grab_free_linegroup(for %zd bytes = %d lines) returned null\n", cell_size, lines_needed);
+      // fprintf(gclog, "grab_free_linegroup(for %zd bytes = %d lines) returned null\n", cell_size, lines_needed);
       return false;
     }
 
     approx_lines_allocated_since_last_collection += linegroup_size_in_lines(g);
-    fprintf(gclog, "try_prep_allocable_block installing free group of size %d\n", linegroup_size_in_lines(g));
+    // fprintf(gclog, "try_prep_allocable_block installing free group of size %d\n", linegroup_size_in_lines(g));
     tracking.add_and_install_free_group(g, *bumper);
 
     if (ENABLE_GCLOG_PREP) {
@@ -2149,41 +2002,28 @@ public:
           line_offset_within_f15(g),
           frame15_id_of(g), this,
           global_space_allocator.get_curr_frame_idx());
-      display_linemap_for_frame15_id(frame15_id_of(g));
+      //display_linemap_for_frame15_id(frame15_id_of(g));
     }
 
     if (MEMSET_FREED_MEMORY) {
       auto dist = distance(g, g->bound);
-      if (dist > 16) {
-        fprintf(gclog, "INFO: prepared block from %p to %p; size %d bytes\n",
-          g, g->bound, dist);
-        fflush(gclog);
-        
-      } else {
-        fprintf(gclog, "WARN: prepared too-tiny allocable block from %p to %p; size in bytes is %d; in lines %zd\n",
-          g, g->bound,
-          dist,
-          linegroup_size_in_lines(g));
-        fflush(gclog);
-        return false;
-      }
       memset(offset(g, 16), 0xef, dist - 16);
     }
     return true;
   }
 
   int unmarked_line_from(uint8_t* linemap, int start) {
-      for (int i = start; i < (IMMIX_LINES_PER_BLOCK - 1); ++i) {
+      for (int i = start; i < (IMMIX_LINES_PER_FRAME15 - 1); ++i) {
         if (linemap[i] == 0) return i;
       }
       return -1;
   }
 
   int first_marked_line_after(uint8_t* linemap, int start) {
-      for (int i = start + 1; i < IMMIX_LINES_PER_BLOCK; ++i) {
+      for (int i = start + 1; i < IMMIX_LINES_PER_FRAME15; ++i) {
         if (linemap[i] != 0) return i;
       }
-      return IMMIX_LINES_PER_BLOCK;
+      return IMMIX_LINES_PER_FRAME15;
   }
 
   // Precondition: needed_bytes is less than one line.
@@ -2275,7 +2115,7 @@ public:
       hdr_record_value(gcglobals.hist_gc_alloc_array, req_bytes);
     }
 
-    if (req_bytes <= IMMIX_LINE_SIZE) {
+    if (req_bytes <= IMMIX_BYTES_PER_LINE) {
       return allocate_array_into_bumper<true>(&small_bumper, elt_typeinfo, n, req_bytes, init);
     } else if (req_bytes > (1 << 13)) {
       // The Immix paper, since it built on top of Jikes RVM, uses an 8 KB
@@ -2322,10 +2162,6 @@ public:
       auto f15 = frame15_for_frame15_id(fid);
       uint8_t count = count_marked_lines_for_frame15(f15, linemap);
       rv += count;
-
-      // This field is read by should_skip_compaction_for_frame15_id...
-      auto finfo = frame15_info_for(f15);
-      finfo->num_available_lines_at_last_collection = (IMMIX_LINES_PER_BLOCK - count);
     }
     return rv * IMMIX_BYTES_PER_LINE;
   }
@@ -2362,11 +2198,6 @@ public:
     //size_t frame15s_total = tracking.logical_frame15s();
     size_t lines_tracked = tracking.num_lines_tracked();
     size_t lines_allocated = this->approx_lines_allocated_since_last_collection;
-    double nursery_ratio = double(lines_allocated) / double(lines_tracked);
-    double yield_rate   = double(num_lines_reclaimed) / double(lines_tracked);
-    double local_yield  = double(num_lines_reclaimed) / double(lines_allocated);
-    double yield_percentage = 100.0 * yield_rate; // usually around 75% - 95%
-    double survival_rate = 1.0 - yield_rate; // usually around 0.05 to 0.25
 
     if (GCLOG_DETAIL > 0) {
       fprintf(gclog, "Reclaimed (%zd) lines.\n", num_lines_reclaimed);
@@ -2385,7 +2216,6 @@ public:
 
 #endif
 
-    g_approx_lines_allocated_since_last_collection += approx_lines_allocated_since_last_collection;
     approx_lines_allocated_since_last_collection = 0;
     //tracking.release_clean_frames();
     return num_lines_reclaimed;
@@ -2415,9 +2245,6 @@ public:
     if (g.count > IMMIX_LINES_PER_FRAME15) {
       fprintf(gclog, "OOPS: watch *%p\n", &g.count);
     }
-
-    fprintf(gclog, "g.count is %d for %p\n", g.count, g.base);
-
     for (int i = 0; i < g.count; ++i) {
       bool is_marked = line_is_marked(g.startline() + i, linemap);
       if (is_marked) {
@@ -2437,10 +2264,10 @@ public:
         if (!was_free) {
           // start new free group
           fg = (free_linegroup*) offset(g.base, i * IMMIX_BYTES_PER_LINE);
-          fg->bound = offset(fg, IMMIX_LINE_SIZE);
+          fg->bound = offset(fg, IMMIX_BYTES_PER_LINE);
         } else {
           // continue free group
-          fg->bound = offset(fg->bound, IMMIX_LINE_SIZE);
+          fg->bound = offset(fg->bound, IMMIX_BYTES_PER_LINE);
         }
 
         if (GCLOG_DETAIL > 2) {
@@ -2482,92 +2309,6 @@ public:
 
     return num_available_lines;
 
-#if 0
-    uint8_t* linemap = linemap_for_frame15_id(fid);
-    int num_marked_lines = count_marked_lines_for_frame15(f15, linemap);
-    gcglobals.lines_live_at_whole_heap_gc += num_marked_lines;
-    
-    if (GCLOG_PRINT_LINE_MARKS) {
-      fprintf(gclog, "frame %u: ", fid);
-      for(int i = 0;i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", (linemap[i] == 0) ? '_' : 'd'); }
-      fprintf(gclog, "\n");
-    }
-
-    auto num_available_lines = (IMMIX_LINES_PER_BLOCK - num_marked_lines);
-
-    auto finfo = frame15_info_for(f15);
-    finfo->num_available_lines_at_last_collection = num_available_lines;
-
-    if (num_marked_lines == 0) {
-      tracking.note_clean_frame15(f15);
-      return num_available_lines;
-    }
-
-    free_linegroup* singlegroup = nullptr;
-
-    // The first line of the next block is off-limits (implicitly marked).
-    int cursor = IMMIX_LINES_PER_BLOCK;
-
-    // One or more holes left to process?
-    int num_lines_to_process = num_available_lines;
-    int num_holes_found = 0;
-    while (num_lines_to_process > 0) {
-      // At least one available line means this loop will terminate before cursor == 0
-      // Precondition: cursor is marked
-      while (line_is_marked(cursor - 1, linemap)) --cursor;
-      // Postcondition: cursor is marked; cursor - 1 is unmarked.
-      int rightmost_unmarked_line = --cursor;
-
-      while (cursor >= 0 && line_is_unmarked(cursor, linemap)) --cursor;
-      // Postcondition: line_is_marked(cursor), line_is_unmarked(cursor + 1), cursor >= -1
-      int leftmost_unmarked_line = cursor + 1;
-
-      free_linegroup* g = (free_linegroup*) offset(f15,   leftmost_unmarked_line      * IMMIX_BYTES_PER_LINE);
-      g->bound =                            offset(f15, (rightmost_unmarked_line + 1) * IMMIX_BYTES_PER_LINE);
-
-      if (MEMSET_FREED_MEMORY) { memset(offset(g, 16), 0xda, distance(g, g->bound) - 16);
-        fprintf(gclog, "cleared lines from %p to %p in frame %u\n", g, g->bound, frame15_id_of(g)); }
-
-      int num_lines_in_group = (rightmost_unmarked_line - leftmost_unmarked_line) + 1;
-      if (num_lines_in_group == 1) {
-        g->next = singlegroup;
-        singlegroup = g;
-      } else {
-        g->next = recycled_lines_medium;
-        recycled_lines_medium = g;
-      }
-
-      num_lines_to_process -= num_lines_in_group;
-      ++num_holes_found;
-      //fprintf(gclog, "num lines in group: %d\n", num_lines_in_group); fflush(gclog);
-      if (num_lines_in_group <= 0) abort();
-    }
-    // Postcondition: singlegroup refers to leftmost hole, if any
-
-    if (singlegroup) {
-      //if (GCLOG_DETAIL > 0) { fprintf(gclog, "Adding frame %p to recycled list; n marked = %d\n", f15, num_marked_lines); }
-      recycled_lines_single.push_back(singlegroup);
-    }
-
-    // Previous (non-sticky-mark-bits) versions reset line and object mark bits here,
-    // after inspecting each frame. The problem with doing so is a situation like the following:
-    //   * The nursery gradually shrinks; eventually, it falls below the threshold, and
-    //     the next collection is scheduled to be unsticky.
-    //   * The next collection finds all new objects live, and reclaims zero lines, because
-    //     mark bits are reset at the *end* of a collection instead of the beginning, so
-    //     none of the old data is inspected yet.
-
-    // Increment mark histogram for default subheap.
-    if (this == gcglobals.default_allocator) {
-      finfo->num_holes_at_last_full_collection = num_holes_found;
-      gcglobals.marked_histogram[num_holes_found] += num_marked_lines;
-      gcglobals.marked_histogram_frames[num_holes_found] += 1;
-      gcglobals.residency_histogram[num_holes_found] += gcglobals.lazy_mapped_frame_liveness[fid];
-    }
-
-    // Coarse marks must be reset after all frames have been processed.
-    return num_available_lines;
-#endif
   }
 
 private:
@@ -2582,7 +2323,6 @@ private:
   uint64_t approx_lines_allocated_since_last_collection;
   // immix_space_end
 };
-
 
 void condemned_set::prepare_for_tracing() {
   gcglobals.allocator->prepare_for_tracing();
@@ -2617,11 +2357,11 @@ void process_worklists() {
   conservative_roots.clear();
 
   if (GCLOG_DETAIL > 0) { fprintf(gclog, "DONE PROCESSING CONSERVATIVE ROOTS.\n"); }
-  immix_worklist.process(false);
+  immix_worklist.drain();
   if (GCLOG_DETAIL > 0) { fprintf(gclog, "After processing, had %zd conservative roots\n", conservative_roots.size()); }
 }
 
-void immix_worklist_t::process(bool conservatively) {
+void immix_worklist_t::drain() {
   while (true) {
     unchecked_ptr* root;
 #if USE_FIFO_SIZE > 0
@@ -2947,7 +2687,6 @@ void initialize(void* stack_highest_addr) {
   (*gcglobals.lazy_mapped_markable_handles) = offset(gcglobals.lazy_mapped_markable_handles, sizeof(heap_handle<immix_space>));
 
   gcglobals.lazy_mapped_frame15info             = allocate_lazily_zero_mapped<frame15info>(     size_t(1) << (address_space_prefix_size_log() - 15));
-  //gcglobals.lazy_mapped_coarse_condemned        = allocate_lazily_zero_mapped<condemned_status>(size_t(1) << (address_space_prefix_size_log() - COARSE_MARK_LOG));
   //gcglobals.lazy_mapped_frame15info_associated  = allocate_lazily_zero_mapped<void*>(      size_t(1) << (address_space_prefix_size_log() - 15));
   //
   gcglobals.lazy_mapped_granule_marks           = allocate_lazily_zero_mapped<uint8_t>(lazy_mapped_granule_marks_size()); // byte marks
@@ -3183,11 +2922,6 @@ FILE* print_timing_stats() {
     foster_hdr_percentiles_print(gcglobals.hist_gc_stackscan_roots, gclog, 4);
   }
 
-  if (!json && FOSTER_GC_EFFIC_HISTOGRAMS) {
-    fprintf(gclog, "gc_pause_ticks:\n");
-    foster_hdr_percentiles_print(gcglobals.hist_gc_pause_ticks, gclog, 4);
-  }
-
   fflush(gclog);
 
   dump_alloc_site_stats(gclog);
@@ -3235,27 +2969,10 @@ FILE* print_timing_stats() {
   fprintf(gclog, "'FosterlowerConfig': %s\n", (const char*)&__foster_fosterlower_config);
   fprintf(gclog, "'FosterGCConfig': {'FifoSize': %d, 'DefragReserveFraction: %.2f}\n", USE_FIFO_SIZE, kFosterDefragReserveFraction);
 
-  /*
-  fprintf(gclog, "Ref patterns seen:\n");
-  std::map<int, int> refOrderPatterns;
-  int totalSeen = 0;
-  for (auto it : refPatterns) {
-    fprintf(gclog, "     ");
-    for (int i = 0; i < 32; ++i) { fprintf(gclog, (x & (1<<i)) ? '1' : '_'); }
-    fprintf(gclog, ": %d\n", it.second);
-    totalSeen += it.second;
-    refOrderPatterns[__builtin_popcount(it.first)] += it.second;
-  }
-  for (auto it : refOrderPatterns) {
-    fprintf(gclog, "           %d: %d (%.2f%%)\n", it.first, it.second, 100.0 * double(it.second)/double(totalSeen));
-  }
-  */
-
   fprintf(gclog, "sizeof immix_space: %lu\n", sizeof(immix_space));
   fprintf(gclog, "sizeof bump_allocator: %lu\n", sizeof(bump_allocator));
   fprintf(gclog, "sizeof large_array_allocator: %lu\n", sizeof(large_array_allocator));
   fprintf(gclog, "sizeof immix_space_tracking: %lu\n", sizeof(immix_space_tracking));
-  //fprintf(gclog, "sizeof immix_line_space: %lu\n", sizeof(immix_line_space));
 
   fprintf(gclog, "# recorded allocs: %d\n", nrecorded);
 
