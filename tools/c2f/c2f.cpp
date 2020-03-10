@@ -1903,8 +1903,8 @@ public:
         emitPokeIdx(base, indices, valEmitter, ctx);
       } else {
         // If we have something like (c = (b = a)),
-        // translate it to (a >^ b; b) >^ c
-        llvm::outs() << "(v* = ";
+        // translate it to ({ a >^ b; b }!) >^ c
+        llvm::outs() << "({ v* = ";
         valEmitter();
         llvm::outs() << "; ptrSet (";
         visitStmt(ptr, AssignmentTarget);
@@ -1916,7 +1916,7 @@ public:
           llvm::outs() << "; v*";
           llvm::outs() << " " << emitBooleanCoercion(exprTy(ptr));
         }
-        llvm::outs() << ");";
+        llvm::outs() << " }!);";
       }
   }
 

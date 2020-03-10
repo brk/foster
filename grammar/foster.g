@@ -166,8 +166,8 @@ val_abs :
                   // value + type abstraction (terms indexed by terms and types)
     ;
 
-tuple : '(' stmts ( AS  t    ')'        -> ^(TYANNOT stmts t)
-                  | (',' e)* ')' hashq  -> ^(TUPLE hashq stmts e*)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
+tuple : '(' e ( AS  t    ')'        -> ^(TYANNOT e t)
+                  | (',' e)* ')' hashq  -> ^(TUPLE hashq e+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
                   )
       ;
 

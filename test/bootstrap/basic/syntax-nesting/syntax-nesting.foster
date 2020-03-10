@@ -18,7 +18,7 @@ callcall = {
 
 call_let = {
   expect_i32 2;
-  print_i32 (((gg = g; gg) 2) !);
+  print_i32 (( ({ gg = g; gg } !) 2) !);
 };
 
 call_deref_b = {

@@ -202,7 +202,7 @@ arrayLengthWrap = { a => arrayLength a };
 // }}}
 
 readInt64FromArrayInt8-v1 :: { % ra : Array Int8 : 0 <=SInt32 ri =>
-                               % ri : Int32 : (woo = arrayLength ra; (zext_i32_to_i64 ri +Int64 7) <SInt64 woo)
+                               % ri : Int32 : ((zext_i32_to_i64 ri +Int64 7) <SInt64 (arrayLength ra))
                                => Int64 };
 readInt64FromArrayInt8-v1 = { a => i =>
   alen = prim_arrayLength a;

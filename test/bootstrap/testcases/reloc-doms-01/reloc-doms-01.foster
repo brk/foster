@@ -1,7 +1,7 @@
 main = {
     outer = { f : { () } =>
         REC loop = { (loop ! as ()); };
-        _ = (ign = { loop !  }; ign);
+        _ = ( { loop !  }, () );
         ()
     };
     outer {()};

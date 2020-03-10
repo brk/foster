@@ -9,7 +9,7 @@ main = {
           else goto_block_5 !
         end
         };
-    REC goto_block_6 = { (1 >^ p_44; p_44^); goto_block_4 ! };
+    REC goto_block_6 = { { 1 >^ p_44; p_44^ } !; goto_block_4 ! };
     REC goto_block_5 = {
         b_5_0 = if opaquely_i32 0 ==Int32 0 then 1 else 0 end;
         goto_block_4 !
@@ -21,7 +21,7 @@ main = {
           else goto_block_1 !
         end
         };
-    REC goto_block_3 = { (-7 >^ p_44; p_44^); goto_block_1 ! };
+    REC goto_block_3 = { { -7 >^ p_44; p_44^ } !; goto_block_1 ! };
     REC goto_block_1 = { print_i32 p_44^; 0 };
 
     expect_i32 0;

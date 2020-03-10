@@ -10,9 +10,9 @@ main = {
         expect_i8 5;
         print_i8 sep_DB598668^;
 
-        _ = (ign = {
+        _ = if True then ign = {
           loop (prim ref 4); // call must be in a function body
-        }; ign);
+        }; ign else { () } end;
 
         // a call here de-triggers the bug: loop sep_DB598668;
 

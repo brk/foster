@@ -328,16 +328,16 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     TList [tok, _,_cbr, TList cbors] | tok `tm` tok_TUPLE ->
       case cbors of
         []           -> E_TupleAST annot KindPointerSized []
-        [stmts]      -> cb_parse_stmts stmts
-        (hash:stmts:rest) | isHashMark hash ->
-                        E_TupleAST annot KindAnySizeType  (cb_parse_stmts stmts : map cb_parse_e rest)
-        (stmts:rest) -> E_TupleAST annot KindPointerSized (cb_parse_stmts stmts : map cb_parse_e rest)
+        [e]          -> cb_parse_e e
+        (hash:e:rest) | isHashMark hash ->
+                        E_TupleAST annot KindAnySizeType  (map cb_parse_e (e:rest))
+        (e:rest)     -> E_TupleAST annot KindPointerSized (map cb_parse_e (e:rest))
     TList [tok, _,_cbr, TList [stmts, thenstmts]] | tok `tm` tok_IF ->
         E_IfAST annot (cb_parse_stmts stmts) (cb_parse_stmts thenstmts) (E_TupleAST annot KindPointerSized [])
     TList [tok, _,_cbr, TList [stmts, thenstmts, elsestmts]] | tok `tm` tok_IF ->
         E_IfAST annot (cb_parse_stmts stmts) (cb_parse_stmts thenstmts) (cb_parse_stmts elsestmts)
-    TList [tok, _,_cbr, TList [stmts, t]] | tok `tm` tok_TYANNOT ->
-        E_TyCheck annot (cb_parse_stmts stmts) (cb_parse_t t)
+    TList [tok, _,_cbr, TList [e, t]] | tok `tm` tok_TYANNOT ->
+        E_TyCheck annot (cb_parse_e e) (cb_parse_t t)
     TList [tok, _,_cbr, TList [mu_formals, mu_tyformals]]        | tok `tm` tok_VAL_ABS ->
         let name = T.empty in -- typechecking maintains the pending binding stack, and will update the fn name
         E_FnAST annot (FnAST annot name (map cb_parse_tyformal $ unMu mu_tyformals)
