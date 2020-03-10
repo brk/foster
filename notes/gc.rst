@@ -1,6 +1,21 @@
 Garbage Collection
 ------------------
 
+Memory management is an ongoing topic of experimentation.
+
+As of early 2020, prior approaches had been rolled back to a relatively
+minimal baseline approach: stack-conservative Immix [Sha2014]_. The primary benefit
+of being stack-conservative is that it (A) does not inhibit LLVM's
+low level optimizations, and (B) allows using non-custom builds of LLVM.
+Immix is a nice baseline in part due to its design (which is relatively simple,
+and does a good job of balancing the tension between per-object and per-heap
+focus), and in part because many extensions of Immix have already been explored
+in the literature, making it easier to potentially expore/adopt such directions
+in the future.
+
+.. [Sha2014] https://www.microsoft.com/en-us/research/publication/fast-conservative-garbage-collection/
+
+
 Heap Layout
 ~~~~~~~~~~~
 
@@ -12,10 +27,13 @@ those pointers.
 
 Typeinfo maps are aligned to at least a multiple of 8, yielding
 3 bits in the header pointer. One bit is used to mark forwarding pointers.
-One bit is used to mark objects which should be updated rather than moved;
-for example, objects allocated on the stack or via malloc instead of through
-a bump-pointer alloctor. The third bit is not yet allocated.
-[[ TODO implement this :) ]]
+The other bits are reserved for future implementation usage.
+
+..
+  One bit is used to mark objects which should be updated rather than moved;
+  for example, objects allocated on the stack or via malloc instead of through
+  a bump-pointer alloctor. The third bit is not yet allocated.
+  [[ TODO implement this :) ]]
 
 Diagram::
 
@@ -68,29 +86,8 @@ There are three cases for the elements worth considering:
     computes aligned element start position and recurses at offsets.
   * Pointer. As above.
 
-An algebraic data type with multiple constructors may need a third
-representation, sufficient to distinguish which constructor was used to
-build the object. One possibility::
-
-    [Object *-]-+
-    [Reference] |
-                v
-      +--------+----------+----------+----------+
-      | header |          |    f1    |    f2   ...
-      |  ptr * |   ctor   |          |         ...
-      +------|-+----------+----------+----------+
-             |
-             v
-          struct {
-            i64         cellSize;
-            i8*         typePlusCtorName;
-            i32         numPtrEntries;
-            i8          isCoro;
-            i8          isArray = false;
-            struct { i8* typeinfo; i32 offset }[numPtrEntries];
-          }
-
-Or::
+Values of an algebraic data type with multiple constructors
+currently store their associated constructor in the type metadata::
 
     [Object *-]-+
     [Reference] |
@@ -105,47 +102,33 @@ Or::
             i64         cellSize;
             i8*         typePlusCtorName;
             i32         numPtrEntries;
-            i8          ctorId;
+            i8          ctorId = C;
             i8          isCoro;
             i8          isArray = false;
             struct { i8* typeinfo; i32 offset }[numPtrEntries];
           }
 
-There are a number of potential variations on the above sketch:
+It would be possible to store the constructor tag in
+either the body or header payloads.
 
- #. Ctor bits could be stored in (A) the object reference,
-    (B) the header pointer, (C, shown) a designated constructor field,
-    or (D) in the typeinfo struct. The benefit is reduced loads (0, 1, 1, 2)
-    at the cost of immutability or restricted aliasing.
- #. The header pointer could describe the overall type (with cell size equal to
-    the largest-layout variant) or the specific variant.
- #. As a special case, data types with one nullary variant can have
-    a plain pointer representation.
+.. 
+  Stable Pointers
+  ~~~~~~~~~~~~~~~
 
-With a variant-specific typeinfo pointer, extra ctor tag bits are not
-strictly needed, as the pointer itself could be used in a switch (or
-at least an if-cascade, since converting a global var addr to constant int
-**may** not be kosher). Or the struct of typeinfo could be extended with an
-i8 ctorTag field.
+  Interfacing with C code requires an alternative to a compacting or copying
+  garbage collector, because the moving GC will be unable to update pointers
+  held by external C code.
 
+  One simple option would be to track which pointers can flow to external C
+  functions (that is, those which are conservatively assumed to capture args),
+  and ensure that those pointers are allocated from a reference-counted heap.
 
-Stable Pointers
-~~~~~~~~~~~~~~~
+  However, that would open up race conditions between concurrently-executing
+  Foster code and C code. What we really want is make sure that any object
+  reachable from C code has a stable address. Address-stability can (I think)
+  be tracked as an effect. However, it must be implemented for a lower-level
+  IR which makes allocation explicit.
 
-Interfacing with C code requires an alternative to a compacting or copying
-garbage collector, because the moving GC will be unable to update pointers
-held by external C code.
-
-One simple option would be to track which pointers can flow to external C
-functions (that is, those which are conservatively assumed to capture args),
-and ensure that those pointers are allocated from a reference-counted heap.
-
-However, that would open up race conditions between concurrently-executing
-Foster code and C code. What we really want is make sure that any object
-reachable from C code has a stable address. Address-stability can (I think)
-be tracked as an effect. However, it must be implemented for a lower-level
-IR which makes allocation explicit.
-
-On the other hand, "hiding" such an allocation decision behind an effect
-may be misguided; perhaps it's better to simply expose stable pointers as
-an explicit data type, along the lines of Haskell's FFI?
+  On the other hand, "hiding" such an allocation decision behind an effect
+  may be misguided; perhaps it's better to simply expose stable pointers as
+  an explicit data type, along the lines of Haskell's FFI?

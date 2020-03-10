@@ -29,30 +29,32 @@ SCCs of modules.
 The back-end is written in C++. The primary advantages of
 using C++ rather than Haskell for lowering to LLVM are:
 
-  * We can use custom LLVM IR passes.
+* We can use custom LLVM IR passes.
+* It's easier to link against our standard library,
+  especially when we don't know the types of certain symbols
+  in advance.
+* In case we revisit using LLVM's GC support:
+
   * We can use a custom GC plugin.
-  * It's easier to link against our standard library,
-    especially when we don't know the types of certain symbols
-    in advance.
   * It seems easier to do GC metadata & type maps this way.
 
 LLVM provides some support for loadable modules, which enables
 passes to be dynamically loaded into standard LLVM tools like
-``opt`` and ``llc``. Unfortunately, that functionality is not
-supported on Windows, and will not be in the forseeable future.
-Thus, we must in to some degree write a copy of ``opt`` and/or
+``opt`` and ``llc``. Unfortunately, that functionality was not
+supported on Windows (I haven't checked lately, though!).
+That left the option of writing a copy of ``opt`` and/or
 ``llc`` which statically link in our plugin and passes.
 Currently, we have a ``fosterlower`` binary, which converts
-protobufs with a close-to-LLVM representation, and outputs
+Cap'n Proto with a close-to-LLVM representation, and outputs
 linked LLVM with initial peephole optimizations. There is a
 second ``fosteroptc`` binary which optimizes the final program
 and emits native object code or assembly.
 
 Possible choices for generation of LLVM IR:
 
-  * Have C++ convert custom IR from protobuf to LLVM (currently done)
-  * Have Haskell generate LLVM via text string pasting
-  * Have Haskell generate LLVM-isomorphic protocol buffers
+* Have C++ convert custom IR from protobuf to LLVM (currently done)
+* Have Haskell generate LLVM via text string pasting
+* Have Haskell generate LLVM-isomorphic protocol buffers
 
 .. ::
     #. Resolution: compute fully-qualified versions of all names.

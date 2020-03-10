@@ -1,5 +1,5 @@
-Optimizations
--------------
+A Code-Size Optimization
+------------------------
 
 Because data constructors are (relatively) heavyweight,
 we can save code size in some cases by merging continuations::
@@ -24,6 +24,8 @@ because
 * ctors can't be usefully specialized for known arg values,
   whereas some calls to known functions can be specialized.
 * a ctor call is relatively many insns; a call is just one.
+
+I believe this optimization is not (yet) implemented by the Foster compiler.
 
 Inlining, Specificially
 -----------------------
@@ -68,11 +70,12 @@ results in simplification taking roughly half of total compilation time.
 
 Kennedy [1] presents (and implements) an improvement to Appel & Jim's un-implemented mutable/graphical
 scheme. Kenedy uses imperative union-find to obtain effectively-linear exhaustive simplification.
+I have re-implemented his algorithm in ``MKNExpr.hs``.
 
 Waddell and Dybvig [4] present a linear-time (but incomplete) algorithm for general, unrestricted
-beta reduction interleaved with constant propagation with several desriable properties
-(online, polyvariant, context-sensitive, demand-driven). A variant of this algorithm is implemented
-in ``KNExpr.hs``.
+beta reduction interleaved with constant propagation. This approach has several desriable properties
+(online, polyvariant, context-sensitive, demand-driven). A variant of this algorithm was once
+implemented in ``KNExpr.hs`` but I found it to be... temperamental.
 
 
 #. `Compiling with Continuations, Continued <http://research.microsoft.com/en-us/um/people/akenn/sml/CompilingWithContinuationsContinued.pdf>`_
@@ -84,48 +87,12 @@ in ``KNExpr.hs``.
 GC Optimizations
 ~~~~~~~~~~~~~~~~
 
-Liveness allows optimizing use of gc roots::
+In years past, the Foster compiler implemented dataflow-driven optimizations of GC roots,
+both to eliminiate unnecessary uses of GC roots as well as to merge roots with disjoint
+lifetimes (thereby shrinking activation record sizes).
 
-        // IN: 2 3 5 8 13 21
-
-        // * If a function body cannot trigger GC, then the in-params
-        //   need not be stored in gcroot slots. Reason: the params
-        //   are never live after a GC point, because there are no GC points.
-        //
-        fn-no-gc = fn (n : i32, r : ref i32) {
-          expect_i32(deref(r))
-          print_i32(n)
-        }
-
-        may-trigger-gc = fn (to i32) { let x : ref i32 = new 0 in { deref(x) } }
-
-        // * If there are no GC points after a `new`, then the returned
-        //   pointer need not be stored in a gcroot slot. Reason: there
-        //   are no further GC roots across which the pointer must be stored.
-        //
-        // TODO enable once regular local vars are implemented
-        //no-gc-after-new = fn (to i32) {
-        //  may-trigger-gc()
-        //
-        //  let n : ref i32 = new 0 in {
-        //    0
-        //  }
-        //}
-
-        // * If a pointer is dead after being passed to a function,
-        //   then it need not exist in a gcroot slot after the previous
-        //   GC point. Thus the temporary in `f(new blah)` need not be
-        //   stored in a gcroot slot. Reason: not live for GC.
-        //
-        no-root-for-dead-ptrs = fn () {
-          expect_i32(42)
-          print_i32(deref(new 42))
-        }
-        main = fn () {
-          fn-no-gc(30, new 30)
-          //no-gc-after-new()
-          no-root-for-dead-ptrs()
-        }
+Currently, we avoid the issue entirely by treating the stack conservatively, which
+obviates the need for GC roots.
 
 Data Structure Elimination
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -137,7 +104,13 @@ The following idioms should not involve runtime allocation::
         let v = (x1, ..., xn) in case v of ... end end
 
 We can also generalize this in a few ways.
-First, this works for any single-constructor datatype, not just tuples.
+This can also work for any single-constructor datatype, not just tuples.
+
+Status: implemented; pattern matching on tuple literals does not allocate.
+I believe that the same optimization also applies in the general
+ADT case but have not checked recently.
+
+
 Furthermore, it doesn't really require a single-ctor type, either;
 as long as the head constructor of the scrutinee is known,
 we can statically prune the decision tree to eliminate impossible cases.
@@ -179,8 +152,14 @@ rather than::
         case p of (C, d) -> ... use d ...
                of pair   -> ... use pair ...
 
+Status: not yet implemented. I am curious about
+how often such an optimization would actually apply.
+
 Pipe Operator
 ~~~~~~~~~~~~~
+
+The Foster compiler implements the pipe operator (``|>``) as a built-in macro,
+rearranging ASTs during parsing.
 
 The pipe operator::
 
@@ -191,14 +170,12 @@ is syntax for::
     (     bytesDrop todrop  b   )
     (NOT (bytesDrop todrop) b  !)
 
-and::
+Multiple pipes are treated like so::
 
     (b |> bytesDrop todrop |> bytesTake reslen)
     =~=
     (b |> bytesDrop todrop) |> bytesTake reslen
-
-is syntax for::
-
+    =~=
     bytesTake reslen (b |> bytesDrop todrop)
     =~=
     bytesTake reslen (bytesDrop todrop b)

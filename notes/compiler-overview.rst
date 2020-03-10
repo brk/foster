@@ -11,7 +11,7 @@ In broad strokes:
 * The middle-end, in ``compiler/foster/me/``, goes from parsed source to a
   low-level IR that is almost, but not quite, LLVM. The middle end performs
   type inference, monomorphization, inlining, pattern match compilation,
-  closure conversion, lambda lifting, optimized GC root insertion, and data
+  closure conversion, lambda lifting, and data
   constructor representation selection. The middle end also contains a reference
   interpreter implementation. The flow through the middle end is roughly as follows:
 
@@ -57,7 +57,6 @@ In broad strokes:
       * May-GC analysis
       * Closure conversion and pattern-match compilation.
       * Allocation explication
-      * GC root insertion
       * And finally, conversion to the output protocol buffers
 * The backend is composed of two executables:
 
@@ -69,8 +68,10 @@ In broad strokes:
     lazy type map generation, and some function argument coercion.
   * ``compiler/fosteroptc.cpp`` takes LLVM IR and compiles it down to assembly
     or object code. It does the same work as ``llc`` and ``optc``, but it runs
-    Foster-specific optimization passes and uses a custom GC plugin for
-    emitting stack maps in a format the runtime can understand.
+    Foster-specific optimization passes.
+    Once upon a time we used a custom GC plugin to emit stack maps and optimize
+    GC write barriers; we now use stack-conservative GC, which allows LLVM to
+    generate better assembly overall.
 * ``scripts/fosterc.py`` ties the above processes together, and handles
   platform-specific linking details. It is in turn wrapped by
   ``scripts/runtest.py``.
@@ -137,10 +138,13 @@ Stack Allocation
 ----------------
 
 From an IR perspective, allocating on the stack instead of the heap (mostly)
-just involves toggling a flag on an AllocationSource. There's one extra
-subtlety: there must also be a GC root pointing to the stack allocation,
-and the GC must know to update the stack slot contents without also trying to
-copy the slot contents to the newspace.
+just involves toggling a flag on an AllocationSource.
+
+.. ::
+  There's one extra
+  subtlety: there must also be a GC root pointing to the stack allocation,
+  and the GC must know to update the stack slot contents without also trying to
+  copy the slot contents to the newspace.
 
 There are a few choices in how to expose this functionality at the source level
 in a safe way. One approach would be to mimic ALGOL, with implicit mutability::
@@ -161,10 +165,12 @@ To support this illusion, expressions of the form ``x := e`` become stores, and
 every other use of a stackvar-bound variable is implicitly replaced (after
 typechecking) with a load from the backing slot.
 
-The problem with this approach is that a closure ``{ x }`` should not be
+The main problem with this approach is that a closure ``{ x }`` should not be
 rewritten to ``{ load x }``, as there's no check that the closure is only used
 when ``x`` is still live. We can account for this with an ad-hoc check, but
-that's both ugly and restrictive.
+that's both ugly and restrictive. In particular, there's no need to forbid
+occurrences in lambdas that get inlined/contified, but it's pretty gross to
+make "typability" depend on the result of optimization!
 
 A subtler problem is a poor interaction with lambda-lifting, which removes
 variables from a closure's environment if the variable can be provided from
@@ -239,7 +245,7 @@ For reference, here are the definitions from the stdlib::
           arrayEnumFrom a (primitive_sext_i64_i32 0) f
         };
 
-and the result of inlining these definitions (not currently performed)::
+and how those definitions might get inlined::
 
         energy = { bodies : Array Planet =>
           let e = (ref 0.0); in
@@ -473,21 +479,70 @@ the possibility of inlining, because the closure **escapes** the scope of ``x``.
    Research question: how common is it to encounter call sites with one known
    callee, where the callee may escape the scope of its innermost free variable?
 
+
+JavaScript/asm.js
+-----------------
+
+Advantages of targeting JS: industrial-strength JITs + GCs on both browsers and servers.
+
+Disadvantages of targeting JS: no direct support for long-running programs,
+deep recursion, or stack manipulation for coroutines. Web workers provide
+something akin to threads, but with restrictions (no signals, fork, or join;
+max 20 workers; spotty support for shared array buffers due to Spectre; no
+access to DOM, or window/document/parent).
+
+* Web platform:
+ * WebSockets, WebGL, canvas, ...
+ * asm.js doesn't provide support for coroutines directly
+   but `Stopify <https://stopify.org/>`_ provides first-class continuations for JavaScript.
+ * Emscripten provides shims for several useful APIs:
+
+   * Graphics: SDL, plus limited support for glut/glfw/glew/xlib, and OpenGL/EGL.
+   * Virtual file system shims for synchronous file API access.
+
+    * Obviously, browsers don't get access to the host filesystem.
+    * In browsers, only web workers get `synchronous file access <https://html5rocks.com/en/tutorials/file/filesystem-spec/>`_.
+
+   * html5 glue bindings
+ * Alternatively, `Browsix <https://browsix.org/>`_ runs code in web workers to circumvent the browser's event loop.
+   It focuses on providing OS abstractions like processes (including fork, spawn, exec, and wait), pipes,
+   signals, a shared filesystem, and sockets.
+ * SIMD.js has been deprecated/removed by Chrome.
+
+
+WebAssembly
+-----------
+
+Advantages of targeting wasm: industrial strength JITs, community momentum, clean design.
+
+The main disadvantages of wasm are related to its early stage; the MVP is, well, minimal,
+and many useful features and platform aspects are `future work <https://webassembly.org/docs/future-features/>`_.
+  * SIMD support for WASM is being worked on.
+  * Direct support for advanced control flow for coroutines/effects is TBD.
+    In the meantime, it's possible to do trampoline-style transformations, I guess.
+  * GC support looks... hard.  This is probably the biggest current blocker to the model of
+    "wasm as host" rather than the common current use case of "wasm from host".
+  * System interface standardization remains ongoing.
+    For example, graphics support is alpha/non-standardized yet.
+    Emscripten shims can be used in browsers but not standalone.
+    WASI provides filesystem, sockets, clocks, and random numbers.
+
+Binaryen
+~~~~~~~~
+
+It looks like Binaryen is the compilation-toolchain aspect of Emscripten,
+specialized to WebAssembly, and
+divorced from the environment shims/polyfills provided by Emscripten.
+
+Binaryen provides an Asyncify compiler pass which provides support
+for pausing/resuming wasm code, which (I think!) can be used to implement coroutines.
+
 Emscripten
 ----------
 
-The Emscripten project gets us (maybe)
-90% of the way to running Foster in a browser.
+The Emscripten project represents one possible route
+to running Foster in a browser.
 The main obstacles remaining:
-
-* The runtime currently dynamically links to ``chromium_base``,
-  instead of statically linking it in, mainly for compilation-speed reasons.
-  Several possible fixes:
-
-   * link statically against ``chromium_base.bc``
-     instead of dynamically against ``chromium_base.so``
-   * reduce dependency on chromium_base by re-implementing in C++ or foster
-   * create a JS-specific platform analogue to ``chromium_base``.
 
 * Currently emscripten does not support stack switching, which means we can't
   use coroutines. But at least programs which do not use coroutines will still
@@ -496,6 +551,7 @@ The main obstacles remaining:
   <http://users-cs.au.dk/danvy/sfp12/papers/thivierge-feeley-paper-sfp12.pdf>`_.
 * The garbage collector uses a custom backtrace function.
   Maybe emscripten has a port of libunwind?
+  It appears that WASM still lacks backtraces.
 * An eventual implementation of parallelism would probably need to be adapted
   from a shared-state to the pure message passing capabilities provided by JS.
 

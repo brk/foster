@@ -1,17 +1,19 @@
 Pattern Match Compilation
 -------------------------
 
-Compilation of nested pattern matches to flat decision trees
-occurs during the conversion to K-normal form. In the past, this occurred
-during closure conversion, as a transformation on control flow graphs. However,
-the advantage of using K-normal form instead of control flow graphs is that
-the process of pattern matching remains expressible as a source-to-source
-transformation. Thanks to guaranteeed contification, the lambda-based
-indirections used to avoid code blowup do not induce extra overhead beyond the
-original CFG-oriented scheme.
+Compilation of nested pattern matches to flat decision trees has bounced
+back and forth between happening "early" (just after typechecking) or "late"
+(just before codegen) in the middle end.
 
-.. note::
-        The examples below are holdovers from the CFG-based days...
+Currently, match compilation happens "late", during closure conversion,
+as a transformation on control flow graphs.
+
+
+In the future, I'd like to revisit moving match compilation earlier
+in the pipeline. Pattern match compilation can (and, I think, should)
+be expressed as a source-to-source program transformation.  Thanks to
+guaranteeed contification, the apparent overhead added by a source-level
+transformation can be reliably eliminated.
 
 A Medium Example
 ~~~~~~~~~~~~~~~~
@@ -190,33 +192,35 @@ computation. That way, if (say) a binding ``y = x[1]`` is available,
 at runtime.
 
 
-GC Roots for Occurrences
-""""""""""""""""""""""""
+.. ::
 
-Assuming that every subterm of an inspected value is GCable,
-the static number of GC roots should be exactly equal to the size of the
-union of distinct occurrences appearing on the RHS of the arms of the match.
+  GC Roots for Occurrences
+  """"""""""""""""""""""""
 
-In particular, this means that if the same occurrence is used on two
-separate paths, a single GC roots should be allocated for both of them.
-This amounts to a special case of stack coloring for roots with known
-disjoint lifetimes.
+  Assuming that every subterm of an inspected value is GCable,
+  the static number of GC roots should be exactly equal to the size of the
+  union of distinct occurrences appearing on the RHS of the arms of the match.
 
-There are a few approaches we could take to ensure that this is true:
+  In particular, this means that if the same occurrence is used on two
+  separate paths, a single GC roots should be allocated for both of them.
+  This amounts to a special case of stack coloring for roots with known
+  disjoint lifetimes.
 
-#. Use memory lifetime markers and rely on LLVM to do the appropriate stack
-   coloring (will it do so for gcroot slots?)
-#. When inserting GC roots, associate roots with ``(Either MoVar Occurrence)``
-   instead of just MoVar. If we do this, we should insert GC roots
-   before optimizing occurrences to ensure that we don't generate
-   separate roots for ``zA = y[0]`` and ``zB = x[1,0]`` when ``y = x[1]``.
-   But that works out well regardless: we can use a single forward pass to
-   optimize both loads from roots and occurrences.
+  There are a few approaches we could take to ensure that this is true:
 
-As it so happens, none of the code in the non-leaf portion of the decision
-tree actually needs to worry about GC roots, since the decision tree code
-can never trigger a GC. It's only the leaves, which could trigger a GC,
-that (may) need to store their occurrences in root slots.
+  #. Use memory lifetime markers and rely on LLVM to do the appropriate stack
+    coloring (will it do so for gcroot slots?)
+  #. When inserting GC roots, associate roots with ``(Either MoVar Occurrence)``
+    instead of just MoVar. If we do this, we should insert GC roots
+    before optimizing occurrences to ensure that we don't generate
+    separate roots for ``zA = y[0]`` and ``zB = x[1,0]`` when ``y = x[1]``.
+    But that works out well regardless: we can use a single forward pass to
+    optimize both loads from roots and occurrences.
+
+  As it so happens, none of the code in the non-leaf portion of the decision
+  tree actually needs to worry about GC roots, since the decision tree code
+  can never trigger a GC. It's only the leaves, which could trigger a GC,
+  that (may) need to store their occurrences in root slots.
 
 A Simple Example
 ~~~~~~~~~~~~~~~~
