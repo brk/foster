@@ -11,7 +11,7 @@ import Foster.Base(Uniq, Ident(..), modIORef')
 import Foster.MainOpts
 
 import Data.IORef(IORef, readIORef, newIORef, writeIORef)
-import Control.Monad.Trans(lift)
+import Control.Monad.Trans.Class(lift)
 import Control.Monad.State(StateT, gets, when, liftIO)
 import Control.Monad.Trans.Except(ExceptT, throwE)
 import Control.Monad.IO.Class(MonadIO)
