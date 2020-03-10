@@ -566,7 +566,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     TList [tok, _,_cbr, TList (hash:tys)] | tok `tm` tok_TUPLE && isHashMark hash
                                                                   -> TupleTypeP KindAnySizeType  (map cb_parse_t tys)
     TList [tok, _,_cbr, TList tys] | tok `tm` tok_TUPLE -> TupleTypeP KindPointerSized (map cb_parse_t tys)
-    TList [tok, _, cbr, TList [tuple, _mu, mu_eff]]        | tok `tm` tok_FUNC_TYPE ->
+    TList [tok, _, cbr, TList [tuple, mu_eff]]        | tok `tm` tok_FUNC_TYPE ->
         let tys = map cb_parse_t (unTuple tuple) in
         let eff = let effp = map cb_parse_eff (unMu mu_eff) in
                   case effp of
@@ -574,7 +574,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
                     [eff] -> Just eff
                     _ -> trace ("Warning: dropping multi-parsed-effects: " ++ show effp) Nothing in
         FnTypeP (init tys) (last tys) eff FastCC FT_Func (cb_parse_range cbr)
-    TList [tok, _, cbr, TList [tuple, _mu, _eff, tannots]] | tok `tm` tok_FUNC_TYPE ->
+    TList [tok, _, cbr, TList [tuple, _eff, tannots]] | tok `tm` tok_FUNC_TYPE ->
         let annots = cb_parse_tannots tannots in
         let (cc, ft) = extractFnInfoFromAnnots annots in
         let tys = map cb_parse_t (unTuple tuple) in

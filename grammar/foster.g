@@ -238,9 +238,9 @@ tatom :
   | '??' a                              -> ^(TYPE_PLACEHOLDER a)
   | '(' ')'                             -> ^(TUPLE)
   | '(' t (',' t)* ')' hashq            -> ^(TUPLE hashq t+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
-  | ('#precondition' val_abs)?
+  |
     '{' t  ('=>' t)* effect? '}'
-   ('@' '{' tannots '}')?               -> ^(FUNC_TYPE ^(TUPLE t+) ^(MU val_abs?) ^(MU effect?) tannots?)  // description of terms indexed by terms
+   ('@' '{' tannots '}')?               -> ^(FUNC_TYPE ^(TUPLE t+) ^(MU effect?) tannots?)  // description of terms indexed by terms
 //      | ':{'        (a ':' k '->')+ t '}'     -> ^(TYPE_TYP_ABS a k t)        // type-level abstractions
 //  | tctor                                -> ^(TYPE_CTOR tctor)                  // type constructor constant
   // The dollar sign is required to distinguish type constructors
