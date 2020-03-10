@@ -1634,6 +1634,10 @@ mknInline subterm mainCont mb_gas = do
                                         dbgDoc $ red (text "CallOfUnknownCont: ") <+> pretty redex
                           return ()
 
+                        CallOfNonInlineableFunction fn fnlink -> do
+                          -- Treat non-inlineable functions as if they were unknown.
+                          return ()
+
                         CallOfSingletonFunction fn -> do
                           do  redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
                               dbgDoc $ text "CallOfSingletonCont: " <+> pretty redex
@@ -2417,7 +2421,7 @@ betaReduceOnlyCall fn args kv    wr fd = do
 
 baFresh :: String -> BlockAccum BlockId
 baFresh s = do u <- freshLabel;
-               return (trace ("new label " ++ show u ++ " for string " ++ s) (s, u))
+               return {- (trace ("new label " ++ show u ++ " for string " ++ s) -} (s, u)
 
 baNewUniq :: BlockAccum Uniq
 baNewUniq = do (uref, _, _) <- get ; mutIORef uref (+1)
