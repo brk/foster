@@ -737,7 +737,7 @@ tidy* assume_tori_is_tidy(tori* p) { return (tidy*) p; }
 
 // }}}
 
-// {{{
+// {{{ Helpers (notably, for allocation and stack scanning).
 // {{{ Function prototype decls
 bool line_for_slot_is_marked(void* slot);
 void inspect_typemap(const typemap* ti);
@@ -914,6 +914,7 @@ namespace helpers {
 
 // TODO use stat_tracker again?
 
+// {{{ Space management
 frame21* allocate_frame21() {
   bool commit = true;
   frame21* rv = (frame21*) pages_map(nullptr, 1 << 21, 1 << 21, &commit);
@@ -1101,7 +1102,9 @@ public:
 };
 
 space_allocator_t global_space_allocator;
+// }}}
 
+// {{{ Linemap display helpers
 uint8_t count_marked_lines_for_frame15(frame15* f15, uint8_t* linemap_for_frame);
 
 void display_linemap_for_frame15_id(frame15_id fid) {
@@ -1134,8 +1137,9 @@ void display_used_linegroup_linemap(used_linegroup* g, uint8_t* linemap) {
     }
   }
 }
+// }}}
 
-
+// {{{ metadata helpers
 void used_linegroup::clear_line_and_object_mark_and_validity_bits() {
   uint8_t* linemap = linemap_for_frame15_id(associated_frame15_id());
 
@@ -1151,8 +1155,6 @@ void used_linegroup::clear_line_and_object_mark_and_validity_bits() {
   gc_assert(startline() < endline(), "invalid: startline after endline when clearing bits");
   clear_object_mark_and_validity_bits_for_used_group(*this);
 }
-
-// {{{ metadata helpers
 
 static inline int64_t array_size_for(int64_t n, int64_t slot_size) {
   return roundUpToNearestMultipleWeak(sizeof(heap_array) + n * slot_size,
@@ -1206,8 +1208,6 @@ int64_t large_array_allocator::approx_size_in_bytes() {
   return rv;
 }
 // }}}
-
-// {{{
 
 void mark_line_for_slot(void* slot) {
   uint8_t* linemap = linemap_for_frame15_id(frame15_id_of(slot));
@@ -1309,6 +1309,9 @@ void for_each_child_slot(heap_cell* cell, CellThunk thunk) {
   for_each_child_slot_with(cell, arr, map, cell_size, thunk);
 }
 
+// }}}
+
+// {{{ Factored-out functionality: cell scanning, space tracking.
 // This struct contains per-frame state and code shared between
 // regular and line-based immix frames.
 namespace immix_common {
@@ -2072,18 +2075,6 @@ public:
                  IMMIX_BYTES_PER_LINE - sizeof(free_linegroup));
         }
         // Nothing to do!
-        #if 0
-        if (was_free) { // continue free group
-          // fallthrough
-        } else { // was used, now free: start new free group
-          free_linegroup* new_fg = (free_linegroup*) offset(g->base, i * IMMIX_BYTES_PER_LINE);
-          new_fg->next = fg;
-          fg = new_fg;
-          fg->bound = offset(g->base, i * IMMIX_BYTES_PER_LINE);
-        }
-
-        fg->bound += IMMIX_BYTES_PER_LINE;
-        #endif
       }
       was_free = !is_marked;
     }
@@ -2249,27 +2240,6 @@ void collect_roots_from_stack(void* start_frame) {
     hdr_record_value(gcglobals.hist_gc_stackscan_frames, int64_t(nFrames));
   }
 
-  const bool SANITY_CHECK_CUSTOM_BACKTRACE = false;
-  if (SANITY_CHECK_CUSTOM_BACKTRACE) {
-    // backtrace() fails when called from a coroutine's stack...
-    int numRetAddrs = backtrace((void**)&retaddrs, MAX_NUM_RET_ADDRS);
-    if (GCLOG_DETAIL > 2) {
-      for (int i = 0; i < numRetAddrs; ++i) {
-        fprintf(gclog, "backtrace: %p\n", retaddrs[i]);
-      }
-      for (int i = 0; i < nFrames; ++i) {
-        fprintf(gclog, "           %p\n", frames[i].retaddr);
-      }
-    }
-    int diff = numRetAddrs - nFrames;
-    for (int i = 0; i < numRetAddrs; ++i) {
-      if (frames[i].retaddr != retaddrs[diff + i]) {
-        fprintf(gclog, "custom + system backtraces disagree: %p vs %p, diff %d\n", frames[diff + i].retaddr, retaddrs[i], diff);
-        exit(11);
-      }
-    }
-  }
-
   // For now, we must disable frame pointer elimination
   // to ensure that we can calculate the stack pointer
   // (which requires that we have a frame pointer).
@@ -2280,28 +2250,23 @@ void collect_roots_from_stack(void* start_frame) {
   // the performance gain from FPE is only on the order of
   // 1 to 3%, so it's not a critical optimization.
   //
-  // Note that while LLVM's GC plugin architecture can tell us
-  // frame sizes for Foster functions, and thus lets us
-  // theoretically reconstruct frame boundaries once we
-  // reach the land of Foster, we still need "a few"
-  // frame pointers to get from Here to There.
-  //
   // If we were willing to accept a dependency on libgcc,
-  // we could reuse the _Unwind_Backtrace function to unwind
-  // past libfoster frames and then use LLVM's computed
-  // stack frame sizes to crawl the rest of the stack
-  // (assuming no interspersed foreign frames...).
+  // we could use the _Unwind_Backtrace function.
 
   for (int i = 0; i < nFrames; ++i) {
     frameptr fp = (frameptr) frames[i].frameptr;
     frameptr sp = (i == 0) ? fp : offset(frames[i - 1].frameptr, 2 * sizeof(void*));
+
+    // The bottom-most frame of a coroutine stack will have a null frame pointer;
+    // when we see it, we can bail out.
+    if (!fp) { break; }
 
     // Iterate over all (aligned) potential root slots in the frame.
     frameptr lower = std::min(fp, sp);
     frameptr upper = std::max(fp, sp);
 
     while (lower <= upper) {
-      fprintf(gclog, "considering potential root %p in frame %d\n", lower, i);
+      //fprintf(gclog, "considering potential root %p in frame %d\n", lower, i);
       helpers::consider_conservative_root((unchecked_ptr*) lower);
       lower = offset(lower, sizeof(void*));
     }
