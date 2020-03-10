@@ -56,9 +56,6 @@ extern "C" char* __foster_fosterlower_config;
 #define DEBUG_INITIALIZE_ALLOCATIONS  0 // Initialize even when the middle end doesn't think it's necessary
 #define ELIDE_INITIALIZE_ALLOCATIONS  0 // Unsafe: ignore requests to initialize allocated memory.
 #define MEMSET_FREED_MEMORY           0
-// This included file may un/re-define these parameters, providing
-// a way of easily overriding-without-overwriting the defaults.
-#include "gc/foster_gc_reconfig-inl.h"
 
 const ssize_t inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
 

@@ -310,20 +310,6 @@ add_custom_command(
 )
 # }}}
 
-# The .py file here is basically `touch` with a hardcoded path.
-# The intention here was that we could store/overwrite compile-time
-# config flags for the runtime/GC in a way that's more easily amenable
-# to automated re-configuration than source editing or command line flags
-# or such.
-add_custom_command(
-  OUTPUT ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_reconfig-inl.h
-  COMMAND
-    ${PYTHON} ${PROJECT_SOURCE_DIR}/scripts/mk_gc_reconfig_h.py
-      --srcdir=${PROJECT_SOURCE_DIR}
-  DEPENDS
-    ${PROJECT_SOURCE_DIR}/scripts/mk_gc_reconfig_h.py
-)
-
 # {{{ Use clang to build libfoster.bc
 set (hdrhist_ROOT ${PROJECT_SOURCE_DIR}/third_party/HdrHistogram_c/)
 
@@ -377,7 +363,6 @@ add_custom_command(
     ${LIBFOSTER_CPP_SOURCES}
     ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
     ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_utils.h
-    ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_reconfig-inl.h
     ${PROJECT_BINARY_DIR}/_bitcodelibs_/foster_hdrhist.bc
 )
 

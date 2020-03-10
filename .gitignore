@@ -10,7 +10,6 @@ _obj
 grammar/output/
 notes/_build/
 third_party/nacl-20110221/build
-runtime/gc/foster_gc_reconfig-inl.h
 compiler/me/cabal.sandbox.config
 compiler/me/dist-newstyle
 compiler/me/src/Foster/Tokens.hs
