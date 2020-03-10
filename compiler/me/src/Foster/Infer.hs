@@ -261,15 +261,15 @@ tcUnifyEffects t1 t2 constraints = do
                    tcFails [text "Effect unification produced infinite loop"]
          _   -> do 
                    let unifyTail1 ds tl desc = do
-                       --tcLift $ putDocLn $ text "unifyTail1 " <> pretty ds <+> pretty tl
-                       if null ds then return (tl, [])
-                                  else do tv <- newTcUnificationVarEffect desc
-                                          return (tv, [TypeConstrEq tl (effectExtendsTc ds tv)] )
+                        --tcLift $ putDocLn $ text "unifyTail1 " <> pretty ds <+> pretty tl
+                        if null ds then return (tl, [])
+                                    else do tv <- newTcUnificationVarEffect desc
+                                            return (tv, [TypeConstrEq tl (effectExtendsTc ds tv)] )
                    let unifyTail2 ds tl desc = do
-                       --tcLift $ putDocLn $ text "unifyTail2 " <> pretty ds <+> pretty tl
-                       if null ds then return (tl, [])
-                                  else do tv <- newTcUnificationVarEffect desc
-                                          return (tv, [TypeConstrEq (effectExtendsTc ds tv) tl] )
+                        --tcLift $ putDocLn $ text "unifyTail2 " <> pretty ds <+> pretty tl
+                        if null ds then return (tl, [])
+                                    else do tv <- newTcUnificationVarEffect desc
+                                            return (tv, [TypeConstrEq (effectExtendsTc ds tv) tl] )
 
                    (tail1, c1) <- unifyTail1 ds1 tl1 "fx.tail1"
                    (tail2, c2) <- unifyTail2 ds2 tl2 "fx.tail2"
