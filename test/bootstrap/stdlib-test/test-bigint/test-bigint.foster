@@ -345,8 +345,8 @@ print_Wordx = { k =>
 
 debug_nat_2 = { n =>
   a = natDigits n;
-    expect_text "_[1] = "; print_Wordb a[1];
-    expect_text "_[0] = "; print_Wordb a[0];
+    expect_text "_[1] = "; print_Wordb a.[1];
+    expect_text "_[0] = "; print_Wordb a.[0];
 };
 
 testNatDivW = { i : Int64 => j : Int64 =>

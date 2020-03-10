@@ -114,7 +114,7 @@ ptrGetIndex = { ptr => idx =>
   case ptr
     of $PtrNil -> prim kill-entire-process "ptrGetIndex null";
     of $PtrRef r -> r^
-    of $PtrArr arr off -> arr[off +Int32 idx]
+    of $PtrArr arr off -> arr.[off +Int32 idx]
   end
 };
 
@@ -123,7 +123,7 @@ ptrSetIndex = { ptr => idx => val =>
   case ptr
     of $PtrNil -> ()
     of $PtrRef r -> val >^ r;
-    of $PtrArr arr off -> val >^ arr[off +Int32 idx];
+    of $PtrArr arr off -> val >^ arr.[off +Int32 idx];
   end
 };
 
@@ -132,7 +132,7 @@ ptrGet = { ptr =>
   case ptr
     of $PtrNil -> prim kill-entire-process "ptrGet null";
     of $PtrRef r -> r^
-    of $PtrArr arr off -> arr[off]
+    of $PtrArr arr off -> arr.[off]
   end
 };
 
@@ -141,7 +141,7 @@ ptrSet = { ptr => val =>
   case ptr
     of $PtrNil -> prim kill-entire-process "ptrGet null";
     of $PtrRef r -> val >^ r;
-    of $PtrArr arr off -> val >^ arr[off]
+    of $PtrArr arr off -> val >^ arr.[off]
   end
 };
 
@@ -170,7 +170,7 @@ ptrMemset = { ptr => v => n =>
 
 arrMemset :: forall (a:Type) { Array a => Int32 => a => Int32 => () };
 arrMemset = { arr => off => v => n =>
-  enumRange32 0 n { i => v >^ arr[i +Int32 off] };
+  enumRange32 0 n { i => v >^ arr.[i +Int32 off] };
 };
 
 ptrMemcpy :: forall (a:Type) { Ptr a => Ptr a => Int32 => () };
@@ -223,7 +223,7 @@ memmove_arr :: forall (a:Type) { Array a => Int32 => Int32 => Int32 };
 memmove_arr = { arr => srcoff => n =>
   REC loop = { i =>
     if i <SInt32 n
-      then arr[srcoff +Int32 i] >^ arr[i];
+      then arr.[srcoff +Int32 i] >^ arr.[i];
            loop (i +Int32 1)
       else n
     end
@@ -366,7 +366,7 @@ zeroTerminate = { arr =>
   len = arrayLength32 arr;
   out = allocDArray (len +Int32 1);
   memcpy_i8_to_from_at_len out arr 0 len;
-  0 >^ out[len];
+  0 >^ out.[len];
   out;
 };
 

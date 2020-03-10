@@ -158,7 +158,7 @@ copyOfArrayTo :: forall (t:Type)
 copyOfArrayTo = { forall t:Type,
                    a => n =>
   assert (arrayLength a >=UInt64 (zext_i32_to_i64 n)) "copyOfArrayTo";
-  newDArray0:[t] n { i : Int32 => a[i] };
+  newDArray0:[t] n { i : Int32 => a.[i] };
 };
 
 /////
@@ -194,7 +194,7 @@ newDArray = { forall v:Type,
   x = (prim ref n);
 
   until { x^ ==Int32 0 } {
-      f x^            >^ a[x^ -Int32  1];
+      f x^            >^ a.[x^ -Int32  1];
       ( x^ -Int32 1 ) >^ x
   };
   a
@@ -215,8 +215,8 @@ newArrayReplicate = { forall v:Type,
   x = (prim ref n);
 
   until { x^ ==Int32 0 } {
-      v >^ a[x^ -Int32 1];
-      (      x^ -Int32 1 ) >^ x
+      v >^ a.[x^ -Int32 1];
+      (       x^ -Int32 1 ) >^ x
   };
   a
 };
@@ -233,7 +233,7 @@ arrayFromRange32 = { sm => lg => f =>
   REC go = { n =>
     if n >SInt32 0 then
       i = n -Int32 1;
-      f  (i +Int32 sm) >^ arr[i];
+      f  (i +Int32 sm) >^ arr.[i];
       go  i
     end
   };
@@ -253,7 +253,7 @@ arrayFromRange32Up = { sm => lg => f =>
   arr = allocDArray (lg -Int32 sm);
   REC go = { n => lim =>
     if n <SInt32 lim then
-      f  (n +Int32 sm) >^ arr[n];
+      f  (n +Int32 sm) >^ arr.[n];
       go (n +Int32 1) lim
     end
   };
@@ -263,17 +263,17 @@ arrayFromRange32Up = { sm => lg => f =>
 
 arrayCopy :: forall (a:Type) { Array a => Array a };
 arrayCopy = { arr =>
-  newDArray0 (arrayLength32 arr) { idx => arr[idx] };
+  newDArray0 (arrayLength32 arr) { idx => arr.[idx] };
 };
 
 arrayMap :: forall (a:Type) (b:Type) { Array a => { a => b } => Array b };
 arrayMap = { arr => f =>
-  arrayFromRange32 0 (arrayLength32 arr) { idx => f arr[idx] };
+  arrayFromRange32 0 (arrayLength32 arr) { idx => f arr.[idx] };
 };
 
 arrayMapWithIndex32 :: forall (a:Type) (b:Type) { Array a => { Int32 => a => b } => Array b };
 arrayMapWithIndex32 = { arr => f =>
-  arrayFromRange32 0 (arrayLength32 arr) { idx => f idx arr[idx] };
+  arrayFromRange32 0 (arrayLength32 arr) { idx => f idx arr.[idx] };
 };
 
 // Returns True on success, otherwise False.
@@ -282,8 +282,8 @@ arrayIterReverse = { forall t:Type,
                            n : Int32 => // invariant: n < len a
                            f : { t => Bool } =>
   if n >=SInt32 0 // TODO change this to avoid needing wraparound here.
-  then if f a[n] then arrayIterReverse a (n -Int32 1) f
-                 else False end
+  then if f a.[n] then arrayIterReverse a (n -Int32 1) f
+                  else False end
   else True end
 };
 

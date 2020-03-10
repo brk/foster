@@ -10,7 +10,7 @@ main = {
 };
 
 fooBARBAZ___QUUUX = {
-    print_i32 aAAAARRRRRRAAAYYYYYY[0];
+    print_i32 aAAAARRRRRRAAAYYYYYY.[0];
 };
 
 barBARARBARBAARA = { arg =>
@@ -28,7 +28,7 @@ ascii_space = 32;
 
 part3 = {
   expect_i8 ascii_space;
-  print_i8 sa[0];
+  print_i8 sa.[0];
 };
 
 pair = (20, ascii_space);

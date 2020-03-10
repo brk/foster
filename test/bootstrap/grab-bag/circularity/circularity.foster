@@ -55,7 +55,7 @@ weird1 = { forall t:Type,
                   a : Array t =>
                   f1 : { t => () } =>
   prim_arrayLength a;
-  f1 a[0];
+  f1 a.[0];
   weird1 a f1;
   ()
 };
@@ -65,6 +65,6 @@ weird2 = { forall t:Type,
                   a : Array t =>
                   f2 : { t => () } =>
   prim_arrayLength a;
-  f2 a[0];
+  f2 a.[0];
   ()
 };

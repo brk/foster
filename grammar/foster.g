@@ -24,7 +24,7 @@ tokens {
   HASH_MARK='#';
 
   OPEN_PAREN='('; CLOSE_PAREN=')';
-  OPEN_SQRBR='['; CLOSE_SQRBR=']'; OPEN_COLON_SQRBR=':[';
+  OPEN_SQRBR='['; CLOSE_SQRBR=']'; OPEN_COLON_SQRBR=':['; OPEN_DOT_SQRBR='.[';
   OPEN_CURLY='{'; CLOSE_CURLY='}';
 
   VAL_APP; FORMALS;
@@ -139,7 +139,7 @@ tyapp   :	':[' t (',' t)* ']'          -> ^(VAL_TYPE_APP t+) // type application
 
 suffix  :  tyapp
         |  '^'                          -> ^(DEREF)             // dereference
-        |  '[' e ']'                    -> ^(SUBSCRIPT e)
+        |  '.[' e ']'                   -> ^(SUBSCRIPT e)
         |  '!'                          -> ^(VAL_APP)		// nullary call
 //      |    '.(' e ')'                 -> ^(VAL_APP e)
   ;

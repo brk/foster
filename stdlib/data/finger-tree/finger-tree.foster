@@ -813,14 +813,19 @@ ftFoldrTreeWithIndex = { size => fidx => ft => init =>
 
 // }}}
 
-// {{{ Conversion to primitive arrays
+// {{{ Conversion to and from primitive arrays
+ftFromArray :: forall (a:Type) { Array a => FingerTree a };
+ftFromArray  = { arr =>
+  f0 = { idx => prim subscript arr idx };
+  ftFromFunction (arrayLength32 arr) f0;
+};
 
 ftToArray :: forall (a:Type) { { a => Int32 } => FingerTree a => Array a };
 ftToArray = { size => ft =>
   len = ftTreeSize size ft;
   arr = allocDArray:[a] len;
   f = { idx => val => unit =>
-          val >^ arr[idx];
+          val >^ arr.[idx];
           unit
       };
   ftFoldlTreeWithIndex size f ft ();

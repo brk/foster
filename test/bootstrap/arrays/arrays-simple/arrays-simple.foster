@@ -18,10 +18,10 @@ noinline_arrays_bool = { b =>
   print_i64 (prim_arrayLength b);
 
   expect_i1 True;
-  print_i1 b[0];
+  print_i1 b.[0];
 
   expect_i1 False;
-  print_i1 b[1];
+  print_i1 b.[1];
 };
 
 
@@ -29,7 +29,7 @@ newDArray32 = { n : Int32 => f : { Int32 => Int32 } =>
   a = allocDArray:[Int32] n;
   REC go = { x =>
     if x ==Int32 0 then () else
-      f x >^ a[x -Int32  1];
+      f x >^ a.[x -Int32  1];
       go (x -Int32 1)
     end
   };
@@ -40,7 +40,7 @@ newDArray32 = { n : Int32 => f : { Int32 => Int32 } =>
 arrays = {
   a = newDArray32 2 { n : Int32 => n };
   expect_i32 2;
-  print_i32 a[opaquely_i32 1];
+  print_i32 a.[opaquely_i32 1];
 };
 
 trunc32to8 = { n : Int32 => trunc_i32_to_i8 n; };
@@ -49,7 +49,7 @@ newDArray8 = { n : Int32 => f : { Int32 => Int8 } =>
   a = allocDArray:[Int8] n;
   REC go = { x =>
     if x ==Int32 0 then () else
-      f x >^ a[x -Int32  1];
+      f x >^ a.[x -Int32  1];
       go (x -Int32 1)
     end
   };
@@ -71,9 +71,9 @@ arrays8 = {
   a = newDArray8 k { x : Int32 => trunc32to8 (x +Int32 96) };
 
   expect_i32 99;
-  print_i8 a[opaquely_i32 2];
+  print_i8 a.[opaquely_i32 2];
 
-  (trunc32to8 0) >^ a[3];
+  (trunc32to8 0) >^ a.[3];
   prim_print_bytes_stdout a 6 0;
   expect_abc !;
 
@@ -99,31 +99,31 @@ arrays-indexing = { i8 : Int8 => i32 : Int32 => i64 : Int64 => iw : Word =>
 
   a = newDArray32 256 { n : Int32 => n };
   expect_i32 1;
-  print_i32 a[i8];
+  print_i32 a.[i8];
 
   expect_i32 1;
-  print_i32 a[i32];
+  print_i32 a.[i32];
 
   expect_i32 1;
-  print_i32 a[i64];
+  print_i32 a.[i64];
 
   expect_i32 1;
-  print_i32 a[iw];
+  print_i32 a.[iw];
 
   expect_i1 True;
-  print_i1 (__COMPILES__ a[0] );
+  print_i1 (__COMPILES__ a.[0] );
 
   expect_i1 True;
-  print_i1 (__COMPILES__ a[255] );
+  print_i1 (__COMPILES__ a.[255] );
 
   expect_i1 True;
-  print_i1 (__COMPILES__ a[ir32] );
+  print_i1 (__COMPILES__ a.[ir32] );
 
   expect_i1 False;
-  print_i1 (__COMPILES__ a[runit] );
+  print_i1 (__COMPILES__ a.[runit] );
 
   expect_i1 False;
-  print_i1 (__COMPILES__ a[()] );
+  print_i1 (__COMPILES__ a.[()] );
 };
 
 noinline_arrays_indir = {
@@ -131,7 +131,7 @@ noinline_arrays_indir = {
   b = prim mach-array-literal True False;
 
   expect_i1 True;
-  print_i1 b[a[0]];
+  print_i1 b.[a.[0]];
 };
 
 arrays-indir-2 = {
@@ -140,20 +140,20 @@ arrays-indir-2 = {
   b = prim mach-array-literal 22 33;
 
   expect_i32 22;
-  print_i32 b[a[0]];
+  print_i32 b.[a.[0]];
 
 
   a = prim mach-array-literal 1 0;
   b = prim mach-array-literal 22 33;
 
   expect_i32 33;
-  print_i32 b[a[0]];
+  print_i32 b.[a.[0]];
 
   a = prim mach-array-literal 0 1;
   b = prim mach-array-literal 22 33;
 
   expect_i32 33;
-  print_i32 b[a[1]];
+  print_i32 b.[a.[1]];
 
 };
 

@@ -10,7 +10,7 @@ main = {
 
 natRShd_A = { a : Array Word => ndigits : Int32 =>
   newsize = arrayLength32 a -Int32 ndigits;
-  newDArray0 newsize { i:Int32 => a[i +Int32 ndigits] };
+  newDArray0 newsize { i:Int32 => a.[i +Int32 ndigits] };
 };
 // Currently we give natRShd_A the un-refined type { Array Word => Int32 => Array Word }.
 // A more refined possibility would be
@@ -47,7 +47,7 @@ arrayFromRange32 = { sm => lg => f =>
   REC go = { n =>
     if n >SInt32 0 then
       i = n -Int32 1;
-      f  (i +Int32 sm) >^ arr[i];
+      f  (i +Int32 sm) >^ arr.[i];
       go  i
     end
   };

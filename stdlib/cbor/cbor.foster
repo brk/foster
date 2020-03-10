@@ -121,27 +121,27 @@ tryWriteCBOR = { cbor => dest =>
   writeTypeAndU = { offset : Int64 => tycode : Int8 => val : Int64 =>
     majorType = bitshl-Int8 tycode 5;
     if val <UInt64 24
-      then (trunc_i64_to_i8 val `bitor-Int8` majorType) >^ dest[offset]; offset +Int64 1
+      then (trunc_i64_to_i8 val `bitor-Int8` majorType) >^ dest.[offset]; offset +Int64 1
       else if val <UInt64 256
         then (24 `bitor-Int8` majorType) >^ (prim subscript dest (offset +Int64 0));
              (trunc_i64_to_i8 val)       >^ (prim subscript dest (offset +Int64 1));
              offset +Int64 2
         else
           if val <UInt64 65536
-            then (25 `bitor-Int8` majorType) >^ dest[offset];
+            then (25 `bitor-Int8` majorType) >^ dest.[offset];
                  (trunc_i64_to_i8 (val `bitlshr-Int64` 8)) >^ (prim subscript dest (offset +Int64 1));
                  (trunc_i64_to_i8 val)                     >^ (prim subscript dest (offset +Int64 2));
                  offset +Int64 3
             else
                 if val <UInt64 4294967296
-                  then (26 `bitor-Int8` majorType) >^ dest[offset];
+                  then (26 `bitor-Int8` majorType) >^ dest.[offset];
                        (trunc_i64_to_i8 (val `bitlshr-Int64` 24)) >^ (prim subscript dest (offset +Int64 1));
                        (trunc_i64_to_i8 (val `bitlshr-Int64` 16)) >^ (prim subscript dest (offset +Int64 2));
                        (trunc_i64_to_i8 (val `bitlshr-Int64`  8)) >^ (prim subscript dest (offset +Int64 3));
                        (trunc_i64_to_i8 val)                      >^ (prim subscript dest (offset +Int64 4));
                        offset +Int64 5
                   else
-                       (27 `bitor-Int8` majorType) >^ dest[offset];
+                       (27 `bitor-Int8` majorType) >^ dest.[offset];
                        1 +Int64 (writeU8 val (offset +Int64 1));
                 end
           end
@@ -152,7 +152,7 @@ tryWriteCBOR = { cbor => dest =>
   writeSpecial = { offset => val =>
     if val <UInt64 24 then writeTypeAndU offset 7 val else
       majorType = bitshl-Int8 7 5;
-      (trunc_i64_to_i8 val `bitor-Int8` majorType) >^ dest[offset];
+      (trunc_i64_to_i8 val `bitor-Int8` majorType) >^ dest.[offset];
       offset +Int64 1
     end
   };
@@ -244,7 +244,7 @@ tryWriteCBOR = { cbor => dest =>
 tryReadCBOR :: { Array Int8 => Ref Int64 => CBOR };
 tryReadCBOR = { inp => offset =>
 
-  headerbyte = inp[offset^];
+  headerbyte = inp.[offset^];
   (offset^ +Int64 1) >^ offset;
 
   majortype     = bitfield-len-Int8 headerbyte 5 3;
@@ -268,12 +268,12 @@ tryReadCBOR = { inp => offset =>
 tryReadCBOR_IntV :: { Array Int8 => Ref Int64 => Int8 => Int64 };
 tryReadCBOR_IntV = { inp => offset => additional =>
   v = case additional
-    of 24 -> inp[offset^] |> zext_i8_to_i64
-    of 25 -> octet2ToInt64 inp[offset^] inp[offset^ +Int64 1]
-    of 26 -> octet4ToInt32 inp[offset^] inp[offset^ +Int64 1] inp[offset^ +Int64 2] inp[offset^ +Int64 3]
+    of 24 -> inp.[offset^] |> zext_i8_to_i64
+    of 25 -> octet2ToInt64 inp.[offset^] inp.[offset^ +Int64 1]
+    of 26 -> octet4ToInt32 inp.[offset^] inp.[offset^ +Int64 1] inp.[offset^ +Int64 2] inp.[offset^ +Int64 3]
                           |> zext_i32_to_i64
-    of 27 -> mergeInt32 (octet4ToInt32  inp[offset^ +Int64 0] inp[offset^ +Int64 1] inp[offset^ +Int64 2] inp[offset^ +Int64 3])
-                        (octet4ToInt32  inp[offset^ +Int64 4] inp[offset^ +Int64 5] inp[offset^ +Int64 6] inp[offset^ +Int64 7])
+    of 27 -> mergeInt32 (octet4ToInt32  inp.[offset^ +Int64 0] inp.[offset^ +Int64 1] inp.[offset^ +Int64 2] inp.[offset^ +Int64 3])
+                        (octet4ToInt32  inp.[offset^ +Int64 4] inp.[offset^ +Int64 5] inp.[offset^ +Int64 6] inp.[offset^ +Int64 7])
     of 28 -> prim kill-entire-process "tryReadCBOR_UInt saw additional type of 28"
     of 29 -> prim kill-entire-process "tryReadCBOR_UInt saw additional type of 29"
     of 30 -> prim kill-entire-process "tryReadCBOR_UInt saw additional type of 30"
@@ -292,7 +292,7 @@ cborUpdateOffset = { offset => additional =>
 /*
 cborUpdateOffset :: { Array Int8 => Ref Int64 => Int8 => Int64 };
 cborUpdateOffset = { inp => offset =>
-  headerbyte = inp[offset];
+  headerbyte = inp.[offset];
   additional = bitfield-len-Int8 headerbyte 0 5;
   cborNextOffset (offset +Int64 1) additional;
 };
@@ -356,7 +356,7 @@ tryReadCBOR_Array = { inp => offset => additional =>
       arr = allocDArray:[CBOR] (trunc_i64_to_i32 len);
       REC go = { n =>
         if n ==Int64 len then () else
-          (tryReadCBOR inp offset) >^ arr[n];
+          (tryReadCBOR inp offset) >^ arr.[n];
           go (n +Int64 1)
         end
       };
@@ -385,8 +385,8 @@ tryReadCBOR_Other = { inp => offset => additional =>
     of 24 -> prim kill-entire-process "tryReadCBOR_Other saw CBOR_Byte"
     of 25 -> prim kill-entire-process "tryReadCBOR_Other saw CBOR_Float16"
     of 26 -> prim kill-entire-process "tryReadCBOR_Other saw CBOR_Float32"
-    of 27 -> mergeInt32 (octet4ToInt32  inp[offset^ +Int64 0] inp[offset^ +Int64 1] inp[offset^ +Int64 2] inp[offset^ +Int64 3])
-                        (octet4ToInt32  inp[offset^ +Int64 4] inp[offset^ +Int64 5] inp[offset^ +Int64 6] inp[offset^ +Int64 7])
+    of 27 -> mergeInt32 (octet4ToInt32  inp.[offset^ +Int64 0] inp.[offset^ +Int64 1] inp.[offset^ +Int64 2] inp.[offset^ +Int64 3])
+                        (octet4ToInt32  inp.[offset^ +Int64 4] inp.[offset^ +Int64 5] inp.[offset^ +Int64 6] inp.[offset^ +Int64 7])
              |> i64-as-f64
              |> CBOR_Double
     of 28 -> prim kill-entire-process "tryReadCBOR_Other saw additional type of 28"
@@ -413,7 +413,7 @@ tryReadCBOR_NR = { inp => offset =>
       of $CborStackRetVal -> val
       of $CborStackArr arr r s ->
         idx = r^;
-        val >^ arr[idx];
+        val >^ arr.[idx];
         next = idx +Int32 1;
         if arrayLength32 arr ==Int32 next
           then process s (CBOR_Array arr)
@@ -425,7 +425,7 @@ tryReadCBOR_NR = { inp => offset =>
 
   REC readNext = { stack =>
 
-    headerbyte = inp[offset^];
+    headerbyte = inp.[offset^];
     (offset^ +Int64 1) >^ offset;
 
     majortype     = bitfield-len-Int8 headerbyte 5 3;

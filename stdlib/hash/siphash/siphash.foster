@@ -28,25 +28,25 @@ readInt64FromArrayInt8 :: { % ra : Array Int8 : 0 <=SInt32 ri =>
 readInt64FromArrayInt8 = { arr => i =>
 // 1.91 - 1.94 s
 /*
-  a = arr[i +Int32 0];
-  b = arr[i +Int32 1];
-  c = arr[i +Int32 2];
-  d = arr[i +Int32 3];
-  e = arr[i +Int32 4];
-  f = arr[i +Int32 5];
-  g = arr[i +Int32 6];
-  h = arr[i +Int32 7];
+  a = arr.[i +Int32 0];
+  b = arr.[i +Int32 1];
+  c = arr.[i +Int32 2];
+  d = arr.[i +Int32 3];
+  e = arr.[i +Int32 4];
+  f = arr.[i +Int32 5];
+  g = arr.[i +Int32 6];
+  h = arr.[i +Int32 7];
   */
 // 1.84 - 1.91 s
 /*
-  h = arr[i +Int32 7];
-  g = arr[i +Int32 6];
-  f = arr[i +Int32 5];
-  e = arr[i +Int32 4];
-  d = arr[i +Int32 3];
-  c = arr[i +Int32 2];
-  b = arr[i +Int32 1];
-  a = arr[i +Int32 0];
+  h = arr.[i +Int32 7];
+  g = arr.[i +Int32 6];
+  f = arr.[i +Int32 5];
+  e = arr.[i +Int32 4];
+  d = arr.[i +Int32 3];
+  c = arr.[i +Int32 2];
+  b = arr.[i +Int32 1];
+  a = arr.[i +Int32 0];
 */
 /*
   // 1.42 s
@@ -83,7 +83,7 @@ readInt64FromArrayInt8 = { arr => i =>
 //          ==>   zext_i32_to_i64 offset +Int64 len_rem < arrayLength bytes
 read-rem = { len_rem => offset : Int32 => bytes =>
   r = trunc_i64_to_i32 len_rem;
-  idx = { n => if n <UInt32 r then bytes[offset +Int32 n] else 0 end };
+  idx = { n => if n <UInt32 r then bytes.[offset +Int32 n] else 0 end };
   a = idx 0;
   b = idx 1;
   c = idx 2;

@@ -21,7 +21,7 @@ newDArray0_local = { forall v:Type,
   REC go = { x =>
     if x ==Int32 0 then () else
        y  = x -Int32 1;
-      (f y) >^ a[y];
+      (f y) >^ a.[y];
       go y
     end
   };

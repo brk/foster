@@ -300,7 +300,7 @@ bytesGetNumFragments = { bytes =>
 bytesGet!    :: { Int64 => Bytes => Int8 };
 bytesGet! = { o => ba =>
   case ba
-    of $BytesFragment arr _ -> arr[trunc_i64_to_i32 o];
+    of $BytesFragment arr _ -> arr.[trunc_i64_to_i32 o];
     of $BytesOffset bb m  _ -> bytesGet! (o +Int64 m) bb;
     of $BytesConcat bb bc _ ->
       afterdrop = o -Int64 bytesLength bb;
@@ -320,7 +320,7 @@ bytesGet32! = { o => ba => bytesGet! (zext_i32_to_i64 o) ba };
 bytesGet0! :: { Bytes => Int8 };
 bytesGet0! = { ba =>
   case ba
-    of $BytesFragment arr _ -> arr[0];
+    of $BytesFragment arr _ -> arr.[0];
     of $BytesOffset bb m  _ -> bytesGet! m bb;
     of $BytesConcat bb bc _ -> bytesGet0! bb;
     of $BytesEmpty          -> prim kill-entire-process "bytesGet0! of BytesEmpty";
@@ -511,7 +511,7 @@ bytesCmpRaw = { b1 => a2 =>
   REC go = { idx =>
     if idx ==Int64 len
       then defaultVerdict
-      else res = cmp-UInt8 (bytesGet! idx b1) a2[idx];
+      else res = cmp-UInt8 (bytesGet! idx b1) a2.[idx];
            if isEQ res then go (idx +Int64 1) else res end
     end
   };
@@ -595,7 +595,7 @@ bytesChunkDrop = { b => i =>
 bytesChunkGet! :: { BytesChunk => Int64 => Int8 };
 bytesChunkGet! = { b => i =>
   case b of $BytesChunk arr off _ ->
-    arr[off +Int64 i]
+    arr.[off +Int64 i]
   end
 };
 
@@ -630,7 +630,7 @@ bytesChunkCmpRaw = { b1 => a2 =>
   REC go = { idx =>
     if idx ==Int64 len
       then defaultVerdict
-      else res = cmp-UInt8 (bytesChunkGet! b1 idx) a2[idx];
+      else res = cmp-UInt8 (bytesChunkGet! b1 idx) a2.[idx];
            if isEQ res then go (idx +Int64 1) else res end
     end
   };

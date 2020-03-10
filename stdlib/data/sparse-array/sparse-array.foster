@@ -36,7 +36,7 @@ sparseArrayLookup :: forall (a:Type) { SparseArray a => Int32 => Maybe a };
 sparseArrayLookup = { sa => idx =>
   case sa of $SparseArray arr bitmap ->
     if testBit32 bitmap idx
-      then Some arr[sparseArrayOffset bitmap idx]
+      then Some arr.[sparseArrayOffset bitmap idx]
       else None
     end
   end
@@ -49,7 +49,7 @@ sparseArrayElem = { sa =>
   case sa of $SparseArray arr bitmap ->
     if bitmap ==Int32 0
       then None
-      else Some arr[0]
+      else Some arr.[0]
     end
   end
 };
@@ -64,7 +64,7 @@ sparseArrayInsert = { sa => elem => idx =>
         // Replacing an existing element;
         // don't need to grow the array or shift offsets.
         arrx = arrayCopy arr;
-        elem >^ arrx[sparseArrayOffset bitmap idx];
+        elem >^ arrx.[sparseArrayOffset bitmap idx];
         SparseArray arrx bitmap
       else
         // Inserting a new element;
@@ -91,9 +91,9 @@ sparseArrayInsert = { sa => elem => idx =>
         arrx = newDArray0 (arrayLength32 arr +Int32 1)
                  { newoff =>
                      v = case newoff `cmpUInt32` newoffset
-                       of $LT -> arr[newoff]
+                       of $LT -> arr.[newoff]
                        of $EQ -> elem
-                       of $GT -> arr[newoff -Int32 1]
+                       of $GT -> arr.[newoff -Int32 1]
                     end;
                     /*
                     print_text_bare "   ";

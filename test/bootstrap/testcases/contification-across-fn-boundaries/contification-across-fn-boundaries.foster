@@ -11,7 +11,7 @@ flip = { maxn : Int32 =>
 
   REC flip-helper-b = { i : Int32 => n : Int32 =>
     if i <SInt32 n then
-      s[i] >^ t[i];
+      s.[i] >^ t.[i];
       flip-helper-b (i +Int32 1) n;
     else () end
   };

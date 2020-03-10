@@ -1,11 +1,11 @@
 main = {
   expect_i1 True;
-  print_i1 (__COMPILES__ (allocDArray:[Int32] 1)[0]);
+  print_i1 (__COMPILES__ (allocDArray:[Int32] 1).[0]);
 
   expect_i1 False;
-  print_i1 (__COMPILES__ (allocDArray:[Int32] 1)[(prim ref 0)]);
+  print_i1 (__COMPILES__ (allocDArray:[Int32] 1).[(prim ref 0)]);
 
   expect_i1 True;
-  print_i1 (__COMPILES__ (allocDArray:[Int32] 1)[(prim ref 0)^]);
+  print_i1 (__COMPILES__ (allocDArray:[Int32] 1).[(prim ref 0)^]);
 };
 

@@ -131,25 +131,25 @@ arrayFoldlFrom = { arr => offset => f => acc =>
 
 arrayFoldlFromTo :: forall (t:Type) (a:Type) { Array t => Int32 => Int32 => { t => a => a } => a => a };
 arrayFoldlFromTo = { arr => fst => fin => f => acc =>
-  foldRange fst fin acc { n : Int32 => acc => f arr[n] acc }
+  foldRange fst fin acc { n : Int32 => acc => f arr.[n] acc }
 };
 
 arrayFoldlFromTo64 :: forall (t:Type) (a:Type) { Array t => Int64 => Int64 => { t => a => a } => a => a };
 arrayFoldlFromTo64 = { arr => fst => fin => f => acc =>
-  foldRange64 fst fin acc { n => acc => f arr[trunc_i64_to_i32 n] acc }
+  foldRange64 fst fin acc { n => acc => f arr.[trunc_i64_to_i32 n] acc }
 };
 
 arrayFoldlFromToWithIndex64 :: forall (t:Type) (a:Type) {
               Array t => Int64 => Int64 => { Word => t => a => a } => a => a };
 arrayFoldlFromToWithIndex64 = { arr => fst => fin => f => acc =>
-  foldRange64 fst fin acc { n => acc => f (trunc_i64_to_Word n) arr[trunc_i64_to_i32 n] acc }
+  foldRange64 fst fin acc { n => acc => f (trunc_i64_to_Word n) arr.[trunc_i64_to_i32 n] acc }
 };
 
 ////
 
 arrayFoldr :: forall (t:Type) (a:Type) { Array t => { t => a => a } => a => a };
 arrayFoldr = { arr => f => acc =>
-  foldRangeDown (arrayLength32 arr -Int32 1) 0 acc { n : Int32 => acc => f arr[n] acc }
+  foldRangeDown (arrayLength32 arr -Int32 1) 0 acc { n : Int32 => acc => f arr.[n] acc }
 };
 
 ////
@@ -162,7 +162,7 @@ arrayEq = { a1 => a2 => eq =>
       REC go = { idx =>
         if idx ==Int64 arrayLength a1
           then True
-          else if eq a1[idx] a2[idx]
+          else if eq a1.[idx] a2.[idx]
                  then go (incr64 idx)
                  else False
                end
@@ -195,7 +195,7 @@ arrayEnumFromTo = { forall t:Type,
                   x : Int64 =>
                   f : { t => Int64 => () } =>
   if k <SInt64 x
-    then f a[trunc_i64_to_i32 k] k;
+    then f a.[trunc_i64_to_i32 k] k;
          arrayEnumFromTo a (incr64 k) x f
   end
 };
@@ -227,7 +227,7 @@ arrayFoldFrom = { forall t:Type r:Type,
                   f : { t => Int64 => r => r } =>
                   acc : r =>
   if k <SInt64 prim_arrayLength a
-    then arrayFoldFrom a (incr64 k) f (f a[trunc_i64_to_i32 k] k acc)
+    then arrayFoldFrom a (incr64 k) f (f a.[trunc_i64_to_i32 k] k acc)
     else acc
   end
 };
@@ -242,7 +242,7 @@ arrayFold = { forall t:Type r:Type,
 arrayZero32 = { a : Array Int32 =>
   REC go = { n =>
     if n <SInt64 arrayLength a
-      then 0 >^ a[trunc_i64_to_i32 n]; go (n +Int64 1)
+      then 0 >^ a.[trunc_i64_to_i32 n]; go (n +Int64 1)
     end
   };
   go 0

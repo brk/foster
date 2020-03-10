@@ -33,7 +33,7 @@ gen-meta  = { forall b:Boxed, GenMetaD () };
 array_poke_return_type = {
   // This makes sure that the return value of an array-poke expression
   // is consistent between the front and back ends.
-  0 >^ (allocDArray:[Int32] 1)[0];
+  0 >^ (allocDArray:[Int32] 1).[0];
 };
 
 /*

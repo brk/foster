@@ -26,8 +26,8 @@ tmp_bytes_iter_reverse = { a : Array Int8 =>
                            n : Int32 => // invariant: n < len a
                            f : { Int8 => Bool } =>
   if n >=SInt32 0
-  then if f a[n] then tmp_bytes_iter_reverse a (n -Int32 1) f
-                 else False end
+  then if f a.[n] then tmp_bytes_iter_reverse a (n -Int32 1) f
+                  else False end
   else True end
 };
 

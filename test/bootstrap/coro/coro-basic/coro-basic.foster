@@ -32,10 +32,10 @@ main = {
   co = coro_create { x : Array Int8 =>
          print_i32 4444444;
       force_gc_for_debugging_purposes  !;
-         print_i8 x[0]; // 16
+         print_i8 x.[0]; // 16
          y = coro_yield { 6666 };
 
-         noinline_foo y[0];
+         noinline_foo y.[0];
          // TODO no yield makes for an error
          _ = coro_yield { 7777 };
          {9999}

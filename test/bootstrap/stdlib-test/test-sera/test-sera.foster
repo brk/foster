@@ -40,7 +40,7 @@ mkEmptySera =  {
 primArrayBoxedIndex :: forall (t:Boxed) { Array t => Word => Maybe t };
 primArrayBoxedIndex = { a => i =>
   if i <UWord arrayLengthWord a
-    then Some a[trunc_Word_to_i32 i]
+    then Some a.[trunc_Word_to_i32 i]
     else None
   end
 };
@@ -48,7 +48,7 @@ primArrayBoxedIndex = { a => i =>
 primArrayBoxedWrite :: forall (t:Boxed) { Array t => Word => t => () };
 primArrayBoxedWrite = { arr => idx => val =>
   if idx <UWord arrayLengthWord arr
-    then val >^ arr[idx]; ()
+    then val >^ arr.[idx]; ()
     else ()
   end
 };
@@ -253,7 +253,7 @@ seraFoldl = { v => f => acc =>
             // block, it may not be full so we manually iterate over the "good"
             // indices.
             foldRange 0 (trunc_Word_to_i32 (seraNumElemsInLastRef v)^) accp
-                            { n : Int32 => acc => f last[n] acc };
+                            { n : Int32 => acc => f last.[n] acc };
 
   end
 };

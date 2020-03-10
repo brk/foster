@@ -5,22 +5,22 @@ main =  {
   print_i64 (prim_arrayLength x);
 
   expect_i32 1;
-  print_i32 x[0];
+  print_i32 x.[0];
 
   expect_i32 1;
-  print_i32 x[1];
+  print_i32 x.[1];
 
   expect_i32 2;
-  print_i32 x[2];
+  print_i32 x.[2];
 
   expect_i32 3;
-  print_i32 x[3];
+  print_i32 x.[3];
 
   expect_i32 5;
-  print_i32 x[4];
+  print_i32 x.[4];
 
   expect_i32 8;
-  print_i32 x[5];
+  print_i32 x.[5];
 
   part2 !;
   part3 !;
@@ -36,10 +36,10 @@ part2 = {
   print_i64 (prim_arrayLength x);
 
   expect_i32 11;
-  print_i64 x[0];
+  print_i64 x.[0];
 
   expect_i32 22;
-  print_i64 x[1];
+  print_i64 x.[1];
 };
 
 invoker32 = { f => f ! };
@@ -62,9 +62,9 @@ part3 = {
   expect_i32 1111;
 
   //expect_i1 False;
-  //print_i1 (x[1] !);
+  //print_i1 (x.[1] !);
 
-  fx = x[0];
+  fx = x.[0];
 
   print_i32 1111;
 
@@ -85,10 +85,10 @@ part4 = {
   x = prim mach-array-literal { 1 } { 2 };
 
   expect_i32 1;
-  print_i32 (x[0] !);
+  print_i32 (x.[0] !);
 
   expect_i32 2;
-  print_i32 (x[1] !);
+  print_i32 (x.[1] !);
 };
 
 part5 = {
@@ -96,9 +96,9 @@ part5 = {
     x = prim mach-array-literal 11 22;
 
     expect_i32 expected;
-    print_i64 x[0];
+    print_i64 x.[0];
 
-    33 >^ x[0];
+    33 >^ x.[0];
   };
 
   run 11;
@@ -110,9 +110,9 @@ part6 = {
   run = { expected =>
 
     expect_i32 expected;
-    print_i64 x[0];
+    print_i64 x.[0];
 
-    33 >^ x[0];
+    33 >^ x.[0];
   };
 
   run 11;

@@ -312,7 +312,8 @@ namespace foster {
       return tok->type == OPEN_PAREN
           || tok->type == OPEN_CURLY
           || tok->type == OPEN_SQRBR
-          || tok->type == OPEN_COLON_SQRBR;
+          || tok->type == OPEN_COLON_SQRBR
+          || tok->type == OPEN_DOT_SQRBR;
     }
 
     bool isMatchingTokenClose(pANTLR3_COMMON_TOKEN tok) {
@@ -326,6 +327,7 @@ namespace foster {
       if (opn->type == OPEN_CURLY) return CLOSE_CURLY;
       if (opn->type == OPEN_SQRBR) return CLOSE_SQRBR;
       if (opn->type == OPEN_COLON_SQRBR) return CLOSE_SQRBR;
+      if (opn->type == OPEN_DOT_SQRBR)   return CLOSE_SQRBR;
       return 0;
     }
 

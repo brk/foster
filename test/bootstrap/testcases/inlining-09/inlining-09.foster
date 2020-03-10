@@ -37,9 +37,12 @@ wordNumBits32 = {
 };
 
 arrayLength32 :: forall (x:Type) { Array x => Int32 };
-arrayLength32 = { forall t:Type, a : Array t =>
+arrayLength32 = { a =>
   trunc_i64_to_i32 (prim_arrayLength a)
 };
+
+arrayGet32 :: forall (x:Type) { Array x => Int32 => x };
+arrayGet32 = { a => x => a.[x] };
 
 digitNumBits :: { Int32 };
 digitNumBits = { wordNumBits32 !  -Int32 4 };
@@ -53,7 +56,7 @@ natCountBits_A = { a =>
   r0 = fin *Int32 (digitNumBits !);
 
   // Add the number of bits needed for the last digit.
-  r0  +Int32 (bitlength-Word a[fin]);
+  r0  +Int32 (bitlength-Word (arrayGet32 a fin));
 };
 
 // TODO should this be called wordCountBits instead?

@@ -27,19 +27,19 @@ main = {
 
 noinline_readInt32FromArrayInt8 :: { Array Int8 => Int32 => Int32 };
 noinline_readInt32FromArrayInt8 = { arr => i =>
-  a = arr[i +Int32 0];
-  b = arr[i +Int32 1];
-  c = arr[i +Int32 2];
-  d = arr[i +Int32 3];
+  a = arr.[i +Int32 0];
+  b = arr.[i +Int32 1];
+  c = arr.[i +Int32 2];
+  d = arr.[i +Int32 3];
   octet4ToInt32 d c b a
 };
 
 noinline_readInt32FromArrayInt8_offset :: { Array Int8 => Int32 => Int32 };
 noinline_readInt32FromArrayInt8_offset = { arr => i =>
-  a = arr[i +Int32 4];
-  b = arr[i +Int32 5];
-  c = arr[i +Int32 6];
-  d = arr[i +Int32 7];
+  a = arr.[i +Int32 4];
+  b = arr.[i +Int32 5];
+  c = arr.[i +Int32 6];
+  d = arr.[i +Int32 7];
   octet4ToInt32 d c b a
 };
 
@@ -52,14 +52,14 @@ octet4ToInt32 = { hi : Int8 => m1 : Int8 => m2 : Int8 => lo : Int8 =>
 
 noinline_readInt64FromArrayInt8 :: { Array Int8 => Int32 => Int64 };
 noinline_readInt64FromArrayInt8 = { arr => i =>
-  a = arr[i +Int32 0];
-  b = arr[i +Int32 1];
-  c = arr[i +Int32 2];
-  d = arr[i +Int32 3];
-  e = arr[i +Int32 4];
-  f = arr[i +Int32 5];
-  g = arr[i +Int32 6];
-  h = arr[i +Int32 7];
+  a = arr.[i +Int32 0];
+  b = arr.[i +Int32 1];
+  c = arr.[i +Int32 2];
+  d = arr.[i +Int32 3];
+  e = arr.[i +Int32 4];
+  f = arr.[i +Int32 5];
+  g = arr.[i +Int32 6];
+  h = arr.[i +Int32 7];
   mergeInt32 (octet4ToInt32 h g f e)
              (octet4ToInt32 d c b a)
 };

@@ -26,7 +26,7 @@ natCountBits = { i : NatInf =>
   r0 = fin *Int32 (digitNumBits !);
 
   // Add the number of bits needed for the last digit.
-  r0  +Int32 (bitlength-Word a[fin])
+  r0  +Int32 (bitlength-Word a.[fin])
 };
 
 noinline_llvm_arrLen32 :: forall (x:Type) { Array x => Int32 };
@@ -54,7 +54,7 @@ newDArray0 = { forall v:Type,
   REC go = { x =>
     if x ==Int32 0 then () else
        y  = x -Int32 1;
-      (f y) >^ a[y];
+      (f y) >^ a.[y];
       go y
     end
   };

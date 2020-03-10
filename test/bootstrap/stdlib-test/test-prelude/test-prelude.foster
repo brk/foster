@@ -190,63 +190,63 @@ test-bytes = {
 
 test-bytes-foldl-bytes = {
   bs = BytesConcat (BytesFragment b"12" 2) (BytesFragment b"34" 2) 4;
-  expect_i8x b"1"[0];
-  expect_i8x b"2"[0];
-  expect_i8x b"3"[0];
-  expect_i8x b"4"[0];
+  expect_i8x b"1".[0];
+  expect_i8x b"2".[0];
+  expect_i8x b"3".[0];
+  expect_i8x b"4".[0];
   bytesFoldlBytes bs { b => unit => print_i8x b; () } ();
 
   bs = BytesConcat (BytesFragment b"1234" 4) (BytesFragment b"5678" 4) 8;
-  expect_i8x b"3"[0];
-  expect_i8x b"4"[0];
-  expect_i8x b"5"[0];
-  expect_i8x b"6"[0];
+  expect_i8x b"3".[0];
+  expect_i8x b"4".[0];
+  expect_i8x b"5".[0];
+  expect_i8x b"6".[0];
   bytesFoldlBytesFromLen bs { b => unit => print_i8x b; () } 2 4 ();
 
   bs = BytesOffset (BytesConcat (BytesFragment b"1234" 4) (BytesFragment b"5678" 4) 8) 2 6;
-  expect_i8x b"4"[0];
-  expect_i8x b"5"[0];
-  expect_i8x b"6"[0];
-  expect_i8x b"7"[0];
+  expect_i8x b"4".[0];
+  expect_i8x b"5".[0];
+  expect_i8x b"6".[0];
+  expect_i8x b"7".[0];
   bytesFoldlBytesFromLen bs { b => unit => print_i8x b; () } 1 4 ();
 };
 
 test-bytes-inspection = {
   bs = BytesOffset (BytesConcat (BytesFragment b"1234" 4) (BytesFragment b"5678" 4) 8) 2 5;
 
-  expect_i8x b"3"[0];
-  expect_i8x b"4"[0];
-  expect_i8x b"5"[0];
-  expect_i8x b"6"[0];
-  expect_i8x b"7"[0];
+  expect_i8x b"3".[0];
+  expect_i8x b"4".[0];
+  expect_i8x b"5".[0];
+  expect_i8x b"6".[0];
+  expect_i8x b"7".[0];
   bytesFoldlBytes bs { b => unit => print_i8x b; () } ();
 
   bs2 = bytesConcat bs bs;
 
-  expect_i8x b"3"[0];
-  expect_i8x b"4"[0];
-  expect_i8x b"5"[0];
-  expect_i8x b"6"[0];
-  expect_i8x b"7"[0];
-  expect_i8x b"3"[0];
-  expect_i8x b"4"[0];
-  expect_i8x b"5"[0];
-  expect_i8x b"6"[0];
-  expect_i8x b"7"[0];
+  expect_i8x b"3".[0];
+  expect_i8x b"4".[0];
+  expect_i8x b"5".[0];
+  expect_i8x b"6".[0];
+  expect_i8x b"7".[0];
+  expect_i8x b"3".[0];
+  expect_i8x b"4".[0];
+  expect_i8x b"5".[0];
+  expect_i8x b"6".[0];
+  expect_i8x b"7".[0];
   bytesFoldlBytes bs2 { b => unit => print_i8x b; () } ();
 
   print_text "----"; expect_text "----";
 
-  expect_i8x b"3"[0]; print_i8x (bytesGet! 0 bs2 );
-  expect_i8x b"4"[0]; print_i8x (bytesGet! 1 bs2 );
-  expect_i8x b"5"[0]; print_i8x (bytesGet! 2 bs2 );
-  expect_i8x b"6"[0]; print_i8x (bytesGet! 3 bs2 );
-  expect_i8x b"7"[0]; print_i8x (bytesGet! 4 bs2 );
-  expect_i8x b"3"[0]; print_i8x (bytesGet! 5 bs2 );
-  expect_i8x b"4"[0]; print_i8x (bytesGet! 6 bs2 );
-  expect_i8x b"5"[0]; print_i8x (bytesGet! 7 bs2 );
-  expect_i8x b"6"[0]; print_i8x (bytesGet! 8 bs2 );
-  expect_i8x b"7"[0]; print_i8x (bytesGet! 9 bs2 );
+  expect_i8x b"3".[0]; print_i8x (bytesGet! 0 bs2 );
+  expect_i8x b"4".[0]; print_i8x (bytesGet! 1 bs2 );
+  expect_i8x b"5".[0]; print_i8x (bytesGet! 2 bs2 );
+  expect_i8x b"6".[0]; print_i8x (bytesGet! 3 bs2 );
+  expect_i8x b"7".[0]; print_i8x (bytesGet! 4 bs2 );
+  expect_i8x b"3".[0]; print_i8x (bytesGet! 5 bs2 );
+  expect_i8x b"4".[0]; print_i8x (bytesGet! 6 bs2 );
+  expect_i8x b"5".[0]; print_i8x (bytesGet! 7 bs2 );
+  expect_i8x b"6".[0]; print_i8x (bytesGet! 8 bs2 );
+  expect_i8x b"7".[0]; print_i8x (bytesGet! 9 bs2 );
 };
 
 
@@ -271,31 +271,31 @@ test-bytes-flattening = {
 
   print_text "===="; expect_text "====";
 
-  expect_i8x b"3"[0];
-  expect_i8x b"4"[0];
-  expect_i8x b"5"[0];
-  expect_i8x b"6"[0];
-  expect_i8x b"7"[0];
-  expect_i8x b"3"[0];
-  expect_i8x b"4"[0];
-  expect_i8x b"5"[0];
-  expect_i8x b"6"[0];
-  expect_i8x b"7"[0];
+  expect_i8x b"3".[0];
+  expect_i8x b"4".[0];
+  expect_i8x b"5".[0];
+  expect_i8x b"6".[0];
+  expect_i8x b"7".[0];
+  expect_i8x b"3".[0];
+  expect_i8x b"4".[0];
+  expect_i8x b"5".[0];
+  expect_i8x b"6".[0];
+  expect_i8x b"7".[0];
 
   bytesFoldlBytes bsf { b => unit => print_i8x b; () } ();
 
   print_text "----"; expect_text "----";
 
-  expect_i8x b"3"[0]; print_i8x (bytesGet! 0 bsf );
-  expect_i8x b"4"[0]; print_i8x (bytesGet! 1 bsf );
-  expect_i8x b"5"[0]; print_i8x (bytesGet! 2 bsf );
-  expect_i8x b"6"[0]; print_i8x (bytesGet! 3 bsf );
-  expect_i8x b"7"[0]; print_i8x (bytesGet! 4 bsf );
-  expect_i8x b"3"[0]; print_i8x (bytesGet! 5 bsf );
-  expect_i8x b"4"[0]; print_i8x (bytesGet! 6 bsf );
-  expect_i8x b"5"[0]; print_i8x (bytesGet! 7 bsf );
-  expect_i8x b"6"[0]; print_i8x (bytesGet! 8 bsf );
-  expect_i8x b"7"[0]; print_i8x (bytesGet! 9 bsf );
+  expect_i8x b"3".[0]; print_i8x (bytesGet! 0 bsf );
+  expect_i8x b"4".[0]; print_i8x (bytesGet! 1 bsf );
+  expect_i8x b"5".[0]; print_i8x (bytesGet! 2 bsf );
+  expect_i8x b"6".[0]; print_i8x (bytesGet! 3 bsf );
+  expect_i8x b"7".[0]; print_i8x (bytesGet! 4 bsf );
+  expect_i8x b"3".[0]; print_i8x (bytesGet! 5 bsf );
+  expect_i8x b"4".[0]; print_i8x (bytesGet! 6 bsf );
+  expect_i8x b"5".[0]; print_i8x (bytesGet! 7 bsf );
+  expect_i8x b"6".[0]; print_i8x (bytesGet! 8 bsf );
+  expect_i8x b"7".[0]; print_i8x (bytesGet! 9 bsf );
 };
 
 test-div-mod = {

@@ -19,7 +19,7 @@ local-arrayEnumFrom = { forall t:Type,
                   k : Int64 =>
                   f : { t => Int64 => () } =>
   if k <SInt64 prim_arrayLength a
-    then f a[trunc_i64_to_i32 k] k;
+    then f a.[trunc_i64_to_i32 k] k;
          local-arrayEnumFrom a (k +Int64 1) f
     else ()
   end
@@ -32,7 +32,7 @@ local-arrayEnumFrom_lh = { forall t:Type,
                   f : { t => Int64 => () } =>
   REC lup = { k =>
      if k <SInt64 prim_arrayLength a
-       then f a[trunc_i64_to_i32 k] k;
+       then f a.[trunc_i64_to_i32 k] k;
             lup (k +Int64 1)
        else ()
      end
@@ -55,7 +55,7 @@ local-arrayEnumFrom = { forall t:Type,
                   k : Int64 =>
                   f : { t => Int64 => () } =>
   if k <SInt64 prim_arrayLength a
-    then f a[trunc_i64_to_i32 k] k;
+    then f a.[trunc_i64_to_i32 k] k;
          local-arrayEnumFrom a (k +Int64 1) f
     else ()
   end

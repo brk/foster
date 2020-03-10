@@ -29,13 +29,13 @@ call_deref_b = {
 
 test-nested-let-if = {
   expect_i32 666;
-  if (q = (z = (y1 = opaquely_i32 0;
+  if {q = {z = {y1 = opaquely_i32 0;
                 y2 = opaquely_i32 1;
-                y1 +Int32 y2);
+                y1 +Int32 y2 } !;
            z2 = opaquely_i32 2;
-           z +Int32 z2);
+           z +Int32 z2 } !;
       q2 = opaquely_i32 3;
-      (q +Int32 q2) <SInt32 0)
+      (q +Int32 q2) <SInt32 0} !
    then print_i32 777
    else print_i32 666
    end;
@@ -43,10 +43,10 @@ test-nested-let-if = {
 
 test-nested-let-var = {
   expect_i32 0;
-  print_i32 (x = (g = 0; g); x);
+  print_i32 ({ x = ({ g = 0; g } !); x } !);
 };
 
 test-nested-let-fun = {
   expect_i32 0;
-  print_i32 (z = (f = { 0 }; f); z !);
+  print_i32 ({ z =  { f = { 0 }; f } !; z ! } !);
 };
