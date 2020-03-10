@@ -5,9 +5,10 @@
 *.a
 *.swp
 *.swo
-.cabal-sandbox
 __pycache__
 _obj
+grammar/output/
+notes/_build/
 third_party/nacl-20110221/build
 runtime/gc/foster_gc_reconfig-inl.h
 compiler/me/cabal.sandbox.config
