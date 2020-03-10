@@ -10,9 +10,9 @@ main = {
 
   t0 = foster_gettime_microsecs !;
   sr = prim ref 0;
-  sh = foster_subheap_create !;
+  //sh = foster_subheap_create !;
   enumRange32 0 100 { i =>
-    foster_subheap_collect sh;
+    //foster_subheap_collect sh;
 
     s2 = noinline_llvm_base64-encode-bare4 str;
     (sr^ +Int64 arrayLength s2) >^ sr;
