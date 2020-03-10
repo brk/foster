@@ -41,59 +41,35 @@ if __name__ == "__main__":
   params = {
         'bindir' :  normalize(options.bindir),
         'srcroot':  normalize(options.srcroot),
-        'hsflags':  ['-rtsopts'],
-        'stackflags' : []
+        'cabalflags' : ['-j']
       }
 
   if options.profile:
     if not options.optimize:
-      params['hsflags'].append('-fprof-auto')
-      params['hsflags'].append('-prof')
-      params['stackflags'].append('--executable-profiling')
-      params['stackflags'].append('--library-profiling')
+      params['cabalflags'].append('--enable-profiling')
+      params['cabalflags'].append('--disable-optimization')
     else:
       print("Warning: profiling disabled due to --optimize flag")
 
   if options.optimize:
-    params['hsflags'].append('-O2')
+    params['cabalflags'].append('-O2')
 
   if options.coverage:
-    params['hsflags'].append('-fhpc')
+    params['cabalflags'].append('--enable-coverage')
 
   # Allow runtime opts to be late-bound.
 
-  def build_with_stack():
-    cmd = [
-       'stack', 'install',
-       '--stack-yaml', ('%(srcroot)s/compiler/me/stack.yaml' % params),
-       '--local-bin-path', params['bindir'],
-       ] + ['--ghc-options="%s"' % s for s in params['hsflags']] + params['stackflags']
-    run_command(cmd, {}, "")
-
-  def build_with_ghcmake():
-    params['ghcmake'] = 'ghc --make'
-
-    with open(os.devnull, 'w') as devnull:
-      (rv, ms) = run_command("which ghc-make", {}, "", stdout=devnull, strictrv=False)
-      if rv == 0:
-         # Prevent a spurious/buggy error (race condition?) from ghc-make
-         run_command('touch %(bindir)s/me' % params, {}, "")
-         params['ghcmake'] = 'ghc-make'
-
-
-    params['hsflags'] = (' '.join(params['hsflags']) +
-                         " -XFlexibleInstances -XFlexibleContexts -XMultiParamTypeClasses -XDeriveDataTypeable" +
-                         " -XTypeSynonymInstances -XDeriveFunctor -XBangPatterns" +
-                         " -Wall -fwarn-unused-do-bind -fwarn-tabs" +
-                         " -fno-warn-missing-signatures -fno-warn-name-shadowing" +
-                         " -fno-warn-type-defaults -fno-warn-orphans -fno-warn-redundant-constraints")
-    cmd = ("cabal v1-exec -- %(ghcmake)s -i%(srcroot)s/compiler/me/src %(hsflags)s " +
-           "%(srcroot)s/compiler/me/src/Main.hs -o %(bindir)s/me") % params
+  def build_with_cabal():
+    cmd = ("cabal v2-build exe:me " +
+                " ".join(params['cabalflags']))
     os.chdir(os.path.join(options.srcroot, 'compiler', 'me'))
     run_command(cmd, {}, "")
+    # We need at least the -O2 flag for cabal to execute the correct executable.
+    # Otherwise, cabal defaults to using the non-optimized artifact.
+    run_command(
+        ''.join(["cabal v2-exec " +
+                  (" ".join(params['cabalflags'])) +
+            " -- sh %(srcroot)s/scripts/cp_me.sh %(bindir)s/me" % params]), {}, "")
 
-  if False:
-     build_with_stack()
-  else:
-     build_with_ghcmake()
+  build_with_cabal()
 

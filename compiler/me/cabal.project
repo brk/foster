@@ -1,0 +1,11 @@
+packages: me.cabal
+
+source-repository-package
+  type: git
+  location: https://github.com/brk/minuproto.git
+  tag: 721665cb485ab85b566cebd3f02edde4d94a3d6c
+
+source-repository-package
+  type: git
+  location: https://github.com/brk/hoopl.git
+  tag: bfa3e986c5bbdcfba28ab9992c6c6377a8c3ab55
