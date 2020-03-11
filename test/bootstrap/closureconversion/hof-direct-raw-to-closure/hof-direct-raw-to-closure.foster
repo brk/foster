@@ -1,17 +1,18 @@
-// IN: 48 52
+// Verify that (because they have different representations
+// and calling conventions) we cannot pass a bare C function pointer
+// to a higher-order function that expects a Foster function.
 
-fx = { opaquely_i32 42 };
+// Without the @ proc annotation, we'd get a link-time error. 
+//opaquely_i64 :: { Int64 => Int64 } @ { proc = true };
 
-// This tests passing of top-level functions to higher-order
-// Foster functions, which (pessimistically?) expect a closure.
-
-// The explicit proc annotation is now redundant,
-// but we'll keep it as a reminder that this syntax exists.
-read_i32 :: { Int32 } @ { proc = true };
+foreign import opaquely_i64 :: { Int64 => Int64 };
 
 main = {
-  expect_i32 48 ; print_i32 (run-it { read_i32 ! }); // Foster fn, anon
-  //expect_i32 52 ; print_i32 (run-it read_i32);        // C fn, directly
+  // Compile-time error due to proc/func mismatch.
+  expect_i1 False; print_i1 (__COMPILES__ run-it-eta opaquely_i32 48);
+
+  expect_i32 48 ; print_i32 (run-it-eta { x => opaquely_i32 x } 48); // Foster fn, anon
+
   check-shadowing !;
   check-call-of-literal-function !;
   force_gc_for_debugging_purposes !;
@@ -21,12 +22,12 @@ check-call-of-literal-function = {
   expect_i32 55 ; { print_i32 55 } !;
 };
 
-run-it = { f: {Int32} => f ! };
+run-it-eta = { f: {Int32 => Int32} => x : Int32 => f x };
 
 check-shadowing = {
-  read_i32 = { opaquely_i32 50 };
+  opaquely_i64 = { x => opaquely_i32 x };
 
   expect_i32 50 ; // check shadowing of global names
-  print_i32 (run-it read_i32);
+  print_i32 (run-it-eta opaquely_i64 50);
 };
 

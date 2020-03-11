@@ -374,8 +374,6 @@ void  print_i32c(int32_t x) { fprint_i32c(stdout, x); }
 void  print_i32b(int32_t x) { fprint_i32b(stdout, x); }
 void expect_i32b(int32_t x) { fprint_i32b(stderr, x); }
 
-int read_i32() { int32_t n; scanf(" %d", &n); return n; }
-
 void  print_i32_bare(int32_t x) { fprint_i32_bare(stdout, x); }
 void  print_i64_bare(int64_t x) { fprint_i64_bare(stdout, x); }
 void  print_i64(int64_t x) { fprint_i64(stdout, x); }

@@ -1,7 +1,7 @@
 Type Inference and Overloading
 ------------------------------
 
-Here's a snippet of code::
+Here's a snippet of code (in long-obsolete syntax)::
 
     fn () {
       let s:i64 = llvm.readcyclecounter() in {

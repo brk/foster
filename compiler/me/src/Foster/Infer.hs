@@ -60,7 +60,7 @@ tcUnifyThings thing1 thing2 errAction = do
 tcUnifyFT uft1 uft2 = tcUnifyThings uft1 uft2
      (\_ _ -> tcFails [text "Unable to unify disparate proc/func annotations" <> line])
 
--- Likewise, code like ``run-it read_i32`` will cause a CCC/FastCC mismatch,
+-- Likewise, code like ``run-it some_c_fn_symbol`` will cause a CCC/FastCC mismatch,
 -- which will be papered over with a proc wrapper.
 tcUnifyCC ucc1 ucc2 = tcUnifyThings ucc1 ucc2
      (\_ _ -> tcWhenVerbose $
