@@ -932,14 +932,6 @@ evalNamedPrimitive "force_gc_for_debugging_purposes" gs _args =
 evalNamedPrimitive opaq gs [val] | opaq `elem` ["opaquely_i32", "opaquely_i64"] =
          return $ withTerm gs (SSTmValue $ val)
 
-evalNamedPrimitive "print_newline" gs [] =
-      do printStringNL gs ""
-         return $ withTerm gs unit
-
-evalNamedPrimitive "expect_newline" gs [] =
-      do expectStringNL gs ""
-         return $ withTerm gs unit
-
 evalNamedPrimitive "prim_print_bytes_stdout" gs [SSArray a, SSInt32 n] =
       do printString gs (stringOfBytes $ packBytes gs a n)
          return $ withTerm gs unit

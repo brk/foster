@@ -232,7 +232,6 @@ globalsKnownToNotGC = map T.pack
                     ,"memcpy_i8_to_from_at_len"
                     ,"memcpy_i8_to_at_from_len"
                     ,"memcpy_i8_to_at_from_at_len"
-                    ,"expect_newline", "print_newline"
                     ,"prim_arrayLength"
                     ,"prim_print_bytes_stdout"
                     ,"prim_print_bytes_stderr"

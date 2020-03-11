@@ -203,9 +203,6 @@ primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     ,(,) "get_cmdline_n_args" $ mkProcType [] [i32]
     ,(,) "get_cmdline_arg_n" $ mkProcType [i32] [fosStringType]
 
-    ,(,) "expect_newline" $ mkProcType [] []
-    ,(,) "print_newline" $ mkProcType [] []
-
     ,(,) "cstr" $ mkProcType [ArrayTypeAST i8] [TyAppAST (TyConAST "CString") []]
     ,(,) "cdataptr_unsafe" $ mkProcType [ArrayTypeAST i8, i32] [TyAppAST (TyConAST "CString") []]
     ,(,) "cstr_free" $ mkProcType [TyAppAST (TyConAST "CString") []] []

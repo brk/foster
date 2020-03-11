@@ -400,9 +400,6 @@ void print_addr(void* x) { fprintf(stdout, "addr: %p\n", x); }
 void foster_printf_2p(const char* s, void* a, void*   b) { fprintf(stdout, s, a, b); }
 void foster_printf_pi(const char* s, void* a, int32_t b) { fprintf(stdout, s, a, b); }
 
-void print_newline()  { fprintf(stdout, "\n"); }
-void expect_newline() { fprintf(stderr, "\n"); }
-
 void prim_print_bytes_stdout(foster_bytes* array, uint32_t n, uint32_t off) {
   fprint_bytes_from(stdout, array, n, off);
 }

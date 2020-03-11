@@ -81,12 +81,16 @@ print_text_bare = { s : Text =>
    end;
 };
 
+expect_newline = { expect_text_bare "\n"; () };
+
+print_newline = { print_text_bare "\n"; () };
+
 expect_text = { s : Text =>
-  expect_text_bare s; expect_newline !; ()
+  expect_text_bare s; expect_newline !
 };
 
 print_text = { s : Text =>
-  print_text_bare s; print_newline !; ()
+  print_text_bare s; print_newline !
 };
 
 (==TextBytes) = { a : Text => b : Text =>
