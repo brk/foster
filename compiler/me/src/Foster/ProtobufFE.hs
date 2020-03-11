@@ -293,9 +293,6 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
   unMu (TList [_, _, _, TList cbors]) = cbors
   unMu cbor = error $ "unMu give non-array: " ++ show cbor
 
-  unMu1 x = case unMu x of [v] -> v
-                           vs -> error $ "unMu1 expected one, got " ++ show vs
-
   cb_parse_range cbr = case cbr of
     TList [startline, startcol, endline, endcol] ->
       case (cb_int startline, cb_int startcol, cb_int endline, cb_int endcol) of
@@ -404,12 +401,9 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
 
   cb_parse_e :: CBOR -> ExprAST TypeP
   cb_parse_e cbor = case cbor of
-    TList [tok, _,_cbr, TList [mu_mb_opr, mu_phrase, mu_mb_binops]] | tok `tm` tok_TERM ->
-      let base0 = cb_parse_phrase (unMu1 mu_phrase) in
-      let base1 = case unMu mu_mb_opr of
-                    [] -> base0
-                    oprs -> error $ "cb_parse_e opr: " ++ show oprs in
-      parseBinopChain base1 (unMu mu_mb_binops)
+    TList [tok, _,_cbr, TList [phrase, mu_mb_binops]] | tok `tm` tok_TERM ->
+      let base = cb_parse_phrase phrase in
+      parseBinopChain base (unMu mu_mb_binops)
     _ -> error $ "cb_parse_e failed: " ++ show cbor
 
   parseBinopChain :: ExprAST TypeP -> [CBOR] -> ExprAST TypeP

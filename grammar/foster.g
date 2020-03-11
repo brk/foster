@@ -118,9 +118,9 @@ patbind :
   ;
 
 e       :
-    opr? phrase
+    phrase
            binops? // value application, with optional prefix operator
-              -> ^(TERM ^(MU opr?) ^(MU phrase) ^(MU binops?))
+              -> ^(TERM phrase ^(MU binops?))
   ;
 
 binops  : (binop phrase)+;
