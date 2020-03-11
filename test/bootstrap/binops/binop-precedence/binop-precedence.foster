@@ -1,3 +1,4 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
 
 binop-Int32simple = {
   expect_i32(14) ;  print_i32(2 +Int32 3 *Int32 4);

@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 main = {
   expect_i1 True ; print_i1 (__COMPILES__ 0b1  );
   expect_i1 False; print_i1 (__COMPILES__ 0_1  );

@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 main = {
   print_i32 2;
   expect_i32 (case 0

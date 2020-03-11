@@ -1,3 +1,4 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
 
 mkTextConcat = { a : Text => b : Text =>
   lensum = (textLength a) +Int32 (textLength b);

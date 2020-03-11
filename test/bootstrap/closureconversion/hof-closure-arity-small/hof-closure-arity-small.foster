@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 run-clo-1 = { y : Int32 =>
               f : {Int32 => Int32 => Int32} =>
              f y (opaquely_i32 8) };

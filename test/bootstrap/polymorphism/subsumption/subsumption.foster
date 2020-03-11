@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 main = {
   x = threedotthree-part-one !;
   y = threedotthree-part-two !;

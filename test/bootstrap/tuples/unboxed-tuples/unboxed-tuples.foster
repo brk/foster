@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 main = {
   //build-unboxed !;
   return-unboxed-A (0 ==Int32 opaquely_i32 0);

@@ -1,3 +1,4 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
 
 type case F3
   of $F3 Float32 Float32 Float32

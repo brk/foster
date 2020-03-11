@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 // Types: Word, Word*2, Word/2
 //              WordX2  WordO2 (at C level)
 //

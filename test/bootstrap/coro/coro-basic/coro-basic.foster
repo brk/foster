@@ -1,3 +1,4 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
 snafuinclude Coro "coro";
 
 main = {
@@ -19,18 +20,19 @@ main = {
 
   noinline_bar = { y0 =>
          //force_gc_for_debugging_purposes !;
-         _ = coro_yield {zext_i8_to_i32 y0};
-         print_i32 5555555;
+         _ = coro_yield {zext_i8_to_i64 y0};
+         // TODO changing this to _i32 breaks effect type inference (!)
+         print_i64 5555555;
          //force_gc_for_debugging_purposes !;
-         print_i32 6666666;
+         print_i64 6666666;
 
          // Inconsistent use of coro_yield should be marked as a type error.
          print_i1 (__COMPILES__ coro_yield ((), 7777 ));
   };
   noinline_foo = { y0 => noinline_bar y0 };
-  // co :: Coro (Array Int8) Int32
+  // co :: Coro (Array Int8) Int64
   co = coro_create { x : Array Int8 =>
-         print_i32 4444444;
+         print_i64 4444444;
       force_gc_for_debugging_purposes  !;
          print_i8 x.[0]; // 16
          y = coro_yield { 6666 };
@@ -42,16 +44,16 @@ main = {
   };
   r  = (prim ref 0);
 
-    print_i32 2222222;
+    print_i64 2222222;
   //force_gc_for_debugging_purposes !;
-    print_i32 ((coro_invoke co b"\x10") !); // 6666
-    print_i32 1234;
+    print_i64 ((coro_invoke co b"\x10") !); // 6666
+    print_i64 1234;
   force_gc_for_debugging_purposes !;
-    print_i32 ((coro_invoke co b"\x20") !); // 20
+    print_i64 ((coro_invoke co b"\x20") !); // 20
   //force_gc_for_debugging_purposes !;
-    print_i32 ((coro_invoke co b"\x30") !);
-    print_i32 3333333;
-    print_i32 9999999;
+    print_i64 ((coro_invoke co b"\x30") !);
+    print_i64 3333333;
+    print_i64 9999999;
 };
 
 

@@ -1,5 +1,7 @@
 snafuinclude BootstrappedQ "bootstrapped-queue";
 
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 main = {
   q0 = mkEmptyBootstrappedQueue !;
   q1 = bootstrappedQueueSnoc { 1 } q0;

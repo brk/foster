@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 // Verify that (because they have different representations
 // and calling conventions) we cannot pass a bare C function pointer
 // to a higher-order function that expects a Foster function.

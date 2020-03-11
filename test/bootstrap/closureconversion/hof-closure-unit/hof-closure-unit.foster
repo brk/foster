@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 run-clo = { f:{Int32} => f ! };
 
 main = {

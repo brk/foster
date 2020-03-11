@@ -1,4 +1,4 @@
-
+snafuinclude PreludePrintExpect "prelude/print-expect";
 
 main = {
   print_result_120 (noinline_call_fold1 !);

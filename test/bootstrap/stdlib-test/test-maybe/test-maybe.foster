@@ -1,4 +1,5 @@
 snafuinclude Maybe "maybe";
+snafuinclude PreludePrintExpect "prelude/print-expect";
 
 main = {
   tu = { 2 };

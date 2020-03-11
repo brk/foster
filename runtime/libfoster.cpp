@@ -262,12 +262,13 @@ int cleanup() {
 }
 
 
-template <int N, typename Int>
-int fprint_b2(FILE* f, Int x) {
+int fprint_b2(FILE* f, uint64_t x, uint8_t N) {
+  if (N >= 64) N = 64;
+
   char* buf = new char[N+1];
   buf[N] = '\0';
-  for (Int i = 0; i < N; ++i) {
-    buf[(N-1) - i] = (x & (Int(1)<<i)) ? '1' : '0';
+  for (uint8_t i = 0; i < N; ++i) {
+    buf[(N-1) - i] = (x & (uint64_t(1)<<i)) ? '1' : '0';
   }
   int n = fprintf(f, "0b%s\n", buf);
   delete [] buf;
@@ -285,16 +286,16 @@ void fprint_p9f64(FILE* f, double x) { fprintf(f, "%.9f\n", x); }
 
 void fprint_i64(FILE* f, int64_t x) { fprintf(f, "%" PRId64 "\n", x); }
 void fprint_i64x(FILE* f, int64_t x) { fprintf(f, "0x%" PRIX64 "\n", x); }
-void fprint_i64b(FILE* f, int64_t x) { fprint_b2<64>(f, x); }
+void fprint_i64b(FILE* f, int64_t x) { fprint_b2(f, x, 64); }
+void fprint_i64bb(FILE* f, int64_t x, uint8_t N) { fprint_b2(f, x, N); }
 void fprint_i64_bare(FILE* f, int64_t x) { fprintf(f, "%" PRId64 , x); }
 
 void fprint_i32(FILE* f, int32_t x) {  fprintf(f, "%d\n", x); fflush(f); }
 void fprint_i32x(FILE* f, int32_t x) { fprintf(f, "0x%X\n", x); }
-void fprint_i32b(FILE* f, int32_t x) { fprint_b2<32>(f, x); }
-void fprint_i32c(FILE* f, int32_t x) {  fprintf(f, "%c\n", x); fflush(f); }
+void fprint_i32b(FILE* f, int32_t x) { fprint_b2(f, x, 32); }
 void fprint_i32_bare(FILE* f, int64_t x) { fprintf(f, "%ld" , x); }
 
-void fprint_i8b(FILE* f, int8_t x) { fprint_b2<8>(f, x); }
+void fprint_i8b(FILE* f, int8_t x) { fprint_b2(f, x, 8); }
 
 void fprint_bytes_from(FILE* f, foster_bytes* array, uint32_t n, uint32_t off) {
   uint32_t c = array->cap;
@@ -355,23 +356,10 @@ int32_t force_gc_for_debugging_purposes() {
   gc::force_gc_for_debugging_purposes(); return 0;
 }
 
-void  print_i8(int8_t x) { fprint_i32(stdout, x); } // implicit conversion
-void expect_i8(int8_t x) { fprint_i32(stderr, x); } // implicit conversion
-
-void  print_i8x(int8_t x) { fprint_i32x(stdout, uint8_t(x)); }
 void expect_i8x(int8_t x) { fprint_i32x(stderr, uint8_t(x)); }
-
-void  print_i8b(int8_t x) { fprint_i8b(stdout, x); }
 void expect_i8b(int8_t x) { fprint_i8b(stderr, x); }
 
-void  print_i32(int32_t x) { fprint_i32(stdout, x); }
-void expect_i32(int32_t x) { fprint_i32(stderr, x); }
-
-void  print_i32x(int32_t x) { fprint_i32x(stdout, x); }
 void expect_i32x(int32_t x) { fprint_i32x(stderr, x); }
-void  print_i32c(int32_t x) { fprint_i32c(stdout, x); }
-
-void  print_i32b(int32_t x) { fprint_i32b(stdout, x); }
 void expect_i32b(int32_t x) { fprint_i32b(stderr, x); }
 
 void  print_i32_bare(int32_t x) { fprint_i32_bare(stdout, x); }
@@ -383,6 +371,8 @@ void expect_i64x(int64_t x) { fprint_i64x(stderr, x); }
 
 void  print_i64b(int64_t x) { fprint_i64b(stdout, x); }
 void expect_i64b(int64_t x) { fprint_i64b(stderr, x); }
+
+void  print_i64bb(int64_t x, uint8_t N) { fprint_i64bb(stdout, x, N); }
 
 // C type "bool" becomes LLVM "i8 zeroext", not "i1"
 void  print_i1(bool x) { fprintf(stdout, (x ? "true\n" : "false\n")); }

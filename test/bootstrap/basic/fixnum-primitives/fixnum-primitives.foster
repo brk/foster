@@ -1,5 +1,6 @@
 snafuinclude Bits "bitwise";
 snafuinclude Text "text";
+snafuinclude Prelude "prelude";
 
 main = {
   trunc8-test   !;

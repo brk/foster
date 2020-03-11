@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 main = {
   expect_i32b 0b`11100;
   print_i32b ((bitshl-Int32) 0b`111 (opaquely_i32 2));

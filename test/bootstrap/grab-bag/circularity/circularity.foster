@@ -1,3 +1,4 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
 
 type case Maybe (t:Type)
     of $None

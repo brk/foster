@@ -171,10 +171,7 @@ boxedTyVars tyvars = map (\v -> (v, KindPointerSized)) tyvars
 -- functions implemented by the Foster runtime.
 
 primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
-    [(,) "expect_i32"  $ mkProcType [i32] []
-    ,(,)  "print_i32"  $ mkProcType [i32] []
-    ,(,) "expect_i32x" $ mkProcType [i32] []
-    ,(,)  "print_i32x" $ mkProcType [i32] []
+    [(,) "expect_i32x" $ mkProcType [i32] []
     ,(,)  "print_i32_bare"  $ mkProcType [i32] []
     ,(,) "expect_i64"  $ mkProcType [i64] []
     ,(,)  "print_i64"  $ mkProcType [i64] []
@@ -184,18 +181,12 @@ primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
 
     ,(,) "expect_i1"   $ mkProcType [i1] []
     ,(,)  "print_i1"   $ mkProcType [i1] []
-    ,(,) "expect_i8"   $ mkProcType [i8] []
-    ,(,)  "print_i8"   $ mkProcType [i8] []
     ,(,) "expect_i8x"  $ mkProcType [i8] []
-    ,(,)  "print_i8x"  $ mkProcType [i8] []
     ,(,) "expect_i8b"  $ mkProcType [i8] []
-    ,(,)  "print_i8b"  $ mkProcType [i8] []
-    ,(,) "expect_i16"  $ mkProcType [i16] []
-    ,(,)  "print_i16"  $ mkProcType [i16] []
     ,(,) "expect_i32b" $ mkProcType [i32] []
-    ,(,)  "print_i32b" $ mkProcType [i32] []
     ,(,) "expect_i64b" $ mkProcType [i64] []
     ,(,)  "print_i64b" $ mkProcType [i64] []
+    ,(,)  "print_i64bb" $ mkProcType [i64, i8] []
 
     ,(,) "opaquely_i32" $ mkProcType [i32] [i32]
     ,(,) "opaquely_i64" $ mkProcType [i64] [i64]

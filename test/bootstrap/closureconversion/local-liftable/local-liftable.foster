@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 main = {
   f = { x : Int32 => x +Int32 1 };
   expect_i32 1;

@@ -1,4 +1,5 @@
 snafuinclude Primitives "primitives";
+snafuinclude PreludePrintExpect "prelude/print-expect";
 
 main = {
   intCountBits (noinline_foo !);

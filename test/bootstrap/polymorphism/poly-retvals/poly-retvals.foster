@@ -1,3 +1,4 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
 
 main = {
   // Can   instantiate unboxed type variable with unboxed type (Int32).

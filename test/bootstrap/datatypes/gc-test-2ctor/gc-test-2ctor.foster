@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 type case V of $V1 Int32
             of $V2;
 // we need two constructors, not one, to make sure we get bitcasts

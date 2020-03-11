@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 test = { arg:Int32 =>
    // syntactically nested function definition
    // (with no free variables); equivalent to

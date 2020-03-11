@@ -1,3 +1,4 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
 
 main = {
   a = (allocDArray:[(Int32, Int32)] 3);

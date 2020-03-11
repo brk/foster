@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 run-it = { f:{Int32} => f ! };
 
 // This just tests passing of (lambda-lifted) function pointers,

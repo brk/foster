@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 main = {
 
   id = { forall t:Boxed, x:t => x };

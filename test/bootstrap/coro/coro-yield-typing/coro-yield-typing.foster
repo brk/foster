@@ -1,4 +1,5 @@
 snafuinclude Coro "coro";
+snafuinclude PreludePrintExpect "prelude/print-expect";
 
 brkpt = { x => x };
 

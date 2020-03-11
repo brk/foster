@@ -1,4 +1,5 @@
 snafuinclude Coro "coro";
+snafuinclude PreludePrintExpect "prelude/print-expect";
 
 main = {
   expect_i32 1111111;

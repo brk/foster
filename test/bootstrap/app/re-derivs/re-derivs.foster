@@ -1,3 +1,4 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
 snafuinclude Vlist "vlist";
 
 // Based on the paper "Regular-expression derivatives re-examined"

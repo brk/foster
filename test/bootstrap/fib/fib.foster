@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 // http://www.research.att.com/~njas/sequences/table?a=45&fmt=4
 main = {
   expect_i32 55;

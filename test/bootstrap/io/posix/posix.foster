@@ -1,6 +1,7 @@
 // IN: 1 3 5 7
 
 snafuinclude Posix "io/posix";
+snafuinclude PreludePrintExpect "prelude/print-expect";
 
 main = {
   res = read_stdin_bytes_chunk 512;

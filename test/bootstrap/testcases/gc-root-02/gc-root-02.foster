@@ -1,3 +1,4 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
 
 main = {
     existsFile_EF3F635E = { x_7A5ED037 : { Int32 } => // must a fn typed arg

@@ -1,3 +1,4 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
 
 until = { cond : { Bool } => body : { () } =>
   if cond ! then () else body ! ; until cond body end

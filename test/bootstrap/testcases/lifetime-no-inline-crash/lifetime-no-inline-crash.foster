@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 main = {
   expect_i32 (if wordNumBits32 ! ==Int32 32
                 then 89 else 42 end);

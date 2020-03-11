@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 // Example of datatype involving non-uniform recursion.
 
 type case SDSeq (a:Boxed)

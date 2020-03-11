@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 main = {
   // Mismatch between declared and inferred return types
   expect_i1 True ; print_i1 (__COMPILES__  { 0 }  );

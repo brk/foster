@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 main = {
   no-gc (prim ref 0);
   gc-before-use (prim ref 0);

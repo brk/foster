@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 type case Tup2
       of $Tup2 (Int32, Int32)
       ;

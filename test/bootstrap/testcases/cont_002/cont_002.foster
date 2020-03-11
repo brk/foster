@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 scan = {
 
     goto_yy99 = { print_i32 1  };

@@ -1,5 +1,5 @@
 snafuinclude Text "text";
-
+snafuinclude PreludePrintExpect "prelude/print-expect";
 
 effect YldA (a:Type)
   of $YldA a => (Int32, Int32)

@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
 main = {
   test-assert-bool-lits !;
   test-assert-bool-unrefined True False;

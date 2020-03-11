@@ -1,3 +1,5 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
   main = {
     const600 = 4;
     seq573 = expect_i32 const600;
