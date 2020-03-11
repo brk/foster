@@ -5,17 +5,17 @@ snafuinclude Bytes "bytes";
 // which has type { i64, [0 x i8] }*,
 // and the closest we can get from C-land, which is %struct.foster_bytes*.
 
-foster_stdin_read_bytes :: { Array Int8 => Ref Int32 => Int64 } @ { proc = true };
+foreign import foster_stdin_read_bytes :: { Array Int8 => Ref Int32 => Int64 };
 
 //                             (fd)     (bytes)     (offset) (len/pad) (status)    (#rd/wr)
-foster_posix_read_bytes  :: { Int64 => Array Int8 => Int64 => Int64 => Ref Int32 => Int64 } @ { proc = true };
-foster_posix_write_bytes :: { Int64 => Array Int8 => Int64 => Int64 => Ref Int32 => Int64 } @ { proc = true };
+foreign import foster_posix_read_bytes  :: { Int64 => Array Int8 => Int64 => Int64 => Ref Int32 => Int64 };
+foreign import foster_posix_write_bytes :: { Int64 => Array Int8 => Int64 => Int64 => Ref Int32 => Int64 };
 
-foster_posix_write_bytes_to_file ::
-                       { Array Int8 => Array Int8 => Int64 => Int64 => Ref Int32 => Int64 } @ { proc = true };
+foreign import foster_posix_write_bytes_to_file ::
+                       { Array Int8 => Array Int8 => Int64 => Int64 => Ref Int32 => Int64 };
 
 
-foster_posix_get_tuntap_fd :: { Int64 } @ { proc = true };
+foreign import foster_posix_get_tuntap_fd :: { Int64 };
 
 type case IORead
       of $IOReadDone  Bytes

@@ -1,5 +1,4 @@
-// Imported from C code
-frozzle :: { Int32 => () } @ { proc = True };
+foreign import frozzle :: { Int32 => () };
 
 // Called by C code
 do_something_eh = { x : Int32 => y : Int32 =>

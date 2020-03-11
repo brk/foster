@@ -239,8 +239,7 @@ tatom :
   | '(' ')'                             -> ^(TUPLE)
   | '(' t (',' t)* ')' hashq            -> ^(TUPLE hashq t+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
   |
-    '{' t  ('=>' t)* effect? '}'
-   ('@' '{' tannots '}')?               -> ^(FUNC_TYPE ^(TUPLE t+) ^(MU effect?) tannots?)  // description of terms indexed by terms
+    '{' t  ('=>' t)* effect? '}'    -> ^(FUNC_TYPE ^(TUPLE t+) ^(MU effect?))  // description of terms indexed by terms
 //      | ':{'        (a ':' k '->')+ t '}'     -> ^(TYPE_TYP_ABS a k t)        // type-level abstractions
 //  | tctor                                -> ^(TYPE_CTOR tctor)                  // type constructor constant
   // The dollar sign is required to distinguish type constructors

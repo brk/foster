@@ -568,11 +568,6 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
                     [eff] -> Just eff
                     _ -> trace ("Warning: dropping multi-parsed-effects: " ++ show effp) Nothing in
         FnTypeP (init tys) (last tys) eff FastCC FT_Func (cb_parse_range cbr)
-    TList [tok, _, cbr, TList [tuple, _eff, tannots]] | tok `tm` tok_FUNC_TYPE ->
-        let annots = cb_parse_tannots tannots in
-        let (cc, ft) = extractFnInfoFromAnnots annots in
-        let tys = map cb_parse_t (unTuple tuple) in
-        FnTypeP (init tys) (last tys) Nothing cc ft (cb_parse_range cbr)
     _ -> error $ "cb_parse_tatom failed: " ++ show cbor
 
   cb_parse_eff :: CBOR -> Effect
@@ -608,11 +603,6 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
                        TyAppP tcon (map cb_parse_tatom xs) -- TODO handle minus
         [] -> error $ "cb_parse_single_eff_empty failed: " ++ show cbor
     _ -> error $ "cb_parse_single_effect failed: " ++ show cbor
-
-  extractFnInfoFromAnnots annots =
-      if (T.pack "proc", T.pack "true") `elem` annots
-        then (CCC   , FT_Proc)
-        else (FastCC, FT_Func)
 
   cb_parse_tannots cbor = case cbor of
     TList [tok, _, _cbr, TList bindings] | tok `tm` tok_BINDING ->

@@ -2,9 +2,6 @@
 // and calling conventions) we cannot pass a bare C function pointer
 // to a higher-order function that expects a Foster function.
 
-// Without the @ proc annotation, we'd get a link-time error. 
-//opaquely_i64 :: { Int64 => Int64 } @ { proc = true };
-
 foreign import opaquely_i64 :: { Int64 => Int64 };
 
 main = {
