@@ -449,7 +449,9 @@ int main(int argc, char** argv) {
     // access to specific coro fields.
     //foster_generic_coro_t = llvm::StructType::create(module->getContext(),
     //                                          "struct.foster_generic_coro");
-    ASSERT(foster_generic_coro_t != NULL);
+    if (!optStandalone) {
+      ASSERT(foster_generic_coro_t != NULL);
+    }
 
     foster_generic_split_coro_ty = getSplitCoroType(getUnitType()->getLLVMType());
 

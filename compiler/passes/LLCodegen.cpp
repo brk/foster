@@ -370,25 +370,27 @@ CodegenPass::CodegenPass(llvm::Module* m, CodegenPassConfig config)
   // Clang decorated the stdlib functions with, because we need some of the
   // attributes (such as "target-features=+sse2") to match, otherwise we'll
   // get incorrect results.
-  llvm::Function* f = mod->getFunction("memalloc_cell");
-  llvm::AttributeList attrs = f->getAttributes();
-  auto FI = llvm::AttributeList::FunctionIndex;
-  if (!attrs.hasAttribute(FI, "no-frame-pointer-elim")) {
-    attrs = attrs.addAttribute(f->getContext(), FI,
-      llvm::Attribute::get(f->getContext(), "no-frame-pointer-elim", "true"));
+  if (llvm::Function* f = mod->getFunction("memalloc_cell")) {
+    // No attribute mangling for functions outside the runtime.
+    llvm::AttributeList attrs = f->getAttributes();
+    auto FI = llvm::AttributeList::FunctionIndex;
+    if (!attrs.hasAttribute(FI, "no-frame-pointer-elim")) {
+      attrs = attrs.addAttribute(f->getContext(), FI,
+        llvm::Attribute::get(f->getContext(), "no-frame-pointer-elim", "true"));
+    }
+
+    llvm::AttrBuilder toremove;
+    toremove.addAttribute(
+        llvm::Attribute::get(f->getContext(), "stack-protector-buffer-size", "8"));
+    attrs = attrs.removeAttributes(f->getContext(), FI, toremove);
+
+    llvm::AttrBuilder toadd;
+    toadd.addAttribute(
+        llvm::Attribute::get(f->getContext(), "foster-fn"));
+    attrs = attrs.addAttributes(f->getContext(), FI, toadd);
+
+    this->fosterFunctionAttributes = attrs;
   }
-
-  llvm::AttrBuilder toremove;
-  toremove.addAttribute(
-      llvm::Attribute::get(f->getContext(), "stack-protector-buffer-size", "8"));
-  attrs = attrs.removeAttributes(f->getContext(), FI, toremove);
-
-  llvm::AttrBuilder toadd;
-  toadd.addAttribute(
-      llvm::Attribute::get(f->getContext(), "foster-fn"));
-  attrs = attrs.addAttributes(f->getContext(), FI, toadd);
-
-  this->fosterFunctionAttributes = attrs;
 }
 
 std::map<std::string, llvm::Type*> gDeclaredSymbolTypes;
@@ -458,14 +460,15 @@ void registerKnownDataTypes(const std::vector<LLDecl*> datatype_decls,
 }
 
 void createCompilerFlagsGlobalString(CodegenPass* pass) {
-  std::string s;
-  std::stringstream ss(s);
-  ss << "{";
-  ss << "'emitLifetimeInfo':" << pass->config.emitLifetimeInfo << ",";
-  ss << "'disableAllArrayBoundsChecks':" << pass->config.disableAllArrayBoundsChecks;
-  ss << "}";
-  auto gv = builder.CreateGlobalString(ss.str(), "__foster_fosterlower_config");
-  gv->setLinkage(llvm::GlobalValue::ExternalLinkage);
+  if (!pass->config.standalone) {
+    std::stringstream ss;
+    ss << "{";
+    ss << "'emitLifetimeInfo':" << pass->config.emitLifetimeInfo << ",";
+    ss << "'disableAllArrayBoundsChecks':" << pass->config.disableAllArrayBoundsChecks;
+    ss << "}";
+    auto gv = builder.CreateGlobalString(ss.str(), "__foster_fosterlower_config");
+    gv->setLinkage(llvm::GlobalValue::ExternalLinkage);
+  }
 }
 
 void addExternDecls(const std::vector<LLDecl*> decls,

@@ -132,7 +132,9 @@ Type* getSlotType(llvm::Value* v) { return v->getType()->getPointerElementType()
 
 extern char kFosterMain[];
 void CodegenPass::markFosterFunction(Function* f) {
-  f->setAttributes(this->fosterFunctionAttributes);
+  if (!this->fosterFunctionAttributes.isEmpty()) {
+    f->setAttributes(this->fosterFunctionAttributes);
+  }
 
   // We must not inline foster__main, which is marked with our gc,
   // into its caller, which is a gc-less function!
