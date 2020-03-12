@@ -129,9 +129,6 @@ def compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir):
     else:
       outpath = paths["_out.o"]
 
-    if options.standalone and options.exepath is not None:
-      outpath = options.exepath
-
     # Getting tee functionality in Python is a pain in the behind
     # so we just disable logging when running with --show-cmdlines.
     if show_cmdlines(options) or no_compile_log(options):
@@ -224,12 +221,6 @@ def compile_foster_code(inputfile):
     insert(options.optcargs, '-dump-postopt')
     insert(options.beargs  , '-dump-prelinked')
 
-  if options.standalone:
-    insert(options.beargs, "--unsafe-disable-gc")
-    # unsafe-disable-array-bounds-checks
-    insert(options.beargs, "--standalone")
-    insert(options.meargs, "--standalone")
-
   tmpdir = options.tmpdir
 
   finalpath = os.path.join(tmpdir, os.path.basename(inputfile))
@@ -246,23 +237,18 @@ def compile_foster_code(inputfile):
 
     if options.asm:
       outpath = "%s.o" % finalpath
-      if options.standalone and options.exepath is not None:
-        outpath = options.exepath
       as_elapsed = run_command('%s -g %s.s -c -o %s' % (options.cxxpath, finalpath, outpath), paths, inputfile,
                                    showcmd=show_cmdlines(options))
     else: # fosteroptc emitted a .o directly.
       as_elapsed = 0
 
-    if options.standalone:
-      ld_elapsed = 0
-    else:
-      ld_elapsed = link_to_executable(finalpath, exepath, paths, inputfile)
+    ld_elapsed = link_to_executable(finalpath, exepath, paths, inputfile)
 
-      if options.exepath is not None:
-        exe_cmd = [options.exepath] + allprogargs
-        shutil.copy2(exepath, options.exepath)
-        print("Try running:")
-        print('       ', ''.join(options.exepath))
+    if options.exepath is not None:
+      exe_cmd = [options.exepath] + allprogargs
+      shutil.copy2(exepath, options.exepath)
+      print("Try running:")
+      print('       ', ''.join(options.exepath))
 
   return (paths, exe_cmd, (fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed, as_elapsed, ld_elapsed))
 
@@ -354,8 +340,6 @@ def get_fosterc_parser():
                     help="Provide explicit redirection for compiled program's stdin.")
   parser.add_option("--foster-runtime", action="append", dest="progrtargs", default=[],
                     help="Pass through command line arguments to program runtime")
-  parser.add_option("--standalone", action="store_true", dest="standalone", default=False,
-                    help="Just compile, don't link...")
   parser.add_option("--stacktraces", action="store_true", dest="stacktraces", default=False,
                     help="Have the middle-end produce stack traces on error")
   parser.add_option("--cxxpath", dest="cxxpath", action="store", default="MISSING_CXXPATH_ARG",

@@ -240,25 +240,19 @@ typecheckAndFoldContextBindings ctxTC0 bindings = do
 -- |  #. Make sure that all unification variables have been properly eliminated,
 -- |     or else we consider type checking to have failed
 -- |     (no implicit instantiation at the moment!)
-typecheckModule :: Bool -> Bool -> Bool -> ([Flag], strings)
+typecheckModule :: Bool -> Bool -> ([Flag], strings)
                 -> ModuleExpr TypeAST
                 -> TcEnv
                 -> Compiled (OutputOr TCRESULT)
-typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
+typecheckModule verboseMode pauseOnErrors flagvals modast tcenv0 = do
     liftIO $ when verboseMode $ do
         putDocLn $ text "module AST decls:" <$> pretty (moduleASTdecls modast)
     let dts = moduleASTprimTypes modast ++ moduleASTdataTypes modast
     --let fns = moduleASTfunctions modast
     --let nonfns = moduleASTnonfndefs modast
     let defns = [(T.pack nm, e) | ToplevelDefn (nm, e) <- moduleASTitems modast]
-    let filteredDecls = if standalone
-                          then filter okForStandalone primitiveDecls
-                          else primitiveDecls
-        okForStandalone (nm, _, _) = nm `elem` ["foster__logf64"
-                                               ,"prim_arrayLength"
-                                               ]
 
-    let primBindings = computeContextBindings' (filteredDecls ++ primopDecls)
+    let primBindings = computeContextBindings' (primitiveDecls ++ primopDecls)
     let allCtorTypes = concatMap extractCtorTypes dts
     let (nullCtors, nonNullCtors) = splitCtorTypes allCtorTypes
     let declBindings = computeContextBindings' (moduleASTdecls modast) ++
@@ -557,7 +551,7 @@ main = do
            --Just stats1 <- liftIO $ Criterion.getGCStats
 
            (ci_time, cb_program) <- ioTime $ readAndParseCbor infile
-           let wholeprog = cb_parseWholeProgram cb_program (getStandaloneFlag flagVals)
+           let wholeprog = cb_parseWholeProgram cb_program
 
            --liftIO $ performGC
            --Just stats2 <- liftIO $ Criterion.getGCStats
@@ -738,7 +732,6 @@ typecheckSourceModule :: TcEnv ->          ModuleExpr TypeAST
 typecheckSourceModule tcenv sm = do
     verboseMode <- gets ccVerbose
     flags <- gets ccFlagVals
-    let standalone    = getStandaloneFlag  flags
     let pauseOnErrors = getInteractiveFlag flags
     --whenDumpIR "ast" $ do
     --   putDocLn (outLn $ "vvvv AST :====================")
@@ -749,7 +742,7 @@ typecheckSourceModule tcenv sm = do
     --liftIO $ performGC
     --Just stats1 <- liftIO $ Criterion.getGCStats
 
-    (tc_time, res0) <- ioTime $ typecheckModule verboseMode pauseOnErrors standalone flags sm tcenv
+    (tc_time, res0) <- ioTime $ typecheckModule verboseMode pauseOnErrors flags sm tcenv
 
     --liftIO $ performGC
     --Just stats2 <- liftIO $ Criterion.getGCStats

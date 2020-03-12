@@ -72,6 +72,7 @@ executable me
       Foster.ExprAST
       Foster.ILExpr
       Foster.Infer
+      Foster.FromHaskell
       Foster.KNExpr
       Foster.KNStaticChecks
       Foster.KNUtil

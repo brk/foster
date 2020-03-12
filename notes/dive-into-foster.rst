@@ -480,26 +480,6 @@ into::
 
       ((T*)buf)[0]
 
-Bare-Metal Mode
-~~~~~~~~~~~~~~~
-
-There's a ``--standalone`` flag for the compiler
-(and a ``fosterc-standalone`` driver script) which disables linking
-with the runtime. This could, in theory, be useful for creating
-very low-level code, such as the implementation of an operating system.
-
-However, I haven't done much with it yet, mainly because I think it
-would be worth extending the benefits of effects and handlers to
-standalone code, as much as possible, and I'm not sure of the right
-way of doing so.
-
-One way of going about it is to have a layered runtime, such that
-only a very very small amount of code is truly zero-runtime,
-and most code can assume at least coroutine primitives.
-A different approach would be to have an alternate implementation
-of certain primitive effects in standalone mode, probably not involving
-the "regular" implementation of coroutines at all.
-
 Benchmarking Infrastructure
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

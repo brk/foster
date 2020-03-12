@@ -38,29 +38,29 @@ import Control.Monad.State (evalState, get, put, liftM, State)
 
 type CBOR = Term
 
-cb_parseWholeProgram :: CBOR -> Bool -> WholeProgramAST (ExprSkel ExprAnnot) TypeP
-cb_parseWholeProgram cbor standalone =
+cb_parseWholeProgram :: CBOR -> WholeProgramAST (ExprSkel ExprAnnot) TypeP
+cb_parseWholeProgram cbor =
   case cbor of
     TList cbmods ->
-      let mods = map (cb_parseSourceModule standalone) cbmods in
+      let mods = map cb_parseSourceModule cbmods in
       WholeProgramAST mods
     _ -> error "cb_parseWholeProgram expected an array of modules."
 
-cb_parseSourceModule standalone cbor = case cbor of
+cb_parseSourceModule cbor = case cbor of
   TList [nm, _, _, TList lines, _] ->
-    cb_parseSourceModuleWithLines standalone sourcelines (cborText nm) cbor
+    cb_parseSourceModuleWithLines sourcelines (cborText nm) cbor
       where sourcelines = SourceLines $ Seq.fromList $ map cborText lines
   _ -> error "cb_parseSourceModule"
 
 -- Defer parsing to a separate function so that sourcelines is in scope for
 -- the function's where-clause definitions.
-cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
+cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
   TList [_, hash, modtree, _, TList hiddentokens] ->
       case modtree of
         TList [tok, _, _, TList (cbincludes:defn_decls)] | tok `tm` tok_MODULE ->
           let includes  = cb_parseIncludes cbincludes
               items = map cb_parse_ToplevelItem defn_decls
-              primDTs = if standalone then [] else primitiveDataTypesP
+              primDTs = primitiveDataTypesP
               m = ModuleAST (T.unpack (cborText hash)) includes items lines primDTs
           in resolveFormatting hiddentokens m
         _ -> error $ "cb_parseSourceModule[1] failed"

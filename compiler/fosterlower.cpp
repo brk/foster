@@ -77,11 +77,6 @@ optBitcodeLibsDir("bitcodelibs",
   cl::cat(FosterOptCat));
 
 static cl::opt<bool>
-optStandalone("standalone",
-  cl::desc("Produce a standalone LLVM IR file, don't link in anything else"),
-  cl::cat(FosterOptCat));
-
-static cl::opt<bool>
 optEmitDebugInfo("g",
   cl::desc("Emit debug information in generated LLVM IR (not yet implemented)"),
   cl::cat(FosterOptCat));
@@ -393,40 +388,38 @@ int main(int argc, char** argv) {
 
   llvm::Module* module = new Module(mainModulePath.c_str(), foster::fosterLLVMContext);
 
-  if (!optStandalone) {
+  {
     coro_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/gc_bc/libfoster_coro.bc");
     linkTo(std::move(coro_bc), "libfoster_coro", *module);
   }
 
   // TODO mark foster__assert as alwaysinline
-  if (!optStandalone) {
-    // These are "special" functions in that they need a declaration, but
-    // their definition should not be available after linking against libfoster.
-    llvm::Type* i32 = foster::builder.getInt32Ty();
-    module->getOrInsertFunction("opaquely_i32",
-        FunctionType::get(i32, llvm::makeArrayRef(i32), /*isVarArg=*/ false));
-    llvm::Type* i64 = foster::builder.getInt64Ty();
-    module->getOrInsertFunction("opaquely_i64",
-        FunctionType::get(i64, llvm::makeArrayRef(i64), /*isVarArg=*/ false));
+
+  // These are "special" functions in that they need a declaration, but
+  // their definition should not be available after linking against libfoster.
+  llvm::Type* i32 = foster::builder.getInt32Ty();
+  module->getOrInsertFunction("opaquely_i32",
+      FunctionType::get(i32, llvm::makeArrayRef(i32), /*isVarArg=*/ false));
+  llvm::Type* i64 = foster::builder.getInt64Ty();
+  module->getOrInsertFunction("opaquely_i64",
+      FunctionType::get(i64, llvm::makeArrayRef(i64), /*isVarArg=*/ false));
+
+  libfoster_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/foster_runtime.bc");
+  foster::putModuleFunctionsInScope(libfoster_bc.get(), module);
+
+  for (auto arg : linkAgainstBCs) {
+    auto bc = readLLVMModuleFromPath(arg);
+    linkTo(std::move(bc), arg, *module);
   }
 
-  if (!optStandalone) {
-    libfoster_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/foster_runtime.bc");
-    foster::putModuleFunctionsInScope(libfoster_bc.get(), module);
-
-    for (auto arg : linkAgainstBCs) {
-      auto bc = readLLVMModuleFromPath(arg);
-      linkTo(std::move(bc), arg, *module);
-    }
-
-    // The module is "unclean" because it now has types that refer to libfoster_bc;
-    // remove the taint by round-tripping to disk. Usually takes ~1ms.
-    { ScopedTimer timer("llvm.roundtrip");
-      dumpModuleToBitcode(module,     outdirFile(optOutputName + ".stdlib.bc").c_str());
-      delete module;
-      module = readLLVMModuleFromPath(outdirFile(optOutputName + ".stdlib.bc")).release();
-    }
+  // The module is "unclean" because it now has types that refer to libfoster_bc;
+  // remove the taint by round-tripping to disk. Usually takes ~1ms.
+  { ScopedTimer timer("llvm.roundtrip");
+    dumpModuleToBitcode(module,     outdirFile(optOutputName + ".stdlib.bc").c_str());
+    delete module;
+    module = readLLVMModuleFromPath(outdirFile(optOutputName + ".stdlib.bc")).release();
   }
+  
 
   //================================================================
   {
@@ -449,9 +442,7 @@ int main(int argc, char** argv) {
     // access to specific coro fields.
     //foster_generic_coro_t = llvm::StructType::create(module->getContext(),
     //                                          "struct.foster_generic_coro");
-    if (!optStandalone) {
-      ASSERT(foster_generic_coro_t != NULL);
-    }
+    ASSERT(foster_generic_coro_t != NULL);
 
     foster_generic_split_coro_ty = getSplitCoroType(getUnitType()->getLLVMType());
 
@@ -480,7 +471,6 @@ int main(int argc, char** argv) {
                              = optDisableAllArrayBoundsChecks;
     config.disableInliningOnAllFosterFunctions
                              = optDisableInliningOnAllFosterFunctions;
-    config.standalone        = optStandalone;
 
     foster::codegenLL(prog, module, config);
   }
@@ -504,7 +494,7 @@ int main(int argc, char** argv) {
     foster::runWarningPasses(*module);
   }
 
-  if (!optStandalone) {
+  {
     ScopedTimer timer("llvm.link");
     linkTo(std::move(libfoster_bc), "libfoster", *module);
   }

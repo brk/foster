@@ -460,21 +460,19 @@ void registerKnownDataTypes(const std::vector<LLDecl*> datatype_decls,
 }
 
 void createCompilerFlagsGlobalString(CodegenPass* pass) {
-  if (!pass->config.standalone) {
-    std::stringstream ss;
-    ss << "{";
-    ss << "'emitLifetimeInfo':" << pass->config.emitLifetimeInfo << ",";
-    ss << "'disableAllArrayBoundsChecks':" << pass->config.disableAllArrayBoundsChecks;
-    ss << "}";
-    auto gv = builder.CreateGlobalString(ss.str(), "__foster_fosterlower_config");
-    gv->setLinkage(llvm::GlobalValue::ExternalLinkage);
-  }
+  std::stringstream ss;
+  ss << "{";
+  ss << "'emitLifetimeInfo':" << pass->config.emitLifetimeInfo << ",";
+  ss << "'disableAllArrayBoundsChecks':" << pass->config.disableAllArrayBoundsChecks;
+  ss << "}";
+  auto gv = builder.CreateGlobalString(ss.str(), "__foster_fosterlower_config");
+  gv->setLinkage(llvm::GlobalValue::ExternalLinkage);
 }
 
 void addExternDecls(const std::vector<LLDecl*> decls,
                     CodegenPass* pass) {
   for (auto d : decls) {
-    if (pass->config.standalone || d->isForeign) {
+    if (d->isForeign) {
       const std::string& declName = d->getName();
       TypeAST* fosterType = d->getType();
 
@@ -536,9 +534,7 @@ void LLModule::codegenModule(CodegenPass* pass) {
 
   addExternDecls(extern_val_decls, pass);
 
-  if (!pass->config.standalone) {
-    extendWithImplementationSpecificProcs(pass, procs);
-  }
+  extendWithImplementationSpecificProcs(pass, procs);
 
   for (auto& item : items) {
     //llvm::errs() << "Adding " << item->name << " to pass->globalValues\n";
@@ -683,11 +679,6 @@ void LLProc::codegenProto(CodegenPass* pass) {
   if (symbolName == kFosterMain) {
     // No args, returning void...
     FT = llvm::FunctionType::get(builder.getVoidTy(), false);
-    linkage = llvm::GlobalValue::ExternalLinkage;
-    cc      = llvm::CallingConv::C;
-  }
-
-  if (pass->config.standalone) {
     linkage = llvm::GlobalValue::ExternalLinkage;
     cc      = llvm::CallingConv::C;
   }
