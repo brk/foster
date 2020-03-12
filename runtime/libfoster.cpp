@@ -387,48 +387,12 @@ void prim_print_bytes_stderr(foster_bytes* array, uint32_t n, uint32_t off) {
   fprint_bytes_from(stderr, array, n, off);
 }
 
-// to[0..req_len] = from[req_at..req_at+req_len]
-void memcpy_i8_to_from_at_len(foster_bytes* to, foster_bytes* from,
-                              uint32_t req_at, uint32_t req_len) {
-  // Note: from->cap is represented as i64 but for now there's an
-  // invariant that its value is representable using (signed) i32,
-  // so the truncation from int64_t to uint32_t is OK.
-  foster__assert(uint32_t(from->cap) >= req_at,
-                 "memcpy_i8_to_from_at_len can't copy negative # of bytes!");
-  int32_t from_rem = uint32_t(from->cap) - req_at;
-  req_len =      (std::min)(req_len, uint32_t(to->cap));
-  uint32_t len = (std::min)(uint32_t(from_rem), req_len);
-  if (to != from) {
-    memcpy(to->bytes, from->bytes + req_at, len);
-  } else {
-    memmove(to->bytes, from->bytes + req_at, len);
-  }
-}
-
-// to[req_at..whatever] = from[0..req_len]
-void memcpy_i8_to_at_from_len(foster_bytes* to,   uint32_t req_at,
-                              foster_bytes* from, uint32_t req_len) {
-  // Note: to->cap is represented as i64 but for now there's an
-  // invariant that its value is representable using (signed) i32,
-  // so the truncation from int64_t to uint32_t is OK.
-  foster__assert(uint32_t(to->cap) >= req_at,
-                             "memcpy_i8_to_from_at_len can't copy negative # of bytes!");
-  int32_t to_rem = uint32_t(to->cap) - req_at;
-  req_len =      (std::min)(req_len, uint32_t(from->cap));
-  uint32_t len = (std::min)(uint32_t(to_rem), req_len);
-  if (to != from) {
-    memcpy(to->bytes + req_at, from->bytes, len);
-  } else {
-    memmove(to->bytes + req_at, from->bytes, len);
-  }
-}
-
 // to[to_at..to_at+req_len] = from[from_at..from_at+req_len]
 // (or as close of a slice as possible)
-// Returns 0 if the requested number of bytes were copied, 1 otherwise.
-int8_t memcpy_i8_to_at_from_at_len(foster_bytes* to,   int64_t   to_at,
-                                   foster_bytes* from, int64_t from_at,
-                                   int64_t req_len) {
+// Returns the number of *un*copied bytes.
+int64_t memcpy_i8_to_at_from_at_len(foster_bytes* to,   int64_t   to_at,
+                                    foster_bytes* from, int64_t from_at,
+                                    int64_t req_len) {
   foster__assert((from->cap >= from_at) && (to->cap >= to_at),
                              "memcpy_i8_to_at_from_at_len can't copy negative # of bytes!");
   // guaranteed to be non-negative due to assertion invariant
@@ -442,7 +406,7 @@ int8_t memcpy_i8_to_at_from_at_len(foster_bytes* to,   int64_t   to_at,
   } else {
     memmove(to->bytes + to_at, from->bytes + from_at, len_sz);
   }
-  return (len == req_len) ? 0 : 1;
+  return req_len - len;
 }
 
 // Copies a byte array (Array Int8) from the Foster heap

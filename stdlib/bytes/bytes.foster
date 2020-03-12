@@ -1,5 +1,6 @@
 snafuinclude PreludeFixnums "prelude-fixnums";
 snafuinclude PreludeFolds   "prelude-folds";
+snafuinclude PreludeMemcpy  "prelude/memcpy";
 
 // Immutable wrapper around Array Int8 with enhanced asymptotics
 // for common operations like concatenation of bytes and taking slices/views

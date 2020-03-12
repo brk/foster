@@ -229,8 +229,6 @@ globalsKnownToNotGC = map T.pack
                     ,"expect_i32x", "print_i32x"
                     ,"expect_i64x", "print_i64x"
                     ,"print_i64_bare"
-                    ,"memcpy_i8_to_from_at_len"
-                    ,"memcpy_i8_to_at_from_len"
                     ,"memcpy_i8_to_at_from_at_len"
                     ,"prim_arrayLength"
                     ,"prim_print_bytes_stdout"

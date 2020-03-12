@@ -970,25 +970,11 @@ evalNamedPrimitive "print_float_p9f64" gs [SSFloat f] =
          return $ withTerm gs unit
 
 -- {{{
--- to[req_at..whatever] = from[0..req_len]
-evalNamedPrimitive "memcpy_i8_to_at_from_len" gs
-         [SSArray arr, SSInt32 req_at_I , from_bs_or_arr, SSInt32 req_len_I] =
-  evalNamedPrimitive "memcpy_i8_to_at_from_at_len" gs
-         [SSArray arr, SSInt64 (fromIntegral req_at_I) , from_bs_or_arr,
-                       SSInt64 0, SSInt64 (fromIntegral req_len_I)]
-
--- to[0..req_len] = from[req_at..req_at+req_len]
-evalNamedPrimitive "memcpy_i8_to_from_at_len" gs
-         [SSArray arr, from_bs_or_arr, SSInt32 req_at_I, SSInt32 req_len_I] =
-  evalNamedPrimitive "memcpy_i8_to_at_from_at_len" gs
-         [SSArray arr, SSInt64 0, from_bs_or_arr, SSInt64 (fromIntegral req_at_I),
-                       SSInt64 (fromIntegral req_len_I)]
-
 -- to[to_at..to_at+req_len] = from[from_at..from_at+req_len]
 evalNamedPrimitive "memcpy_i8_to_at_from_at_len" gs
          [SSArray arr, SSInt64 to_at, from_bs_or_arr, SSInt64 from_at, SSInt64 req_len_I] =
    if isSameArray (SSArray arr) from_bs_or_arr
-    then error "memcpy_i8_to_from_at_len: arrays were aliased!"
+    then error "memcpy_i8_to_at_from_at_len: arrays were aliased!"
     else
       do let min0 a b c = max 0 (min (min a b) c)
          let     to_len  = prim_arrayLength (SSArray arr)
@@ -999,9 +985,9 @@ evalNamedPrimitive "memcpy_i8_to_at_from_at_len" gs
          let len = min0 to_rem from_rem req_len
          case () of
            _ | to_rem < 0 || from_rem < 0
-            -> error "memcpy_i8_to_from_at_len: *_at > *_len"
+            -> error "memcpy_i8_to_at_from_at_len: *_at > *_len"
            _ | len /= req_len
-            -> error "memcpy_i8_to_from_at_len: unable to copy requested length"
+            -> error "memcpy_i8_to_at_from_at_len: unable to copy requested length"
            _ -> do
              let idxs = take (fromIntegral len) $ [from_at..] :: [Int64]
              (_, gs') <- mapFoldM idxs gs (\idx64 gs -> do

@@ -1,0 +1,11 @@
+// to[0..req_len] = from[req_at..req_at+req_len]
+memcpy_i8_to_from_at_len :: { Array Int8 => Array Int8 => Int32 => Int32 => () };
+memcpy_i8_to_from_at_len = { dest => from => from_at => req_len =>
+  _ign = memcpy_i8_to_at_from_at_len dest 0 from (zext_i32_to_i64 from_at) (zext_i32_to_i64 req_len); ()
+};
+
+// to[req_at..whatever] = from[0..req_len]
+memcpy_i8_to_at_from_len :: { Array Int8 => Int32 => Array Int8 => Int32 => () };
+memcpy_i8_to_at_from_len = { dest => dest_at => from => req_len =>
+  _ign = memcpy_i8_to_at_from_at_len dest (zext_i32_to_i64 dest_at) from 0 (zext_i32_to_i64 req_len); ()
+};
