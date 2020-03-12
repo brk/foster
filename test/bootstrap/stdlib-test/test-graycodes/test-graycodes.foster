@@ -1,0 +1,34 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+snafuinclude PreludeFolds "prelude-folds";
+snafuinclude Bitwise "bitwise";
+
+main = {
+    /*
+  enumRange32 0 16 { x => print_i32 x };
+  enumRange32 0 16 { x => x |> trunc_i32_to_i8 |> gray8-hot |> print_i8b };
+  enumRange32 0 16 { x => print_i32b x };
+  enumRange32 0 16 { x => x |> trunc_i32_to_i8 |> gray8-of-Int8 |> print_i8b };
+  */
+  foldRange:[Int8]   0 16 0 { x => g =>
+    expect_i8b (gray8-of-Int8 (x |> trunc_i32_to_i8));
+    print_i8b g;
+    next-hot = gray8-hot (x +Int32 1 |> trunc_i32_to_i8);
+    g `bitxor-Int8` next-hot;
+  };
+};
+
+
+gray8-of-Int8 = { x : Int8 =>
+  x `bitxor-Int8` (x `bitlshr-Int8` 1)
+};
+
+// Returns a word with a single bit set,
+// denoting the "hot" bit that was flipped
+// in constructing the corresponding Gray value.
+gray8-hot :: { Int8 => Int8 };
+gray8-hot = { binary =>
+  if binary ==Int8 0
+    then bitshl-Int8 1 7
+    else bitshl-Int8 1 (lowest-set-bit-Int8 binary)
+  end
+};
