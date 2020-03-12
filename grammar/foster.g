@@ -6,8 +6,8 @@ options {
   //language = C;
   output = AST;
 
-  // Grammar is LL(5); lookahead is needed to
-  // disambiguate    '(' '(' SYMBOL ')'
+  // Grammar is LL(4); lookahead is needed to
+  // disambiguate     '(' SYMBOL ')'  as expr vs name part of statement binding.
 }
 
 
@@ -220,6 +220,8 @@ tp // "type phrase"
           )
   | 'forall' tyformalr+ t  -> ^(FORALL_TYPE tyformalr+ t) // description of terms indexed by types;
   ;
+// LL(3) needed to disambiguate where tyformalr+ ends and t begins
+// when t is a tuple type.
 
 minusq : '-' ? ;
 single_effect : minusq a tatom* -> ^(EFFECT_SINGLE minusq a tatom*);
