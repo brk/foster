@@ -18,7 +18,7 @@ import Foster.Letable
 import Foster.Kind
 
 import Control.Monad(liftM)
-import Control.Monad.State(gets, get, put, lift, liftIO, forM_,
+import Control.Monad.State(gets, get, put, lift, forM_,
                            StateT, evalStateT, execStateT, runStateT)
 import Data.IORef(IORef, readIORef, newIORef, writeIORef)
 import Data.UnionFind.IO
@@ -29,7 +29,7 @@ import qualified Data.Set as Set(toList, fromList)
 import qualified Data.Map as Map
 import Data.Map(Map)
 import qualified Data.List as List(foldl', reverse, all, any)
-import Data.Maybe(catMaybes, isJust, isNothing, fromJust)
+import Data.Maybe(catMaybes, isJust, isNothing)
 import Data.Either(partitionEithers)
 
 import Compiler.Hoopl(UniqueMonad(..), C, O, freshLabel, intToUnique,
@@ -37,8 +37,6 @@ import Compiler.Hoopl(UniqueMonad(..), C, O, freshLabel, intToUnique,
 
 import Prelude hiding ((<$>))
 import Text.PrettyPrint.ANSI.Leijen
-
-import Debug.Trace(trace)
 
 -- Binding occurrences of variables, with link to a free occurrence (if not dead).
 data MKBound x = MKBound (TypedId x) (OrdRef (Maybe (FreeOcc x)))
@@ -82,8 +80,8 @@ boundVar (MKBound v _) = v
 boundOcc :: MKBound t -> Compiled (Maybe (FreeOcc t))
 boundOcc (MKBound _ r) = readOrdRef r
 
-boundUniq :: MKBound t -> Uniq
-boundUniq (MKBound _ r) = ordRefUniq r
+_boundUniq :: MKBound t -> Uniq
+_boundUniq (MKBound _ r) = ordRefUniq r
 
 {- Given a graph like this:
       b1 ----> f1       x1 <---- b2
@@ -1634,7 +1632,7 @@ mknInline subterm mainCont mb_gas = do
                                         dbgDoc $ red (text "CallOfUnknownCont: ") <+> pretty redex
                           return ()
 
-                        CallOfNonInlineableFunction fn fnlink -> do
+                        CallOfNonInlineableFunction _fn _fnlink -> do
                           -- Treat non-inlineable functions as if they were unknown.
                           return ()
 
@@ -1813,7 +1811,7 @@ doContifyWith_part1 cont bv fn occs wr fd bindingWorklistRef = do
             liftIO $ putStrLn $ "WARNING: term is dead..."
             return ()) occs
 
-doContifyWith_part2 cont bvs fns bindingWorklistRef relocDomMarkers mredex fnrest replaceActiveSubtermWith = do
+doContifyWith_part2 _cont bvs fns bindingWorklistRef relocDomMarkers mredex fnrest replaceActiveSubtermWith = do
   rdm <- liftIO $ readIORef relocDomMarkers
   let ids = map (tidIdent.boundVar) bvs
   (target, targetrest) <-
@@ -1832,7 +1830,7 @@ doContifyWith_part2 cont bvs fns bindingWorklistRef relocDomMarkers mredex fnres
           --                      fR                         cont f = F in dR
           --
           -- Remove the contified function explicitly
-          replaceActiveSubtermWith fnrest
+          _ <- replaceActiveSubtermWith fnrest
           return targetandrest
 
   linkResult <- getActiveLinkFor target
@@ -2481,7 +2479,7 @@ pccOfTopTerm uref subterm = do
             if isDead then go subterm2
               else error $ "MKLetCont in pccTopTerm, known: " ++ show (map (tidIdent.boundVar.fst) [(kb,c)])
 
-          MKLetCont _ knowns subterm2 -> do
+          MKLetCont _ knowns _subterm2 -> do
                                  --subtm <- lift $ readLink "pccOfTopTerm(subterm2)" subterm2
                                  --kn <- lift $ knOfMK NoCont subtm
                                  error $ "MKLetCont in pccTopTerm, knowns: " ++ show (map (tidIdent.boundVar.fst) knowns)
