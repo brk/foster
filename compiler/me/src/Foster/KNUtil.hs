@@ -523,20 +523,28 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
             KNStore _ v1 v2     -> text "store" <+> prettyId v1 <+> text "to" <+> prettyId v2
             KNCase _t v bnds    -> align $
                                        kwd "case" <+> pretty v <+> text "::" <+> pretty (tidType v)
-                                       <$> indent 2 (vcat [ kwd "of" <+> fill 20 (pretty pat)
-                                                                     <+> (case guard of
-                                                                            Nothing -> empty
-                                                                            Just g  -> text "if" <+> pretty g)
-                                                                     <+> text "->" <+> pretty expr
-                                                          | (CaseArm pat expr guard _ _) <- bnds
-                                                          ])
+                                       <$> indent 2 (vcat (map prettyCaseArm bnds))
                                        <$> end
+            KNHandler _annot _ty _eff action arms mb_xform _resumeid ->
+              align $
+                text "handler" <+> pretty action
+                <$> indent 2 (vcat (map prettyCaseArm arms))
+                <$> (case mb_xform of Nothing -> empty
+                                      Just xf -> kwd "as" <+> pretty xf)
+                <$> end
             KNAllocArray {}     -> text $ "KNAllocArray "
             KNArrayRead  t ai   -> pretty ai <+> pretty t
             KNArrayPoke  t ai v -> prettyId v <+> text ">^" <+> pretty ai <+> pretty t
             KNArrayLit   _t _arr _vals -> text "<...array literal...>"
             KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map pretty vs))
             KNCompiles _r _t e  -> parens (text "__COMPILES__" <+> pretty e)
+
+prettyCaseArm (CaseArm pat expr guard _ _) =
+  kwd "of"  <+> fill 20 (pretty pat)
+            <+> (case guard of
+                  Nothing -> empty
+                  Just g  -> text "if" <+> pretty g)
+            <+> text "->" <+> pretty expr
 
 instance Pretty FoldStatus where
     pretty (FoldTooBig      size) = text "too big, size=" <> pretty size
