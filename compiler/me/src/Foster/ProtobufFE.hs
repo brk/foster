@@ -147,9 +147,6 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     _ -> error $ "cb_parse_id_str failed: " ++ show cbor
     
   cb_parse_x_str cbor = T.unpack (cb_parse_x_text cbor)
-  cb_parse_x_VarAST cbor = case cb_parse_x cbor of
-                             E_VarAST _ v -> v
-                             _ -> error "cb_parse_x_VarAST shouldn't fail"
   cb_parse_x_text cbor = case cb_parse_x cbor of
                            E_VarAST _ (VarAST _ t) -> t
                            _ -> error "cb_parse_x_text shouldn't fail"
@@ -317,11 +314,6 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     TList [tok, _,_cbr, TList [name]] | tok `tm` tok_TERMNAME -> cb_parse_termname name
     TList [tok, _,_cbr, TList (e : pmatches)] | tok `tm` tok_CASE -> E_Case annot (cb_parse_e e) (map cb_parse_pmatch pmatches)
     TList [tok, _,_cbr, TList [stmts]] | tok `tm` tok_COMPILES -> E_CompilesAST annot (Just $ cb_parse_stmts stmts)
-    {-TList [tok, _,_cbr, TList [mu_bindings, stmts]] | tok `tm` tok_LETS   ->
-        let mkLet s cb = E_LetAST (annotOfCbor cb) (cb_parse_binding cb) s in
-        foldl' mkLet (cb_parse_stmts stmts) (reverse $ unMu mu_bindings)
-    TList [tok, _,_cbr, TList [mu_bindings, stmts]] | tok `tm` tok_LETREC ->
-        E_LetRec annot (map cb_parse_binding (unMu mu_bindings)) (cb_parse_stmts stmts)-}
     TList [tok, _,_cbr, TList cbors] | tok `tm` tok_TUPLE ->
       case cbors of
         []           -> E_TupleAST annot KindPointerSized []
@@ -497,13 +489,6 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     TList [tok, _,_cbr, TList []] | tok `tm` tok_FLS -> ctor False
     _ -> error $ "cb_parse_bool failed: " ++ show cbor
 
-
-  cb_parse_binding cbor = case cbor of
-    TList [tok, _,_cbr, TList [x, e]] | tok `tm` tok_BINDING ->
-      TermBinding (cb_parse_x_VarAST x) (cb_parse_e e)
-    _ -> error $ "cb_parse_binding failed: " ++ show cbor
-
-
   cb_parse_formal cbor = case cbor of
     TList [tok, _,_cbr, TList [xid]]    | tok `tm` tok_FORMAL ->
       let name = cb_parse_x_text xid in
@@ -603,11 +588,6 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
                        TyAppP tcon (map cb_parse_tatom xs) -- TODO handle minus
         [] -> error $ "cb_parse_single_eff_empty failed: " ++ show cbor
     _ -> error $ "cb_parse_single_effect failed: " ++ show cbor
-
-  cb_parse_tannots cbor = case cbor of
-    TList [tok, _, _cbr, TList bindings] | tok `tm` tok_BINDING ->
-      [(evarName v, evarName x) | TermBinding v (E_VarAST _ x) <- map cb_parse_binding bindings]
-    _ -> error $ "cb_parse_tannots failed: " ++ show cbor
 
   -- TODO parse different escapes, etc.
   cb_parse_str quo chrs = case (quo, chrs) of
