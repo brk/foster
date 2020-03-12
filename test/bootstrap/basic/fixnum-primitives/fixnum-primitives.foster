@@ -168,7 +168,11 @@ floating-ops = {
   expect_i64x (0x43efffffffffffff);
   print_i64x  (f64-as-i64 18446744073709549568.0);
 
-  prevFloat64 = { f => i64-as-f64 ((f64-as-i64 f) -Int64 1) };
+  nextFloat64 = { f => f |> f64-as-i64 |> (+Int64)  1 |> i64-as-f64 };
+  prevFloat64 = { f => f |> f64-as-i64 |> (+Int64) -1 |> i64-as-f64 };
+  // We use (+Int64) -1 because addition commutes but subtraction doesn't,
+  // and we want x - 1 but piping would give us 1 - x.
+  // And (+Int64) -1  is shorter and more symmetric than { i => i -Int64 1 }.
 
   print_i32 5123;
   expect_i32 5123;
