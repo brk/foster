@@ -98,14 +98,14 @@ bitwise-ops = {
   expect_i32                     32;
   print_i32 (bitlength-alt-Int32 -1234567);
 
-  first-bit-set-Int32-test 0 1;
-  first-bit-set-Int32-test 1 2;
-  first-bit-set-Int32-test 0 3;
-  first-bit-set-Int32-test 2 4;
-  first-bit-set-Int32-test 0 5;
-  first-bit-set-Int32-test 1 6;
-  first-bit-set-Int32-test 0 7;
-  first-bit-set-Int32-test 3 8;
+  lowest-bit-set-Int32-test 0 1;
+  lowest-bit-set-Int32-test 1 2;
+  lowest-bit-set-Int32-test 0 3;
+  lowest-bit-set-Int32-test 2 4;
+  lowest-bit-set-Int32-test 0 5;
+  lowest-bit-set-Int32-test 1 6;
+  lowest-bit-set-Int32-test 0 7;
+  lowest-bit-set-Int32-test 3 8;
 
   expect_i32b                     0b`0000`1101;
   print_i32b (bit-reverse-Int32 8 0b`1011`0000);
@@ -130,8 +130,8 @@ bitwise-ops = {
   print_i32 0xFFFF`FFFF;
 };
 
-first-bit-set-Int32-test = { e : Int32 => n : Int32 =>
-  expect_i32 e; print_i32 (first-set-bit-Int32 n);
+lowest-bit-set-Int32-test = { e : Int32 => n : Int32 =>
+  expect_i32 e; print_i32 (lowest-set-bit-Int32 n);
 };
 
 floating-ops = {

@@ -168,8 +168,24 @@ bitlength-alt2-Int32 = { n : Int32 =>
   32 -Int32 (ctlz-Int32 n)
 };
 
-first-set-bit-Int32 = { n : Int32 =>
-  (bitlength-Int32 (bitand-Int32 n (negate-Int32 n))) -Int32 1
+bitlength-Int8 = { n : Int8 =>
+  8 -Int8 (ctlz-Int8 n)
+};
+
+// Given 0, returns -1.
+// Given 7, returns 3.
+// Given 8, returns 4.
+highest-set-bit-Int32 = { n : Int32 => n |> bitlength-Int32 |> (+Int32) -1 };
+
+// Given 0, returns -1.
+// Given 7, returns 0.
+// Given 8, returns 4.
+lowest-set-bit-Int32 = { n : Int32 =>
+  n |> negate-Int32 |> bitand-Int32 n |> bitlength-Int32 |> (+Int32) -1
+};
+
+lowest-set-bit-Int8 = { n : Int8 =>
+  n |> negate-Int8 |> bitand-Int8 n |> bitlength-Int8 |> (+Int8) -1
 };
 
 // Precondition: 0 <= index < 32
