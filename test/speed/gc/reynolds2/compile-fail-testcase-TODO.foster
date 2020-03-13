@@ -15,19 +15,26 @@ mktree = { n =>
 };
 
 get-current-subheap = {
+  /*
     sh = foster_subheap_create !;
     os = foster_subheap_activate sh;
     _  = foster_subheap_activate os;
     os
+  */
+  ()
 };
 
 in-temp-subheap = { f =>
+/*
   sh = foster_subheap_create !   ;
   os = foster_subheap_activate sh;
     rv = f !;
   _ = foster_subheap_activate os ;
   // _ = foster_subheap_collect  sh ;
   rv
+  */
+
+  f !
 };
 
 search = { cs => p => t =>
