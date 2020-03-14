@@ -2631,7 +2631,6 @@ cffnOfMKCont cv (MKFn _v vs _ subterm _isrec _annot) = do
                                                 blockid <- generateBlock "case.arm" {-bindings-} [] subterm
                                                 --dbgDoc $ text $ "bindings for " ++ show blockid ++ " are " ++ show (map (tidIdent. boundVar) bindings)
                                                 return $ CaseArm pat blockid Nothing (map boundVar bindings) range) arms
-                                                --return $ CaseArm pat blockid Nothing [] range) arms
                                  baPutBlock head insns (CFCase v' arms')
           -- arms  :: MKCaseArm (PatternRepr) (Subterm _)
           -- arms' :: CaseArm PatternRepr BlockId MonoType
@@ -2743,11 +2742,23 @@ data PatternMatchStatus t = MatchDef [(Ident, FreeVar t)]
                           | MatchAmbig
                           | MatchNeg
 
-matchSeq :: t -> SourceRange -> Subterm t -> (FreeVar t, PatternRepr t) -> Compiled (Subterm t)
-matchSeq ty range subterm (v, pat) = do
+instance TExpr (PatternAtom ty) ty where
+  freeTypedIds (P_Variable _ v) = [v]
+  freeTypedIds _ = []
+
+patternReprFreeIds :: PatternRepr ty -> [TypedId ty]
+patternReprFreeIds (PR_Atom atom) = freeTypedIds atom
+patternReprFreeIds (PR_Ctor  _ _ reprs _) = concatMap patternReprFreeIds reprs
+patternReprFreeIds (PR_Tuple _ _ reprs  ) = concatMap patternReprFreeIds reprs
+patternReprFreeIds (PR_Or    _ _ reprs  ) = concatMap patternReprFreeIds reprs
+
+matchSeq :: t -> SourceRange -> Map Ident (MKBound t)
+  -> Subterm t -> (FreeVar t, PatternRepr t) -> Compiled (Subterm t)
+matchSeq ty range boundsFor subterm (v, pat) = do
   parentLink <- newOrdRef Nothing
-  let todoBindings = []
-  let rv = MKCase parentLink ty v [MKCaseArm pat subterm todoBindings range]
+  let patBoundVars = patternReprFreeIds pat
+  let bindings = [boundsFor Map.! tidIdent tid | tid <- patBoundVars]
+  let rv = MKCase parentLink ty v [MKCaseArm pat subterm bindings range]
   _ <- backpatchT rv [subterm]
   newOrdRef (Just rv)
 
@@ -2763,9 +2774,9 @@ findMatchingArm :: Pretty ty =>
                 -> Compiled ()
 findMatchingArm replaceCaseWith ty v arms lookupVar = go arms NoPossibleMatchYet
   where go [] _ = return ()
-        go ((MKCaseArm pat subterm _bindings range):rest) potentialMatch = do
+        go ((MKCaseArm pat subterm bindings range):rest) potentialMatch = do
               -- Map from pattern variable ids to bound vars.
-              let boundsFor = Map.fromList [(tidIdent (boundVar b), b) | b <- _bindings]
+              let boundsFor = Map.fromList [(tidIdent (boundVar b), b) | b <- bindings]
 
               matchRes <- matchPatternAgainst pat v
               case (matchRes, potentialMatch) of
@@ -2784,7 +2795,7 @@ findMatchingArm replaceCaseWith ty v arms lookupVar = go arms NoPossibleMatchYet
                     then return ()
                     else do
                       -- TODO maybe mark the generated cases as redexes?
-                      caseSeq <- foldlM (matchSeq ty range) subterm varsPats
+                      caseSeq <- foldlM (matchSeq ty range boundsFor) subterm varsPats
                       replaceCaseWith caseSeq
 
                 -- A match that definitely won't happen can be ignored.

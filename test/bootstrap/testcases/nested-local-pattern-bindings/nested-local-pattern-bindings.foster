@@ -1,0 +1,14 @@
+main = {
+  // If matchSeq in MKNExpr.hs fails to compute pattern bindings,
+  // this code will compute the wrong closure capture set and
+  // thus fail to codegen.
+  f = { p1 => p2 =>
+    case (p1, p2) of ((x, _), _) ->
+      x
+    end
+  };
+
+  a = f (1, 2) (1, 2);
+  b = f (3, 4) (3, 4);
+  ()
+};
