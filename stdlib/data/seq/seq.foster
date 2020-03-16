@@ -1,4 +1,5 @@
 snafuinclude FingerTree "data/finger-tree";
+snafuinclude Maybe "maybe";
 
 type case Seq (a:Type)
       of $Seq (FingerTree a)
@@ -99,12 +100,158 @@ seqSplitAt = { seq => i =>
   end
 };
 
+seqDrop :: forall (a:Type) { Seq a => Int32 => Seq a };
+seqDrop = { seq => n =>
+  let (_head, tail) = seqSplitAt seq n; tail
+};
+
+seqKeep :: forall (a:Type) { Seq a => Int32 => Seq a };
+seqKeep = { seq => n =>
+  let (head, _tail) = seqSplitAt seq n; head
+};
+
+// TODO: translate negative numbers into index-from-rear.
 seqIndex :: forall (a:Type) { Seq a => Int32 => Maybe a };
 seqIndex =  { seq => idx =>
   let ($Seq ft) = seq;
   ftIndex ftElemSize ft idx;
 };
 
+seqChunk :: forall (a:Type) { Seq a => Int32 => Seq (Seq a) };
+seqChunk = { seq => chunkSize =>
+  REC loop = { remainder => acc =>
+    case ()
+      of _ if seqIsEmpty remainder -> acc
+      of _ if seqLength remainder <=SInt32 chunkSize ->
+        seqPostpend acc remainder
+      of _ ->
+        let (head, tail) = seqSplitAt remainder chunkSize;
+        loop tail (seqPostpend acc head)
+    end
+  };
+  loop seq (seqEmpty !)
+};
+
+seqWithout :: forall (a:Type) { Seq a => { a => Bool } => Seq a };
+seqWithout = { seq => pred =>
+  REC loop = { ft => acc =>
+    case ftViewL ftElemSize ft
+      of $FT_EmptyL -> acc
+      of $FT_Cons e rest ->
+        if pred e
+          then loop rest acc
+          else loop rest (seqPostpend acc e)
+        end
+    end
+  };
+  loop (unSeq seq) (seqEmpty !)
+};
+
+seqWhere :: forall (a:Type) { Seq a => { a => Bool } => Seq a };
+seqWhere = { seq => pred =>
+  seqWithout seq { e => e |> pred |> not }
+};
+
+// Returns the sub-sequence of values which appear in the left array only.
+// O(n * m)
+seqLeftDifferenceEq :: forall (a:Type) { Seq a => Seq a => { a => a => Bool } => Seq a };
+seqLeftDifferenceEq = { left => right => eq =>
+  left `seqWithout` { elt => seqContainsAny right { x => eq elt x } }
+};
+
+seqCountWhere :: forall (a:Type) { Seq a => { a => Bool } => Int32 };
+seqCountWhere = { seq => pred =>
+  counter = { elt => count =>
+    if pred elt then count +Int32 1 else count end
+    //count +Int32 oneIf (pred elt)
+    //pred elt |> oneIf |> (+Int32) count
+  };
+  ftFoldlTree counter (unSeq seq) 0
+};
+
+// TODO rewrite to reduce time and space usage, using seqFind.
+seqContainsAny :: forall (a:Type) { Seq a => { a => Bool } => Bool };
+seqContainsAny = { seq => pred =>
+  seqCountWhere seq pred >UInt32 0
+  //seqWhere seq pred |> seqIsEmpty |> not
+};
+
+// Returns a pair of (e, idx) for the 
+seqFindFirstIndex :: forall (a:Type) { Seq a => { a => Bool } => Maybe (a, Int32) };
+seqFindFirstIndex = { seq => pred =>
+  REC loop = { ft => idx =>
+    case ftViewL ftElemSize ft
+      of $FT_EmptyL -> None
+      of $FT_Cons e rest ->
+        if pred e
+          then Some (e, idx)
+          else loop rest (idx +Int32 1)
+        end
+    end
+  };
+  loop (unSeq seq) 0
+};
+
+// Precondition: input sequence is sorted according to the given ordering.
+//
+// Returns a pair of positions (L, H) identifying the range
+// which does (or would) contain the given element.
+//
+// Time: O(lg n)
+//
+// Example elt => output mappings for [0, 2, 2, 4, 4, 4, 4, 6, 6, 6]:
+//    0 => (0, 1)
+//    1 => (1, 1)
+//    2 => (1, 3)
+//    6 => (7, 10)
+seqSortedRange :: forall (a:Type) { Seq a => a => { a => a => Ord } => (Int32, Int32) };
+seqSortedRange = { seq => elt => ord =>
+  lo = seqHighestPositionLT seq elt ord;
+  hi = seqLowestPositionGT seq elt ord;
+  (lo, hi)
+};
+
+seqHighestPositionLT :: forall (a:Type) { Seq a => a => { a => a => Ord } => Int32 };
+seqHighestPositionLT = { seq => elt => ord =>
+  goLow = isLE;
+  seqFindPositionBiased seq elt ord goLow True;
+};
+
+seqLowestPositionGT :: forall (a:Type) { Seq a => a => { a => a => Ord } => Int32 };
+seqLowestPositionGT = { seq => elt => ord =>
+  goLow = isLT;
+  seqFindPositionBiased seq elt ord goLow False;
+};
+
+// Note that zero refers to the position before index 0,
+// and 1 refers to the position after index 0.
+seqFindPositionBiased :: forall (a:Type) { Seq a => a => { a => a => Ord } => { Ord => Bool } => Bool => Int32 };
+seqFindPositionBiased = { seq => elt => ord => goLow => biasLow =>
+  REC loop = { lo => hi =>
+    // Invariant: lo marks (before) the highest known index to be LT elt.
+    // Invariant: hi marks (after)  the lowest known index to be GT elt.
+    case hi -Int32 lo
+      of 0 -> lo // range shrunk to zero size, nowhere else to go!
+      of 1 ->
+        // Do we go before or after the element where we are?
+        midElt = seqIndex seq lo |> unMaybe;
+        case elt `ord` midElt
+          of $LT -> lo
+          of $EQ -> if biasLow then lo else hi end
+          of $GT -> hi
+        end
+      of rangeSize ->
+        lowerDelta = rangeSize `bitashr-Int32` 1;
+        midIdx = lo +Int32 lowerDelta;
+        midElt = seqIndex seq midIdx |> unMaybe;
+        if elt `ord` midElt |> goLow
+          then loop lo midIdx
+          else loop midIdx hi
+        end
+    end
+  };
+  loop 0 (seqLength seq)
+};
 
 seqReverse :: forall (a:Type) { Seq a => Seq a };
 seqReverse =  { seq =>
