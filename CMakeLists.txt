@@ -105,7 +105,6 @@ find_program(CAPNP NAMES capnp
 find_program(MINUPROTO NAMES minuproto
   PATHS
     $ENV{HOME}/.cabal/bin
-    ${PROJECT_SOURCE_DIR}/compiler/me/.cabal-sandbox/bin
   DOC "Cap'n Proto plugin to generate Haskell code from .capnp files")
 
 get_filename_component(CAPNP_BIN_DIR ${CAPNP} DIRECTORY)

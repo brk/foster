@@ -694,51 +694,6 @@ converted, the bitcasts must be modified accordingly. However, this
 is no harder updating the call sites from closure applications to
 procedure applications.
 
-
-Neutral facets
-~~~~~~~~~~~~~~
-
-We cannot generate GC root slots until after monomorphization due to
-unboxed polymorphism, because whether or not a given parameter needs
-a gcroot depends on how its type parameters are instantiated.
-There are a few potential solutions:
-
-* Monomorphize before closure conversion.
-* Monomorphize after closure conversion, and have the middle-end
-  do a separate analysis of monomorphic and polymorphic core.
-* Monomorphize after closure conversion, and leave stack slot
-  generation to the backend. Easy but inefficient: gcroots are
-  worth optimizing!
-
-The duplication involved in monomorphization requires consistent
-alpha-renaming, which also affects closed-over variables. This is
-true regardless of when monomorphization is performed, but doing
-it earlier makes it harder to cheat---which argues in favor of doing
-it earlier!
-
-
-Pass Ordering Constraints: may-GC analysis
-------------------------------------------
-
-Strict requirement: may-gc information must be computed
-before GC root insertion can occur.
-
-Closure conversion loses the call graph
-structure that would make it easy to do a bottom-up may-gc
-analysis, which suggests doing may-gc computation before closure conversion.
-
-However, closure conversion also makes representation decisions which can
-eliminate potential allocations. As a result, if we do may-gc computation
-before closure conversion, we'll be forced into a (well, an even more)
-conservative estimate of which functions might wind up GCing.
-
-Thus we split the collection into two phases: first, we collect constraints
-before doing closure conversion. The primary benefit of this choice is that
-we can generate a more efficient constraint set. If ``f`` calls ``h``, and
-we know that ``h`` has a known gc effect, we can avoid generating and then
-later solving an indirect constraint. After collecting a minimal constraint
-set, we wait until after closure conversion to resolve the constraints.
-
 Historical Note: Integer Syntax
 -------------------------------
 
@@ -755,24 +710,4 @@ a leading zero plus a base specifier.
 Plus, we end up needing six characters: ``0ff_16`` instead of four: ``0xff``.
 And the leading zero looks pretty silly in cases like ``0FFFF`FFFF`0000`0000_16``
 Finally, the scheme suggests support for (unsupported) arbitrary bases.
-
-On the other hand, lining up vertically-juxtaposed
-numbers looks nicer with trailing base specifiers.
-
-
-Extending The Language
-----------------------
-
-Currently, language extensions require the following modifications:
-
-#. Edit grammar/foster.g with new syntax rules.
-#. Edit compiler/parse/ANTLRtoFosterAST.cpp and
-     (probably) compiler/include/foster/parse/FosterAST.h
-#. Protocol buffer handing:
-
-  * ``compiler/parse/FosterAST.proto``
-  * ``compiler/passes/DumpToProtobuf.cpp``
-
-#. Middle-end, to whatever degree is needed.
-#. Back-end, maybe: ``compiler/fosterlower.cpp``
 

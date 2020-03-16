@@ -10,10 +10,7 @@ Miscellanous Tidbits of Knowledge
 * If a Foster program silently fails, check ``gclog.txt``.
 * If the return value is 99, it means the GC detected an error while running.
   If the return value is 255, it means the GC ran out of heap space.
-* The GC heap size can be configured with ``--foster-runtime '{"gc_semispace_size_kb":400}'``
-* Semispace memory is initialized to 0x66, so a SIGSEGV crash with an address of
-  mostly 6's means a read of uninitialized memory.
-* When semispace memory is cleared, it is changed to 0xFE.
+* The GC heap size can be configured with ``--foster-heap-MB 400``
 * To unsafely disable array bounds checking (e.g. to see how much speedup is
   possible, without going to the trouble of establishing the necessary invariants)
   use ``--be-arg=-unsafe-disable-array-bounds-checks``
@@ -34,8 +31,10 @@ Miscellanous Tidbits of Knowledge
 * To convert a UTF-8 encoded string (say, as copied from a web page) into the
   corresponding byte sequence expressed as a Foster machine literal array,
   use a snippet of Python code in http://repl.it/languages/Python/ like so::
+
       def arra(s):
         print "prim mach-array-literal " + ' '.join(str(ord(x)) for x in list(s))
+
   and its length via ``len(s.decode('utf-8'))``.
 * Can't yet mix ``|>`` sugar with primitive applications.
 * Case analysis on literal tuples will not result in runtime allocation,
@@ -53,10 +52,10 @@ Miscellanous Tidbits of Knowledge
           optimized to a raw operation, and vice versa.
 * Inline asm syntax::
 
-    prim inline-asm :[ { () } ]
-                    "cli ; sti"
-                    ""
-                    True;
+      prim inline-asm :[ { () } ]
+                      "cli ; sti"
+                      ""
+                      True;
 
   The required arguments are: an overall function type for the assembly code,
   the text of the code itself, the text of the constraints on the assembly code,
@@ -172,34 +171,3 @@ We can also compile to a native executable::
 
     fosterc   simplegl.foster --nativelib SDL --bitcode sdlWrap.bc --backend-optimize -o fostergl.exe
 
-
-
-Performance-related notes
--------------------------
-
-* The middle-end compiler takes 2m2s to build with -O2, and roughly 48s to build without optimization.
-  The middle-end then runs about 30% faster, but serialization time is not affected at all.
-
-* In a hello-world comparison, the foster binary is ~53KB bigger than the C binary.
-  Use of ``strings`` suggests strings account for 14KB of the size increase.
-  Foster-generated binaries dynamically link against a minimial selection of "standard" libraries:
-  libc, libm, librt, pthreads, libgcc_s, and libstdc++
-
-* fannkuchredux(-nogc)-unchecked
-    runs 100% slower than the reference C program.
-  fannkuchredux-alt with "optimized" GC roots/reloads (and kills)
-    runs 42% slower than the reference C program.
-  fannkuchredux-alt with "un-optimized" GC roots/reloads (and no kills)
-    runs 28% slower than the reference C program. (!)
-      The program executes more instructions, but has higher IPC and lower cycle count.
-      This suggests that dataflow-driven nulling-out of root slots
-      carries non-trivial costs on modern out-of-order machines.
-  fannkuchredux-alt with "optimized" GC roots and no reloads (--non-moving-gc)
-    runs 10% slower than the reference C program.
-  fannkuchredux-alt with "un-optimized" GC roots and no reloads (--non-moving-gc)
-    runs 5% slower than the reference C program.
-  fannkuchredux-alt with "un-optimized" GC roots and no reloads (--non-moving-gc)
-                                            and array bounds checks disabled
-    runs 5% FASTER than the reference C program.
-  fannkuchredux-alt with no GC roots at all and array bounds checks disabled
-    runs 8% FASTER than the reference C program.
