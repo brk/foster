@@ -21,6 +21,19 @@ that the implementation (essentially ``#include``) is a temporary hack.
 Running Code
 ~~~~~~~~~~~~
 
+To run an individual file, use ``runfoster``:
+
+.. code-block:: bash
+
+    :2016-09-07 16:06:09 ~/foster/_obj/ $ cat scratchpad.foster
+    snafuinclude Prelude "prelude";
+    main = {
+      print_text "Hello, world!";
+    };
+    :2016-09-07 16:06:11 ~/foster/_obj/ $ runfoster scratchpad.foster
+    Hello, world!
+
+
 The ``test/bootstrap`` directory contains the primary regression suite for
 the compiler. The ``gotest.sh`` script finds and run tests by name, and
 prints out a bunch of debugging/timing info along the way::
@@ -92,16 +105,6 @@ prints out a bunch of debugging/timing info along the way::
     :2016-09-07 16:03:20 ~/foster/_obj/ $
 
 
-To run an individual file, use ``runfoster``::
-
-    :2016-09-07 16:06:09 ~/foster/_obj/ $ cat scratchpad.foster
-    snafuinclude Prelude "prelude";
-    main = {
-      print_text "Hello, world!";
-    };
-    :2016-09-07 16:06:11 ~/foster/_obj/ $ runfoster scratchpad.foster
-    Hello, world!
-
 Syntax
 ~~~~~~
 
@@ -141,6 +144,9 @@ is a separate function from ``+Int64``. Also, signedness is a property of
 There are explicit checked add/sub/mul operators,
 which do come in signed and unsigned variants:
 ``+ucInt32``, ``*scInt64``, etc.
+These operators dynamically check for wraparound (in LLVM, using intrinsics
+which can do things like check hardware overflow flags).
+On overflow, the checked operator variants currently abort the program.
 
 Bitwise operators are spelled like ``bitand-Int32``. The operators are
 ``bitand``, ``bitor``, ``bitxor``, ``bitshl``, ``bitlshr``, ``bitashr``, and ``bitnot``.
@@ -158,7 +164,29 @@ that takes another argument. Calling a function that returns a function
 must be ``(fn arg1) arg2``.
 
 Functions can also be applied F#-style, using the pipe operator:
-``arg2 |> fn arg1``.
+``arg2 |> fn arg1 |> { x => foo x y }``.
+This pipeline is desugared by the compiler into ``{ x => foo x y } (fn arg1 arg2)``
+which is guaranteed to be shrunk to ``foo (fn arg1 arg2) y``.
+
+In languages with currying, all arguments are of a single function;
+syntax like ``fn arg1 arg2`` means the same thing as ``(fn arg1) arg2``
+and so the pipeline operator can be defined as a regular function.
+With uncurried arguments, the pipeline operator must be primitive in
+order to work with functions of any number of arguments.
+Having multiple arguments also raises the question of which argument
+"receives" the pipe's input.
+In some languages, the answer is the function's first argument;
+in Foster, the pipeline operator applies its argument to the *last* 
+argument, not the first.
+As the example shows, this potential ambiguity can be resolved with
+minimal syntactic overhead with a function literal.
+
+.. todo
+  I'm considering whether having two pipe variants for "near"/"far"
+  applications might be a worthwhile tradeoff. Potentially with
+  ``|>>`` for far and ``|>`` for near, or keep ``|>`` for far and
+  use something like ``..`` for near, mirroring/reflecting the
+  connection between record field lookup and functional methods.
 
 Other expressions include numbers (for now: double precision float or
 8 to 64-bit integer), strings (Python-like syntax: single or double quotes,
@@ -383,15 +411,15 @@ Implementation
 Interpretation
 ~~~~~~~~~~~~~~
 
-There is a small-step interpreter, available via the ``--interpret`` flag.(
+There is a small-step interpreter, available via the ``--interpret`` flag.
 It's mainly intended as a reference semantics, not a day-to-day REPL or
-anything like that.
+anything like that. It's likely somewhat bitrotted at this point.
 
 Compilation
 ~~~~~~~~~~~
 
-The Foster middle-end does some high-level optimizations like contification,
-inlining, and GC root analysis. The LLVM backend then does further work.
+The Foster middle-end does some high-level optimizations like contification
+and inlining. The LLVM backend then does further work.
 
 The following small Foster program::
 
@@ -480,6 +508,8 @@ into::
 
       ((T*)buf)[0]
 
+(on little-endian architectures, of course.)
+
 Benchmarking Infrastructure
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -512,22 +542,18 @@ Unimplemented Bits
 * Full story on boxed vs unboxed types
 * Module system
 * Non-trivial use of effects
-* Effect handlers
-* Monadic effect translation
 * Any form of JIT compilation
-* A sophisticated garbage collector
 
 Vision
 ------
 
 * ML-style type safety provides a solid foundation for a reasonable language.
 * For reasons of both maintainability and security, we'd also like to
-track and restrict the effects of executing a given piece of code,
-thus effect typing.
+  track and restrict the effects of executing a given piece of code,
+  thus effect typing.
 * Given effect typing, something like extensible effects provides a unified
-mechanism for language-based interpositioning.
+  mechanism for language-based interpositioning.
 * Coroutines serve as a behind-the-scenes implementation mechanism for
-extensible effects, and also for an independent, hugely useful,
-in-front-of-the-scenes language mechanism.
-*
+  extensible effects, and also for an independent, hugely useful,
+  in-front-of-the-scenes language mechanism.
 

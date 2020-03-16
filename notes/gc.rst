@@ -132,3 +132,36 @@ either the body or header payloads.
   On the other hand, "hiding" such an allocation decision behind an effect
   may be misguided; perhaps it's better to simply expose stable pointers as
   an explicit data type, along the lines of Haskell's FFI?
+
+..
+  Coroutines and Garbage Collection
+  +++++++++++++++++++++++++++++++++
+
+  Coroutines somewhat complicate the details of garbage collection.
+
+  First, a garbage collection invoked from an
+  active coroutine must not only walk the call stack to trace roots,
+  it must also go through the stack of suspended coroutines and trace
+  roots from each saved continuation point.
+  Second, any reachable dormant coroutine must also be traced.
+
+  This implies that it's somewhat nicer to represent the stack
+  of suspended coroutines via a linked list threaded through the
+  coroutine objects, rather than as a separate stack data structure,
+  because the former representation meshes better with the GC's notion
+  of reachability.
+
+  Another point is that coroutine stacks should not be allocated on
+  a compacting (/semispace) GC heap. Otherwise, when a GC is triggered
+  from a coroutine, the GC must (A) detect when its stack has been copied,
+  and (B) update the stack pointer + base pointer to refer to the new copy.
+  It's not impossible to do, but it's easier to just avoid the mess entirely.
+
+  The easiest solution for coroutine stacks is probably to maintain a
+  separate mark-sweep heap: when a coroutine is traced, its stack is marked,
+  and once all stacks have been marked, unmarked stacks may be ``free()``\d.
+  Thankfully, performance is of no consideration for tracking the coroutine
+  stacks, under the assumption that coroutines will be allocated (and freed)
+  an order of magnitude less frequently than "regular" objects.
+
+

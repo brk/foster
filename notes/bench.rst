@@ -8,7 +8,8 @@ The ``bench-all.py`` script will run a set of benchmark programs under some numb
 of compile-time and run-time configurations, recording relevant statistics to the file system.
 
 For a compilation of ``speed/micro/addtobits``
-with the flags ``inline=no`, `LLVMopt=O0``, and ``donate=no``:
+with the flags ``inline=no``, ``LLVMopt=O0``, and ``donate=no``
+we'll generate something akin to the following:
 
 * ``data/2013-05-28@09.48.52/speed__micro__addtobits/[inline=no,LLVMopt=O0,donate=no]/compile.txt``
 * ``data/2013-05-28@09.48.52/speed__micro__addtobits/[inline=no,LLVMopt=O0,donate=no]/exe.exe``
@@ -84,21 +85,24 @@ would also probably be an entry for ``revision`` and/or ``date_taken``.
 An ``impl_lang`` key would also be helpful.
 
 There are also a few different ways we can slice and dice the input for visualizations:
+
  * For each individual test, compare the effects of different flags.
  * For each individual test, compare performance across different times/revisions
    at the same flags.
  * Compare output metrics as input size varies (for one or more benchmark impls)
  * Do the same for groups of tests (i.e. different implementations of the same benchmark)
    with a common scale for comparison.
-  * Group tests by implementation language
+ * Group tests by implementation language
 
 For comparing flag effects across tests, we want::
+
     [ {
       xlabel:"...",
       results: [
         {legend_text:"...",
           output_samples: [...]
         } ] } ]
+
 Each distinct xlabel would be mapped to an arbitrary (hidden) x-value.
 
 Besides detailed visualizations, it would also be nice to have a compact, easy-to-digest

@@ -2,7 +2,7 @@
 
 $ # Run through "Installation" steps below, then:
 
-$ hg clone https://bitbucket.org/b/foster foster
+$ git clone https://github.com/brk/foster foster
 $ cd foster
 $ mkdir _obj        # Separate directory for compilation results and such
 $ cd _obj           # The name can be whatever you'd like, but it should

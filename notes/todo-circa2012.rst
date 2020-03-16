@@ -354,19 +354,5 @@ TODO: design & implementation
   * When/where do we convert from unqualified names to fully-qualified names?
   * Is a fully-qualified name just a module name + identifier?
 
-* Interfacing with C libraries:
-
-Benchmarks
-==========
-
-nbody
------
-
-* determine why we're executing so many extra insns
-
-fannkuch?
----------
-
-
-
+* Interfacing with C libraries
 

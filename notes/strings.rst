@@ -31,7 +31,7 @@ but the downside is that we then have to teach the compiler about another
 hard-coded type. The main advantages are that we encourage higher-level programming,
 and also we can go from ``ByteFragment`` to a byte array without allocating, but
 it seems... trickier... to guarantee that ``bytesOfRawArray b"lah"`` will statically
-allocate the ``Bytes`` wrapper in addition to the bytes thsem
+allocate the ``Bytes`` wrapper in addition to the bytes themselves.
 
 For text literals, code generation will emit a static array and a call to the
 implictly-inserted function ``TextFragment`` with an automatically-computed length.

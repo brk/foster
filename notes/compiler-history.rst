@@ -3,7 +3,7 @@ Compiler History
 
 The compiler was originally a monolithic C++ binary.
 It is now a separate front-end, middle-end, and back-end,
-which communicate via protocol buffers.
+which communicate via CBOR and Cap'n'Proto buffers.
 
 The front-end is written in C++, and uses ANTLR
 to turn text strings into parse trees, which it then
@@ -111,7 +111,7 @@ parsing context.
 
 A parse tree is a simple tree-encoded representation of an input string.
 Parse trees themselves do not have proper semantics: for example, binary
-operators corresond in structure to their source ordering, not their
+operators correspond in structure to their source ordering, not their
 relative precedences.
 
 AST Building
@@ -190,7 +190,7 @@ whereas the back-end seems easiest to implement in C++.
 
 The back-end may actually be several distinct pieces:
   * AST or CFG to LLVM ``Module`` (may require some custom LLVM passes)
-  * ``Module`` to asm/obj (requires GC plugin)
+  * ``Module`` to asm/obj (may require GC plugin)
   * Linker + optimizer: could be separate binary or could reuse ``llvm-ld``
     and ``opt``.
 
@@ -217,31 +217,6 @@ The design of the backend does anticipate self-hosting, however:
 Foster-specific LLVM passes are encapsulated in a LLVM-to-LLVM binary
 called ``fosteroptc``, which is distinct from the ``fosterlower`` binary
 that converts typechecked protobufs to LLVM IR.
-
-
-Random Timing Notes
--------------------
-
-With debug info enabled for libfoster::
-
-    013 K .ll -(107 ms)-> 337 K  preopt.bc (fosterlower) (23 ms linking, 40 ms reading, 23 ms dumping bitcode)
-    337 K .bc -(314 ms)-> 2.2 MB out.s     (fosteroptc) (39 ms reading, 255 ms llc, 4 ms opt)
-    2.2 M  .s -( 46 ms)-> 196 K  out.o     (gcc/as)
-    196 K  .o -( 59 ms)-> 1.9 M  a.out     (gcc/ld)
-
-Without debug info enabled for libfoster::
-
-    013 K .ll -( 28 ms)->  50 K  preopt.bc (fosterlower) ( 1 ms linking,  6 ms reading,  4 ms dumping bitcode)
-     50 K .bc -(230 ms)-> 266 K  out.s     (fosteroptc) ( 7 ms reading, 213 ms llc, 1 ms opt)
-    266 K  .s -( 17 ms)->  37 K  out.o     (gcc/as)
-     36 K  .o -( 57 ms)-> 1.8 M  a.out     (gcc/ld)
-
-By disabling debug info, compilation time per-module drops from 565 ms by 170 ms, to 389 ms.
-Time for ``ctest -V`` similarly drops from 16 s to 11 s.
-
-By making the 2.2 MB ``libchromium_base`` library linked dynamically instead of statically,
-final binary sizes are 1.5 MB smaller, and link time drops from 57 ms to 27 ms. Time for ``ctest -V``
-dropped by 10% overall.
 
 Direct Style, CPS, & CFG
 ------------------------
@@ -428,7 +403,7 @@ All of the constructors are represented as word-sized values pointing to
 a tagged heap cell.
 The garbage collector uses the tag pointer to determine how to collect
 the tagged constructor cell, and pattern matching also uses the tag
-to determine what the "small id" of the constructor is. In theory
+to determine what the "small id" of the constructor is.
 
 There are a few representation optimizations that can be made in
 specific situations:

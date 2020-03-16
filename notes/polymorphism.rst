@@ -274,12 +274,12 @@ Haskell will implictly generalize the type of ``foo`` to ``forall a. [a] -> ()``
 
 However, if we add a type annotation to ``foo``, like so::
 
-    foo :: x -> ()
+    foo :: z -> ()
     foo x = bar x
     bar (_ :: [b]) = ()
 
-the code no longer typechecks. The reason is that ``x`` denotes an opaque type,
-rather than a type meta variable. Unification would produce ``x = [b]`` which
+the code no longer typechecks. The reason is that ``z`` denotes an opaque type,
+rather than a type meta variable. Unification would produce ``z = [b]`` which
 is an error.
 
 In Foster, at least for now, the situation is reversed. In the first example,
@@ -298,11 +298,16 @@ or on the value-level lambda directly::
     foo = { forall t:Type, x : t => () };
 
 Note that ``{ forall t:Type, x => () }`` results in ``x`` getting a type metavariable,
-rather than the presuambly-intended behavior of getting the bound type variable ``t``.
+rather than the presumably-intended behavior of getting the bound type variable ``t``.
+
+But Why?
+++++++++
 
 The major advantage of this approach is that every language-level type variable has
 an explicit binding site, which in turn means that scoped type variables are trivially
 supported, rather than the situation in Haskell, where they are a non-standard extension.
+Being explicit about type variable binding sites also improves the robustness of
+inference for effects and rows when appearing in higher order function type annotations.
 
 Links
 +++++

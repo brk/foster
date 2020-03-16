@@ -13,7 +13,6 @@ Foster Notes
    test
    features
    compiler-overview
-   runtime
    arrays
    strings
    hashtables
@@ -24,7 +23,6 @@ Foster Notes
    space-safety
    bench
    optimization-examples
-   todo
    checklist
    compiler-history
 
