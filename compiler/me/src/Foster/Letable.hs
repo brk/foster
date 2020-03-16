@@ -10,7 +10,7 @@ module Foster.Letable where
 import Foster.Base(Literal(..), CtorId, CtorRepr(..), ArrayIndex(..),
                    AllocMemRegion, AllocInfo(..), Occurrence, AllocationSource,
                    SourceRange,
-                   FosterPrim(..), MayGC(..), memRegionMayGC,
+                   FosterPrim(..),
                    TypedId(..), Ident(..), mapRight, ZeroInit,
                    TExpr(freeTypedIds), TypedWith(..))
 import Foster.MonoType
@@ -170,72 +170,3 @@ isPure letable = case letable of
       ILArrayRead    {} -> True
       ILArrayPoke    {} -> False -- as with store
       ILArrayLit     {} -> True -- as with tuples
-
-canGC :: Map.Map Ident MayGC -> Letable ty -> MayGC
-canGC mayGCmap letable =
-  case letable of
-         ILAppCtor _ (_, repr) _ _sr -> canCtorReprAppGC repr
-         ILAlloc        _ amr    _sr -> memRegionMayGC amr
-         ILAllocArray _ _ amr  _ _sr -> memRegionMayGC amr
-         ILAllocate info  _sr -> -- If the ctor is nullary, we won't GC...
-                             -- otherwise, we defer to the alloc region.
-                        fmap canCtorReprAppGC (allocCtorRepr info)
-                     `orMayGC` memRegionMayGC (allocRegion info)
-         ILCall     _ v _ -> -- Exists due to mergeAdjacentBlocks.
-                             Map.findWithDefault (GCUnknown "") (tidIdent v) mayGCmap
-         ILCallPrim _ p _ -> canGCPrim p
-         ILTuple KindAnySizeType  _ _   -> WillNotGC
-         ILTuple _                _ _   -> MayGC -- rather than stack allocating tuples, easier to just remove 'em probably.
-         ILLiteral  _ lit -> canGCLit lit
-         ILKillProcess {} -> WillNotGC
-         ILOccurrence  {} -> WillNotGC
-         ILDeref       {} -> WillNotGC
-         ILStore       {} -> WillNotGC
-         ILBitcast     {} -> WillNotGC
-         ILArrayRead   {} -> WillNotGC
-         ILArrayPoke   {} -> WillNotGC
-         ILArrayLit    {} -> MayGC
-
-canGCLit lit = case lit of
-  LitText      {} -> MayGC -- unless we statically allocate such things
-  LitInt       {} -> WillNotGC -- unless it's a bignum...
-  LitBool      {} -> WillNotGC
-  LitFloat     {} -> WillNotGC
-  LitByteArray {} -> WillNotGC
-
-orMayGC (Just WillNotGC) _ = WillNotGC
-orMayGC _            maygc = maygc
-
-canGCPrim (PrimIntTrunc {}) = WillNotGC
-canGCPrim (PrimOp       {}) = WillNotGC
-canGCPrim (NamedPrim (TypedId _ (GlobalSymbol name _alt))) =
-                    if willNotGCGlobal name then WillNotGC
-                                            else GCUnknown "canGCPrim:global"
-canGCPrim _ = GCUnknown "canGCPrim:other"
-
-canCtorReprAppGC CR_Transparent = WillNotGC
-canCtorReprAppGC CR_TransparentU= WillNotGC
-canCtorReprAppGC (CR_Default _) = MayGC
-canCtorReprAppGC (CR_Tagged  _) = MayGC
-canCtorReprAppGC (CR_Nullary _) = WillNotGC
-canCtorReprAppGC (CR_Value   _) = WillNotGC
-
-globalsKnownToNotGC = map T.pack
-                    ["expect_i1", "print_i1"
-                    ,"expect_i8", "print_i8", "print_i8b"
-                    ,"expect_i64" , "print_i64" , "expect_i32", "print_i32"
-                    ,"expect_i32b", "print_i32b"
-                    ,"expect_i64b", "print_i64b"
-                    ,"expect_i32x", "print_i32x"
-                    ,"expect_i64x", "print_i64x"
-                    ,"print_i64_bare"
-                    ,"memcpy_i8_to_at_from_at_len"
-                    ,"prim_arrayLength"
-                    ,"prim_print_bytes_stdout"
-                    ,"prim_print_bytes_stderr"
-                    ,"print_float_p9f64", "expect_float_p9f64"
-                    ,"foster_stdin_read_bytes"
-                    ,"foster_getticks"
-                    ,"foster_getticks_elapsed"
-                    ]
-willNotGCGlobal name = name `elem` globalsKnownToNotGC

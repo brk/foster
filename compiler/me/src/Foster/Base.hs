@@ -58,7 +58,6 @@ data ProcOrFunc   = FT_Proc | FT_Func  deriving (Show, Eq)
 data RecStatus = YesRec | NotRec deriving (Eq, Ord, Show)
 data VarNamespace = VarProc | VarLocal deriving Show
 data TailQ = YesTail | NotTail deriving (Eq, Show)
-data MayGC = GCUnknown String | MayGC | WillNotGC deriving (Eq, Show, Ord)
 data SafetyGuarantee = SG_Static | SG_Dynamic | SG_Unsafe                   deriving (Show, Eq)
 data ArrayIndex expr = ArrayIndex expr expr SourceRange
                                             SafetyGuarantee deriving (Show, Eq)
@@ -115,10 +114,6 @@ childrenOfArrayIndex (ArrayIndex a b _ _) = [a, b]
 
 briefCC CCC = "ccc"
 briefCC FastCC = ""
-
-boolGC  WillNotGC    = False
-boolGC  MayGC        = True
-boolGC (GCUnknown _) = True
 
 -- |||||||||||||||||||||||||| Patterns ||||||||||||||||||||||||||{{{
 
@@ -760,11 +755,6 @@ data AllocMemRegion = MemRegionStack
                     | MemRegionGlobalData
                     | MemRegionGlobalHeap deriving (Show, Eq)
 
-memRegionMayGC :: AllocMemRegion -> MayGC
-memRegionMayGC MemRegionStack = WillNotGC
-memRegionMayGC MemRegionGlobalHeap = MayGC
-memRegionMayGC MemRegionGlobalData = WillNotGC
-
 data AllocInfo t = AllocInfo { allocType      :: t
                              , allocRegion    :: AllocMemRegion
                              , allocTypeName  :: String
@@ -775,10 +765,6 @@ data AllocInfo t = AllocInfo { allocType      :: t
                              }
 
 data ZeroInit = DoZeroInit | NoZeroInit deriving (Show, Eq)
-
-type MayGCConstraint = (MayGC -- at most one direct constraint
-                       ,Set.Set Ident) --any # of indirect constraints
-type MayGCConstraints = Map Ident MayGCConstraint
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- {{{ Split up a sequence of function bindings into minimal SCCs.

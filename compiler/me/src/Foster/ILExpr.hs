@@ -69,7 +69,7 @@ type NumPredsMap = Map BlockId Int
 -- The standard definition of a basic block and its parts.
 -- This is equivalent to MinCaml's make_closure ...
 data ILBlock  = Block BlockEntryL [ILMiddle] ILLast
-data ILMiddle = ILLetVal      Ident   (Letable TypeLL) MayGC
+data ILMiddle = ILLetVal      Ident   (Letable TypeLL)
               | ILTupleStore  [LLVar]  LLVar    AllocMemRegion
               | ILRebindId    Ident    LLVar
               deriving Show
@@ -92,22 +92,15 @@ data ILLast = ILRetVoid
 
 instance Pretty (Set.Set Ident) where pretty s = text "{" <> list (map pretty (Set.toList s)) <> text "}"
 
-prepForCodegen :: ModuleIL CCBody TypeLL -> MayGCConstraints -> Compiled (ILProgram, [Proc BasicBlockGraph' ])
-prepForCodegen m mayGCconstraints0 = do
+prepForCodegen :: ModuleIL CCBody TypeLL -> Compiled (ILProgram, [Proc BasicBlockGraph' ])
+prepForCodegen m = do
     let decls = map (\(s,t, isForeign) -> LLExternDecl s t isForeign) (moduleILdecls m)
     let dts = moduleILprimTypes m ++ moduleILdataTypes m
     let CCBody hprocs valbinds = moduleILbody m
     (_ep_time, combined) <- ioTime $ mapM explicateProc hprocs
     let (aprocs, preallocprocs) = unzip combined
 
-    let mayGCmap = resolveMayGC mayGCconstraints0 aprocs
-
-    whenDumpIR "maygc" $ do
-      putDocLn $ text "resolved maygc:" <$>
-         indent 4 ( pretty (Map.toList $ mapAllFromList
-                                   [(mgc,f) | (f,mgc) <- Map.toList mayGCmap]) )
-
-    (_dh_time, procs) <- ioTime $ mapM (deHooplize mayGCmap) aprocs
+    (_dh_time, procs) <- ioTime $ mapM deHooplize aprocs
 
     --liftIO $ putDocLn $ text "explicateProcs time: " <> text (Criterion.secs ep_time)
     --liftIO $ putDocLn $ text "deHooplize/gcr time: " <> text (Criterion.secs dh_time)
@@ -127,9 +120,9 @@ prepForCodegen m mayGCconstraints0 = do
 
      return (p { procBlocks = g' }, p { procBlocks = g0 })
 
-   deHooplize :: Map Ident MayGC -> Proc BasicBlockGraph' -> Compiled ILProcDef
-   deHooplize mayGCmap p = do
-     let (cfgBlocks , numPreds) = flattenGraph (procBlocks p) mayGCmap
+   deHooplize :: Proc BasicBlockGraph' -> Compiled ILProcDef
+   deHooplize p = do
+     let (cfgBlocks , numPreds) = flattenGraph (procBlocks p)
      return $ ILProcDef (p { procBlocks = cfgBlocks }) numPreds
 
 fnty_of_procty pt@(LLProcType (env:_args) _rets _cc) = LLPtrType (LLStructType [pt, env])
@@ -276,81 +269,6 @@ makeClosureAllocationExplicit ids clos = do
                     ++ concat clo_tuplestores ++ env_tuplestores
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
--- MayGCConstraints is essentially two disjoint maps, merged into one.
--- There are functions which are definitely MayGC, and functions which
--- are of unknown GC-status, along with the functions they call.
--- Resolving the constraints means propagating the known-MayGC values
--- up through the call graph. Any function which does not get thusly
--- tainted can be assumed to not GC.
-
-resolveMayGC :: MayGCConstraints -> [ Proc BasicBlockGraph' ] -> MayGCMap
-resolveMayGC constraints procs =
-  -- Compute the strongly-connected components of the MayGC constraint graph;
-  -- nodes are (proc, maygc) pairs, and edges are from the MayGCConstraints map.
-  let scc = Graph.stronglyConnComp [ ((p,m), procIdent p, Set.toList s)
-                | p <- procs, (m,s) <- maybeToList $
-                                            Map.lookup (procIdent p) constraints
-            ] in
-  -- Traverse the SCCs, bottom up, propagating constraints.
-  foldl' go Map.empty scc
-    where go :: (MayGCMap -> SCC (Proc BasicBlockGraph' , MayGC) -> MayGCMap)
-          go m (AcyclicSCC (p,mgc)) = let m' = collectMayGCConstraints_Proc p $
-                                                (Map.insert (procIdent p) mgc m)
-                                      in Map.adjust unknownMeansNoGC (procIdent p) m'
-          go m (CyclicSCC [(p,mgc)])= let m' = collectMayGCConstraints_Proc p $
-                                                (Map.insert (procIdent p) mgc m)
-                                      in Map.adjust unknownMeansNoGC (procIdent p) m'
-          go m (CyclicSCC pms) =
-            let (ps,mgcs) = unzip pms in
-            -- Start with a conservative estimate for the whole SCC's behavior.
-            let mgc = joinMayGCs mgcs in
-            let m'0 = foldl' (\m p -> Map.insert (procIdent p) mgc m)    m    ps in
-            let m's = foldl' (\m p -> collectMayGCConstraints_Proc p  m) m'0  ps in
-            foldl' (\m p -> Map.adjust unknownMeansNoGC (procIdent p) m) m's  ps
-
-          joinMayGCs mgcs = foldl1 joinMayGC mgcs
-
-          joinMayGC MayGC _ = MayGC
-          joinMayGC _ MayGC = MayGC
-          joinMayGC WillNotGC WillNotGC = WillNotGC
-          joinMayGC WillNotGC     (GCUnknown a)  = GCUnknown a
-          joinMayGC (GCUnknown a) WillNotGC      = GCUnknown a
-          joinMayGC (GCUnknown a) (GCUnknown b)  = GCUnknown (a ++ "+" ++ b)
-
--- At this point, all allocation has been made explicit;
--- if a known function has no constraints that imply it will GC,
--- then we can conclude that it will not GC.
-unknownMeansNoGC (GCUnknown _) = WillNotGC
-unknownMeansNoGC other         = other
-
--- Individual calls should be pessimistically assumed to GC.
-unknownMeansMayGC (GCUnknown _) = MayGC
-unknownMeansMayGC other         = other
-
-type MayGCMap = Map Ident MayGC
-
-collectMayGCConstraints_Proc :: Proc BasicBlockGraph' -> MayGCMap -> MayGCMap
-collectMayGCConstraints_Proc proc m = foldGraphNodes go (bbgpBody $ procBlocks proc) m
-  where
-        go :: forall e x. Insn' e x -> MayGCMap -> MayGCMap
-        go (CCLabel        {}   ) m = m
-        go (CCTupleStore   {}   ) m = m
-        go (CCRebindId     {}   ) m = m
-        go (CCLast _ (CCCont {} ) ) m = m
-        go (CCLast _ (CCCase {} ) ) m = m
-
-        go (CCLetFuns  _ _clos) _ = error $ "collecMayGCConstraints saw CCLetClosures!"
-
-        go (CCLetVal x (ILBitcast t v)) m = case Map.lookup (tidIdent v) m of
-                                               Nothing  -> withGC m $ unknownMeansMayGC (canGC m (ILBitcast t v))
-                                               Just mgc -> Map.insert x mgc m
-        go (CCLetVal _  letable)        m = withGC m $ unknownMeansMayGC (canGC m letable)
-
-        withGC m WillNotGC     = m
-        withGC m MayGC         = Map.adjust (\_ -> MayGC) (procIdent proc) m
-        withGC m (GCUnknown _) = m
---------------------------------------------------------------------
-
 computeNumPredecessors elab blocks =
   foldr (\b m -> incrPredecessorsDueTo (lastNode b) m)
         startingMap blocks
@@ -369,8 +287,8 @@ withGraphBlocks bbgp f =
    let jumpTo bg = case bbgpEntry bg of (bid, _) -> CCLast bid $ CCCont bid [] in
    f $ preorder_dfs $ mkLast (jumpTo bbgp) |*><*| bbgpBody bbgp
 
-flattenGraph :: BasicBlockGraph' -> MayGCMap -> ( [ILBlock] , NumPredsMap )
-flattenGraph bbgp mayGCmap = -- clean up any rebindings from gc root optz.
+flattenGraph :: BasicBlockGraph' -> ( [ILBlock] , NumPredsMap )
+flattenGraph bbgp = -- clean up any rebindings from gc root optz.
    withGraphBlocks (simplifyCFG bbgp) (\blocks ->
      ( map (deHooplizeBlock (bbgpRetK bbgp)) blocks
      , computeNumPredecessors (bbgpEntry bbgp) blocks ))
@@ -385,7 +303,7 @@ flattenGraph bbgp mayGCmap = -- clean up any rebindings from gc root optz.
      midmany insn = [mid insn]
 
      mid :: Insn' O O -> ILMiddle
-     mid (CCLetVal id letable   ) = ILLetVal id letable (canGC mayGCmap letable)
+     mid (CCLetVal id letable   ) = ILLetVal id letable
      mid (CCTupleStore vs tid r)  = ILTupleStore vs tid r
      mid (CCRebindId {}         ) = error $ "Invariant violated: CCRebindId not eliminated!"
      mid (CCLetFuns {}          ) = error $ "Invariant violated: CCLetFuns should have been eliminated!"
@@ -664,56 +582,6 @@ runPreAllocationOptimizations b0 = do
   --liftIO $ putDocLn $ text "  runLiveness time: " <> text (Criterion.secs lv_time)
   return b2
 
--- ||||||||||| Bottom-up May-GC constraint propagation ||||||||||{{{
-type MGCM a = State MayGCConstraints a -- MGCM = "may-gc monad"
-
-collectMayGCConstraints :: CCBody -> MayGCConstraints
-collectMayGCConstraints (CCBody procs _bindings) =
-      -- TODO do we need to worry about GC in top-level bindings?
-      execState (mapM collectMayGCConstraints_CCProc procs) Map.empty
-
-collectMayGCConstraints_CCProc :: CCProc -> MGCM ()
-collectMayGCConstraints_CCProc proc =
-    collectMayGCConstraints_CFG (procBlocks proc) (procIdent proc)
-
-collectMayGCConstraints_CFG :: BasicBlockGraph' -> Ident -> MGCM ()
-collectMayGCConstraints_CFG bbgp fnid = let (bid,_) = bbgpEntry bbgp in
-                                        mapGraphNodesM_ go bid (bbgpBody bbgp)
-  where
-        go :: forall e x. Insn' e x -> MGCM ()
-        go (CCLabel  _    )    = return ()
-        -- This is a conservative approximation; we may not actually call v
-        -- through the ident it is bound to, but it's good enough for now...
-        -- The indirect constraint is a hack to ensure that the SCC/call graph
-        -- built during may-gc resolution will not be under-approximated.
-        -- The aliasing bit makes sure that calls to x are treated as being
-        -- GCUnknown rather than MayGC.
-        go (CCLetVal x (ILBitcast _ v)) = do addIndirectConstraint (tidIdent v)
-                                             modify $ aliasing x v
-        go (CCLetVal _  lt)    = withGC $ canGC Map.empty lt
-        go (CCLetFuns [] []) = error $ "empty CCLetFuns spotted by collectMayGCConstraints in ILExpr.hs"
-        go (CCLetFuns _ids _closures) = withGC MayGC
-        go (CCLast _ cclast)     = case cclast of
-                     CCCont {}      -> return ()
-                     CCCase {}      -> return ()
-
-        go (CCTupleStore {}) = return ()
-        go (CCRebindId   {}) = return ()
-
-        aliasing x v = \m -> Map.insert x (looky m (tidIdent v) `addAlias` v) m
-        addAlias (maygc, s) v = (maygc, Set.insert (tidIdent v) s)
-        looky m id = Map.findWithDefault defaultMayGCConstraint id m
-        defaultMayGCConstraint = (GCUnknown "maygc-init", Set.empty)
-
-        withGC WillNotGC     = return ()
-        withGC MayGC         = modify $ Map.adjust (\_ -> (MayGC, Set.empty)) fnid
-        withGC (GCUnknown _) = return ()
-
-        addIndirectConstraint id =
-          modify $ Map.adjust (\(maygc, indirs) ->
-                                (maygc, Set.insert id indirs)) fnid
--- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
 -- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
 showILProgramStructure :: ILProgram -> Doc
 showILProgramStructure (ILProgram procdefs vals _decls _dtypes _lines) =
@@ -734,8 +602,6 @@ showILProgramStructure (ILProgram procdefs vals _decls _dtypes _lines) =
         <$> text (show blockid)
         <$> text (concatMap (\m -> "\t" ++ show m ++ "\n") mids)
         <$> text (show last ++ "\n^^^^^^^^^^^^^^\n")
-
-instance Pretty MayGC where pretty = text . show
 
 instance Show ILLast where
   show (ILRetVoid     ) = "ret void"

@@ -52,8 +52,7 @@ void emitFosterArrayBoundsCheck(llvm::Module* mod, llvm::Value* idx,
   Value* msg_array = builder.CreateGlobalString(srclines);
   Value* msg = builder.CreateBitCast(msg_array, builder.getInt8PtrTy());
   Value* ext = signExtend(idx, len64->getType());
-  llvm::CallInst* call = builder.CreateCall(fosterBoundsCheck, { ext, len64, msg });
-  markAsNonAllocating(call);
+  builder.CreateCall(fosterBoundsCheck, { ext, len64, msg });
 }
 
 void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr) {
@@ -62,8 +61,7 @@ void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr) {
 
   Value* msg_array = builder.CreateGlobalString(cstr);
   Value* msg = builder.CreateBitCast(msg_array, builder.getInt8PtrTy());
-  llvm::CallInst* call = builder.CreateCall(fosterAssert, { cond, msg });
-  markAsNonAllocating(call);
+  builder.CreateCall(fosterAssert, { cond, msg });
 }
 
 llvm::Value* getUnitValue() {
@@ -187,7 +185,7 @@ void emitRecordMallocCallsite(llvm::Module* m,
                               llvm::Value* typedesc) {
   llvm::Value* rmc = m->getFunction("record_memalloc_cell");
   ASSERT(rmc != NULL) << "NO record_memalloc_cell IN MODULE! :(";
-  markAsNonAllocating(builder.CreateCall(rmc, { mem, typemap, srcloc, typedesc }));
+  builder.CreateCall(rmc, { mem, typemap, srcloc, typedesc });
 }
 
 // |arg| is a 1-based index (0 is the fn return value).
@@ -227,8 +225,7 @@ CodegenPass::emitMalloc(TypeAST* typ,
 
   llvm::Type* ty = typ->getLLVMType();
   if (init) {
-    markAsNonAllocating(builder.CreateMemSet(mem, builder.getInt8(0),
-                                                  slotSizeOf(ty), /*align*/ 4));
+    builder.CreateMemSet(mem, builder.getInt8(0), slotSizeOf(ty), /*align*/ 4);
   }
 
   return builder.CreateBitCast(mem, ptrTo(ty), "ptr");
@@ -370,9 +367,7 @@ createFtan(IRBuilder<>& b, llvm::Value* vd) {
   llvm::Value* tanf = m->getFunction(
       (vd->getType()->isFloatTy() ? "foster__tanf32" : "foster__tanf64"));
   ASSERT(tanf != NULL) << "NO foster__tanfDD IN MODULE! :(";
-  auto ci = builder.CreateCall(tanf, { vd });
-  markAsNonAllocating(ci);
-  return ci;
+  return builder.CreateCall(tanf, { vd });
 }
 
 llvm::Value*

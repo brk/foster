@@ -144,8 +144,8 @@ defaultMiddle =     BlockMiddle {
     }
 
 dumpMiddle :: ILMiddle -> FC.BlockMiddle
-dumpMiddle (ILLetVal id letable maygc) =
-    defaultMiddle { letval_of_BlockMiddle = StrictlyJust (dumpLetVal id letable maygc) }
+dumpMiddle (ILLetVal id letable) =
+    defaultMiddle { letval_of_BlockMiddle = StrictlyJust (dumpLetVal id letable) }
 dumpMiddle (ILRebindId id var) =
     defaultMiddle { rebind_of_BlockMiddle = StrictlyJust $
          RebindId { fromid_of_RebindId = dumpIdent id , tovar_of_RebindId  = dumpVar var } }
@@ -162,10 +162,10 @@ dumpTupleStore (ILTupleStore vs v r) =
     }
 dumpTupleStore other = error $ "dumpTupleStore called on non-tuple-store value: " ++ show other
 
-dumpLetVal :: Ident -> IL.Letable TypeLL -> MayGC -> FC.LetVal
-dumpLetVal id letable maygc =
+dumpLetVal :: Ident -> IL.Letable TypeLL -> FC.LetVal
+dumpLetVal id letable =
   LetVal { letvalid_of_LetVal = dumpIdent id
-         , letexpr_of_LetVal  = dumpExpr maygc letable
+         , letexpr_of_LetVal  = dumpExpr letable
          }
 
 defaultTerminator tag =     Terminator {
@@ -269,86 +269,86 @@ sourceLoc (SourceRange startline startcol _ _ _ mb_file) =
     SourceLocation (fromIntegral startline) (fromIntegral startcol) (u8fromString msg)
 
 -- |||||||||||||||||||||||| Expressions |||||||||||||||||||||||||{{{
-dumpExpr :: MayGC -> IL.Letable TypeLL -> FC.Letable
-dumpExpr _ (ILAlloc    {}) = error "ILAlloc should have been translated away!"
-dumpExpr _ (ILBitcast t v) =
+dumpExpr :: IL.Letable TypeLL -> FC.Letable
+dumpExpr (ILAlloc    {}) = error "ILAlloc should have been translated away!"
+dumpExpr (ILBitcast t v) =
     (defaultLetable t Ilbitcast) { parts_of_Letable = [dumpVar v] }
-dumpExpr _ (ILLiteral ty lit) = dumpLiteral ty lit
-dumpExpr _ x@(ILKillProcess _ msg) =
+dumpExpr (ILLiteral ty lit) = dumpLiteral ty lit
+dumpExpr x@(ILKillProcess _ msg) =
     (defaultLetable (typeOf x) Ilkillprocess) {
             stringvalue_of_Letable = StrictlyJust $ u8fromText msg }
-dumpExpr _ x@(ILTuple _kindTODO [] _allocsrc) =
+dumpExpr x@(ILTuple _kindTODO [] _allocsrc) =
     (defaultLetable (typeOf x) Ilunit) { type_of_Letable = StrictlyNone }
-dumpExpr _ x@(ILTuple KindAnySizeType vs _allocsrc) =
+dumpExpr x@(ILTuple KindAnySizeType vs _allocsrc) =
     (defaultLetable (typeOf x) Ilunboxedtuple) { parts_of_Letable = map dumpVar vs, type_of_Letable = StrictlyNone }
-dumpExpr _ (ILTuple _kind vs allocsrc) =
+dumpExpr (ILTuple _kind vs allocsrc) =
         error $ "CapnpIL.hs: ILTuple " ++ show vs
             ++ "\n should have been eliminated!\n" ++ show allocsrc
 
-dumpExpr _ (ILOccurrence t v occ) =
+dumpExpr (ILOccurrence t v occ) =
     (defaultLetable t Iloccurrence) { occ_of_Letable = StrictlyJust $ dumpOccurrence v occ }
 
-dumpExpr _ (ILAllocate info sr) =
+dumpExpr (ILAllocate info sr) =
     (defaultLetable (allocType info) Ilallocate) {
         allocinfo_of_Letable = StrictlyJust $ dumpAllocate info,
         sourceloc_of_Letable = StrictlyJust $ sourceLoc sr  }
 
-dumpExpr _  (ILAllocArray (LLArrayType elt_ty) size memregion zeroinit sr) =
+dumpExpr (ILAllocArray (LLArrayType elt_ty) size memregion zeroinit sr) =
     (defaultLetable  elt_ty Ilallocate) {
         allocinfo_of_Letable = StrictlyJust $ dumpAllocate
                        (AllocInfo elt_ty memregion "xarrayx"
                                   Nothing (Just size)  "...array..." zeroinit),
         sourceloc_of_Letable = StrictlyJust $ sourceLoc sr }
 
-dumpExpr _  (ILAllocArray nonArrayType _ _ _ _sr) =
+dumpExpr (ILAllocArray nonArrayType _ _ _ _sr) =
          error $ "CapnpIL.hs: Can't dump ILAllocArray with non-array type "
               ++ show nonArrayType
 
-dumpExpr _ x@(ILDeref ty a) =
+dumpExpr x@(ILDeref ty a) =
     (defaultLetable (typeOf x) Ilderef) { parts_of_Letable = [dumpVar a]
                                         , boolvalue_of_Letable = [isTraced ty]
                                         , type_of_Letable = StrictlyNone }
 
 -- The boolvalue for Deref and Store is used to determine whether loads/stores
 -- should use LLVM's gcread/gcwrite primitives or regular, non-barriered ops.
-dumpExpr _ x@(ILStore v r) =
+dumpExpr x@(ILStore v r) =
     (defaultLetable (typeOf x) Ilstore) { parts_of_Letable = map dumpVar [v, r]
                                         , boolvalue_of_Letable = [isTraced (tidType v)]
                                         , type_of_Letable = StrictlyNone }
 
-dumpExpr _ x@(ILArrayRead _t (ArrayIndex b i rng sg)) =
+dumpExpr x@(ILArrayRead _t (ArrayIndex b i rng sg)) =
     (defaultLetable (typeOf x) Ilarrayread) {
           parts_of_Letable = map dumpVar [b, i]
         , stringvalue_of_Letable = StrictlyJust $ stringSG sg
         , primopname_of_Letable = StrictlyJust $ u8fromString $ highlightFirstLine rng }
 
-dumpExpr _ x@(ILArrayPoke (ArrayIndex b i rng sg) v) =
+dumpExpr x@(ILArrayPoke (ArrayIndex b i rng sg) v) =
     (defaultLetable (typeOf x) Ilarraypoke) {
           parts_of_Letable = map dumpVar [b, i, v]
         , stringvalue_of_Letable = StrictlyJust $ stringSG sg
         , primopname_of_Letable = StrictlyJust $ u8fromString $ highlightFirstLine rng }
 
-dumpExpr _ _x@(ILArrayLit ty@(LLArrayType ety) arr vals) =
+dumpExpr _x@(ILArrayLit ty@(LLArrayType ety) arr vals) =
       (defaultLetable ty Ilarrayliteral) {
         parts_of_Letable = [dumpVar arr]
       , arraylit_of_Letable = StrictlyJust $ pbArrayLit ety vals
       }
 
-dumpExpr _ (ILArrayLit otherty _arr _vals) =
+dumpExpr (ILArrayLit otherty _arr _vals) =
     error $ "dumpExpr saw array literal with non-array type " ++ show otherty
 
 
-dumpExpr maygc (ILCall t base args)
-        = dumpCall t (dumpVar base)          args maygc ccs
+dumpExpr (ILCall t base args)
+        = dumpCall t (dumpVar base)          args ccs
   where stringOfCC FastCC = "fastcc"
         stringOfCC CCC    = "ccc"
         ccs = stringOfCC $ extractCallConv (tidType base)
 
-dumpExpr _ (ILCallPrim t (NamedPrim (TypedId _ (GlobalSymbol gs _))) [arr])
+dumpExpr (ILCallPrim t (NamedPrim (TypedId _ (GlobalSymbol gs _))) [arr])
         | gs == T.pack "prim_arrayLength"
         = dumpArrayLength t arr
 
-dumpExpr _ (ILCallPrim t (PrimInlineAsm fty contents constraints sideeffects) args)
+dumpExpr (ILCallPrim t (PrimInlineAsm fty contents constraints sideeffects) args)
         =
     let (d, r, cc) = case fty of
          LLPtrType (LLStructType [LLProcType (_:d) r cc, _]) -> (d,r,cc)
@@ -362,22 +362,22 @@ dumpExpr _ (ILCallPrim t (PrimInlineAsm fty contents constraints sideeffects) ar
             , asmproctype_of_PbCallAsm = dumpProcType (d, r, cc)
         } }
 
-dumpExpr maygc (ILCallPrim t (NamedPrim base) args)
-        = dumpCall t (dumpGlobalSymbol base) args maygc "ccc"
+dumpExpr (ILCallPrim t (NamedPrim base) args)
+        = dumpCall t (dumpGlobalSymbol base) args "ccc"
 
-dumpExpr _ (ILCallPrim t (LookupEffectHandler tag) _args)
+dumpExpr (ILCallPrim t (LookupEffectHandler tag) _args)
         = (defaultLetable t Ilcallprimop) {
             primopname_of_Letable = StrictlyJust $ u8fromString "lookup_handler_for_effect",
             primopsize_of_Letable = [fromIntegral tag]
         }
 
-dumpExpr _ (ILCallPrim t (PrimOp op _ty) args)
+dumpExpr (ILCallPrim t (PrimOp op _ty) args)
         = dumpCallPrimOp t op args
 
-dumpExpr _ (ILCallPrim t (CoroPrim coroPrim argty retty) args)
-        = dumpCallCoroOp t coroPrim argty retty args True
+dumpExpr (ILCallPrim t (CoroPrim coroPrim argty retty) args)
+        = dumpCallCoroOp t coroPrim argty retty args
 
-dumpExpr _ (ILCallPrim t (PrimIntTrunc _from to) args)
+dumpExpr (ILCallPrim t (PrimIntTrunc _from to) args)
         = dumpCallPrimOp t (truncOp to) args
   where truncOp I1  = "trunc_i1"
         truncOp I8  = "trunc_i8"
@@ -387,24 +387,24 @@ dumpExpr _ (ILCallPrim t (PrimIntTrunc _from to) args)
         truncOp IWd = "trunc_w0"
         truncOp IDw = "trunc_w1"
 
-dumpExpr _ (ILAppCtor _ _cinfo _ _sr) = error $ "CapnpIL.hs saw ILAppCtor, which"
+dumpExpr (ILAppCtor _ _cinfo _ _sr) = error $ "CapnpIL.hs saw ILAppCtor, which"
                                        ++ " should have been translated away..."
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||||||| Calls ||||||||||||||||||||||||||{{{
-dumpCall :: TypeLL -> TermVar -> [TypedId TypeLL] -> MayGC -> String -> FC.Letable
-dumpCall t base args maygc callConv =
+dumpCall :: TypeLL -> TermVar -> [TypedId TypeLL] -> String -> FC.Letable
+dumpCall t base args callConv =
     (defaultLetable t Ilcall) {
         parts_of_Letable = base : map dumpVar args,
-        callinfo_of_Letable = StrictlyJust $ dumpCallInfo (boolGC maygc) callConv Nothing
+        callinfo_of_Letable = StrictlyJust $ dumpCallInfo callConv Nothing
     }
 
 
-dumpCallInfo mayGC strCallConv pbCoroPrim =
+dumpCallInfo strCallConv pbCoroPrim =
     PbCallInfo {
           coroprim_of_PbCallInfo = strictMB $ pbCoroPrim
-        , callmaytriggergc_of_PbCallInfo = mayGC
+        , callmaytriggergc_of_PbCallInfo = True -- [2]
         , callisatailcall_of_PbCallInfo = False -- [1]
         , callconv_of_PbCallInfo = u8fromString strCallConv
     }
@@ -413,6 +413,10 @@ dumpCallInfo mayGC strCallConv pbCoroPrim =
 --     the callee's stack frame. Since we don't do that analysis yet,
 --     we provide a conservative default. But note that we've already
 --     eliminated tail *recursion*.
+--
+-- [2] The middle-end no longer computes may-GC information and the
+--     backend no longer uses it, but the field remains in place for
+--     potential future use.
 
 dumpCallPrimOp t op args = -- TODO actually use prim_op_size from C++ side.
     (defaultLetable t Ilcallprimop) {
@@ -420,10 +424,10 @@ dumpCallPrimOp t op args = -- TODO actually use prim_op_size from C++ side.
         primopname_of_Letable = StrictlyJust $ u8fromString op
     }
 
-dumpCallCoroOp t coroPrim argty retty args mayGC =
+dumpCallCoroOp t coroPrim argty retty args =
     (defaultLetable t Ilcall) {
         parts_of_Letable = map dumpVar args,
-        callinfo_of_Letable = StrictlyJust $ dumpCallInfo mayGC callConv pbCoroPrim
+        callinfo_of_Letable = StrictlyJust $ dumpCallInfo callConv pbCoroPrim
     }
     where
         callConv = case coroPrim of

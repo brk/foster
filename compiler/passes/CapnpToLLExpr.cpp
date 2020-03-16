@@ -145,7 +145,7 @@ LLExpr* parseCall(const pb::Letable::Reader& e) {
   for (unsigned i = firstArg; i < e.getParts().size(); ++i) {
     args.push_back(parseTermVar(e.getParts()[i]));
   }
-  return new LLCall(base, args, c.getCallmaytriggergc(),
+  return new LLCall(base, args,
                     c.getCallisatailcall(), c.getCallconv());
 }
 

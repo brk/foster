@@ -13,7 +13,7 @@ options =
  -- short chars, long options,  argument descriptor,      explanation of option.
  [ Option []     ["interpret"]  (ReqArg Interpret  "DIR") "interpret in DIR"
  , Option []     ["prog-arg"]   (ReqArg ProgArg    "ARG") "pass through ARG"
- , Option []     ["dump-ir"]    (ReqArg DumpIR      "IR") "dump a particular IR (ast, ann, kn, mono, mono-sunk, cfg, cc, may-gc, maygc, prealloc, il)"
+ , Option []     ["dump-ir"]    (ReqArg DumpIR      "IR") "dump a particular IR (ast, ann, kn, mono, mono-sunk, cfg, cc, may-gc, prealloc, il)"
  , Option []     ["dump-fn"]    (ReqArg DumpFn      "FN") "dump a particular fn"
  , Option []     ["verbose"]    (NoArg  Verbose)          "verbose mode"
  , Option []     ["interactive"](NoArg  Interactive)      "interactive mode (pause on errors)"

@@ -217,7 +217,7 @@ llvm::Value* emitStore(CodegenPass* pass,
 Value* emitCallToInspectPtr(CodegenPass* pass, Value* ptr) {
    llvm::Value* rmc = pass->mod->getFunction("inspect_ptr_for_debugging_purposes");
    ASSERT(rmc) << "couldnt find inspect_ptr_for_debugging_purposes";
-   return markAsNonAllocating(builder.CreateCall(rmc, builder.CreateBitCast(ptr, builder.getInt8PtrTy())));
+   return builder.CreateCall(rmc, builder.CreateBitCast(ptr, builder.getInt8PtrTy()));
 }
 
 std::vector<llvm::Value*>
@@ -421,9 +421,9 @@ llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
 
   Value* hstr_bytes; Value* len;
   if (tryBindArray(this, hstr, /*out*/ hstr_bytes, /*out*/ len)) {
-    markAsNonAllocating(builder.CreateMemCpy(hstr_bytes, /* dst align */ 4,
-                                             cstr, /* src align */ 4,
-                                             sz));
+    builder.CreateMemCpy(hstr_bytes, /* dst align */ 4,
+                               cstr, /* src align */ 4,
+                               sz);
   } else { ASSERT(false); }
 
   // TODO null terminate?
@@ -916,8 +916,8 @@ ConstantInt* getTagForCtorId(const CtorId& c) {
 llvm::Value* emitCallGetCtorIdOf(CodegenPass* pass, llvm::Value* v) {
   llvm::Value* foster_ctor_id_of = pass->mod->getFunction("foster_ctor_id_of");
   ASSERT(foster_ctor_id_of != NULL);
-  return markAsNonAllocating(builder.CreateCall(foster_ctor_id_of,
-                             emitBitcast(v, builder.getInt8PtrTy())));
+  return builder.CreateCall(foster_ctor_id_of,
+                            emitBitcast(v, builder.getInt8PtrTy()));
 }
 
 void codegenSwitch(CodegenPass* pass, LLSwitch* sw, llvm::Value* insp_tag) {
@@ -1764,7 +1764,6 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   if (pass->config.countClosureCalls && fromClosure) {
     auto f  = pass->mod->getFunction("foster__record_closure_call");
     auto ci = builder.CreateCall(f);
-    markAsNonAllocating(ci);
   }
 
   assertHaveCallableType(base, FT, FV);
@@ -1788,12 +1787,6 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   // See CapnpIL.hs for a note on tail call marker safety.
   if (this->okToMarkAsTailCall && callingConv == llvm::CallingConv::Fast) {
     callInst->setTailCall(true);
-  }
-
-  if (!this->callMightTriggerGC) {
-    markAsNonAllocating(callInst);
-  } else {
-    emitFakeComment("ABOVE CALL MAY TRIGGER GC...");
   }
 
   return callInst;

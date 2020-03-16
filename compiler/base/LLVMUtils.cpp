@@ -232,15 +232,6 @@ const char* llvmValueTag(llvm::Value* v) {
   return "Unknown Value";
 }
 
-llvm::CallInst* markAsNonAllocating(llvm::CallInst* callInst) {
-  llvm::Value* tru = llvm::ConstantInt::getTrue(callInst->getContext());
-  llvm::Metadata* md_tru = llvm::ValueAsMetadata::getConstant(tru);
-  llvm::MDNode* mdnode = llvm::MDTuple::get(callInst->getContext(),
-                                            llvm::makeArrayRef(md_tru));
-  callInst->setMetadata("willnotgc", mdnode);
-  return callInst;
-}
-
 // Converts a global variable of type [_ x T] to a local var of type T*.
 Constant* arrayVariableToPointer(GlobalVariable* arr) {
   llvm::Constant* zero =

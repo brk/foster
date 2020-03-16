@@ -283,12 +283,11 @@ struct LLCall : public LLExpr {
   // Calls may be to non-var bases (LLCoroPrim, etc)
   // because we lazily generate polymorphic instantiations.
   std::vector<LLVar*> args;
-  bool callMightTriggerGC;
   bool okToMarkAsTailCall;
   std::string callconv;
 
-  LLCall(LLExpr* base, std::vector<LLVar*>& args, bool mayGC, bool tail, std::string callconv)
-  : LLExpr("LLCall"), base(base), args(args), callMightTriggerGC(mayGC),
+  LLCall(LLExpr* base, std::vector<LLVar*>& args, bool tail, std::string callconv)
+  : LLExpr("LLCall"), base(base), args(args),
                       okToMarkAsTailCall(tail), callconv(callconv) { }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };

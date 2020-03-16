@@ -61,7 +61,6 @@ extern llvm::IRBuilder<> builder;
 std::string makePathAbsolute(std::string path);
 
 const char* llvmValueTag(llvm::Value* v);
-llvm::CallInst* markAsNonAllocating(llvm::CallInst* callInst);
 llvm::Constant* arrayVariableToPointer(llvm::GlobalVariable* arr);
 
 bool isFunctionPointerTy(llvm::Type* p);

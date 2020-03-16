@@ -41,7 +41,7 @@ import Foster.TypeAST
 import Foster.ParsedType
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn, E_AnnVar, AnnCall, AnnLetFuns,
                       AnnLetVar))
-import Foster.ILExpr(showILProgramStructure, prepForCodegen, collectMayGCConstraints)
+import Foster.ILExpr(showILProgramStructure, prepForCodegen)
 import Foster.KNExpr(kNormalizeModule, knLoopHeaders, knSinkBlocks,
                      knSize, renderKN,
                      handleCoercionsAndConstraints, collectIntConstraints)
@@ -857,13 +857,7 @@ lowerModulePhase2 monomod0 flags outfile = do
          _ <- liftIO $ renderCC ccmod True
          putDocLn $ (outLn "^^^ ===================================")
 
-     let constraints = collectMayGCConstraints (moduleILbody ccmod)
-     whenDumpIR "may-gc" $ do
-         liftIO $ putStrLn "\n MAY GC CONSTRAINTS ======================="
-         liftIO $ putDocLn $ list (map pretty $ (Map.toList constraints))
-         liftIO $ putStrLn "\n/MAY GC CONSTRAINTS ======================="
-
-     (cp_time, (ilprog, prealloc)) <- ioTime $ prepForCodegen ccmod  constraints
+     (cp_time, (ilprog, prealloc)) <- ioTime $ prepForCodegen ccmod
      whenDumpIR "prealloc" $ do
          putDocLn $ (outLn "/// Pre-allocation ====================")
          _ <- liftIO (renderCC (ccmod { moduleILbody = let (CCBody _ vals) = moduleILbody ccmod in
