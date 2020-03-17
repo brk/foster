@@ -638,6 +638,8 @@ instance Pretty (Graph Insn' o c) where
   pretty bb = foldGraphNodes prettyInsn' bb empty
 
 instance Pretty (ToplevelBinding ty) where
+  pretty (TopBindAppCtor id _ty (_cid, _repr) ids) =
+    text "TopBindAppCtor" <+> pretty id <+> pretty ids
   pretty _tb = text "toplevel binding..."
 
 instance Pretty CCBody where
