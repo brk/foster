@@ -244,50 +244,10 @@ Value* generateInvokeYield(bool isYield,
     expectedStatusMsg = "can only resume a dormant coroutine";
   }
 
-/*
-  auto prf = pass->mod->getFunction("foster_printf_pi");
-  ASSERT(prf) << "couldn't find foster_printf_pi?!?";
-    builder.CreateCall(prf,
-                     { builder.CreateBitCast(
-                        builder.CreateGlobalString("invoke/yield: current_coro is %p , status is %d\n") ,
-                        builder.getInt8PtrTy())
-                     , builder.CreateBitCast(current_coro, builder.getInt8PtrTy())
-                     , status });
-
-    builder.CreateCall(prf,
-                     { builder.CreateBitCast(
-                        builder.CreateGlobalString("invoke/yield:         coro is %p , expst is %d\n") ,
-                        builder.getInt8PtrTy())
-                     , builder.CreateBitCast(coro,   builder.getInt8PtrTy())
-                     , expectedStatus });
-  */
-
   Value* cond = builder.CreateICmpEQ(status, expectedStatus);
   //emitFosterAssert(pass->mod, cond, expectedStatusMsg);
 
   Value* target_coro_pretransfer = coro;
-
-/*
-  auto prf = pass->mod->getFunction("foster_printf_2p");
-  ASSERT(prf) << "couldn't find foster_printf_2p?!?";
-  if (isYield) {
-    builder.CreateCall(prf,
-                     { builder.CreateBitCast(
-                        builder.CreateGlobalString("pre-transfer(Y); current_coro is %p <<<, coro is %p\n") ,
-                        builder.getInt8PtrTy())
-                     , builder.CreateBitCast(current_coro, builder.getInt8PtrTy())
-                     , builder.CreateBitCast(coro,         builder.getInt8PtrTy()) });
-
-  } else {
-    builder.CreateCall(prf,
-                     { builder.CreateBitCast(
-                        builder.CreateGlobalString("pre-transfer(I); current_coro is %p, coro is %p <<<\n") ,
-                        builder.getInt8PtrTy())
-                     , builder.CreateBitCast(current_coro, builder.getInt8PtrTy())
-                     , builder.CreateBitCast(coro,         builder.getInt8PtrTy()) });
-
-  }
-  */
 
   if (tag) {
     builder.CreateStore(tag, gep(current_coro, 0, coroField_EffectTag(), "tag_addr"));
@@ -372,17 +332,6 @@ Value* generateInvokeYield(bool isYield,
   // So if we were originally yielding, then we are
   // now being re-invoked, possibly by a different
   // coro and/or a different thread!
-
-/*
-  auto prf2 = pass->mod->getFunction("foster_printf_2p");
-  builder.CreateCall(prf2,
-                     { builder.CreateBitCast(
-                        builder.CreateGlobalString(isYield ? "post-transfer(Y) current %p <<<, coro is %p\n"
-                                                           : "post-transfer(I) current %p, coro is %p <<<\n"),
-                        builder.getInt8PtrTy())
-                     , builder.CreateBitCast(current_coro, builder.getInt8PtrTy())
-                     , builder.CreateBitCast(coro,         builder.getInt8PtrTy()) });
-*/
 
   auto target_coro_posttransfer = current_coro;
   Value* casted_ptr = builder.CreateBitCast(target_coro_posttransfer,
@@ -520,17 +469,6 @@ Value* emitCoroWrapperFn(
   callArgs.push_back(env);
   //addCoroArgs(callArgs, arg);
 
-/*
-  auto prf = pass->mod->getFunction("foster_printf_2p");
-  ASSERT(prf) << "couldn't find foster_printf_2p?!?";
-  builder.CreateCall(prf,
-                     { builder.CreateBitCast(
-                        builder.CreateGlobalString("wrapper call; coro_slot is %p, coro is %p\n") ,
-                        builder.getInt8PtrTy())
-                     , builder.CreateBitCast(coro_slot, builder.getInt8PtrTy())
-                     , builder.CreateBitCast(fcg,       builder.getInt8PtrTy()) });
-*/
-
   llvm::CallInst* call  = builder.CreateCall(fn, llvm::makeArrayRef(callArgs));
   call->setCallingConv(llvm::CallingConv::Fast);
 
@@ -642,17 +580,6 @@ Value* CodegenPass::emitCoroCreateFn(
   llvm::errs() << "gccoro type: " << *(gfcoro->getType()) << "\n";
   llvm::errs() << "status slot type: " << *(fcoro_status->getType()) << "\n";
   builder.CreateStore(builder.getInt32(FOSTER_CORO_DORMANT), fcoro_status);
-
-  /*
-  auto prf = this->mod->getFunction("foster_printf_pi");
-  ASSERT(prf) << "couldn't find foster_printf_pi?!?";
-    builder.CreateCall(prf,
-                     { builder.CreateBitCast(
-                        builder.CreateGlobalString(".coro_create: newly allocated coro is %p , status is %d\n") ,
-                        builder.getInt8PtrTy())
-                     , builder.CreateBitCast(fcoro, builder.getInt8PtrTy())
-                     , builder.getInt32(0) });
-  */
 
   llvm::Value* wrapper = emitCoroWrapperFn(this, retTy, argTypes);
   // coro_func wrapper = ...;
