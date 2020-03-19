@@ -267,6 +267,19 @@ seqPrefixSumFromLeftInclusiveSerial = { seq => op =>
   end
 };
 
+seqPrefixSumFromLeftExclusiveSerial :: forall (a:Type) (b:Type) { Seq a => { b => a => b } => b => Seq b };
+seqPrefixSumFromLeftExclusiveSerial = { seq => op => elt =>
+  REC loop = { headElt : b => tail : Seq a => acc : Seq b =>
+    case seqViewL tail
+      of $SV_EmptyL      -> acc
+      of $SV_Cons x rest -> next = op headElt x;
+                            loop next rest (seqPostpend acc next)
+    end
+  };  
+
+  loop elt seq (seqEmpty !);
+};
+
 seqReverse :: forall (a:Type) { Seq a => Seq a };
 seqReverse =  { seq =>
   seqReverseWith seq { x : a => x }

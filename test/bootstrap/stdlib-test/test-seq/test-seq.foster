@@ -163,8 +163,12 @@ part2 = {
   expect_text "[1, 2, 3, 4, ]";
   print_seq xs print_i32_bare;
 
-  expect_text "[1, 3. 6, 10, ]";
-  print_seq ys print_i32;
+  expect_text "[1, 3, 6, 10, ]";
+  print_seq ys print_i32_bare;
+
+  zs = seqPrefixSumFromLeftExclusiveSerial xs { x => y => x +f64 (y |> s32-to-f64) } 0.0;
+  expect_text "[1.000000, 3.000000, 6.000000, 10.000000, ]";
+  print_seq zs { f => f |> print_f64_bare };
 };
 
 main = {
