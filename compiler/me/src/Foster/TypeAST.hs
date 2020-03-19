@@ -173,8 +173,6 @@ boxedTyVars tyvars = map (\v -> (v, KindPointerSized)) tyvars
 primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     [(,) "expect_i64"  $ mkProcType [i64] []
     ,(,)  "print_i64"  $ mkProcType [i64] []
-    ,(,) "expect_i64x" $ mkProcType [i64] []
-    ,(,)  "print_i64x" $ mkProcType [i64] []
     ,(,)  "print_i64bb" $ mkProcType [i64, i8] []
     ,(,) "expect_i64bb" $ mkProcType [i64, i8] []
 

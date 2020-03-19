@@ -1,5 +1,4 @@
 snafuinclude Bits "bitwise";
-snafuinclude Text "text";
 snafuinclude Prelude "prelude";
 
 main = {
@@ -180,7 +179,7 @@ floating-ops = {
   expect_float_p9f64 18446744073709551616.0;
   print_float_p9f64 ((maxReprUInt64 !) |> u64-to-f64-unsafe);
 
-  expect_text "0xFFFFFFFFFFFFFFFF"; // "-1" ; unsigned: "18446744073709551615";
+  expect_text "0xffffffffffffffff"; // "-1" ; unsigned: "18446744073709551615";
   print_i64x (maxReprUInt64 !);
 
   expect_i64x 4895412794951729152;

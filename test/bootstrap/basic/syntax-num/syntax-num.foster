@@ -1,4 +1,4 @@
-snafuinclude Text "text";
+snafuinclude Prelude "prelude";
 
 main = {
   a = 1;

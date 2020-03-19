@@ -579,6 +579,18 @@ tmp_Text_of_UWord = { n:Word =>
 
 ////
 
+fmt_hex = { t : Text => mkTextConcat "0x" t };
+
+print_i8x  = { x : Int8  => x |> tmp_Text_16_of_UInt8  |> fmt_hex |> print_text };
+print_i32x = { x : Int32 => x |> tmp_Text_16_of_UInt32 |> fmt_hex |> print_text };
+print_i64x = { x : Int64 => x |> tmp_Text_16_of_UInt64 |> fmt_hex |> print_text };
+
+expect_i8x  = { x : Int8  => x |> tmp_Text_16_of_UInt8  |> fmt_hex |> expect_text };
+expect_i32x = { x : Int32 => x |> tmp_Text_16_of_UInt32 |> fmt_hex |> expect_text };
+expect_i64x = { x : Int64 => x |> tmp_Text_16_of_UInt64 |> fmt_hex |> expect_text };
+
+////
+
 f64-to-u32? = { a : Float64 =>
   if a <f64 2147483647.5
     then Some (f64-to-u32! a)

@@ -285,14 +285,7 @@ void fprint_p9f64(FILE* f, double x) { fprintf(f, "%.9f\n", x); }
 // TODO .17g for doubles?
 
 void fprint_i64(FILE* f, int64_t x) { fprintf(f, "%" PRId64 "\n", x); }
-void fprint_i64x(FILE* f, int64_t x) { fprintf(f, "0x%" PRIX64 "\n", x); }
-void fprint_i64b(FILE* f, int64_t x) { fprint_b2(f, x, 64); }
 void fprint_i64bb(FILE* f, int64_t x, uint8_t N) { fprint_b2(f, x, N); }
-
-void fprint_i32x(FILE* f, int32_t x) { fprintf(f, "0x%X\n", x); }
-void fprint_i32b(FILE* f, int32_t x) { fprint_b2(f, x, 32); }
-
-void fprint_i8b(FILE* f, int8_t x) { fprint_b2(f, x, 8); }
 
 void fprint_bytes_from(FILE* f, foster_bytes* array, uint32_t n, uint32_t off) {
   uint32_t c = array->cap;
@@ -355,8 +348,6 @@ int32_t force_gc_for_debugging_purposes() {
 
 void  print_i64(int64_t x) { fprint_i64(stdout, x); }
 void expect_i64(int64_t x) { fprint_i64(stderr, x); }
-void  print_i64x(int64_t x) { fprint_i64x(stdout, x); }
-void expect_i64x(int64_t x) { fprint_i64x(stderr, x); }
 
 void  print_i64bb(int64_t x, uint8_t N) { fprint_i64bb(stdout, x, N); }
 void expect_i64bb(int64_t x, uint8_t N) { fprint_i64bb(stderr, x, N); }

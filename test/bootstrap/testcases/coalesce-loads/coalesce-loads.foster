@@ -1,4 +1,4 @@
-snafuinclude PreludePrintExpect "prelude/print-expect";
+snafuinclude Prelude "prelude";
 
 main = {
   key = prim mach-array-literal 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 (15 +Int8 0);
@@ -45,13 +45,6 @@ noinline_readInt32FromArrayInt8_offset = { arr => i =>
   octet4ToInt32 d c b a
 };
 
-octet4ToInt32 = { hi : Int8 => m1 : Int8 => m2 : Int8 => lo : Int8 =>
-  (((zext_i8_to_i32 hi) `bitshl-Int32` 24)  `bitor-Int32`
-   ((zext_i8_to_i32 m1) `bitshl-Int32` 16)) `bitor-Int32`
-  (((zext_i8_to_i32 m2) `bitshl-Int32` 8)   `bitor-Int32`
-    (zext_i8_to_i32 lo))
-};
-
 noinline_readInt64FromArrayInt8 :: { Array Int8 => Int32 => Int64 };
 noinline_readInt64FromArrayInt8 = { arr => i =>
   a = arr.[i +Int32 0];
@@ -65,9 +58,3 @@ noinline_readInt64FromArrayInt8 = { arr => i =>
   mergeInt32 (octet4ToInt32 h g f e)
              (octet4ToInt32 d c b a)
 };
-
-mergeInt32 = { hi : Int32 => lo : Int32 =>
-  ((zext_i32_to_i64 hi) `bitshl-Int64` 32)  `bitor-Int64`
-   (zext_i32_to_i64 lo)
-};
-

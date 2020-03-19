@@ -1038,7 +1038,6 @@ isSameArray _ _ = False
 
 -- TODO print_i64bb
 lookupPrintInt :: Integer -> String -> Maybe (MachineState -> IO ())
-lookupPrintInt i  "print_i64_bare" = Just (\gs -> printString   gs (showSigned 64 i))
 lookupPrintInt i  "print_i64b" =   Just (\gs ->  printStringNL gs (showBits 64 i))
 lookupPrintInt i "expect_i64b" =   Just (\gs -> expectStringNL gs (showBits 64 i))
 lookupPrintInt i  "print_i64x" =    Just (\gs ->  printStringNL gs (showHexy 64 i))
@@ -1173,13 +1172,11 @@ showBits k n = -- k = 32, for example
 isPrintFunction name =
   case name of
     "print_i64"  -> Just $ \(SSInt64 i) -> show i
-    "print_i1"   -> Just $ display
     _ -> Nothing
 
 isExpectFunction name =
   case name of
     "expect_i64" -> Just $ \(SSInt64 i) -> show i
-    "expect_i1"  -> Just $ display
     _ -> Nothing
 
 display :: SSValue -> String
