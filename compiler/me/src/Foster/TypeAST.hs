@@ -428,6 +428,8 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "u32-to-f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "uitofp_f64" i32
   ,(,) "f64-as-i64"    $(,) (mkFnType [f64] [i64]     ) $ PrimOp "bitcast_i64" f64
   ,(,) "i64-as-f64"    $(,) (mkFnType [i64] [f64]     ) $ PrimOp "bitcast_f64" i64
+  ,(,) "f32-as-i32"    $(,) (mkFnType [f32] [i32]     ) $ PrimOp "bitcast_i32" f32
+  ,(,) "i32-as-f32"    $(,) (mkFnType [i32] [f32]     ) $ PrimOp "bitcast_f32" i32
   ,(,) "s64-to-f32-unsafe"    $ (,) (mkFnType [i64] [f32] ) $ PrimOp "sitofp_f32" i64
   ,(,) "u64-to-f32-unsafe"    $ (,) (mkFnType [i64] [f32] ) $ PrimOp "uitofp_f32" i64
   ,(,) "s32-to-f32-unsafe"    $ (,) (mkFnType [i32] [f32] ) $ PrimOp "sitofp_f32" i32

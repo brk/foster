@@ -421,8 +421,9 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "sitofp_f32")     { return b.CreateSIToFP(VL, b.getFloatTy(),  "sitofp_f32tmp"); }
   else if (op == "uitofp_f32")     { return b.CreateUIToFP(VL, b.getFloatTy(),  "uitofp_f32tmp"); }
   else if (op == "bitcast_f64")    { return b.CreateBitCast(VL, b.getDoubleTy(), "bitcast_f64tmp"); }
-  else if (op == "bitcast_f32")    { return b.CreateBitCast(VL, b.getFloatTy(),  "bitcast_f64tmp"); }
+  else if (op == "bitcast_f32")    { return b.CreateBitCast(VL, b.getFloatTy(),  "bitcast_f32tmp"); }
   else if (op == "bitcast_i64")    { return b.CreateBitCast(VL, b.getInt64Ty(),  "bitcast_i64tmp"); }
+  else if (op == "bitcast_i32")    { return b.CreateBitCast(VL, b.getInt32Ty(),  "bitcast_i32tmp"); }
   else if (op == "ftan")           { return createFtan(b, VL); }
 
   ASSERT(args.size() > 1) << "CodegenUtils.cpp missing implementation of " << op << "\n";
