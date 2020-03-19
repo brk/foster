@@ -22,20 +22,18 @@ import Foster.CloConv
 import Foster.TypeLL
 import Foster.Letable
 import Foster.Avails
-import Foster.Output(putDocLn)
+--import Foster.Output
 import Foster.MainOpts (getNoPreAllocOpt)
 import Data.Map(Map)
-import Data.List(zipWith4, foldl' )
-import Data.Maybe(maybeToList, fromMaybe)
-import Control.Monad.State(evalState, execState, State, get, gets, modify)
+import Data.List(zipWith4)
+import Data.Maybe(fromMaybe)
+import Control.Monad.State(evalState, State, get, gets, modify)
 import Control.Monad.IO.Class(liftIO)
 import qualified Data.Set as Set(toList, union, unions, difference,
-                                 member, Set, empty, size, fromList, insert)
+                                 member, Set, empty, size, fromList)
 import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
-                                 adjust, insert, findWithDefault, toList)
+                                 insert, findWithDefault)
 import qualified Data.Text as T(pack, isInfixOf)
-import qualified Data.Graph as Graph(stronglyConnComp)
-import Data.Graph(SCC(..))
 
 --import qualified Criterion.Measurement as Criterion(secs)
 

@@ -8,7 +8,6 @@
 module Foster.Context where
 
 import Control.Monad(ap)
-import Control.Applicative(Applicative(..))
 
 import Control.Monad.State(liftM, liftM2)
 import Data.IORef(IORef,newIORef,readIORef,writeIORef)

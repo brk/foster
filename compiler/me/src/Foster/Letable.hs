@@ -11,15 +11,13 @@ import Foster.Base(Literal(..), CtorId, CtorRepr(..), ArrayIndex(..),
                    AllocMemRegion, AllocInfo(..), Occurrence, AllocationSource,
                    SourceRange,
                    FosterPrim(..),
-                   TypedId(..), Ident(..), mapRight, ZeroInit,
+                   TypedId(..), mapRight, ZeroInit,
                    TExpr(freeTypedIds), TypedWith(..))
 import Foster.MonoType
 import Foster.TypeLL
 import Foster.Kind
 
 import qualified Data.Text as T
-
-import qualified Data.Map as Map(Map, findWithDefault)
 
 -- The reason we have both ILAllocate and ILAlloc is that
 -- LLCodegen performs auto-loads from stack slots, which
