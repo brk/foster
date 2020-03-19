@@ -75,6 +75,98 @@ seqRangeDown = { n =>
   foldRangeDown (n -Int32 1) 0 (seqEmpty !) seqPrepend;
 };
 
+part1 = { 
+  s = seqFromFunction 28 { idx => idx };
+  expect_i1 True;
+  print_i1 (seqContainsAny s { x => x ==Int32 8 });
+
+  expect_i1 False;
+  print_i1 (seqContainsAny s { x => x ==Int32 108 });
+
+  s10 = seqFromFunction 5 { idx => (idx *Int32 10) +Int32 5 };
+  // s10 == [5, 15, 25, 35, 45]
+
+  expect_i32 0;
+  expect_i32 1;
+  expect_i32 2;
+  expect_i32 3;
+  expect_i32 4;
+  expect_i32 5;
+
+  print_i32 (seqHighestPositionLT s10  0 cmpSInt32);
+  print_i32 (seqHighestPositionLT s10 10 cmpSInt32);
+  print_i32 (seqHighestPositionLT s10 20 cmpSInt32);
+  print_i32 (seqHighestPositionLT s10 30 cmpSInt32);
+  print_i32 (seqHighestPositionLT s10 40 cmpSInt32);
+  print_i32 (seqHighestPositionLT s10 50 cmpSInt32);
+
+  expect_i32 0;
+  expect_i32 1;
+  expect_i32 2;
+  expect_i32 3;
+  expect_i32 4;
+  expect_i32 5;
+
+  print_i32 (seqLowestPositionGT s10  0 cmpSInt32);
+  print_i32 (seqLowestPositionGT s10 10 cmpSInt32);
+  print_i32 (seqLowestPositionGT s10 20 cmpSInt32);
+  print_i32 (seqLowestPositionGT s10 30 cmpSInt32);
+  print_i32 (seqLowestPositionGT s10 40 cmpSInt32);
+  print_i32 (seqLowestPositionGT s10 50 cmpSInt32);
+
+  srep = seqFromFunction 9 { idx =>
+                                    case idx
+                                      of 0                -> 1
+                                      of 1 or 2           -> 2
+                                      of 3 or 4 or 5 or 6 -> 4
+                                      of _ -> 6
+                                    end };
+  // srep == [1, 2, 2, 4, 4, 4, 4, 6, 6]
+  expect_i32 0; print_i32 (seqLowestPositionGT srep 0 cmpSInt32);
+  expect_i32 1; print_i32 (seqLowestPositionGT srep 1 cmpSInt32);
+  expect_i32 3; print_i32 (seqLowestPositionGT srep 2 cmpSInt32);
+  expect_i32 3; print_i32 (seqLowestPositionGT srep 3 cmpSInt32);
+  expect_i32 7; print_i32 (seqLowestPositionGT srep 4 cmpSInt32);
+  expect_i32 7; print_i32 (seqLowestPositionGT srep 5 cmpSInt32);
+  expect_i32 9; print_i32 (seqLowestPositionGT srep 6 cmpSInt32);
+  expect_i32 9; print_i32 (seqLowestPositionGT srep 7 cmpSInt32);
+
+  expect_i32 0; print_i32 (seqHighestPositionLT srep 0 cmpSInt32);
+  expect_i32 0; print_i32 (seqHighestPositionLT srep 1 cmpSInt32);
+  expect_i32 1; print_i32 (seqHighestPositionLT srep 2 cmpSInt32);
+  expect_i32 3; print_i32 (seqHighestPositionLT srep 3 cmpSInt32);
+  expect_i32 3; print_i32 (seqHighestPositionLT srep 4 cmpSInt32);
+  expect_i32 7; print_i32 (seqHighestPositionLT srep 5 cmpSInt32);
+  expect_i32 7; print_i32 (seqHighestPositionLT srep 6 cmpSInt32);
+  expect_i32 9; print_i32 (seqHighestPositionLT srep 7 cmpSInt32);
+
+  expect-pair-eq = { p1 => p2 =>
+    let (x, p1b) = p1;
+    let (p2a, p2b) = p2;
+    expect_i32 p2a; print_i32 x;
+    expect_i32 p2b; print_i32 p1b;
+  };
+  expect-pair-eq (seqSortedRange srep 0 cmpSInt32) (0, 0);
+  expect-pair-eq (seqSortedRange srep 1 cmpSInt32) (0, 1);
+  expect-pair-eq (seqSortedRange srep 2 cmpSInt32) (1, 3);
+  expect-pair-eq (seqSortedRange srep 3 cmpSInt32) (3, 3);
+  expect-pair-eq (seqSortedRange srep 4 cmpSInt32) (3, 7);
+  expect-pair-eq (seqSortedRange srep 5 cmpSInt32) (7, 7);
+  expect-pair-eq (seqSortedRange srep 6 cmpSInt32) (7, 9);
+  expect-pair-eq (seqSortedRange srep 7 cmpSInt32) (9, 9);
+};
+
+part2 = {
+  xs = seqFromFunction 4 { idx => idx +Int32 1 };
+  ys = seqPrefixSumFromLeftInclusiveSerial xs { x => y => x +Int32 y };
+
+  expect_text "[1, 2, 3, 4, ]";
+  print_seq xs print_i32_bare;
+
+  expect_text "[1, 3. 6, 10, ]";
+  print_seq ys print_i32;
+};
+
 main = {
   enumRange32 0 30 { n =>
     expect_i32 n;
@@ -91,87 +183,8 @@ main = {
     } |> print_i1;
   };
 
-  { 
-    s = seqFromFunction 28 { idx => idx };
-    expect_i1 True;
-    print_i1 (seqContainsAny s { x => x ==Int32 8 });
-
-    expect_i1 False;
-    print_i1 (seqContainsAny s { x => x ==Int32 108 });
-
-    s10 = seqFromFunction 5 { idx => (idx *Int32 10) +Int32 5 };
-    // s10 == [5, 15, 25, 35, 45]
-
-    expect_i32 0;
-    expect_i32 1;
-    expect_i32 2;
-    expect_i32 3;
-    expect_i32 4;
-    expect_i32 5;
-  
-    print_i32 (seqHighestPositionLT s10  0 cmpSInt32);
-    print_i32 (seqHighestPositionLT s10 10 cmpSInt32);
-    print_i32 (seqHighestPositionLT s10 20 cmpSInt32);
-    print_i32 (seqHighestPositionLT s10 30 cmpSInt32);
-    print_i32 (seqHighestPositionLT s10 40 cmpSInt32);
-    print_i32 (seqHighestPositionLT s10 50 cmpSInt32);
-
-    expect_i32 0;
-    expect_i32 1;
-    expect_i32 2;
-    expect_i32 3;
-    expect_i32 4;
-    expect_i32 5;
-
-    print_i32 (seqLowestPositionGT s10  0 cmpSInt32);
-    print_i32 (seqLowestPositionGT s10 10 cmpSInt32);
-    print_i32 (seqLowestPositionGT s10 20 cmpSInt32);
-    print_i32 (seqLowestPositionGT s10 30 cmpSInt32);
-    print_i32 (seqLowestPositionGT s10 40 cmpSInt32);
-    print_i32 (seqLowestPositionGT s10 50 cmpSInt32);
-
-    srep = seqFromFunction 9 { idx =>
-                                      case idx
-                                        of 0                -> 1
-                                        of 1 or 2           -> 2
-                                        of 3 or 4 or 5 or 6 -> 4
-                                        of _ -> 6
-                                      end };
-    // srep == [1, 2, 2, 4, 4, 4, 4, 6, 6]
-    expect_i32 0; print_i32 (seqLowestPositionGT srep 0 cmpSInt32);
-    expect_i32 1; print_i32 (seqLowestPositionGT srep 1 cmpSInt32);
-    expect_i32 3; print_i32 (seqLowestPositionGT srep 2 cmpSInt32);
-    expect_i32 3; print_i32 (seqLowestPositionGT srep 3 cmpSInt32);
-    expect_i32 7; print_i32 (seqLowestPositionGT srep 4 cmpSInt32);
-    expect_i32 7; print_i32 (seqLowestPositionGT srep 5 cmpSInt32);
-    expect_i32 9; print_i32 (seqLowestPositionGT srep 6 cmpSInt32);
-    expect_i32 9; print_i32 (seqLowestPositionGT srep 7 cmpSInt32);
-
-    expect_i32 0; print_i32 (seqHighestPositionLT srep 0 cmpSInt32);
-    expect_i32 0; print_i32 (seqHighestPositionLT srep 1 cmpSInt32);
-    expect_i32 1; print_i32 (seqHighestPositionLT srep 2 cmpSInt32);
-    expect_i32 3; print_i32 (seqHighestPositionLT srep 3 cmpSInt32);
-    expect_i32 3; print_i32 (seqHighestPositionLT srep 4 cmpSInt32);
-    expect_i32 7; print_i32 (seqHighestPositionLT srep 5 cmpSInt32);
-    expect_i32 7; print_i32 (seqHighestPositionLT srep 6 cmpSInt32);
-    expect_i32 9; print_i32 (seqHighestPositionLT srep 7 cmpSInt32);
-
-    expect-pair-eq = { p1 => p2 =>
-      let (x, p1b) = p1;
-      let (p2a, p2b) = p2;
-      expect_i32 p2a; print_i32 x;
-      expect_i32 p2b; print_i32 p1b;
-    };
-    expect-pair-eq (seqSortedRange srep 0 cmpSInt32) (0, 0);
-    expect-pair-eq (seqSortedRange srep 1 cmpSInt32) (0, 1);
-    expect-pair-eq (seqSortedRange srep 2 cmpSInt32) (1, 3);
-    expect-pair-eq (seqSortedRange srep 3 cmpSInt32) (3, 3);
-    expect-pair-eq (seqSortedRange srep 4 cmpSInt32) (3, 7);
-    expect-pair-eq (seqSortedRange srep 5 cmpSInt32) (7, 7);
-    expect-pair-eq (seqSortedRange srep 6 cmpSInt32) (7, 9);
-    expect-pair-eq (seqSortedRange srep 7 cmpSInt32) (9, 9);
-  } !;
-  
+  part1 !;
+  part2 !;
 
   //seqs = seqChunk (seqFromFunction 28 { idx => idx }) 10; // :: Seq (Seq Int32)
   //print_seq seqs { s : Seq Int32 => print_seq s { x : Int32 => print_i32_bare x; () } };

@@ -369,10 +369,10 @@ tmp_Text_16_of_Int8_nibble = { n : Int8 =>
   end
 };
 
-print_i32_bare = { x => x |> tmp_Text_of_Int32 |> print_text };
-expect_i32_bare = { x => x |> tmp_Text_of_Int32 |> expect_text };
-print_i64_bare = { x => x |> tmp_Text_of_Int64 |> print_text_bare };
-expect_i64_bare = { x => x |> tmp_Text_of_Int64 |> expect_text_bare };
+print_i32_bare = { x => x |> tmp_Text_of_Int32 |> print_text_bare; () };
+expect_i32_bare = { x => x |> tmp_Text_of_Int32 |> expect_text_bare; () };
+print_i64_bare = { x => x |> tmp_Text_of_Int64 |> print_text_bare; () };
+expect_i64_bare = { x => x |> tmp_Text_of_Int64 |> expect_text_bare; () };
 
 tmp_Text_of_Int32 = { n:Int32 => tmp_Text_of_Int64 (sext_i32_to_i64 n) };
 

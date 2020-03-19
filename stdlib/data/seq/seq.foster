@@ -163,8 +163,6 @@ seqCountWhere :: forall (a:Type) { Seq a => { a => Bool } => Int32 };
 seqCountWhere = { seq => pred =>
   counter = { elt => count =>
     if pred elt then count +Int32 1 else count end
-    //count +Int32 oneIf (pred elt)
-    //pred elt |> oneIf |> (+Int32) count
   };
   ftFoldlTree counter (unSeq seq) 0
 };
@@ -251,6 +249,22 @@ seqFindPositionBiased = { seq => elt => ord => goLow => biasLow =>
     end
   };
   loop 0 (seqLength seq)
+};
+
+seqPrefixSumFromLeftInclusiveSerial :: forall (a:Type) { Seq a => { a => a => a } => Seq a };
+seqPrefixSumFromLeftInclusiveSerial = { seq => op =>
+  if seqLength seq <=UInt32 1 then seq else
+    REC loop = { headElt : a => tail : Seq a => acc : Seq a =>
+      case seqViewL tail
+        of $SV_EmptyL      -> acc
+        of $SV_Cons x rest -> next = op headElt x;
+                              loop next rest (seqPostpend acc next)
+      end
+    };  
+
+    let (head, tail) = seqSplitAt seq 1;
+    loop (seqIndex head 0 |> unMaybe) tail head;
+  end
 };
 
 seqReverse :: forall (a:Type) { Seq a => Seq a };
