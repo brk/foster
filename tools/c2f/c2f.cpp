@@ -189,6 +189,7 @@ const RecordType* bindRecordType(const Type* typ) {
 
 std::string tyOpSuffix(const clang::Type* ty) {
   if (ty->isCharType()) return "Int8";
+  if (ty->isBooleanType()) return "Int32"; // C draws a very fuzzy line between bools and ints.
   if (ty->isSpecificBuiltinType(BuiltinType::UShort)) return "Int16";
   if (ty->isSpecificBuiltinType(BuiltinType::Short)) return "Int16";
   if (ty->isSpecificBuiltinType(BuiltinType::UInt)) return "Int32";
@@ -199,7 +200,7 @@ std::string tyOpSuffix(const clang::Type* ty) {
   if (ty->isSpecificBuiltinType(BuiltinType::LongLong)) return "Int64";
   if (ty->isSpecificBuiltinType(BuiltinType::Float)) return "f32";
   if (ty->isSpecificBuiltinType(BuiltinType::Double)) return "f64";
-  if (ty->isSpecificBuiltinType(BuiltinType::LongDouble)) return "f64";
+  if (ty->isSpecificBuiltinType(BuiltinType::LongDouble)) return "f64"; // no 80-bit floats for us...
 
   if (auto pty = dyn_cast<PointerType>(ty)) {
     return "Ptr /*" + tyOpSuffix(ty->getPointeeType().getTypePtr()) + "*/ ";
@@ -294,6 +295,7 @@ std::string maybeNonUppercaseTyName(const clang::Type* ty, std::string defaultNa
 
 std::string tyName(const clang::Type* ty, std::string defaultName = "C2FUNK") {
   if (ty->isCharType()) return "Int8";
+  if (ty->isBooleanType()) return "Bool";
   if (ty->isSpecificBuiltinType(BuiltinType::UShort)) return "Int16";
   if (ty->isSpecificBuiltinType(BuiltinType::Short)) return "Int16";
   if (ty->isSpecificBuiltinType(BuiltinType::UInt)) return "Int32";
@@ -1020,7 +1022,8 @@ public:
   FileClassifier(const SourceManager& sm) : SM(sm) {}
 
   bool isFromMainFile(const SourceLocation& loc) const {
-    return SM.isWrittenInMainFile(loc);
+    //return SM.isWrittenInMainFile(loc);
+    return SM.isInMainFile(loc);
   }
 
   bool isFromMainFile(const Decl* d) const {
@@ -1072,8 +1075,17 @@ private:
 };
 
 bool shouldProcessTopLevelDecl(const Decl* d, const FileClassifier& FC) {
+  /*
+  llvm::errs() << "Should process top level decl "
+      << d->getLocation().printToString(FC.getSourceMgr())
+      << "? in main? " <<  FC.getSourceMgr().isInMainFile(d->getLocation())
+      << "? wr main? " <<  FC.getSourceMgr().isWrittenInMainFile(d->getLocation())
+      << "? sys hdr? " <<  FC.getSourceMgr().isInSystemHeader(d->getLocation())
+      << "\n";
+      */
+  if (FC.isFromSystemHeader(d)) return false;
+
   if (!FC.isFromMainFile(d)) {
-    if (FC.isFromSystemHeader(d)) return false;
     if (auto nd = dyn_cast<NamedDecl>(d)) {
       if (globals.shouldIgnore(nd->getNameAsString())) {
         return false;
@@ -1500,7 +1512,7 @@ public:
     if (CFGBlock* next = ab->getReachableBlock()) {
       if (isExitBlock(next)) {
         if (!hasValue) {
-          llvm::outs() << "(jump = (); jump)";
+          llvm::outs() << "() /*jump*/ ";
         } else {
           if (last && !isa<ReturnStmt>(last)) {
             llvm::outs() << "(prim kill-entire-process \"missing-return\")";
@@ -1881,7 +1893,7 @@ public:
   void emitPokeIdx(const Expr* base, Indices& indices,
                    Lam& valEmitter, ContextKind ctx) {
       std::string tynm = tyName(exprTy(base));
-      llvm::outs() << "(ptrSetIndex ";
+      llvm::outs() << "( { ptrSetIndex ";
       visitStmt(base);
       llvm::outs() << " ";
       emitSubscriptIndex(indices);
@@ -1892,7 +1904,7 @@ public:
         llvm::outs() << "; "; emitPeek(base, indices);
       }
       // TODO BooleanContext
-      llvm::outs() << ");";
+      llvm::outs() << " } !);";
   }
 
   template <typename Lam>
@@ -2103,11 +2115,11 @@ The corresponding AST to be matched is
     if (op == "=") {
       handleAssignment(binop, ctx);
     } else if (op == ",") {
-      llvm::outs() << "( _ = ";
+      llvm::outs() << "( { _ = ";
       visitStmt(binop->getLHS(), StmtContext);
       llvm::outs() << ";\n";
       visitStmt(binop->getRHS(), ctx);
-      llvm::outs() << " )";
+      llvm::outs() << " } ! )";
     } else if (op == "&&" || op == "||") {
       bool needsBoolToIntCoercion = !isBooleanContext;
       if (needsBoolToIntCoercion) { llvm::outs() << "if "; }
@@ -2766,6 +2778,8 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     if (srcTy == "Int16" && dstTy == "Int32" && !isSigned) return "zext_i16_to_i32";
     if (srcTy == "Int16" && dstTy == "Int64" && !isSigned) return "zext_i16_to_i64";
     if (srcTy == "Int32" && dstTy == "Int64" && !isSigned) return "zext_i32_to_i64";
+    if (srcTy == "Bool" && dstTy == "Int8" ) return "c2f_i1_to_i8";
+    if (srcTy == "Bool" && dstTy == "Int32" ) return "c2f_i1_to_i32";
     return "/*unhandled cast from " + srcTy + " to " + dstTy + "*/";
   }
 
@@ -3045,12 +3059,12 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     } else if (const ConditionalOperator* co = dyn_cast<ConditionalOperator>(stmt)) {
       handleIfThenElse(ctx, AnIfExpr, co->getCond(), co->getTrueExpr(), co->getFalseExpr());
     } else if (const BinaryConditionalOperator* bco = dyn_cast<BinaryConditionalOperator>(stmt)) {
-      llvm::outs() << "(condV = ";
+      llvm::outs() << "( { condV = ";
       visitStmt(bco->getCommon(), ExprContext);
       llvm::outs() << ";\n";
       llvm::outs() << "if condV !=Int32 0 then condV else ";
       visitStmt(bco->getFalseExpr(), ExprContext);
-      llvm::outs() << " end)\n";
+      llvm::outs() << " end } !)\n";
     } else if (const ParenExpr* pe = dyn_cast<ParenExpr>(stmt)) {
       if (tryHandleAtomicExpr(pe->getSubExpr(), ctx)) {
         // done
@@ -3060,7 +3074,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         llvm::outs() << ")";
       }
     } else if (const NullStmt* dr = dyn_cast<NullStmt>(stmt)) {
-      llvm::outs() << "(nullstmt = (); nullstmt)";
+      llvm::outs() << "()";
     } else if (const CaseStmt* cs = dyn_cast<CaseStmt>(stmt)) {
       visitCaseStmt(cs, true);
     } else if (const DefaultStmt* ds = dyn_cast<DefaultStmt>(stmt)) {
@@ -3089,7 +3103,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       if (rs->getRetValue()) {
         visitStmt(rs->getRetValue(), ExprContext);
       } else {
-        llvm::outs() << "(retstmt = (); retstmt)";
+        llvm::outs() << "() /*retstmt*/ ";
       }
     } else if (const MemberExpr* me = dyn_cast<MemberExpr>(stmt)) {
       const Expr* base = nullptr;
@@ -3292,7 +3306,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       }
 
       if (numPrintingChildren == 0) {
-        llvm::outs() << "(empty = (); empty)\n";
+        llvm::outs() << "() /*empty*/\n";
       } else {
         size_t childno = 0;
         for (const Stmt* c : cs->children()) {

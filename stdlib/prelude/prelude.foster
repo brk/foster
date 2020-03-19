@@ -345,6 +345,10 @@ tmp_Text_of_Int32_digit = { n:Int32 =>
   end
 };
 
+tmp_Byte_of_Int8_digit = { n:Int8 =>
+  ("0" as Int8) +Int8 n
+};
+
 tmp_Text_16_of_Int32_digit = { n => tmp_Text_16_of_Int8_nibble (cast_i32_to_i8 n) };
 tmp_Text_16_of_Int8_nibble = { n : Int8 =>
   case n
@@ -542,6 +546,23 @@ tmp_Text_of_UInt64 = { n:Int64 =>
     end
   };
   go n ""
+};
+
+tmp_Text_of_UInt64_localmut_rev = { n:Int64 =>
+  buf = allocDArray 16;
+  REC go = { n : Int64 => idx : Int32 =>
+    if n <UInt64 10
+      then (n |> trunc_i64_to_i8 |> tmp_Byte_of_Int8_digit) >^ buf.[idx];
+           idx +Int32 1
+
+      else r = trunc_i64_to_i8 (urem-Int64 n 10);
+           q =                  udiv-Int64 n 10 ;
+           (r |> tmp_Byte_of_Int8_digit) >^ buf.[idx];
+           go q (idx +Int32 1)
+    end
+  };
+  len = go n 0;
+  TextFragment buf len
 };
 
 tmp_Text_of_SWord = { n:Word =>
