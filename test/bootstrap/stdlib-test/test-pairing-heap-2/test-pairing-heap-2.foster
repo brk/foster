@@ -1,68 +1,4 @@
-
-type case List (a:Type)
-  of $Nil
-  of $Cons a (List a)
-;
-
-expect_text_bare = { s : Text =>
-  case s
-    of $TextFragment a n     -> prim_print_bytes_stderr a n 0; n
-    of $TextConcat   s1 s2 n -> expect_text_bare s1; expect_text_bare s2; n
-   end;
-};
-
-print_text_bare = { s : Text =>
-  case s
-    of $TextFragment a n     -> prim_print_bytes_stdout a n 0; n
-    of $TextConcat   s1 s2 n -> print_text_bare s1; print_text_bare s2; n
-   end;
-};
-
-expect_newline = { expect_text_bare "\n"; () };
-
-print_newline = { print_text_bare "\n"; () };
-
-expect_text = { s : Text =>
-  expect_text_bare s; expect_newline !
-};
-
-print_text = { s : Text =>
-  print_text_bare s; print_newline !
-};
-
-
-tmp_Text_of_UInt64 = { n:Int64 =>
-  REC go = { n:Int64 => t:Text =>
-    if n <SInt64 10
-      then mkTextConcat (tmp_Text_of_Int32_digit (trunc_i64_to_i32 n)) t
-      else r = trunc_i64_to_i32 (prim srem-unsafe-Int64 n 10);
-           q =                   prim sdiv-unsafe-Int64 n 10 ;
-           go q (mkTextConcat (tmp_Text_of_Int32_digit r) t);
-    end
-  };
-  go n ""
-};
-
-tmp_Text_of_Int32_digit = { n:Int32 =>
-  case n
-    of 0 -> "0"
-    of 1 -> "1"
-    of 2 -> "2"
-    of 3 -> "3"
-    of 4 -> "4"
-    of 5 -> "5"
-    of 6 -> "6"
-    of 7 -> "7"
-    of 8 -> "8"
-    of 9 -> "9"
-    of _ -> "<error:value passed to tmp_Text_of_Int32_digit was too large>"
-  end
-};
-type case Ord
-       of $LT
-       of $EQ
-       of $GT
-       ;
+snafuinclude Prelude "prelude";
 
 print_bil = { lst =>
   print_text_bare "[";
@@ -70,25 +6,11 @@ print_bil = { lst =>
   print_text "]";
 };
 
-// Uses O(1) stack, and heap proportional to whatever f allocates.
-listFoldl :: forall (a:Type) (e:Type) { List e => { e => a => a } => a => a };
-listFoldl = { forall a:Type e:Type, v => f => acc : a =>
-  case v
-    of $Nil            -> acc
-    of $Cons head tail -> listFoldl tail f (f head acc)
-  end
-};
 type case PairingHeap (elem:Type)
       of $PairingHeapE
       of $PairingHeapT elem (List (PairingHeap elem))
       ;
 
-cmpSInt64 = { a : Int64 => b : Int64 =>
-  if a ==Int64 b
-  then EQ
-  else if a <SInt64 b then LT else GT end
-  end
-};
 // Manually inlined paringHeapMerge, triggers GC root bug.
 pairingHeapMergePairs :: forall (a:Type) { { a => a => Ord } => List (PairingHeap a) => PairingHeap a };
 pairingHeapMergePairs = { forall a:Type, cmp => l =>
@@ -158,25 +80,13 @@ listSortViaPairingHeapWith = { forall a:Type, cmp => lst =>
   noinline_pairingHeapToSortedList cmp (noinline_pairingHeapFromList cmp lst)
 };
 
-mkTextConcat = { a : Text => b : Text =>
-  lensum = (textLength a) +Int32 (textLength b);
-  TextConcat a b lensum
-};
-
-textLength = { t : Text =>
-  case t
-    of $TextFragment _ n -> n
-    of $TextConcat _ _ n -> n
-   end;
-};
-
-listShow = { forall a:Type, showElem : { a => Text } => lst : List a =>
+listShowCtors = { forall a:Type, showElem : { a => Text } => lst : List a =>
   case lst
     of $Nil -> "Nil"
     of $Cons x xs ->
       mkTextConcat "(Cons "
        (mkTextConcat (mkTextConcat (showElem x) " ")
-        (mkTextConcat (listShow showElem xs) ")"))
+        (mkTextConcat (listShowCtors showElem xs) ")"))
   end
 };
 
@@ -187,7 +97,7 @@ pairingHeapShow = { forall a:Type, showElem : { a => Text } => ph : PairingHeap 
     of $PairingHeapT e l ->
       mkTextConcat "(PairingHeapT"
        (mkTextConcat (mkTextConcat (showElem e) " ")
-        (mkTextConcat (listShow { p => pairingHeapShow showElem p } l) ")"))
+        (mkTextConcat (listShowCtors { p => pairingHeapShow showElem p } l) ")"))
   end
 };
 

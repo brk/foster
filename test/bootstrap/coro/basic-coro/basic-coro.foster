@@ -1,4 +1,6 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
 snafuinclude Coro "coro";
+snafuinclude Text "text";
 
 // coro_wrap = forall a b,
 //             fn (f : fn(arg : a to b)) {

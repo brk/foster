@@ -1,3 +1,5 @@
+snafuinclude Text "text";
+
 main = {
   expect_i1 True;
   print_i1 (is-odd-alt2 5);

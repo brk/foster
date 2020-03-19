@@ -1,4 +1,5 @@
 snafuinclude PreludePrintExpect "prelude/print-expect";
+snafuinclude Text "text";
 
 // TB lacks a kind annotation; we'll default to "boxed",
 // so values of type TB will be represented with a pointer indirection

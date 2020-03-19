@@ -1,3 +1,5 @@
+snafuinclude Text "text";
+
 foo :: { % aa : Int32 : True
       => % bb : Int32 : bb >UInt32 aa
       => % rv : Int32 : True };

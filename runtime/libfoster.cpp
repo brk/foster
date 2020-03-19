@@ -288,11 +288,9 @@ void fprint_i64(FILE* f, int64_t x) { fprintf(f, "%" PRId64 "\n", x); }
 void fprint_i64x(FILE* f, int64_t x) { fprintf(f, "0x%" PRIX64 "\n", x); }
 void fprint_i64b(FILE* f, int64_t x) { fprint_b2(f, x, 64); }
 void fprint_i64bb(FILE* f, int64_t x, uint8_t N) { fprint_b2(f, x, N); }
-void fprint_i64_bare(FILE* f, int64_t x) { fprintf(f, "%" PRId64 , x); }
 
 void fprint_i32x(FILE* f, int32_t x) { fprintf(f, "0x%X\n", x); }
 void fprint_i32b(FILE* f, int32_t x) { fprint_b2(f, x, 32); }
-void fprint_i32_bare(FILE* f, int64_t x) { fprintf(f, "%ld" , x); }
 
 void fprint_i8b(FILE* f, int8_t x) { fprint_b2(f, x, 8); }
 
@@ -355,8 +353,6 @@ int32_t force_gc_for_debugging_purposes() {
   gc::force_gc_for_debugging_purposes(); return 0;
 }
 
-void  print_i32_bare(int32_t x) { fprint_i32_bare(stdout, x); }
-void  print_i64_bare(int64_t x) { fprint_i64_bare(stdout, x); }
 void  print_i64(int64_t x) { fprint_i64(stdout, x); }
 void expect_i64(int64_t x) { fprint_i64(stderr, x); }
 void  print_i64x(int64_t x) { fprint_i64x(stdout, x); }
@@ -366,8 +362,6 @@ void  print_i64bb(int64_t x, uint8_t N) { fprint_i64bb(stdout, x, N); }
 void expect_i64bb(int64_t x, uint8_t N) { fprint_i64bb(stderr, x, N); }
 
 // C type "bool" becomes LLVM "i8 zeroext", not "i1"
-void  print_i1(bool x) { fprintf(stdout, (x ? "true\n" : "false\n")); }
-void expect_i1(bool x) { fprintf(stderr, (x ? "true\n" : "false\n")); }
 
 // This is used by the compiler.
 uint8_t foster_ctor_id_of(void* body) {

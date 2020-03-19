@@ -93,6 +93,13 @@ print_text = { s : Text =>
   print_text_bare s; print_newline !
 };
 
+textOfBool = { b : Bool =>
+  if b then "True" else "False" end
+};
+
+print_i1 = { b : Bool => b |> textOfBool |> print_text };
+expect_i1 = { b : Bool => b |> textOfBool |> expect_text };
+
 (==TextBytes) = { a : Text => b : Text =>
   if textLength a ==Int32 textLength b
     then bytesEqual (snafuBytesOfText a) (snafuBytesOfText b)

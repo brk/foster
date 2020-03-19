@@ -1,3 +1,5 @@
+snafuinclude Text "text";
+
 incrInt32 :: { % aa : Int32 : prim <SInt32 aa 10 =>
                % rv : Int32 : prim ==Int32 rv (prim +Int32 aa 1) };
 incrInt32 = { a : Int32 => prim +Int32 a 1 };

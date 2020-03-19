@@ -173,10 +173,6 @@ text_maxdepth = { s : Text =>
    end;
 };
 
-textOfBool = { b : Bool =>
-  if b then "True" else "False" end
-};
-
 // Precondition: n in range 0..128.
 textOfASCII = { n : Int32 => textOfASCII8 (trunc_i32_to_i8 n) };
 
@@ -305,8 +301,8 @@ tmp_Text_bytes_iter_reverse = { t:Text =>
 };
 
 is_ascii_digit = { c : Int8 =>
-  if   c <=SInt8 (trunc_i32_to_i8 57)
-  then c >=SInt8 (trunc_i32_to_i8 48)
+  if   c <=SInt8 57
+  then c >=SInt8 48
   else False
   end
 };
@@ -372,6 +368,11 @@ tmp_Text_16_of_Int8_nibble = { n : Int8 =>
                 `mkTextConcat` (tmp_Text_of_Int8 n `mkTextConcat` ">")
   end
 };
+
+print_i32_bare = { x => x |> tmp_Text_of_Int32 |> print_text };
+expect_i32_bare = { x => x |> tmp_Text_of_Int32 |> expect_text };
+print_i64_bare = { x => x |> tmp_Text_of_Int64 |> print_text_bare };
+expect_i64_bare = { x => x |> tmp_Text_of_Int64 |> expect_text_bare };
 
 tmp_Text_of_Int32 = { n:Int32 => tmp_Text_of_Int64 (sext_i32_to_i64 n) };
 

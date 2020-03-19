@@ -1,4 +1,5 @@
 snafuinclude PreludePrintExpect "prelude/print-expect";
+snafuinclude Text "text";
 
 print_0_of_t_i32_i1 = { x : (Int32, Bool) => case x of (y, _) -> print_i32 y end };
 

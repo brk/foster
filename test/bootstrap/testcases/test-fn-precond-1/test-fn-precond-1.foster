@@ -1,3 +1,5 @@
+snafuinclude Text "text";
+
 eqInt32 :: { % aa : Int32 : True =>
              % bb : Int32 : True =>
              % rv : Bool : prim ==Bool rv (prim ==Int32 aa bb) };

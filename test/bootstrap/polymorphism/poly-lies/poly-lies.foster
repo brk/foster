@@ -1,3 +1,5 @@
+snafuinclude Text "text";
+
 take_unit = { x : () => () };
 
 main = {

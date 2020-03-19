@@ -1,4 +1,4 @@
-snafuinclude PreludePrintExpect "prelude/print-expect";
+snafuinclude Text "text";
 
 main = {
   expect_i1 True;
@@ -49,8 +49,8 @@ test-first-order-closed = {
 // ?
 
 test-first-order-open = {
-  print_i32  111111;
-  expect_i32 111111;
+  print_text  "11111";
+  expect_text "11111";
 
   expect_i1 True;
   print_i1 (__COMPILES__ {

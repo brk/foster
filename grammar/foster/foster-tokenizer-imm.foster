@@ -309,7 +309,7 @@ report_lexical_error = { s : Scanner =>
     (printStrBare msg);
         (printStrBare (strLit b", unexpected character on line \x00")); 
     
-    print_i32_bare (Scanner_line s); 
+    print_i32 (Scanner_line s); // TODO use fmt
     
     printStrBare (strLit b":\n\x00"); 
     

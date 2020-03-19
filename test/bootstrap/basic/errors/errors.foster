@@ -1,4 +1,7 @@
 snafuinclude PreludePrintExpect "prelude/print-expect";
+snafuinclude Text "text";
+
+output-marker = { t => expect_text t; print_text t; };
 
 main = {
   // Mismatch between declared and inferred return types
@@ -9,6 +12,8 @@ main = {
   expect_i1 True ; print_i1 (__COMPILES__           (a !) );
   expect_i1 False; print_i1 (__COMPILES__  print_i1 (a !) );
 
+  output-marker "A";
+
   // Incorrect number of arguments to function
   expect_i1 True;  print_i1 (__COMPILES__  { 0 }!  );
   expect_i1 False; print_i1 (__COMPILES__  { 0 }() );
@@ -17,6 +22,8 @@ main = {
   expect_i1 True;  print_i1 (__COMPILES__  a !  );
   expect_i1 False; print_i1 (__COMPILES__  a 0   );
   expect_i1 False; print_i1 (__COMPILES__  a (0) );
+
+  output-marker "B";
 
   // Duplicate variable names
   expect_i1 True  ; print_i1 (__COMPILES__  { x:Int32 => y:Int32 => 0 }  );
@@ -33,6 +40,8 @@ main = {
   expect_i1 False ; print_i1 (__COMPILES__  if  2   then True else True end);
   expect_i1 True  ; print_i1 (__COMPILES__  if  0   then True else True end);
 
+  output-marker "C";
+
   // IfAST branches must have same type
   expect_i1 True  ; print_i1 (__COMPILES__  if True then True else True end);
   expect_i1 False ; print_i1 (__COMPILES__  if True then  2   else True end);
@@ -48,7 +57,9 @@ main = {
   expect_i1 False ; print_i1 (__COMPILES__ ().[0]);
 
   // Primitives must be called, not treated as first class values.
-  expect_i1 False; print_i1 (__COMPILES__ f = print_i1; f True );
+  expect_i1 False; print_i1 (__COMPILES__ f = opaquely_i32; f 0 );
+
+  output-marker "D";
 
   // Pattern variables shouldn't overlap.
   expect_i1 False;
@@ -66,6 +77,8 @@ main = {
   expect_i1 True ; print_i1 (__COMPILES__  2  >^ (prim ref 0));
   expect_i1 False; print_i1 (__COMPILES__ (>^) 2 (prim ref 0));
   2  >^ (prim ref 0);
+
+  output-marker "E";
 
   print_i32  23456;
   expect_i32 23456;
@@ -88,6 +101,8 @@ main = {
   // Shadowing is OK, including at different types:
   expect_i1 True ; print_i1 (__COMPILES__ { x:() => x = x; x });
   expect_i1 True ; print_i1 (__COMPILES__ { x:() => x = 0; x });
+
+  output-marker "F";
 
   // But writing something that looks recursive but isn't is disallowed.
   expect_i1 False; print_i1 (__COMPILES__  { x:() => x = { x }; x });

@@ -85,7 +85,7 @@ sparseArrayInsert = { sa => elem => idx =>
         print_text_bare "newoffset: ";
         print_i32 newoffset;
         print_text_bare "arr = [";
-        arrayEnum arr { e => o => print_i64_bare (zext_i32_to_i64 e); print_text_bare ", "; () };
+        arrayEnum arr { e => o => print_i64 (zext_i32_to_i64 e); print_text_bare ", "; () };
         print_text "]";
         */
         arrx = newDArray0 (arrayLength32 arr +Int32 1)

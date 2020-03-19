@@ -1,3 +1,5 @@
+snafuinclude Text "text";
+
 main = {
   refs = allocDArray:[Ref Int32] 1;
   fncn = { refs.[0] };

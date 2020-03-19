@@ -1,4 +1,5 @@
 snafuinclude PreludePrintExpect "prelude/print-expect";
+snafuinclude Text "text";
 
 main = {
   test-assert-bool-lits !;
@@ -193,18 +194,18 @@ arrayLenRet = { sm => lg =>
 };
 
 
-arrayLength :: forall (x:Type) { % ra : Array x : True =>
+arrayLengthZ :: forall (x:Type) { % ra : Array x : True =>
                                  % rvAL : Int64 : rvAL ==Int64 prim_arrayLength:[x] ra };
-arrayLength = { a => prim_arrayLength a };
+arrayLengthZ = { a => prim_arrayLength a };
 
 // {{{
 arrayLengthWrap :: forall (x:Type) { % ra : Array x : True =>
                                   % rvALW : Int64 : rvALW ==Int64 prim_arrayLength:[x] ra };
-arrayLengthWrap = { a => arrayLength a };
+arrayLengthWrap = { a => arrayLengthZ a };
 // }}}
 
 readInt64FromArrayInt8-v1 :: { % ra : Array Int8 : 0 <=SInt32 ri =>
-                               % ri : Int32 : ((zext_i32_to_i64 ri +Int64 7) <SInt64 (arrayLength ra))
+                               % ri : Int32 : ((zext_i32_to_i64 ri +Int64 7) <SInt64 (arrayLengthZ ra))
                                => Int64 };
 readInt64FromArrayInt8-v1 = { a => i =>
   alen = prim_arrayLength a;

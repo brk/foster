@@ -1,3 +1,5 @@
+snafuinclude Text "text";
+
 prim-and = { a : Bool => b: Bool =>
   if a then b else False end
 };

@@ -1,3 +1,5 @@
+snafuinclude Text "text";
+
 type case List (a:Type)
   of $Cons a (List a)
   of $Nil

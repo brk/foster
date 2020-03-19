@@ -1,4 +1,5 @@
 snafuinclude PreludePrintExpect "prelude/print-expect";
+snafuinclude Text "text";
 
 main = {
   arrays        !;
@@ -60,14 +61,6 @@ newDArray8 = { n : Int32 => f : { Int32 => Int8 } =>
 };
 
 
-expect_text = { s : Text =>
-  case s
-    of $TextFragment a n     -> prim_print_bytes_stderr a n 0; n
-    of $TextConcat   s1 s2 n -> expect_text s1; expect_text s2; n
-   end;
-};
-
-
 arrays8 = {
   k = 26;
   a = newDArray8 k { x : Int32 => trunc32to8 (x +Int32 96) };
@@ -77,23 +70,17 @@ arrays8 = {
 
   (trunc32to8 0) >^ a.[3];
   prim_print_bytes_stdout a 6 0;
-  expect_abc !;
+  expect_abc_bare !; // embedded null byte causes suffix to be lost.
 
   expect_i32 k;
   print_i64 (prim_arrayLength a);
 
 };
 
-expect_abc = {
-  expect_text "abc";
+expect_abc_bare = {
+  expect_text_bare "abc";
 };
 
-textLength = { t : Text =>
-  case t
-    of $TextFragment _ n -> n
-    of $TextConcat _ _ n -> n
-   end;
-};
 
 arrays-indexing = { i8 : Int8 => i32 : Int32 => i64 : Int64 => iw : Word =>
                     ir32  : ( % rir : Int32 : True ) =>

@@ -11,6 +11,7 @@ foreign import c2f_stderr :: { CFile };
 //print_i1 = { b : Bool => b |> i1->Text |> print_text };
 //expect_i1 = { b : Bool => b |> i1->Text |> expect_text };
 
+
 print_i8   = { x : Int8  => x |> sext_i8_to_i64 |> print_i64 };
 print_i32  = { x : Int32 => x |> sext_i32_to_i64 |> print_i64 };
 

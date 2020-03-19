@@ -1,3 +1,5 @@
+snafuinclude Text "text";
+
 /* this should not be allowed...
 eqInt32 :: { % aa : Int32 : True =>
              % bb : Int32 : prim ==Int32 bb 3 =>
