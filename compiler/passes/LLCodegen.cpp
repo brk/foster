@@ -536,19 +536,9 @@ void LLModule::codegenModule(CodegenPass* pass) {
 
   extendWithImplementationSpecificProcs(pass, procs);
 
-  for (auto& item : items) {
-    //llvm::errs() << "Adding " << item->name << " to pass->globalValues\n";
-
-    if (item->arrlit) {
-      pass->globalValues[item->name] = item->arrlit->codegen(pass);
-    } else {
-      pass->globalValues[item->name] = item->lit->codegen(pass);
-      pass->insertScopedValue(item->name, pass->globalValues[item->name]);
-    }
-  }
-
   // Ensure that the llvm::Function*s are created for all the function
-  // prototypes, so that mutually recursive function references resolve.
+  // prototypes, so that mutually recursive function references resolve,
+  // and any globals can reference functions.
   for (size_t i = 0; i < procs.size(); ++i) {
     // Ensure that the value is in the SymbolInfo entry in the symbol table.
     procs[i]->codegenProto(pass);
@@ -579,6 +569,17 @@ void LLModule::codegenModule(CodegenPass* pass) {
                           cloname + ".closure.cell");
 
     pass->globalValues[cloname] = builder.CreateConstGEP2_32(NULL, globalCell, 0, 2);
+  }
+
+  for (auto& item : items) {
+    //llvm::errs() << "Adding " << item->name << " to pass->globalValues\n";
+
+    if (item->arrlit) {
+      pass->globalValues[item->name] = item->arrlit->codegen(pass);
+    } else {
+      pass->globalValues[item->name] = item->lit->codegen(pass);
+      pass->insertScopedValue(item->name, pass->globalValues[item->name]);
+    }
   }
 
   // Codegen all the function bodies, now that we can resolve mutually-recursive
@@ -1582,10 +1583,18 @@ Value* LLGlobalAppCtor::codegen(CodegenPass* pass) {
   std::vector<llvm::Constant*> consts;
   for (auto v : this->args) {
     auto gv = pass->globalValues[v->getName()];
-    if (auto cgv = dyn_cast<llvm::Constant>(gv)) {
-      consts.push_back(cgv);
+    if (!gv) {
+      gv = pass->globalValues[v->getName() + ".closure.cell"];
+    }
+    if (gv) {
+      if (auto cgv = dyn_cast<llvm::Constant>(gv)) {
+        consts.push_back(cgv);
+      } else {
+        llvm::errs() << "var  " << v->getName() << " was not constant! ... " << *gv << "\n";
+        exit(2);
+      }
     } else {
-      llvm::errs() << "var  " << v->getName() << " was not constant! ... " << *gv << "\n";
+      llvm::errs() << "var  " << v->getName() << " wasn't found in pass->globalValues[]!\n";
       exit(2);
     }
   }
