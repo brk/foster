@@ -19,9 +19,7 @@ Miscellanous Tidbits of Knowledge
   This will cause the compiler to emit calls to ``record_memalloc_cell`` before
   each allocation, which will in turn cause dump_stats() to emit extra information
   about call site distribution. By default, dump_stats() goes to ``gclog.txt``.
-* Inlining is disabled by default (as its name suggests, ``--backend-optimize``
-  is for the backend (LLVM), not the middle end (Haskell).
-  Use ``--me-arg=--inline`` to enable it.
+* For best runtime performance, use ``--backend-optimize``.
 * To see monomorphized, inlined, and loop-headered variants of the input program,
   use ``--me-arg=--dump-ir=mono``.
 * Most allocations, (but currently not arrays) are zero-initialized on allocation.

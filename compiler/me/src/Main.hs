@@ -755,8 +755,6 @@ lowerModule :: String -> (Double, (ModuleIL KNExpr TypeIL))
             -> Compiled CompilerTimings
 lowerModule outfile (tc_time, kmod) = do
      flags    <- gets ccFlagVals
-     let _TODO_donate = getInliningDonate flags
-     let _TODO_insize = getInliningSize   flags
 
      whenDumpIR "kn" $ do
          putDocLn (outLn $ "vvvv k-normalized :====================")

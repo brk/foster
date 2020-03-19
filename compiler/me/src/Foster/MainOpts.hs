@@ -20,8 +20,6 @@ options =
  , Option []     ["dump-prims"] (NoArg  DumpPrims)        "dump primitive bindings"
  , Option []     ["fmt"]        (NoArg  FmtOnly)          "pretty-print source AST"
  , Option []     ["hs2foster"]  (NoArg  Hs2Foster)        "pretty-print source Haskell as Foster"
- , Option []     ["no-inline"]  (NoArg  NoInline)         "disable inlining"
- , Option []     ["inline"]     (NoArg  Inline)           "enable inlining"
  , Option []     ["inline-gas"] (ReqArg InlineGas "GAS")  "stop inlining after GAS steps"
  , Option []     ["no-donate"]  (NoArg  NoDonate)         "diable inlining donation"
  , Option []     ["no-ctor-opt"] (NoArg NoCtorOpt)        "diable ctor representation optimizations"
@@ -46,7 +44,6 @@ getCtorOpt       (flags, _) = (not $ NoCtorOpt   `elem` flags)
 getNoPreAllocOpt (flags, _) =        NoPreAllocOpt `elem` flags
 getTypecheckOnly (flags, _) =        TypecheckOnly `elem` flags
 getNoQuant       (flags, _) =     NoQuantification `elem` flags
-getInlining      (flags, _) = (not $ NoInline    `elem` flags) && (Inline  `elem` flags)
 getInliningDonate(flags, _) = (not $ NoDonate    `elem` flags)
 getInliningSize  (flags, _) = foldr (\f a -> case f of InlineSize s -> Just (read s :: Int) ; _ -> a) Nothing flags
 getInliningGas   (flags, _) = foldr (\f a -> case f of InlineGas s  -> Just (read s :: Int) ; _ -> a) Nothing flags
@@ -64,8 +61,6 @@ data Flag = Interpret String
           | NoPreAllocOpt
           | TypecheckOnly
           | NoQuantification
-          | NoInline
-          | Inline
           | InlineGas String
           | NoDonate
           | InlineSize String
