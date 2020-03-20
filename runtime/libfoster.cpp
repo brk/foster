@@ -308,6 +308,35 @@ extern "C" {
 
 //////////////////////////////////////////////////////////////////
 
+// Int is represented (opaquely) as a inversely-tagged pointer.
+typedef void* Int;
+// A 0 in the low bit signifies a pointer to a bignum.
+// A 1 in the low bit signifies a (signed) 63-bit integer
+// in the high bits.
+// Thus a "small" integer K is represented as 2K + 1,
+// with the restriction that K fits in 63 bits. A signed 64-bit integer
+// S is small if the top two bits of S are both zero or both one.
+//
+// Using 0 for pointers and 1 for integers makes it easier for the
+// GC to recognize when a potential-reference cell is actually a
+// short int.
+
+bool foster_prim_Int_isSmallWord(intptr_t x) {
+  uintptr_t u = x;
+  int hightwobits = u >> ((sizeof(u) * 8) - 2);
+  return (hightwobits == 0 || hightwobits == 3);
+}
+
+// Precondition: foster_prim_Word_isSmall(x)
+Int foster_prim_smallWord_to_Int(intptr_t x) { return (Int)uintptr_t((x << 1) | 1); }
+
+bool foster_prim_Int_isSmall(Int x) { return (uintptr_t(x) & 1) == 1; }
+
+// Precondition: foster_prim_Int_isSmall(x)
+intptr_t foster_prim_Int_to_smallWord(Int x) { return intptr_t(x) >> 1; }
+
+//////////////////////////////////////////////////////////////////
+
 __attribute__((noinline))
 void foster__assert_failed(const char* msg) {
   fprintf(stderr, "%s\n", msg);

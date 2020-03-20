@@ -692,6 +692,11 @@ ailInt qt rng int ty = do
       ti <- qt ty
       return $ KNLiteral ti (LitInt int)
 
+    TyAppTC (TyConTC "Int") [] -> do
+      -- Big integer literals can't be oversized!
+      ti <- qt ty
+      return $ KNLiteral ti (LitInt int)
+
     MetaTyVarTC m -> do
       mty <- readTcMeta m
       case mty of

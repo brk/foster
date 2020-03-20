@@ -726,8 +726,17 @@ void mark_as_smallmedium(frame15* f) {
 // the low 4 GB is for constants, (immutable) globals, etc.
 bool non_markable_addr_toosmall(void* addr) { return uintptr_t(addr) <   uintptr_t(0x100000000ULL); }
 bool non_markable_addr_toobig(void* addr) {   return uintptr_t(addr) >= (uintptr_t(1) << address_space_prefix_size_log()); }
-bool non_markable_addr(void* addr) {
-  return non_markable_addr_toosmall(addr) || non_markable_addr_toobig(addr); 
+// The compiler, runtime,  and GC cooperate to represent "small" integer values
+// as tagged pointer-sized words; if we see the tag, the other bits aren't an address!
+bool non_markable_addr_taggedInt(void* addr) { return (uintptr_t(addr) & 1) != 0; }
+// Pointers on the heap aren't arbitrary bitstrings; type safety ensures they can't
+// point past the heap, so we don't need the toobig check.
+bool non_markable_addr_toosmall_or_taggedInt(void* addr) {
+  return non_markable_addr_toosmall(addr) || non_markable_addr_taggedInt(addr);
+}
+// Conservative stack scans need to consider every kind of invalid pointer.
+bool are_addr_bits_invalid(void* addr) {
+  return non_markable_addr_toosmall_or_taggedInt(addr) || non_markable_addr_toobig(addr);
 }
 
 tidy* assume_tori_is_tidy(tori* p) { return (tidy*) p; }
@@ -858,7 +867,7 @@ namespace helpers {
   void consider_conservative_root(unchecked_ptr* root) {
     gc_assert(root != NULL, "someone passed a NULL root addr!");
     auto maybe_obj = unchecked_ptr_val(*root);
-    bool trivially_unmarkable = non_markable_addr(maybe_obj);
+    bool trivially_unmarkable = are_addr_bits_invalid(maybe_obj);
 
     if (GCLOG_DETAIL > 1) {
       fprintf(gclog, "\t\tgc %d: STACK SLOT slot (%p) holds %p; might be markable? %d [tidy %d]\n",
@@ -1329,8 +1338,9 @@ namespace immix_common {
 #endif
 
     for_each_child_slot_with(cell, arr, map, cell_size, [cell](intr* slot) {
-      // We only need to filter non-markable constants; type safety ensures we won't see un-allocated pointer values.
-      if (!non_markable_addr_toosmall(* (void**)slot)) {
+      // We only need to filter non-markable constants;
+      // type safety ensures we won't see un-allocated pointer values.
+      if (!non_markable_addr_toosmall_or_taggedInt(* (void**)slot)) {
         if (0) {
         fprintf(gclog, "gc %d: adding to worklist slot %p of cell %p holding ptr %p\n",
                         gcglobals.num_gcs_triggered,
@@ -2880,7 +2890,7 @@ void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot) {
   *slot = val;
 
   if (TRACK_WRITE_BARRIER_COUNTS > 3) { ++gcglobals.write_barrier_phase0_hits; }
-  if (non_markable_addr_toosmall(val)) { return; }
+  if (non_markable_addr_toosmall_or_taggedInt(val)) { return; }
   if (TRACK_WRITE_BARRIER_COUNTS > 3) { ++gcglobals.write_barrier_phase0b_hits; }
 }
 

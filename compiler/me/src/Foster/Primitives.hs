@@ -33,10 +33,9 @@ primitiveDataTypesP = [
             (MissingSourceRange "Text.TextConcat")]
         False (MissingSourceRange "Text")),
 
-  (let tf = [] in
-   DataType (TypeFormal "Subheap" (MissingSourceRange "Subheap") KindPointerSized) tf
+   DataType (TypeFormal "Int" (MissingSourceRange "Int") KindPointerSized) []
         []
-        False (MissingSourceRange "Subheap")),
+        False (MissingSourceRange "Int"),
 
    DataType (TypeFormal "effect.Empty" (MissingSourceRange "effect.Empty") KindEffect) []
         []

@@ -1,7 +1,84 @@
 snafuinclude PreludePrintExpect "prelude/print-expect";
+snafuinclude Bignum "bignum";
+snafuinclude Text "text";
+
+print_int :: { Int => () };
+print_int = { i =>
+  sm = prim Int-isSmall i;
+  if sm
+    then
+      w = prim Int-toSmall i;
+      print_i64 (zext_Word_to_i64 w);
+    else
+      ii = prim Int-toBig i;
+      printIntInf ii
+  end;
+};
+
+intFromWord = { w => intFromInt64 (sext_Word_to_i64 w) };
+
+// If w is a small word, Int-ofSmall is more efficient.
+Int-ofWord :: { Word => Int };
+Int-ofWord = { w =>
+  if prim Int-isSmallWord w
+    then prim Int-ofSmall w
+    else prim Int-ofBig (intFromWord w)
+  end
+};
+
+(+Int) :: { Int => Int => Int };
+(+Int) = { x => y =>
+  case (prim Int-isSmall x, prim Int-isSmall y)
+    of (True, True) -> xw = prim Int-toSmall x;
+                       yw = prim Int-toSmall y;
+                       xw +Word yw |> Int-ofWord
+
+    of (True, False) -> xw = prim Int-toSmall x;
+                        yb = prim Int-toBig y;
+                        i = intFromWord xw `intAdd` yb;
+                        prim Int-ofBig i
+
+    of (False, True) -> yw = prim Int-toSmall y;
+                        xb = prim Int-toBig x;
+                        i = intFromWord yw `intAdd` xb;
+                        prim Int-ofBig i
+
+    of (False, False) -> xb = prim Int-toBig x;
+                         yb = prim Int-toBig y;
+                         i = intAdd xb yb;
+                         prim Int-ofBig i
+  end
+};
+
+test-ints = {
+  expect = { x : Int32 => i : Int =>
+    expect_i32 x;
+    print_int i;
+  };
+
+  expect 10 10;
+  expect_text "102030405060708090";
+  print_int 102030405060708090;
+
+  expect_text "192030405060708091";
+  print_int (  102030405060708090 +Int
+                90000000000000001);
+
+  expect_text "102030405060718091";
+  print_int (  102030405060708090 +Int
+                            10001);
+
+  expect_text "102030405060718091";
+  print_int (               10001 +Int
+               102030405060708090);
+
+  expect_text "120034";
+  print_int   (120000 +Int 34);
+};
 
 main = {
   expect_i32 567;
   print_i64  567;
-  ()
+
+  test-ints !;
 };

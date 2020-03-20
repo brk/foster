@@ -127,7 +127,7 @@ struct CodegenPass {
   void codegen(LLModule*);
   void codegen(LLExpr*);
   llvm::Value* emitPrimitiveOperation(const std::string& op,
-                                      llvm::IRBuilder<>& b,
+                                      llvm::IRBuilder<>& b, TypeAST* assoc,
                                       const std::vector<Value*>& args);
 
   llvm::Value* lookupFunctionOrDie(const std::string& fullyQualifiedSymbol);

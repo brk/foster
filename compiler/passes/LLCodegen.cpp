@@ -1225,19 +1225,33 @@ llvm::Value* LLVar::codegen(CodegenPass* pass) {
 llvm::Value* LLInt::codegen(CodegenPass* pass) {
   ASSERT(this->type && this->type->getLLVMType());
   llvm::Type* ty = this->type->getLLVMType();
-
-  llvm::Value* small = ConstantInt::get(ty, this->getAPInt());
+  auto arb = this->getAPInt();
 
   // Our type could be an LLVM type, or an arbitrary precision int type.
+
+  // Common case: small fixnums.
   if (ty->isIntegerTy()) {
-    return small;
+    return ConstantInt::get(ty, arb);
   }
 
-  // MP integer constants that do not fit in 64 bits
-  // must be initialized from string data.
-  ASSERT(false) << "codegen for int values that don't fit"
-                << " in 64 bits not yet implemented";
-  return NULL;
+  int targetWidth = getWordTySize(); // TODO be less conservative
+  llvm::Type* targetTy = getWordTy(builder);
+
+  if (arb.isSignedIntN(targetWidth - 1)) {
+    Value* smallWordToIntFn = pass->mod->getFunction("foster_prim_smallWord_to_Int");
+    ASSERT(smallWordToIntFn != NULL);
+    auto small = ConstantInt::getSigned(targetTy, arb.getSExtValue());
+    return builder.CreateCall(smallWordToIntFn, { small });
+  } else {
+    // MP integer constants that do not fit in 64 bits
+    // must be initialized from string data.
+    //Value* msg_array = builder.CreateGlobalString(cstr);
+    //Value* msg = builder.CreateBitCast(msg_array, builder.getInt8PtrTy());
+    ASSERT(false) << "codegen for Int values that don't fit"
+                  << " in 31 bits not yet implemented";
+    return NULL;
+  }
+
 }
 
 llvm::Value* LLKillProcess::codegen(CodegenPass* pass) {
@@ -1675,7 +1689,7 @@ llvm::Value* LLCallPrimOp::codegen(CodegenPass* pass) {
     llvm::CallInst* handler = builder.CreateCall(fn, { builder.getInt64(this->tag) }, "handler");
     return handler;
   }
-  return pass->emitPrimitiveOperation(this->op, builder,
+  return pass->emitPrimitiveOperation(this->op, builder, this->type,
                                       codegenAll(pass, this->args));
 }
 
@@ -1706,9 +1720,7 @@ llvm::Value* emitFnArgCoercions(Value* argV, llvm::Type* expectedType) {
     argV = emitBitcast(argV, expectedType, "spec2gen");
   }
 
-  // In code like  v = case _ of _ -> expect_i32 ...    _ -> ()
-  // we'll be forced to bind the result of expect_i32 (which is actually
-  // void, not unit) to a unit-typed variable. If so, just use a null pointer.
+  // If we're calling a C function that returns void, conjure up a unit value.
   if (argV->getType()->isVoidTy() && str(expectedType) == "{}*") {
     argV = getNullOrZero(llvm::dyn_cast<llvm::PointerType>(expectedType));
   }

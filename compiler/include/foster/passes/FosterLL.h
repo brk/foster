@@ -204,6 +204,7 @@ public:
     : LLExpr("LLInt") {
     // Debug builds of LLVM don't ignore leading zeroes when considering
     // needed bit widths.
+    if (bitSize == 0) { bitSize = cleanTextBase10.size() * 4; }
     int bitsLLVMneeds = (std::max)(intSizeForNBits(bitSize),
                                    (unsigned) cleanTextBase10.size());
     int ourSize = intSizeForNBits(bitsLLVMneeds);
@@ -227,7 +228,7 @@ public:
     if (n <= 32) return 32;
     if (n <= 64) return 64;
     if (n == 128) return 128;
-    return 0;
+    return n;
   }
 };
 

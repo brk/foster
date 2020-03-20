@@ -269,7 +269,7 @@ void storeNullPointerToSlot(llvm::Value* slot) {
 }
 
 
-
+// ASSUMPTION: not cross compiling; host and target sizes match.
 bool is32Bit() {
   #if defined(__x86_64__) || defined(__x86_64)
     return false;

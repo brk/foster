@@ -18,7 +18,8 @@ where
 import Data.Map as Map(fromList, toList, Map)
 import Data.Char as Char(isLetter)
 
-import Text.PrettyPrint.ANSI.Leijen
+import Text.PrettyPrint.ANSI.Leijen(Pretty(..), text, hsep, (<+>),
+                                    parens, tupled, empty)
 
 import Foster.Base
 import Foster.Kind
@@ -157,12 +158,15 @@ effectsClosed effs = effectsExtends effs nullFx
 --------------------------------------------------------------------------------
 
 i8  = PrimIntAST I8
-i16 = PrimIntAST I16
+--i16 = PrimIntAST I16
 i32 = PrimIntAST I32
 i64 = PrimIntAST I64
 i1  = PrimIntAST I1
+iwd = PrimIntAST IWd
 f64 = TyAppAST (TyConAST "Float64") []
 f32 = TyAppAST (TyConAST "Float32") []
+int = TyAppAST (TyConAST "Int") []
+big = TyAppAST (TyConAST "IntInf") []
 
 primTyVars tyvars = map (\v -> (v, KindAnySizeType)) tyvars
 boxedTyVars tyvars = map (\v -> (v, KindPointerSized)) tyvars
@@ -206,6 +210,12 @@ primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     ,(,) "expect_f32_bare"         $ mkProcType [f32] []
 
     ,(,) "foster__logf64"          $ mkProcType [f64] [f64]
+
+    ,(,) "foster_prim_Word_isSmall"     $ mkProcType [iwd] [i1]
+    ,(,) "foster_prim_Int_to_smallWord" $ mkProcType [int] [iwd]
+    ,(,) "foster_prim_smallWord_to_Int" $ mkProcType [iwd] [int]
+    ,(,) "foster_prim_Int_to_BigInt"    $ mkProcType [int] [big]
+    ,(,) "foster_prim_BigInt_to_Int"    $ mkProcType [big] [int]
 
     -- Calls to this function are internally transformed to AIAllocArray nodes.
     -- forall a, i32 -> Array a
@@ -419,10 +429,10 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "u64-to-f64-unsafe"    $ (,) (mkFnType [i64] [f64] ) $ PrimOp "uitofp_f64" i64
   ,(,) "s32-to-f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "sitofp_f64" i32
   ,(,) "u32-to-f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "uitofp_f64" i32
-  ,(,) "f64-as-i64"    $(,) (mkFnType [f64] [i64]     ) $ PrimOp "bitcast_i64" f64
-  ,(,) "i64-as-f64"    $(,) (mkFnType [i64] [f64]     ) $ PrimOp "bitcast_f64" i64
-  ,(,) "f32-as-i32"    $(,) (mkFnType [f32] [i32]     ) $ PrimOp "bitcast_i32" f32
-  ,(,) "i32-as-f32"    $(,) (mkFnType [i32] [f32]     ) $ PrimOp "bitcast_f32" i32
+  ,(,) "f64-as-i64"    $(,) (mkFnType [f64] [i64]     ) $ PrimOp "bitcast" i64
+  ,(,) "i64-as-f64"    $(,) (mkFnType [i64] [f64]     ) $ PrimOp "bitcast" f64
+  ,(,) "f32-as-i32"    $(,) (mkFnType [f32] [i32]     ) $ PrimOp "bitcast" i32
+  ,(,) "i32-as-f32"    $(,) (mkFnType [i32] [f32]     ) $ PrimOp "bitcast" f32
   ,(,) "s64-to-f32-unsafe"    $ (,) (mkFnType [i64] [f32] ) $ PrimOp "sitofp_f32" i64
   ,(,) "u64-to-f32-unsafe"    $ (,) (mkFnType [i64] [f32] ) $ PrimOp "uitofp_f32" i64
   ,(,) "s32-to-f32-unsafe"    $ (,) (mkFnType [i32] [f32] ) $ PrimOp "sitofp_f32" i32
@@ -431,6 +441,13 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "f32-to-u32-unsafe"    $ (,) (mkFnType [f32] [i32] ) $ PrimOp "fptoui_f32_i32" i32
   ,(,) "f32-to-f64"           $ (,) (mkFnType [f32] [f64] ) $ PrimOp "fpext_f64" f32
   ,(,) "f64-to-f32"           $ (,) (mkFnType [f64] [f32] ) $ PrimOp "fptrunc_f32" f64
+  ,(,) "Int-isSmallWord"      $ (,) (mkFnType [iwd] [i1 ] ) $ PrimOp "Int-isSmallWord" i1
+  ,(,) "Int-isSmall"          $ (,) (mkFnType [int] [i1 ] ) $ PrimOp "Int-isSmall" i1
+  ,(,) "Int-toSmall"          $ (,) (mkFnType [int] [iwd] ) $ PrimOp "Int-toSmall" i1 -- TODO: Precondition: Int-isSmall
+  ,(,) "Int-ofSmall"          $ (,) (mkFnType [iwd] [int] ) $ PrimOp "Int-ofSmall" i1 -- TODO: Precondition: Int-isSmallWord
+  ,(,) "Int-toBig"            $ (,) (mkFnType [int] [big] ) $ PrimOp "bitcast" big -- TODO: Precondition: !isSmall
+  ,(,) "Int-ofBig"            $ (,) (mkFnType [big] [int] ) $ PrimOp "bitcast" int -- No precondition!
+  
   ] ++ concatMap fixnumPrimitives [I32, I64, I8, I16, IWd, IDw]
     ++ sizeConversions
     ++ flonumPrimitives "f64" f64

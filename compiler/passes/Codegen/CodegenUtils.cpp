@@ -360,19 +360,57 @@ createPowi(IRBuilder<>& b, llvm::Value* vd, llvm::Value* vi) {
   return CI;
 }
 
+llvm::Function*
+getFunction(IRBuilder<>& b, const std::string& name) {
+  Module* m = b.GetInsertBlock()->getParent()->getParent();
+  auto func = m->getFunction(name);
+  ASSERT(func != NULL) << "MISSING " << name << " IN MODULE! :(";
+  return func;
+}
+
+llvm::Value*
+createCall1(IRBuilder<>& b, const std::string& name, llvm::Value* vd) {
+  return b.CreateCall(getFunction(b, name), { vd });
+}
 
 llvm::Value*
 createFtan(IRBuilder<>& b, llvm::Value* vd) {
-  Module*    m = b.GetInsertBlock()->getParent()->getParent();
-  llvm::Value* tanf = m->getFunction(
-      (vd->getType()->isFloatTy() ? "foster__tanf32" : "foster__tanf64"));
-  ASSERT(tanf != NULL) << "NO foster__tanfDD IN MODULE! :(";
-  return builder.CreateCall(tanf, { vd });
+  auto name = vd->getType()->isFloatTy() ? "foster__tanf32" : "foster__tanf64";
+  return createCall1(b, name, vd);
+}
+
+llvm::Value*
+createIntIsSmallWord(IRBuilder<>& b, llvm::Value* vd) {
+  auto func = getFunction(b, "foster_prim_Int_isSmallWord");
+  // Open-coded autowrapper.
+  return b.CreateCall(func, { b.CreateBitCast(vd, func->getFunctionType()->getParamType(0)) });
+}
+
+llvm::Value*
+createIntIsSmall(IRBuilder<>& b, llvm::Value* vd) {
+  auto func = getFunction(b, "foster_prim_Int_isSmall");
+  // Open-coded autowrapper.
+  return b.CreateCall(func, { b.CreateBitCast(vd, func->getFunctionType()->getParamType(0)) });
+}
+
+llvm::Value*
+createIntToSmall(IRBuilder<>& b, llvm::Value* vd) {
+  auto func = getFunction(b, "foster_prim_Int_to_smallWord");
+  // Open-coded autowrapper.
+  return b.CreateCall(func, { b.CreateBitCast(vd, func->getFunctionType()->getParamType(0)) });
+}
+
+llvm::Value*
+createIntOfSmall(IRBuilder<>& b, llvm::Value* vd) {
+  auto func = getFunction(b, "foster_prim_smallWord_to_Int");
+  auto intType = getFunction(b, "foster_prim_Int_to_smallWord")->getFunctionType()->getParamType(0);
+  auto call = b.CreateCall(func, { vd }); // Open-coded autowrapper.
+  return b.CreateBitCast(call, intType);
 }
 
 llvm::Value*
 CodegenPass::emitPrimitiveOperation(const std::string& op,
-                                    IRBuilder<>& b,
+                                    IRBuilder<>& b, TypeAST* assoc,
                                     const std::vector<Value*>& args) {
   Value* VL = args.at(0);
        if (op == "negate") { return b.CreateNeg(VL, "negtmp", this->config.useNUW, this->config.useNSW); }
@@ -420,11 +458,12 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "fptoui_f32_i32") { return b.CreateFPToUI(VL, b.getInt32Ty(), "fptoui_f32_i32tmp"); }
   else if (op == "sitofp_f32")     { return b.CreateSIToFP(VL, b.getFloatTy(),  "sitofp_f32tmp"); }
   else if (op == "uitofp_f32")     { return b.CreateUIToFP(VL, b.getFloatTy(),  "uitofp_f32tmp"); }
-  else if (op == "bitcast_f64")    { return b.CreateBitCast(VL, b.getDoubleTy(), "bitcast_f64tmp"); }
-  else if (op == "bitcast_f32")    { return b.CreateBitCast(VL, b.getFloatTy(),  "bitcast_f32tmp"); }
-  else if (op == "bitcast_i64")    { return b.CreateBitCast(VL, b.getInt64Ty(),  "bitcast_i64tmp"); }
-  else if (op == "bitcast_i32")    { return b.CreateBitCast(VL, b.getInt32Ty(),  "bitcast_i32tmp"); }
+  else if (op == "bitcast")        { return b.CreateBitCast(VL, assoc->getLLVMType(), "bitcast_tmp"); }
   else if (op == "ftan")           { return createFtan(b, VL); }
+  else if (op == "Int-isSmallWord"){ return createIntIsSmallWord(b, VL); }
+  else if (op == "Int-isSmall")    { return createIntIsSmall(b, VL); }
+  else if (op == "Int-toSmall")    { return createIntToSmall(b, VL); }
+  else if (op == "Int-ofSmall")    { return createIntOfSmall(b, VL); }
 
   ASSERT(args.size() > 1) << "CodegenUtils.cpp missing implementation of " << op << "\n";
 

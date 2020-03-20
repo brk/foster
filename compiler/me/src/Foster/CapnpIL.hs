@@ -250,6 +250,7 @@ mkPbInt ty int = PBInt { clean_of_PBInt = u8fromString (show $ litIntValue int)
 fixnumTypeSize (LLPrimInt IWd) = (-32)
 fixnumTypeSize (LLPrimInt IDw) = (-64)
 fixnumTypeSize (LLPrimInt isb) = intSizeOf isb
+fixnumTypeSize (LLNamedType "Int") = 0
 fixnumTypeSize other = error $ "Expected int literal to have LLPrimInt type; had " ++ show other
 
 isTraced ty = case ty of
