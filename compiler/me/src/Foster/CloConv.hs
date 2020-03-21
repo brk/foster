@@ -223,7 +223,7 @@ closureConvertBlocks bbg = do
                         other        -> other
           tag <- getTagForEffect effb
           return (mkMiddle $ CCLetVal id (ILLiteral (LLPrimInt I64)
-                                          (LitInt $ mkLiteralIntWithTextAndBase (toInteger tag) "" 10)), ent)
+                                          (LitInt $ mkLiteralIntWithText (toInteger tag) "")), ent)
 
         ILetVal id (ILCallPrim ty (PrimOp "lookup_handler_for_effect" eff) []) -> do
           tag <- getTagForEffect eff

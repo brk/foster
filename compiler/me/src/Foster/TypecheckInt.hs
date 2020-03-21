@@ -4,7 +4,7 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 module Foster.TypecheckInt(typecheckInt, typecheckRat,
-      tryParseInt, ParseIntResult(..), sanityCheck) where
+      tryParseInt, sanityCheck) where
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
@@ -19,28 +19,14 @@ import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeTC
 
-data PIR_FailureCase = PIR_InvalidDigit
-                     | PIR_NeedsTooManyBits
-
-data ParseIntResult = PIR_Success LiteralInt
-                    | PIR_Failure PIR_FailureCase String
-
-tryParseInt :: SourceRange -> String -> ParseIntResult
+tryParseInt :: SourceRange -> String -> Either String LiteralInt
 tryParseInt rng originalText =
-    let maxBits = 64 in
     let (negated, (clean {-without sign-}, expt, _cleanWithExpt), base) = extractCleanBase originalText in
     case () of
-      _ | not (onlyValidDigitsIn clean base) -> PIR_Failure PIR_InvalidDigit $
-                ("Cleaned integer must contain only valid digits for base " ++ show base ++ ": " ++ clean)
-      _ ->
-        let int = precheckedLiteralInt originalText negated clean expt base in
-        let activeBits = litIntMinBits int in
-        if  activeBits <= maxBits
-          then PIR_Success int
-          else PIR_Failure PIR_NeedsTooManyBits $
-                ("Integer literals are currently limited to " ++ show maxBits ++ " bits, but "
-                                  ++ clean ++ " requires " ++ show activeBits ++
-                                  "\n" ++ highlightFirstLine rng)
+      _ | not (onlyValidDigitsIn clean base) -> Left $
+                ("Cleaned integer must contain only valid digits for base " ++ show base ++ ": " ++ clean
+                 ++ "\n" ++ highlightFirstLine rng)
+      _ -> Right $ precheckedLiteralInt originalText negated clean expt base
  where
         onlyValidDigitsIn :: String -> Int -> Bool
         onlyValidDigitsIn str lim =
@@ -56,7 +42,7 @@ tryParseInt rng originalText =
                 nat  = if expt < 0 then error "tryParseInt can't handle negative exponent!"
                          else  nat0 * (10 ^ expt)
                 integerValue = (if negated then -1 else 1) * nat in
-            mkLiteralIntWithTextAndBase integerValue originalText base
+            mkLiteralIntWithText integerValue originalText
 
         -- Precondition: string contains only valid hex digits.
         parseRadixRev :: Integer -> String -> Integer
@@ -95,8 +81,8 @@ extractCleanBase raw = do
 typecheckInt :: ExprAnnot -> String -> Expected TypeTC -> Tc (AnnExpr RhoTC)
 typecheckInt annot originalText expTy = do
   case tryParseInt (rangeOf annot) originalText of
-    PIR_Failure _ msg -> tcFails [red (text msg)]
-    PIR_Success int -> do
+    Left  msg -> tcFails [red (text msg)]
+    Right int -> do
       -- No need to unify with Infer here because tcRho does it for us.
       ty <- case expTy of
                Infer _ -> newTcUnificationVarTau $ "int-lit"

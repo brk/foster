@@ -292,7 +292,6 @@ data Literal = LitInt   !LiteralInt
 data LiteralInt = LiteralInt { litIntValue   :: !Integer
                              , litIntMinBits :: !Int
                              , litIntText    :: !String
-                             , litIntBase    :: !Int
                              } deriving (Show, Eq)
 
 data LiteralFloat = LiteralFloat { litFloatValue   :: !Double
@@ -301,8 +300,8 @@ data LiteralFloat = LiteralFloat { litFloatValue   :: !Double
 
 powersOfTwo = [2^k | k <- [1..]]
 
-mkLiteralIntWithTextAndBase integerValue originalText base =
-  LiteralInt     integerValue activeBits originalText base
+mkLiteralIntWithText integerValue originalText =
+  LiteralInt         integerValue activeBits originalText
     where
         activeBits =
              if integerValue == -2147483648 then 32 -- handle edge cases directly

@@ -527,9 +527,9 @@ tcRhoText rng b expTy = do
                if fromEnum (T.head b) >= 256
                  then tcFails [text $ "Rune cannot be represented as an Int8:"
                                ++ showSourceRange (rangeOf rng)]
-                 else return $ AnnLiteral rng t (LitInt $ LiteralInt (fromIntegral $ fromEnum $ T.head b) 8  (T.unpack b) 10)
+                 else return $ AnnLiteral rng t (LitInt $ LiteralInt (fromIntegral $ fromEnum $ T.head b) 8  (T.unpack b))
              PrimIntTC I32 | T.length b == 1 ->
-                      return $ AnnLiteral rng t (LitInt $ LiteralInt (fromIntegral $ fromEnum $ T.head b) 32 (T.unpack b) 10)
+                      return $ AnnLiteral rng t (LitInt $ LiteralInt (fromIntegral $ fromEnum $ T.head b) 32 (T.unpack b))
              t -> tcFails [text $ "Unable to check Text constant in context"
                                     ++ " expecting non-Text type " ++ show t
                                     ++ showSourceRange (rangeOf rng)]

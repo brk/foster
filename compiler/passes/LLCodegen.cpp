@@ -1222,6 +1222,19 @@ llvm::Value* LLVar::codegen(CodegenPass* pass) {
   return v;
 }
 
+// APInt's toString() method doesn't implement base 256 conversion.
+// The returned bytes are "reversed", with the least significant
+// stored at index zero, instead of the most significant.
+std::string APInt_toBase256_lsb0(llvm::APInt tmp) {
+  std::string rv;
+  while (tmp.getBoolValue()) {
+    uint8_t digit = uint8_t(tmp.getRawData()[0]);
+    rv.push_back(digit);
+    tmp.lshrInPlace(8);
+  }
+  return rv;
+}
+
 llvm::Value* LLInt::codegen(CodegenPass* pass) {
   ASSERT(this->type && this->type->getLLVMType());
   llvm::Type* ty = this->type->getLLVMType();
@@ -1238,18 +1251,20 @@ llvm::Value* LLInt::codegen(CodegenPass* pass) {
   llvm::Type* targetTy = getWordTy(builder);
 
   if (arb.isSignedIntN(targetWidth - 1)) {
+    // Small integer constants can be constructed cheaply by tagging a machine word.
     Value* smallWordToIntFn = pass->mod->getFunction("foster_prim_smallWord_to_Int");
     ASSERT(smallWordToIntFn != NULL);
     auto small = ConstantInt::getSigned(targetTy, arb.getSExtValue());
     return builder.CreateCall(smallWordToIntFn, { small });
   } else {
-    // MP integer constants that do not fit in 64 bits
-    // must be initialized from string data.
-    //Value* msg_array = builder.CreateGlobalString(cstr);
-    //Value* msg = builder.CreateBitCast(msg_array, builder.getInt8PtrTy());
-    ASSERT(false) << "codegen for Int values that don't fit"
-                  << " in 31 bits not yet implemented";
-    return NULL;
+    // Large integer constants must be initialized from binary data.
+    std::string bytes = APInt_toBase256_lsb0(arb);
+    Value* base256 = emitByteArray(pass, bytes, ".intlit_");
+    Value* Int_ofBase256 = pass->mod->getFunction("Int-ofBase256");
+    ASSERT (Int_ofBase256) << "Arbitrary-precision integers need a constructor in scope!";
+    auto call = builder.CreateCall(Int_ofBase256, { base256, builder.getInt1(this->negated) });
+    call->setCallingConv(parseCallingConv("fastcc"));
+    return call;
   }
 
 }

@@ -106,14 +106,14 @@ struct Letable {
   type    @ 2 : Type $optional;
 
   names   @ 3 : List(Text); # repeated
-  pbint   @ 4 : PBInt $optional;
+  intlit  @ 4 : IntLit $optional;
   dval    @ 5 : List(Float64); # optional
 
   boolvalue     @ 6 : List(Bool); # optional
   bytesvalue    @ 7 : Data $optional;
   stringvalue   @ 8 : Text $optional;
 
-  allocinfo   @ 9 : PbAllocInfo $optional;
+  allocinfo   @  9 : PbAllocInfo $optional;
   callinfo    @ 10 : PbCallInfo $optional;
   callasm     @ 11 : PbCallAsm $optional;
 
@@ -208,9 +208,10 @@ struct Proc {
   linkage    @ 5 : Linkage;
 }
 
-struct PBInt {
-  clean   @ 0 : Text; # in base 10
-  bits    @ 1 : Int32;
+struct IntLit {
+  hexnat    @ 0 : Text;
+  tysize    @ 1 : Int32;
+  negate    @ 2 : Bool;
 }
 
 struct PbCoroPrim {

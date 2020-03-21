@@ -21,6 +21,7 @@ import qualified Foster.Letable as IL
 import qualified Data.ByteString as BS(writeFile)
 import Data.Foldable(toList)
 import Data.Map as Map(lookup)
+import Numeric(showHex)
 
 import qualified FosterIL_capnp as FC
 import           FosterIL_capnp
@@ -215,7 +216,7 @@ defaultLetable ty tag =
         , tag_of_Letable         = tag
         , type_of_Letable        = StrictlyJust (dumpType ty)
         , names_of_Letable       = []
-        , pbint_of_Letable       = StrictlyNone
+        , intlit_of_Letable      = StrictlyNone
         , dval_of_Letable        = []
         , boolvalue_of_Letable   = []
         , bytesvalue_of_Letable  = StrictlyNone
@@ -237,16 +238,17 @@ dumpLiteral ty lit =
     LitText  t -> (defaultLetable ty Iltext) {
                         stringvalue_of_Letable = StrictlyJust $ u8fromText t }
     LitInt int -> (defaultLetable ty Ilint) {
-                            pbint_of_Letable = StrictlyJust $ mkPbInt ty int }
+                          intlit_of_Letable = StrictlyJust $ mkInt ty int }
     LitFloat f -> (defaultLetable ty Ilfloat) {
                             dval_of_Letable = [litFloatValue f] }
 
     LitByteArray a -> (defaultLetable ty Ilbytearray) {
                                     bytesvalue_of_Letable = StrictlyJust $ a }
 
-mkPbInt ty int = PBInt { clean_of_PBInt = u8fromString (show $ litIntValue int)
-                       , bits_of_PBInt  = fromIntegral (fixnumTypeSize ty) }
-
+mkInt ty int = IntLit { hexnat_of_IntLit = u8fromString (showHex (abs $ litIntValue int) "")
+                      , tysize_of_IntLit = fromIntegral (fixnumTypeSize ty)
+                      , negate_of_IntLit = (litIntValue int < 0) }
+ 
 fixnumTypeSize (LLPrimInt IWd) = (-32)
 fixnumTypeSize (LLPrimInt IDw) = (-64)
 fixnumTypeSize (LLPrimInt isb) = intSizeOf isb
@@ -560,6 +562,7 @@ dumpVarIdent i =
     }
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+{-# SCC dumpILProgramToCapnp #-}
 dumpILProgramToCapnp :: ILProgram -> FilePath -> IO ()
 dumpILProgramToCapnp m outpath = do
     bytes <- srModule (dumpProgramToModule m)

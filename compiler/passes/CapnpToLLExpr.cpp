@@ -167,13 +167,13 @@ LLExpr* parseGlobalAppCtor(const pb::Letable::Reader& e) {
   return new LLGlobalAppCtor(parseCtorInfo(e.getCtorinfo()), args);
 }
 
-LLExpr* parsePbInt(const pb::PBInt::Reader& i) {
-  return new LLInt(i.getClean(), i.getBits());
+LLExpr* parseIntlit(const pb::IntLit::Reader& i) {
+  return new LLInt(i.getHexnat(), i.getTysize(), i.getNegate());
 }
 
 LLExpr* parseInt(const pb::Letable::Reader& e) {
-  ASSERT(e.hasPbint());
-  return parsePbInt(e.getPbint());
+  ASSERT(e.hasIntlit());
+  return parseIntlit(e.getIntlit());
 }
 
 LLExpr* parseFloat(const pb::Letable::Reader& e) {

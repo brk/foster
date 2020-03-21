@@ -227,7 +227,7 @@ kNormalize st expr =
         ti <- qt t
         let n = length exprs
             i32 = PrimIntTC I32
-            litint = LitInt (LiteralInt (fromIntegral n) 32 (show n) 10)
+            litint = LitInt (LiteralInt (fromIntegral n) 32 (show n))
             arr = AnnAllocArray _rng (error "hmm") (AnnLiteral _rng i32 litint) ati (Just amr) NoZeroInit
             (ArrayTypeTC ati) = t
             isLiteral (Left _) = True

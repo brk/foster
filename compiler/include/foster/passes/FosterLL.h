@@ -198,28 +198,23 @@ struct IntAST;
 struct LLInt : public LLExpr {
 private:
   llvm::APInt* apint;
+  bool negated;
 
 public:
-  explicit LLInt(const std::string& cleanTextBase10, int bitSize)
-    : LLExpr("LLInt") {
-    // Debug builds of LLVM don't ignore leading zeroes when considering
-    // needed bit widths.
-    if (bitSize == 0) { bitSize = cleanTextBase10.size() * 4; }
-    int bitsLLVMneeds = (std::max)(intSizeForNBits(bitSize),
-                                   (unsigned) cleanTextBase10.size());
-    int ourSize = intSizeForNBits(bitsLLVMneeds);
-    ASSERT(ourSize > 0) << "Support for arbitrary-precision ints "
-                  << "(bit size " << bitsLLVMneeds << ") not yet implemented "
-                  << "for integer " << cleanTextBase10;
-    ASSERT(abs(bitSize) <= ourSize) << "Integer '" << cleanTextBase10 << "' had "
-                               << bitSize << " bits; needed " << ourSize;
-    apint = new llvm::APInt(ourSize, cleanTextBase10, 10);
+  explicit LLInt(const std::string& hexnat, int tySize, bool negate)
+    : LLExpr("LLInt"), apint(nullptr), negated(negate) {
+    // Arbitrary precision integer literals have no fixed type size.
+    if (tySize == 0) { tySize = (hexnat.size() * 4) + (negate ? 1 : 0); }
+    // The front end doesn't know how many bits a Word is; we do that here.
+    int bitSize = computeIntSize(tySize);
+    apint = new llvm::APInt(bitSize, hexnat, 16);
+    if (negate) { apint->negate(); }
   }
 
   virtual llvm::Value* codegen(CodegenPass* pass);
   llvm::APInt& getAPInt() { return *apint; }
 
-  unsigned intSizeForNBits(int n) const {
+  unsigned computeIntSize(int n) const {
     if (n == -32) return getWordTySize();
     if (n == -64) return getWordTySize() * 2;
     if (n <= 1)  return 1;
