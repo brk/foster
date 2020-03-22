@@ -26,6 +26,24 @@ Int-ofWord = { w =>
   end
 };
 
+noinline_llvm_Int-ofBase256 = { b => n => Int-ofBase256 b n };
+
+Int-ofBase256 :: { Array Int8 => Bool => Int };
+Int-ofBase256 = { b => negate =>
+  REC loop = { i => idx =>
+    next = (intMulInt32 i 256) `intAdd`
+           (intFromInt32 (b.[idx] |> zext_i8_to_i32));
+    if idx ==Int32 0
+      then next
+      else loop next (idx -Int32 1)
+    end
+  };
+  
+  u = loop (intZero !) (arrayLength32 b -Int32 1);
+  b = if negate then intNegate u else u end;
+  Int-ofBig b
+};
+
 (+Int) :: { Int => Int => Int };
 (+Int) = { x => y =>
   case (prim Int-isSmall x, prim Int-isSmall y)
@@ -56,7 +74,8 @@ test-ints = {
     print_int i;
   };
 
-  expect 10 10;
+/*
+  // Literals that fit in 63 bits:
   expect_text "102030405060708090";
   print_int 102030405060708090;
 
@@ -74,6 +93,16 @@ test-ints = {
 
   expect_text "120034";
   print_int   (120000 +Int 34);
+*/
+
+  // Larger literals:
+
+  expect_text "22213632912598862894889094373145828843847681";
+  print_int  0xFF0000000000000000000000000000000001;
+
+  expect_text "22213632912598862894889094373145828843847681";
+  print_int (Int-ofBase256 b"\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xFF" False);
+
 };
 
 main = {
