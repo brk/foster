@@ -292,8 +292,8 @@ void fprint_bytes_from(FILE* f, foster_bytes* array, uint32_t n, uint32_t off) {
   uint32_t lim = (std::min)(n + off, c);
   // If (n + off) overflows, then lim < off,
   if (lim > off) {
-    uint32_t size = lim - off;
-    fprintf(f, "%.*s", size, &array->bytes[off]);
+    uint32_t count = lim - off;
+    fwrite(&array->bytes[off], 1, count, f);
   }
 }
 

@@ -68,19 +68,10 @@ arrays8 = {
   expect_i32 99;
   print_i8 a.[opaquely_i32 2];
 
-  (trunc32to8 0) >^ a.[3];
-  prim_print_bytes_stdout a 6 0;
-  expect_abc_bare !; // embedded null byte causes suffix to be lost.
-
   expect_i32 k;
   print_i64 (prim_arrayLength a);
 
 };
-
-expect_abc_bare = {
-  expect_text_bare "abc";
-};
-
 
 arrays-indexing = { i8 : Int8 => i32 : Int32 => i64 : Int64 => iw : Word =>
                     ir32  : ( % rir : Int32 : True ) =>

@@ -1,6 +1,6 @@
 snafuinclude PreludeFixnums "prelude-fixnums";
 
-base64-encode-bare :: { Array Int8 => Array Int8 };
+base64-encode-bare :: { Array Int8 => (Array Int8, Int32) };
 base64-encode-bare = { a =>
   alen = arrayLength32 a;
   res = newArrayReplicate (base64-encode-size alen) 0;
@@ -35,14 +35,16 @@ base64-encode-bare = { a =>
           of 1 -> emit3v target a.[from] 0                0;
                   c >^ res.[target +Int32 2];
                   c >^ res.[target +Int32 3];
+                  target +Int32 4
           of 2 -> emit3v target a.[from] a.[from +Int32 1] 0;
                   c >^ res.[target +Int32 3];
-          of _ -> ()
+                  target +Int32 4
+          of _ -> target
         end
     end
   };
-  go 0 0;
-  res
+  actualLen = go 0 0;
+  (res, actualLen)
 };
 
 
@@ -65,7 +67,10 @@ noinline_llvm_base64-encode-bare4 = { a =>
   };
 
   emit4 = { from => target =>
-    emit4v target a.[from] a.[from +Int32 1] a.[from +Int32 2] a.[from +Int32 3]
+    emit4v target a.[from]
+                  a.[from +Int32 1]
+                  a.[from +Int32 2]
+                  a.[from +Int32 3]
   };
 
   REC go = { from => target =>

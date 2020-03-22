@@ -23,5 +23,6 @@ vehemence of any carnal pleasure.""");
 
 try-base64-encoding-testcase = { inp => oup =>
   expect_text oup;
-  print_text (textFromRawASCII (base64-encode-bare inp));
+  let (raw, actualLen) = base64-encode-bare inp;
+  print_text (TextFragment raw actualLen);
 };
