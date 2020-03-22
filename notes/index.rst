@@ -9,24 +9,24 @@ Foster Notes
 .. toctree::
    :maxdepth: 2
 
-   misc
-   test
+   dive-into-foster
+   design-notes
    features
+   checklist
+
+Internal Details
+================
+
+.. toctree::
+   :maxdepth: 2
+
    compiler-overview
-   arrays
-   strings
-   hashtables
-   mutation
-   parallelism
-   polymorphism
+   misc
+   compiler-history
    inlining
    space-safety
-   bench
    optimization-examples
-   checklist
-   compiler-history
 
-   dive-into-foster
 
 .. Indices and tables
 .. ==================

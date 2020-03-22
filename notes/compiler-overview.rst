@@ -1,6 +1,44 @@
 Compiler Overview
 =================
 
+
+Compiler middle-end files, in rough order of what code gets invoked during compilation::
+
+    Base.hs
+    ExprAST.hs
+    ProtobufFE.hs
+    TypeAST.hs
+    Main.hs
+    Context.hs
+    Typecheck.hs
+    Infer.hs
+    AnnExpr.hs
+    KNExpr.hs
+    KNStaticChecks.hs
+    Monomo.hs
+    CFG.hs
+    CloConv.hs
+    PatternMatch.hs
+    CapnpIL.hs
+
+Evolution of compiler type structure:
+
+.. graphviz::
+
+   digraph compilerpasses {
+      "ModuleAST TypeAST" -> "AnnExpr TypeTC";
+      "AnnExpr TypeTC" -> "AnnExprIL TypeIL";
+      "AnnExprIL TypeIL" -> "AIExpr TypeIL";
+      "AIExpr TypeIL" -> "KNExpr TypeIL" [label=" kNormalizeModule"];
+      "KNExpr TypeIL" -> "(KNExpr' RecStatus MonoType) MonoType" [label=" monomorphize"];
+      "(KNExpr' RecStatus MonoType) MonoType" -> "(KNExpr' RecStatus MonoType) MonoType" [label=" runStaticChecks"];
+      "(KNExpr' RecStatus MonoType) MonoType" -> "(KNExpr' RecStatus MonoType) MonoType'" [label=" knLoopHeaders"];
+      "(KNExpr' RecStatus MonoType) MonoType'" -> "(KNExpr' RecStatus MonoType) MonoType''" [label=" knSinkBlocks"];
+      "(KNExpr' RecStatus MonoType) MonoType''" -> "CFBody MonoType" [label=" cfg-ize"];
+      "CFBody MonoType" -> "CCBody TypeLL" [label=" closureConvertAndLift"];
+      "CCBody TypeLL" -> "..." [label=" prepForCodegen, etc"];
+   }
+
 In broad strokes:
 
 * ``grammar/foster.g`` defines an ANTLR 3 grammar for Foster,
@@ -76,31 +114,16 @@ In broad strokes:
   platform-specific linking details. It is in turn wrapped by
   ``scripts/runtest.py``.
 
-.. graphviz::
-
-   digraph compileroverview {
-      "ModuleAST TypeAST" -> "AnnExpr TypeTC";
-      "AnnExpr TypeTC" -> "AnnExprIL TypeIL";
-      "AnnExprIL TypeIL" -> "AIExpr TypeIL";
-      "AIExpr TypeIL" -> "KNExpr TypeIL" [label=" kNormalizeModule"];
-      "KNExpr TypeIL" -> "(KNExpr' RecStatus MonoType) MonoType" [label=" monomorphize"];
-      "(KNExpr' RecStatus MonoType) MonoType" -> "(KNExpr' RecStatus MonoType) MonoType" [label=" runStaticChecks"];
-      "(KNExpr' RecStatus MonoType) MonoType" -> "(KNExpr' RecStatus MonoType) MonoType'" [label=" knLoopHeaders"];
-      "(KNExpr' RecStatus MonoType) MonoType'" -> "(KNExpr' RecStatus MonoType) MonoType''" [label=" knInline, knSinkBlocks"];
-      "(KNExpr' RecStatus MonoType) MonoType''" -> "CFBody MonoType" [label=" cfg-ize"];
-      "CFBody MonoType" -> "CCBody TypeLL" [label=" closureConvertAndLift"];
-      "CCBody TypeLL" -> "..." [label=" prepForCodegen, etc"];
-   }
-
 Pass Ordering Issues
-====================
+--------------------
 
 * Inlining is improved when loop headers are inserted earlier, because it's
   generally more profitable to specialize a loop rather than unroll it once.
   But the decision of whether a particular recursive call should become a
-  call to the loop header or the original function is improved when the results
+call to the loop header or the original function is improved when the results
   of inlining are known (in particular, for recursive calls appearing within
   local functions).
+
    * If a recursive call could be redirected to the loop header but is not,
      then (A) the external function remains recursive, rather than a non-rec
      wrapper around the recursive loop header, and (B) the recursion consumes
@@ -112,18 +135,7 @@ Pass Ordering Issues
      "proper" choice would result in an allocation-free (top-level) function.
 
 Compiler Details
-================
-
-.. toctree::
-
-        closureconversion
-        compiled-examples
-        coro
-        gc
-        optimizations
-        match-compilation
-        recursive-bindings
-        c-types
+----------------
 
 .. include:: closureconversion.rst
 .. include:: compiled-examples.rst
@@ -479,9 +491,23 @@ the possibility of inlining, because the closure **escapes** the scope of ``x``.
    Research question: how common is it to encounter call sites with one known
    callee, where the callee may escape the scope of its innermost free variable?
 
+Platform Targeting
+------------------
+
+One longer-term goal is to expand Foster's reach and utility by making it easy
+to target multiple execution platforms: both multiple native environments with
+varying OSes and CPUs, and the web, at minimum.
+
+Issues to consider:
+
+ * Code generation: native vs bytecode
+ * Control flow primitives
+ * Dynamic code loading/JITs
+ * Platform abstractions: low-level ones like SIMD, sockets, timing, IO, execution contexts,
+   and higher-level ones like graphics.
 
 JavaScript/asm.js
------------------
+~~~~~~~~~~~~~~~~~
 
 Advantages of targeting JS: industrial-strength JITs + GCs on both browsers and servers.
 
@@ -492,6 +518,7 @@ max 20 workers; spotty support for shared array buffers due to Spectre; no
 access to DOM, or window/document/parent).
 
 * Web platform:
+
  * WebSockets, WebGL, canvas, ...
  * asm.js doesn't provide support for coroutines directly
    but `Stopify <https://stopify.org/>`_ provides first-class continuations for JavaScript.
@@ -511,12 +538,13 @@ access to DOM, or window/document/parent).
 
 
 WebAssembly
------------
+~~~~~~~~~~~
 
 Advantages of targeting wasm: industrial strength JITs, community momentum, clean design.
 
 The main disadvantages of wasm are related to its early stage; the MVP is, well, minimal,
 and many useful features and platform aspects are `future work <https://webassembly.org/docs/future-features/>`_.
+
   * SIMD support for WASM is being worked on.
   * Direct support for advanced control flow for coroutines/effects is TBD.
     In the meantime, it's possible to do trampoline-style transformations, I guess.
@@ -538,7 +566,7 @@ Binaryen provides an Asyncify compiler pass which provides support
 for pausing/resuming wasm code, which (I think!) can be used to implement coroutines.
 
 Emscripten
-----------
+~~~~~~~~~~
 
 The Emscripten project represents one possible route
 to running Foster in a browser.

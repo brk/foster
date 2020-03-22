@@ -40,6 +40,7 @@ Miscellanous Tidbits of Knowledge
   This capacity subsumes built-in control flow operators like ``&&`` and ``||`` in C.
 * Shift amounts are silently masked to avoid undefined behavior.
 * Arithmetic operations (``+``, ``-``, ``*``) come in several variants:
+
   * Regular, which has 2s-complement overflow semantics,
     and thus does not distinguish between signed & unsigned bit patterns.
   * Checked, in signed/unsigned variants, which immediately terminates the program
@@ -70,6 +71,7 @@ Miscellanous Tidbits of Knowledge
 * For now, such wrappers cannot be generalized to unboxed structs.
   There are several reasons for this -- no fundamental impediments, just
   annoyingly unclear design decisions to settle:
+  
     * In LLVM's abstract semantics, values in SSA registers cannot be moved
       by a GC. So an unboxed tuple must either not contain any GCable pointers,
       or the tuple must be stored in memory.
@@ -169,3 +171,4 @@ We can also compile to a native executable::
 
     fosterc   simplegl.foster --nativelib SDL --bitcode sdlWrap.bc --backend-optimize -o fostergl.exe
 
+.. include:: bench.rst

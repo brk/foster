@@ -1,5 +1,5 @@
 Mutation
-========
+--------
 
 Basic data model::
 
@@ -72,7 +72,7 @@ about it:
 
 
 Representation: pointer tagging
--------------------------------
++++++++++++++++++++++++++++++++
 
 If an object in memory is potentially aliased, AND we want to update its tag,
 then its tag must be on the object, not on the pointers to the object.
@@ -85,22 +85,23 @@ This implies that immutability brings locality benefits,
 because we don't need to peek through the pointer to match the tag!
 
 Mutability And Algebraic Data Types
------------------------------------
++++++++++++++++++++++++++++++++++++
 
 * ``h.n.v`` syntax only makes sense if the types of h and n guarantee the
   presence of n and v fields. This leaves a choice of two alternatives:
-    1) Require that there is only one leg in the union, or generalize to:
+
+    1) Require that there is only one leg in the union, or generalize to (2):
     2) Require that every leg of the union provide the same field with the same
        layout at the same offset position.
 
 Other thoughts
---------------
++++++++++++++++++++++++++++++++
 
 * Having the compiler convert Array-of-Tuples to Tuple-of-Arrays is a very desirable optimization.
 
 
 Garbage Collection
-------------------
++++++++++++++++++++++++++++++++
 
 With copying GC, it's illegal to keep a bare pointer to a field live across a
 potential GC point, because the field address is derived from the object's base
@@ -153,7 +154,7 @@ Potential solutions:
 
 
 Boxing and Unboxed Representations
-----------------------------------
+++++++++++++++++++++++++++++++++++
 
 The nbody benchmark's C implementation uses the following data layout::
 

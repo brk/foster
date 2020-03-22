@@ -1,5 +1,5 @@
 Arrays
-======
+------
 
 Allowing arrays as global variables permits much easier translation of some
 C code, but doing so is only safe if those arrays are immutable.
@@ -24,7 +24,7 @@ types of primitive arrays, as well as APL/J-style rank typing and
 DPJ-style deterministic parallelism.
 
 Types
------
++++++
 
 Musings::
 

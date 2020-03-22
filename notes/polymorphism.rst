@@ -1,5 +1,5 @@
 The Problems of Polymorphism
-============================
+----------------------------
 
 Greg Morrisett lays out some issues with compiling polymorphism:
 http://www.eecs.harvard.edu/~greg/cs256sp2005/lec15.txt

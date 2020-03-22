@@ -1,5 +1,5 @@
 Benchmarking Infrastructure
-===========================
+---------------------------
 
 The benchmark infrastructure separates the tasks of
 collecting and analyzing/visualizing benchmark data.
@@ -39,7 +39,7 @@ Eventually, we should support comparisons between multiple such files.
                                       [LLVMopt=O0,sse=no,lang=other,date=2013-10-30@11.36.15] {'inputs': ['850']}
 
 timings.json
-------------
+++++++++++++
 
 The format of the ``timings.json`` file would be, for example::
 
@@ -56,7 +56,7 @@ The format of the ``timings.json`` file would be, for example::
     },
 
 stats_n.json
-------------
+++++++++++++
 
 The format of the ``stats_n.json`` file varies with compile-time options. One example::
 
@@ -75,7 +75,7 @@ The format of the ``stats_n.json`` file varies with compile-time options. One ex
     },
 
 Overview
---------
+++++++++
 
 Conceptually, we want to take a list of (input, output) dictionaries,
 and produce a list of structured organized views of the provided data.

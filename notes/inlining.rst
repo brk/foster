@@ -1,5 +1,5 @@
 Inlining
-========
+--------
 
 Consider this source program::
 
@@ -195,7 +195,7 @@ TODO test to see whether/how often inlining increases allocation in practice?
 
 
 Inlining Size Threshold
------------------------
++++++++++++++++++++++++
 
 The ``addtobits`` benchmark
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -391,7 +391,7 @@ statistically significant performance differences on the order of milliseconds.
 
 
 More Intuition
---------------
+++++++++++++++
 
 Input program::
 

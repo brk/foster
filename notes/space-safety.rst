@@ -1,5 +1,5 @@
 Space Safety
-============
+------------
 
 Appel & Shao identify *space safety* as an important consideration for
 implementations of languages which do not allow manual memory management.
@@ -47,7 +47,7 @@ directly, because doing so would lead to incorrect behavior on subsequent
 calls.)
 
 Block Sinking
--------------
++++++++++++++
 
 In theory, block sinking of functions which do not get contified can change
 the allocation rate of programs (for the worse) by moving functions into
