@@ -115,11 +115,6 @@ optDisableAllArrayBoundsChecks("unsafe-disable-array-bounds-checks",
   cl::cat(FosterOptCat));
 
 static cl::opt<bool>
-optDisableInliningOnAllFosterFunctions("avoid-broken-llvm-gcroot-inlining",
-  cl::desc("Some versions of LLVM perform inlining in a way that breaks GC roots..."),
-  cl::cat(FosterOptCat));
-
-static cl::opt<bool>
 optForceNUW("unsafe-use-nuw",
   cl::desc("Forcibly tag all relevant LLVM instructions with nuw"),
   cl::cat(FosterOptCat));
@@ -469,8 +464,6 @@ int main(int argc, char** argv) {
     config.emitLifetimeInfo  = optEnableLifetimeInfo;
     config.disableAllArrayBoundsChecks
                              = optDisableAllArrayBoundsChecks;
-    config.disableInliningOnAllFosterFunctions
-                             = optDisableInliningOnAllFosterFunctions;
 
     foster::codegenLL(prog, module, config);
   }

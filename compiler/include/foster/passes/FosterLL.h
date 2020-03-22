@@ -44,7 +44,6 @@ struct CodegenPassConfig {
   bool countClosureCalls;
   bool emitLifetimeInfo;
   bool disableAllArrayBoundsChecks;
-  bool disableInliningOnAllFosterFunctions;
 };
 
 std::ostream& operator<<(std::ostream& out, LLExpr& expr);
