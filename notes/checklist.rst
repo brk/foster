@@ -1,7 +1,7 @@
 The Programming Language Checklist
 ==================================
 
-One possible completion of http://colinm.org/language_checklist.html ::
+One possible completion of https://www.famicol.in/language_checklist.html ::
 
     You appear to be advocating a new:
     [*] functional  [*] imperative  [ ] object-oriented  [ ] procedural [ ] stack-based
@@ -31,7 +31,7 @@ One possible completion of http://colinm.org/language_checklist.html ::
     [-] reflection  [?] subtyping  [-] multiple inheritance  [-] operator overloading
     [+] algebraic datatypes  [+] recursive types  [+] polymorphic types
     [-] covariant array typing  [-] monads  [?] dependent types
-    [+] infix operators  [+] nested comments  [-] multi-line strings  [-] regexes
+    [+] infix operators  [+] nested comments  [+] multi-line strings  [-] regexes
     [+] call-by-value  [-] call-by-name  [-] call-by-reference  [-] call-cc
 
     The following philosophical objections apply:
