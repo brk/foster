@@ -108,38 +108,46 @@ prints out a bunch of debugging/timing info along the way::
 Syntax
 ~~~~~~
 
-Files are a collection of top-level function definitions (for now, there are
-no global constants or arrays). Functions can have type annotations::
+Files are a collection of top-level *items*: definitions of constant values like
+functions, integers, and arrays, plus declarations of external symbols.
+Functions look like this::
+
+    incrementByOne = { a => a +Int32 1 };
+
+A function has zero or more parameters, each one followed by a thick arrow (``=>``).
+Type inference determines that the parameter ``a``, and the function's result,
+both have type ``Int32``.
+It's often easier to read code when functions are given explicit type annotations::
 
     foo :: { Int32 => Int32 => Int32 };
     foo = { a => b => a +Int32 b };
 
-You can also put type annotations on individual parameters::
+You can also put type annotations inline, on individual parameters::
 
     foo = { a : Int32 => b => a +Int32 b };
 
-Type inference determines that the ``b`` parameter and return type of ``foo``
-are both ``Int32`` in this instance.
-
-Like in Haskell, you can use regular words as infix operators with backticks,
-and turn operators into "regular" names with parens::
+Like in Haskell, you can use ordinary names as infix operators with backticks,
+and turn operators into names with parens::
 
     // (foo 20 3) will print 123
     foo = { x => y =>
       bar = { a => b => (((+Int32) a b) +Int32 100 };
+      //                  ^^^^^^^^ prefix notation for infix operator
       x `bar` y
+      //^^^^^ infix notation for a regular function call
     };
 
-Obviously, ``//`` is a line comment. Less obviously, ``/* ... */`` is a
-nesting block comment.
+Line comments use ``//`` like in C++.
+Less obviously, ``/* ... */`` is a *nesting* block comment.
 
 Operators
 ~~~~~~~~~
 
 Unlike C, there's no overloading or implicit conversion, so ``+Int32``
 is a separate function from ``+Int64``. Also, signedness is a property of
-(comparison) operations rather than values: there are separate
-``>UInt32`` and ``>SInt32`` functions, but no separate add/mul/etc functions.
+operations rather than values: there are separate
+``>UInt32`` and ``>SInt32`` primitives, but no separate add/mul/etc functions,
+which produce identical bit values for "signed" and "unsigned" values.
 
 There are explicit checked add/sub/mul operators,
 which do come in signed and unsigned variants:
@@ -147,10 +155,13 @@ which do come in signed and unsigned variants:
 These operators dynamically check for wraparound (in LLVM, using intrinsics
 which can do things like check hardware overflow flags).
 On overflow, the checked operator variants currently abort the program.
+These primitives will likely be overhauled in the future; for now they can
+help estimate the potential cost of pervasive (location-precise) overflow checking.
 
-Bitwise operators are spelled like ``bitand-Int32``. The operators are
+Bitwise operators are spelled like ``bitand-Int32``. The primitive bitwise operators are
 ``bitand``, ``bitor``, ``bitxor``, ``bitshl``, ``bitlshr``, ``bitashr``, and ``bitnot``.
 There's also ``ctlz`` and ``ctpop``.
+There are higher-level functions defined in ``stdlib/bitwise/bitwise.foster``.
 
 Expressions
 ~~~~~~~~~~~
@@ -175,10 +186,10 @@ With uncurried arguments, the pipeline operator must be primitive in
 order to work with functions of any number of arguments.
 Having multiple arguments also raises the question of which argument
 "receives" the pipe's input.
-In some languages, the answer is the function's first argument;
-in Foster, the pipeline operator applies its argument to the *last* 
+In some languages, the answer is the function's first argument.
+Foster's pipeline operator applies its argument to the *last* 
 argument, not the first.
-As the example shows, this potential ambiguity can be resolved with
+As the previous example shows, this potential ambiguity can be resolved with
 minimal syntactic overhead with a function literal.
 
 .. todo
@@ -215,46 +226,22 @@ Pattern matching doesn't currently support arrays.
 One interesting expression form is ``(__COMPILES__ e)``,
 which evaluates (at compile time) to a boolean value reflecting whether
 the provided expression was well-typed.
+This can be useful to make sure that "improper" usage of an API
+is being prevented by the type system.
+
+.. note::
+
+  Pedantic note: ``__COMPILES__`` does not undo the effects of type checking
+  its argument; thus, by modifying unification variables, adding a
+  ``__COMPILES__`` primitive to working code can cause other code to fail
+  to type check properly.
 
 Some expressions are represented with primitive functions rather than
 dedicated syntax. For example, instead of Python-style ``[1, 2, 3]``
 for arrays, we get by with ``prim mach-array-literal 1 2 3``.
 It's ugly but it retains flexibility.
-
-Coroutines
-~~~~~~~~~~
-
-Foster supports Lua-style stackful coroutines.
-The following code::
-
-    co = coro_create { x : Int32 =>
-           print_i32 x;
-           y = coro_yield 6666;
-           coro_yield y;
-           9999
-    };
-
-    print_i32 (coro_invoke co 10);
-    print_i32 (coro_invoke co 20);
-    print_i32 (coro_invoke co 30);
-
-
-will print out::
-
-    10
-    6666
-    20
-    9999
-
-Interrupts
-~~~~~~~~~~
-
-The Foster compiler has a flag (``--optc-arg=-foster-insert-timer-checks``)
-to insert flag checks, ensuring that a finite number
-of instructions are executed between flag checks. A timer thread in the
-runtime sets the flag every 16ms. Eventually, these timer interrupts should
-cause a coroutine yield, which will enable (nested) scheduling. For now,
-the runtime just prints a message whenever the flag trips.
+Better syntax will likely come in the future, but a big question is:
+for what data structures?
 
 
 Statements
@@ -278,6 +265,125 @@ At file scope, we can also define new datatypes::
 The ``$`` marker is required to syntactically identify data constructors
 in patterns and data type definitions (but not for e.g. function calls).
 
+
+Effects and Handlers
+~~~~~~~~~~~~~~~~~~~~
+
+Foster includes a system of algebraic effects and handlers.
+The design is inspired by much prior work, especially (but not limited to) Koka.
+
+For those with a systems background: effects and handlers are the
+linguistic analogue to system calls. They enable a lot of cool stuff!
+
+Typechecking tracks each function's *effects*, which describe the sorts of
+actions that might be triggered while executing the function.
+As with types, effects can be inferred or written out explicitly.
+Syntactically, effects are "attached" to a function's return type.
+For example, if ``foo`` is a procedure which takes and returns unit values,
+and might have effects ``Eff1`` and ``Eff2``, we'd write its signature like so::
+
+    foo :: { () => () @ (Eff1, Eff2) };
+
+To use higher order functions, we must be able to describe effects abstractly.
+For example, when we call the ``listMap`` function, the effect of the call
+is precisely the effect of the function we provide. Written out in full,
+the ``listMap`` function has a signature like so::
+
+    listMap :: forall (a:Type) (b:Type) (e:Effect)
+                  { List a => { a => b @ e } => List b @ e };
+
+We also sometimes want to combine effects. For example, suppose we wanted to
+map a list, but also print a message to the console for each element::
+
+    listMapAndLog :: forall (a:Type) (b:Type) (e:Effect)
+                  { List a => { a => b @ e } => List b @ (Log|e) };
+    listMapAndLog = { list => fn =>
+      listMap list { a => log "."; fn a }
+    };
+
+The ``(Log|e)`` syntax is called an *open effect*; it just means that calling
+``listMapAndLog`` function can perform whatever effect(s) ``fn`` can do,
+plus also logging.
+
+A *closed effect* describes a known and finite set of effects.
+
+One subtlety here is that it's often convenient to write a finite list of known
+effects in types, but generally what we really mean by that is "at least these
+effects", not "exactly these effects". That is, what we usually want is "closed"
+syntax but open semantics. Accordingly, the way to actually write a closed effect
+is with a trailing closed bar and no variable, like ``(Foo, Bar|)``.
+Writing ``(Foo, Bar)`` by itself will be implictly translated to an open effect
+``(Foo, Bar|e)`` and the effect variable ``e`` will be implicitly quantified over.
+
+
+At the value level, we can also declare our own domain-specific effects.
+An example to demonstrate the syntax for doing so::
+
+    effect MyEffectType (a:Boxed)
+      of $MyEffect      a           => Int32;
+      of $MyOtherEffect Int32 Int64 => a;
+
+This allows ``(MyEffectType Foo)`` to be used as an effect, for any boxed type Foo.
+It also declares functions to *perform* particular effects.
+In this example, the compiler would generate symbols with the following types:
+
+    do_MyEffect      :: forall (a:Boxed) { a              => Int32 @(MyEffectType a) };
+    do_MyOtherEffect :: forall (a:Boxed) { Int32 => Int64 => a     @(MyEffectType a) };
+
+Handlers allow us to give specific behavior to a user-defined effect.
+An example of the syntax is::
+
+    handle some-effectful-expression !
+      of $MyEffect x -> resume 0
+      of $MyOtherEffect x y -> resume (generate-an-a !)
+
+      as { fin => ... }
+    end
+
+Within the right-hand-side of each "arm" of the handler,
+the compiler defines a function called ``resume`` which takes
+a value of the effect constructor's return type. Calling the ``resume``
+function transfers control back to call that was performing the effect.
+A handler doesn't have to call ``resume``; for example, if we wanted to give
+our effect exception-like semantics, we would not resume the code that threw
+the exception. The ``resume`` function is a *tiny* bit magical: it can be stored
+in the heap, but it can be called at most once. (The current implementation simply
+halts the program; in the future we might have it raise a different effect in turn.)
+
+One other subtlety: The ``resume`` function re-executes the target code with the
+same effect handler in place. This is a convenient default, but for more advanced
+uses of effect, such as for doing user-level scheduling, we sometimes want to
+execute the target code in the presence of a different handler. To do this,
+the compiler also silently defines a symbol called ``resume_bare``.
+
+The ``as`` clause is optional; it allows a transformation to be applied to the
+return value of the handled code. The difference between ``handle e |> xform of ... end``
+and ``handle e ... as xform end`` is that the former runs the ``xform`` function
+"under" the handler, and the latter runs it "outside" of the handler. Either way,
+the ``xform`` function only applies to the value returned by the handled expression,
+not the return value of the handler arms (should they choose to not call ``resume``).
+
+Built atop the effect system, we support Lua-style coroutines as a library.
+
+Others have used algebraic effects and handlers to tackle parsing, concurrency,
+exceptions, ambient/implicit variables, and generators. These use cases could
+all be handled by Foster's primitives.
+
+One example which Foster cannot directly encode is nondeterministic choice, which
+is usually implemented by having the effect handler call the ``resume`` function
+multiple times. This is an intentional tradeoff: sacrificing some generality for
+a faster implementation and a simpler mental model.
+
+
+Interrupts
+~~~~~~~~~~
+
+The Foster compiler has a flag (``--optc-arg=-foster-insert-timer-checks``)
+to insert flag checks, ensuring that a finite number
+of instructions are executed between flag checks. A timer thread in the
+runtime sets the flag every 16ms. Eventually, these timer interrupts should
+cause a coroutine yield, which will enable (nested) scheduling. For now,
+the runtime just prints a message whenever the flag trips.
 
 
 Types

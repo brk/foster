@@ -1,7 +1,15 @@
-Inlining
---------
+Inlining Example
+----------------
 
-Consider this source program::
+.. note::
+
+  Since this was originally written, the inliner was rewritten.
+  I haven't checked to see if the behavior is still the same;
+  it may not be, because I think the new inliner is more
+  conservative about duplicating code.
+
+Consider this source program (the functions have been given conspicuous names
+to ease their identification in a larger AST)::
 
     main = {
       aaaaaaaaa "1"
