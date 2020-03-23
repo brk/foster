@@ -44,6 +44,61 @@ data Context ty = Context { contextBindings   :: ContextBindings ty
                           , contextDataTypes  :: Map DataTypeName [DataType ty]
                           } deriving Show
 
+{-
+  contextBindings:
+    The primary symbol table used during type checking.
+    Extended for let bindings, function parameters, etc.
+
+  primitiveBindings: [immutable]
+    When we see   (prim X ...)   we look up X in primitiveBindings to get
+    information needed to type check the application.
+
+  primitiveOperations: [immutable]
+    When we see  (prim X ...) we use primitiveOperations to get a (possibly)
+    more structured representation of X to attach to AnnPrimitive.
+    For example, prim trunc_i32_to_i8 gets mapped to (PrimIntTrunc I32 I8).
+
+  globalIdents: [immutable]
+    Not needed by the type checker; used during closure conversion to
+    determine which bindings need to be captured and which do not.
+
+  nullCtorBindings: [immutable]
+    When we see a variable reference like Foo, we should translate it to
+    (Foo !) if (and only if) Foo is a zero-argument constructor. We separate
+    such nullary bindings from regular bindings to make the decision clearer.
+
+  pendingBindings:
+    As we traverse into the AST, we keep a stack of the bindings we're on
+    the RHS of, in order to give better symbol names to anonymous functions.
+
+  contextEffectCtorInfo: [immutable]
+    Used when typechecking effect constructors in effect patterns.
+
+  localTypeBindings:
+    Provides a mapping from type variable names to the associated
+    tau types/unification variables.
+    Extended when encountering universally quantified types (in tcType')
+    or functions (in tcSigmaFnHelper).
+
+  contextTypeBindings:
+    Used to ensure proper scoping of bound type variables.
+    Extended (by extendTyCtx) when checking foralls, as well as declarations
+    of data types and effects.
+
+  contextCtorInfo: [immutable]
+    Used during type checking when encountering a constructor pattern to look
+    up information needed to construct a type scheme (types and type formals).
+
+  contextDataTypes: [immutable]
+    Used during typechecking for several purposes:
+      to verify that (data) type constructors are used with the correct arity;
+      to verify that each data type name has exactly one definition in scope;
+      to verify that data type definitions don't have duplicate constructors.
+
+    K-normalization threads this information through to dtUnboxedRepr when
+    converting between TypeTC and TypeIL.
+-}
+
 addPendingBinding :: Context ty -> E_VarAST tx -> Context ty
 addPendingBinding ctx v = ctx { pendingBindings = (evarName v) : (pendingBindings ctx) }
 
