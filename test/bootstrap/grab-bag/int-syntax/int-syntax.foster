@@ -23,6 +23,9 @@ main = {
   expect_i1 False; print_i1( __COMPILES__ print_i32 4294967296); // 2^32
   expect_i1 False; print_i1( __COMPILES__ print_i32 4294967297); // 2^32 + 1
 
+  expect_i1 True;
+  print_i1 (255 ==Int8 -1);
+
   // === base 2 ===
   expect_i1 True; print_i1( __COMPILES__ 0b1111`1111); // 8 bits
   expect_i1 True; print_i1( __COMPILES__ 0b1111`1111`1111`1111); // 16 bits

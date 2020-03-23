@@ -17,6 +17,10 @@ main = {
   expect_float_p9f64 -1.0;
   print_float_p9f64 (z0 -f64 f0);
 
+
+  expect_float_p9f64 10.0e3;
+  print_float_p9f64 10e3;
+
   geocar-example !;
 };
 
