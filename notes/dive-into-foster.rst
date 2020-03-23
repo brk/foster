@@ -16,7 +16,7 @@ Here's the Foster version of 'Hello, World'::
     };
 
 The syntax for importing code is a temporary placeholder, mirroring the fact
-that the implementation (essentially ``#include``) is a temporary hack.
+that the implementation (essentially a slightly smarter ``#include``) is a temporary hack.
 
 Running Code
 ~~~~~~~~~~~~
@@ -110,6 +110,8 @@ Syntax
 
 Files are a collection of top-level *items*: definitions of constant values like
 functions, integers, and arrays, plus declarations of external symbols.
+Unlike in C, function definitions do not have to be given in dependency order;
+that's the compiler's job to figure out.
 Functions look like this::
 
     incrementByOne = { a => a +Int32 1 };
@@ -199,8 +201,13 @@ minimal syntactic overhead with a function literal.
   use something like ``..`` for near, mirroring/reflecting the
   connection between record field lookup and functional methods.
 
-Other expressions include numbers (for now: double precision float or
-8 to 64-bit integer), strings (Python-like syntax: single or double quotes,
+A function literal of zero arguments can be called with a postfix ``!``.
+Thus ``{ e } !`` is semantically equivalent to ``e``. This idiom is
+sometimes useful to give tightly scoped names to parts of expressions,
+as in ``{ foo = bar baz; do-something-with foo }``.
+
+Other expressions include numbers (integer literals of unconstrained size,
+plus floating point rational numbers), strings (Python-like syntax: single or double quotes,
 in single or triple-pair flavors; :doc:`strings` can be prefixed with ``r`` to
 disable escaping, or ``b`` to produce bytestrings ``(Array Int8)`` instead
 of ``Text``; there is no primitive character type), pattern matches
@@ -210,6 +217,46 @@ tuples ``(a, b, c)``, and booleans ``True``/``False``.
 Once upon a time, numbers had Fortress-style radix suffixes (like ``8FFF_16``)
 but now we use regular hex/binary prefix syntax (``0b1101``). Numbers can have
 embedded backticks to provide visual separation: ``0b`1110`1110``.
+Binary and hexadecimal (but not octal) literals are supported.
+Foster permits the usual decimal and scientific notations for floating point
+numbers, as well as the more-recent hexadecimal floating point literals (``0x1.2p3``).
+
+One cute thing the compiler will do is notify you about misleading and/or
+potentially interesting alternative ways to write floating point literals.
+Like so::
+
+    Warning: the provided rational constant
+
+      9999999999999999.0
+      ~~~~~~~~~~~~~~~~~~
+
+    is actually the floating point number 10000000000000000.0
+             or, in exponential notation: 1e16
+
+
+    Warning: the provided rational constant
+
+      x = 1.0000e+00;
+          ~~~~~~~~~~
+
+    could be written more compactly as    1e0
+                       or, alternatively: 1.0
+
+
+Integer literals are given an inferred type according to their usage; it is
+a compile-time error for the value to be out of range for the type.
+For example, the literal ``4294967295`` can be given the type ``Int32`` but
+the literal ``4294967296`` cannot be::
+
+    Unable to type check input module:
+    Int constraint violated; context-imposed exact size (in bits) was 32
+                                  but the literal intrinsically needs 33
+      print_i32 4294967296;
+                ~~~~~~~~~~
+
+Note that fixnum literals describe bit patterns; thus ``255 ==Int8 -1``
+is true, whereas ``255 ==Int32 -1`` is false; the bit pattern denoted by
+the literal ``-1`` depends on its assigned type.
 
 Pattern matches can have guards, and non-binding or-patterns are supported::
 
@@ -221,7 +268,7 @@ Pattern matches can have guards, and non-binding or-patterns are supported::
       of _ -> 300
     end
 
-Pattern matching doesn't currently support arrays.
+Pattern matching doesn't currently support arrays or string constants.
 
 One interesting expression form is ``(__COMPILES__ e)``,
 which evaluates (at compile time) to a boolean value reflecting whether
@@ -236,6 +283,17 @@ is being prevented by the type system.
   ``__COMPILES__`` primitive to working code can cause other code to fail
   to type check properly.
 
+Foster provides partial syntactic support for mutable references and arrays.
+Arrays allow indexing with postfix ``.[idx]`` syntax.
+References can be dereferenced with postfix ``^`` and assigned to with the
+(infix) ``>^`` operator.
+Unlike ML's traditional right-to-left assignment operator ``:=``,
+the reference assignment operator is left-to-right, emphasizing the
+distinction between pure binding and mutable update,
+and also mirroring the syntax for pipelined application.
+As in C, array updates may be done by combining the mutable update
+operator with the array indexing syntax.
+
 Some expressions are represented with primitive functions rather than
 dedicated syntax. For example, instead of Python-style ``[1, 2, 3]``
 for arrays, we get by with ``prim mach-array-literal 1 2 3``.
@@ -243,12 +301,18 @@ It's ugly but it retains flexibility.
 Better syntax will likely come in the future, but a big question is:
 for what data structures?
 
-
 Statements
 ~~~~~~~~~~
 
 Within a function body: bindings or expressions. Bindings of recursive functions
-use a ``REC`` marker. Destructuring binds are supported for tuples::
+use a ``REC`` marker. As with most functional languages, recursion is the most
+primitive looping construct; there is no primitive equivalent to ``for`` or ``while``
+loops. Part of the reason is that we can then also exclude ``break`` and ``continue``
+statements, which in turn means that functional abstraction becomes more powerful:
+unlike in a language with that sort of semi-structured control flow, we can
+add function wrappers to arbitrary expressions without "blocking" any such control flow.
+
+Destructuring binds are supported for tuples::
 
    ex = { p : (Int32, Int32) =>
      let (a, b) = p;
@@ -263,7 +327,7 @@ At file scope, we can also define new datatypes::
            ;
 
 The ``$`` marker is required to syntactically identify data constructors
-in patterns and data type definitions (but not for e.g. function calls).
+(as opposed to bindable variables) in patterns and data type definitions.
 
 
 Effects and Handlers
@@ -367,7 +431,8 @@ Built atop the effect system, we support Lua-style coroutines as a library.
 
 Others have used algebraic effects and handlers to tackle parsing, concurrency,
 exceptions, ambient/implicit variables, and generators. These use cases could
-all be handled by Foster's primitives.
+all be handled by Foster's primitives. Effects are a relatively recent addition
+to the language so not much code actually uses them yet.
 
 One example which Foster cannot directly encode is nondeterministic choice, which
 is usually implemented by having the effect handler call the ``resume`` function
@@ -382,7 +447,7 @@ The Foster compiler has a flag (``--optc-arg=-foster-insert-timer-checks``)
 to insert flag checks, ensuring that a finite number
 of instructions are executed between flag checks. A timer thread in the
 runtime sets the flag every 16ms. Eventually, these timer interrupts should
-cause a coroutine yield, which will enable (nested) scheduling. For now,
+cause a coroutine/effect yield, which will enable (nested) scheduling. For now,
 the runtime just prints a message whenever the flag trips.
 
 
@@ -421,39 +486,24 @@ to lift the constraint. The main issue where this comes up is
 in monadic-style encodings, where it's kinda painful to be restricted
 to only defining monads over boxed types.
 
-Effects
-*******
+One difference from traditional ML-like languages is that Foster does
+not perform implicit quantification of types describing values.
+Any polymorphism of values must be explicitly written (and thus
+explicitly scoped).
+However, Foster will perform implicit quantification of non-value
+type parameters (e.g. for effects, and regions if/when we get 'em).
 
-We have (some) support for Koka-style effects. In this example, we verify
-that passing a function which has the Net and Console effects cannot be
-passed if the caller allows only the Console effect, but is allowed if
-the caller allows Console and Net::
-
-    expect_i1 False;
-    print_i1 (__COMPILES__ {
-            chk : { { () @(Console)     } => () } =>
-            f1  :   { () @(Net,Console) }         =>
-            chk f1;
-          });
-
-    expect_i1 True;
-    print_i1 (__COMPILES__ {
-            chk : { { () @(Console,Net) } => () } =>
-            f2 :    { () @(Net,Console) }         =>
-            chk f2;
-          });
-
-However, the standard library does not yet make use of effect types.
-At the moment, they're only used for coroutines, to track what type
-the coroutine is going to yield. Any function called by a coroutine
-is allowed to yield a value (that's what it means to support stackful
-coroutines).
+Foster allows explicit instantiation of polymorphic values,
+the syntax for which (``:[t]``) echoes the syntax for array
+indexing (``:[e]``).
 
 Refinements
 ***********
 
 Unlike most languages, we support refinement types, which are statically
-checked using an SMT solver.
+checked using an SMT solver. Foster's approach, which merely propagates and
+checks refinements, is much less ambitious than LiquidHaskell,
+which seeks to infer refinements.
 
 Here's a silly example, which shows that we can require the caller pass
 only arrays of length 3::
@@ -470,6 +520,12 @@ only arrays of length 3::
     expect_i1 False;
     print_i1 (__COMPILES__ arrayLenInp3 la2);
 
+If ``T`` is a type, then ``% name : T : pred`` is a refined type
+where the property ``pred`` (which can mention ``name``) holds of all values
+which inhabit the type at runtime.
+
+As you can see, the syntax could be improved.
+
 Another silly example, demonstrating the connection between type annotations
 and the variables affected by the annotation::
 
@@ -478,6 +534,10 @@ and the variables affected by the annotation::
       prim assert-invariants (yy >=UInt32 1);
       0
     };
+
+This uses a primitive to directly query the SMT solver;
+if the SMT solver cannot show that the given property holds,
+compilation fails.
 
 Note that the SMT solver performed the following chain of reasoning:
 ``zz = yy``, and ``zz > 2``, therefore ``yy >= 1`` is true.
@@ -489,10 +549,8 @@ safely without runtime bounds checking.
 C2Foster
 --------
 
-One bit of developing-but-cool infrastructure is a program to translate
-C code into Foster code. ``csmith-minimal.sh`` generates random C programs
-(in a restricted subset of C), which ``c2foster`` then translates into
-Foster code.
+One bit of developing-but-cool infrastructure is a program called ``c2foster``
+to translate C code into Foster code.
 
 For example, given the following C code::
 
@@ -510,6 +568,8 @@ we automatically produce the following Foster code::
 
     main = { print_i32 (foo (bitshl-Int32 3 3)) };
 
+A script called ``csmith-minimal.sh`` generates random C programs
+(in a restricted subset of C), which can be fed into ``c2foster``.
 
 Implementation
 --------------
@@ -634,6 +694,8 @@ A few random bits and pieces:
 * sha256, siphash, xorshift ported from reference C implementations
 * Finger trees, maps, sets, and sequences, ported from Haskell
 * Various purely functional data structures, ported from Okasaki
+* Lazy values
+* A subset of QuickCheck
 * A few benchmarks ported from the Language Shootout Benchmarking Game.
 * A partial implementation of a TCP stack, in test/speed/foster-posix/foster-net
 * A port of a UTF-8 decoder, which uses a dash of refinement types,
@@ -649,17 +711,3 @@ Unimplemented Bits
 * Module system
 * Non-trivial use of effects
 * Any form of JIT compilation
-
-Vision
-------
-
-* ML-style type safety provides a solid foundation for a reasonable language.
-* For reasons of both maintainability and security, we'd also like to
-  track and restrict the effects of executing a given piece of code,
-  thus effect typing.
-* Given effect typing, something like extensible effects provides a unified
-  mechanism for language-based interpositioning.
-* Coroutines serve as a behind-the-scenes implementation mechanism for
-  extensible effects, and also for an independent, hugely useful,
-  in-front-of-the-scenes language mechanism.
-
