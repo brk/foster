@@ -221,6 +221,16 @@ type case FloatClassification
   of $FP_NaN
   ;
 
+fmt-FloatClassification = { x =>
+  case x
+  of $FP_Zero -> "FP_Zero"
+  of $FP_Subnormal -> "FP_Subnormal"
+  of $FP_Normal -> "FP_Normal"
+  of $FP_Infinite -> "FP_Infinite"
+  of $FP_NaN -> "FP_NaN"
+  end
+};
+
 classify-f64 :: { Float64 => FloatClassification };
 classify-f64 = { f =>
   f |> f64-as-i64 |> classify-f64-bits
@@ -232,10 +242,10 @@ classify-f64-bits = { i =>
   case e
     of 0 ->
       if (i `bitshl-Int64` 1) ==Int64 0
-        then FP_Subnormal else FP_Zero end
+        then FP_Zero else FP_Subnormal end
     of 0x7FF ->
       if (i `bitshl-Int64` 12) ==Int64 0
-        then FP_NaN else FP_Infinite end
+        then FP_Infinite else FP_NaN end
     of _ -> FP_Normal
   end
 };
@@ -248,6 +258,27 @@ isNaN-f32 = { f =>
     of _ -> False
   end
 };
+
+
+isNaN-f64 = { f =>
+  case classify-f64 f
+    of $FP_NaN -> True
+    of _ -> False
+  end
+};
+
+positiveInfinity-f32 :: { Float32 };
+positiveInfinity-f32 = { 0x7f80`0000 |> i32-as-f32 };
+
+negativeInfinity-f32 :: { Float32 };
+negativeInfinity-f32 = { 0xff80`0000 |> i32-as-f32 };
+
+positiveInfinity-f64 :: { Float64 };
+positiveInfinity-f64 = { 0x7ff0`0000`0000`0000 |> i64-as-f64 };
+
+negativeInfinity-f64 :: { Float64 };
+negativeInfinity-f64 = { 0xfff0`0000`0000`0000 |> i64-as-f64 };
+
 
 ////
 
@@ -392,4 +423,9 @@ erem-Int32 =  { a : Int32 => b : Int32 =>
   r +Int32 (i *Int32 b)
 };
 
+////
 
+isEven-Int8  = { x : Int8  => bitand-Int8  x 1 ==Int8  0 };
+isEven-Int32 = { x : Int32 => bitand-Int32 x 1 ==Int32 0 };
+isEven-Int64 = { x : Int64 => bitand-Int64 x 1 ==Int64 0 };
+isEven-Word  = { x : Word  => bitand-Word  x 1 ==Word  0 };

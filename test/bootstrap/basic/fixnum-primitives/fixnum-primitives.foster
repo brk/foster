@@ -271,6 +271,23 @@ test-float-classification = {
   expect_text "U64_F64_RoundMax";
   print_text (18446744073709550592 |> classify-u64-to-f64 |> show_tag_UInt64asFloat64Cases);
 
+  inf32 = positiveInfinity-f32 !;
+  nan32 = 0.0 `div-f32` 0.0;
+
+  inf64 = negativeInfinity-f64 !;
+  nan64 = 0.0 `div-f64` 0.0;
+
+  tf = { t => f => expect_text t; f |> classify-f32 |> fmt-FloatClassification |> print_text; };
+  tf "FP_Zero" 0.0;
+  tf "FP_Normal" 1.0;
+  tf "FP_Infinite" inf32;
+  tf "FP_NaN" nan32;
+
+  td = { t => f => expect_text t; f |> classify-f64 |> fmt-FloatClassification |> print_text; };
+  td "FP_Zero" -0.0;
+  td "FP_Normal" 1.0;
+  td "FP_Infinite" inf64;
+  td "FP_NaN" nan64;
 };
 
 show_tag_UInt64asFloat64Cases = { c =>
