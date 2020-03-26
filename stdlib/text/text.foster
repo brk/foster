@@ -55,6 +55,9 @@ textFoldASCII = { forall a:Type, t : Text => f : { Int8 => a => a } => acc:a =>
    end;
 };
 
+// Exclude the low end of the ASCII range via wraparound.
+ascii-isPrint = { b : Int8 => (b -Int8 0x20) <UInt8 0x5f };
+
 snafuBytesOfText :: { Text => Bytes };
 snafuBytesOfText = { t =>
   case t

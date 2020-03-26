@@ -117,6 +117,12 @@ enumRangeInc64 = { fst : Int64 =>
   foldRangeInc64 fst fin () { i => u => iter i }
 };
 
+enumRangeWord = { fst : Word =>
+                  fin : Word =>
+                  iter : { Word => () } =>
+  foldRangeWord fst fin () { i => u => iter i }
+};
+
 /////
 
 arrayFoldl :: forall (t:Type) (a:Type) { Array t => { t => a => a } => a => a };

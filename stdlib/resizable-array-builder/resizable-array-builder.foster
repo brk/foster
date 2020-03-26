@@ -5,18 +5,18 @@ type case ResizableArrayBuilder
                                 (Ref Word)         // actual size
      ;
 
-rabToBytes = { rab =>
+rabToRawArray = { rab =>
   let ($ResizableArrayBuilder rcap rsiz) = rab;
   v = rcap^;
   s = rsiz^;
-  if s ==Word 0
-    then bytesEmpty !
-    else
-      bytes = allocDArray (cast_Word_to_i32 s);
-      memcpy_i8_to_at_from_len bytes 0 v (cast_Word_to_i32 s);
-      bytesOfRawArray bytes
-  end
+  bytes = allocDArray (cast_Word_to_i32 s);
+  if s !=Word 0 then
+    memcpy_i8_to_at_from_len bytes 0 v (cast_Word_to_i32 s);
+  end;
+  bytes
 };
+
+rabToBytes = { rab => rab |> rabToRawArray |> bytesOfRawArray };
 
 rabPadToAlignment = { rab => align =>
   sz = rabSize rab;
@@ -85,6 +85,13 @@ rabWriteBytes = { rab => offset => bs =>
     rabWriteWord8_ rab (offset +Word idx) w8;
     idx +Word 1
   } 0;
+};
+
+// Precondition: offset + length does not overflow.
+rabFillByte :: { ResizableArrayBuilder => Word => Word => Int8 => () };
+rabFillByte = { rab => offset => length => value =>
+  // TODO grow to limit and use rabWriteWord8_
+  enumRangeWord offset (offset +Word length) { idx => rabWriteWord8 rab idx value };
 };
 
 rabCheckLimit :: { ResizableArrayBuilder => Word => () };
@@ -160,7 +167,6 @@ rabWriteWord32be = { rab => offset => value =>
   rabWriteWord8_ rab (offset +Word 2) (bitlshr-Int32 value  8 |> trunc_i32_to_i8);
   rabWriteWord8_ rab (offset +Word 1) (bitlshr-Int32 value 16 |> trunc_i32_to_i8);
   rabWriteWord8_ rab (offset +Word 0) (bitlshr-Int32 value 24 |> trunc_i32_to_i8);
-  
 };
 
 rabWriteWord64be :: { ResizableArrayBuilder => Word => Int64 => () };

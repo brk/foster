@@ -619,6 +619,8 @@ incrInt8 = { r : Ref Int8 => v = (r^ +Int8 1); v >^ r; v };
 decrInt8 = { r : Ref Int8 => v = (r^ -Int8 1); v >^ r; v };
 incrInt64 = { r : Ref Int64 => v = (r^ +Int64 1); v >^ r; v };
 decrInt64 = { r : Ref Int64 => v = (r^ -Int64 1); v >^ r; v };
+incrWord = { r : Ref Word => v = (r^ +Word 1); v >^ r; v };
+decrWord = { r : Ref Word => v = (r^ -Word 1); v >^ r; v };
 
 postincrInt32 = { r : Ref Int32 => v = r^; (v +Int32 1) >^ r; v };
 postdecrInt32 = { r : Ref Int32 => v = r^; (v -Int32 1) >^ r; v };
@@ -628,6 +630,8 @@ postincrInt8 = { r : Ref Int8 => v = r^; (v +Int8 1) >^ r; v };
 postdecrInt8 = { r : Ref Int8 => v = r^; (v -Int8 1) >^ r; v };
 postincrInt64 = { r : Ref Int64 => v = r^; (v +Int64 1) >^ r; v };
 postdecrInt64 = { r : Ref Int64 => v = r^; (v -Int64 1) >^ r; v };
+postincrWord = { r : Ref Word => v = r^; (v +Word 1) >^ r; v };
+postdecrWord = { r : Ref Word => v = r^; (v -Word 1) >^ r; v };
 
 // {{{
 
