@@ -50,9 +50,6 @@ tryParseInt rng originalText =
         parseRadixRev r (c:cs) = (fromIntegral $ fromJust (indexOf c))
                                + (r * parseRadixRev r cs)
 
-applyExpt val0 expt = if expt >= 0 then val0 * (10 ^ expt)
-                                   else val0 / (10 ^ (-expt))
-
 -- Given "raw" integer text like "-0x123`456",
 -- return (True, "123456", 16)
 extractCleanBase :: String -> (Bool, (String, Int, String), Int)
@@ -134,7 +131,7 @@ typecheckRat annot originalText expTy = do
                               ,text "Error was:"
                               ,indent 8 (text err) ]
           Right val0 -> do
-            let val = applyExpt val0 expt
+            let val = (val0 * (10 ** (fromIntegral expt)) :: Double)
             tcMaybeWarnMisleadingRat (rangeOf annot) cleanE val
             return (AnnLiteral annot ty (LitFloat $ LiteralFloat val originalText))
     _ -> error $ "Unexpected rational literal base " ++ show base
