@@ -165,6 +165,11 @@ static llvm::cl::opt<bool>
 optC2FVerbose("c2f-verbose",
   llvm::cl::desc("Enable extra debugging output"),
   llvm::cl::cat(CtoFosterCategory));
+
+static llvm::cl::opt<bool>
+optC2FBareLiterals("c2f-bareliterals",
+  llvm::cl::desc("Don't wrap literals with any form of type constraint"),
+  llvm::cl::cat(CtoFosterCategory));
 /*
 static bool startswith(const std::string& a, const std::string& b) {
   return a.size() >= b.size() && a.substr(0, b.size()) == b;
@@ -198,6 +203,8 @@ std::string tyOpSuffix(const clang::Type* ty) {
   if (ty->isSpecificBuiltinType(BuiltinType::Long)) return "Int64";
   if (ty->isSpecificBuiltinType(BuiltinType::ULongLong)) return "Int64";
   if (ty->isSpecificBuiltinType(BuiltinType::LongLong)) return "Int64";
+  if (ty->isSpecificBuiltinType(BuiltinType::UInt128)) return "WordX2";
+  if (ty->isSpecificBuiltinType(BuiltinType::Int128)) return "WordX2";
   if (ty->isSpecificBuiltinType(BuiltinType::Float)) return "f32";
   if (ty->isSpecificBuiltinType(BuiltinType::Double)) return "f64";
   if (ty->isSpecificBuiltinType(BuiltinType::LongDouble)) return "f64"; // no 80-bit floats for us...
@@ -304,6 +311,8 @@ std::string tyName(const clang::Type* ty, std::string defaultName = "C2FUNK") {
   if (ty->isSpecificBuiltinType(BuiltinType::Long)) return "Int64";
   if (ty->isSpecificBuiltinType(BuiltinType::ULongLong)) return "Int64";
   if (ty->isSpecificBuiltinType(BuiltinType::LongLong)) return "Int64";
+  if (ty->isSpecificBuiltinType(BuiltinType::UInt128)) return "WordX2";
+  if (ty->isSpecificBuiltinType(BuiltinType::Int128)) return "WordX2";
   if (ty->isSpecificBuiltinType(BuiltinType::Float)) return "Float32";
   if (ty->isSpecificBuiltinType(BuiltinType::Double)) return "Float64";
   if (ty->isSpecificBuiltinType(BuiltinType::LongDouble)) return "Float64";
@@ -2772,12 +2781,19 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     if (srcTy == "Int16" && dstTy == "Int32" && isSigned) return "sext_i16_to_i32";
     if (srcTy == "Int16" && dstTy == "Int64" && isSigned) return "sext_i16_to_i64";
     if (srcTy == "Int32" && dstTy == "Int64" && isSigned) return "sext_i32_to_i64";
+    if (srcTy == "Int32" && dstTy == "Word"  && isSigned) return "sext_i32_to_Word";
+    if (srcTy == "Int32" && dstTy == "WordX2" && isSigned) return "sext_i32_to_WordX2";
+    if (srcTy == "Int64" && dstTy == "WordX2" && isSigned) return "sext_i64_to_WordX2";
     if (srcTy == "Int8"  && dstTy == "Int16" && !isSigned) return "zext_i8_to_i16";
     if (srcTy == "Int8"  && dstTy == "Int32" && !isSigned) return "zext_i8_to_i32";
     if (srcTy == "Int8"  && dstTy == "Int64" && !isSigned) return "zext_i8_to_i64";
     if (srcTy == "Int16" && dstTy == "Int32" && !isSigned) return "zext_i16_to_i32";
     if (srcTy == "Int16" && dstTy == "Int64" && !isSigned) return "zext_i16_to_i64";
     if (srcTy == "Int32" && dstTy == "Int64" && !isSigned) return "zext_i32_to_i64";
+    if (srcTy == "Int32" && dstTy == "Word"  && !isSigned) return "zext_i32_to_Word";
+    if (srcTy == "Int64" && dstTy == "Word")               return "trunc_i64_to_Word";
+    if (srcTy == "Int32" && dstTy == "WordX2" && !isSigned) return "zext_i32_to_WordX2";
+    if (srcTy == "Int64" && dstTy == "WordX2" && !isSigned) return "zext_i64_to_WordX2";
     if (srcTy == "Bool" && dstTy == "Int8" ) return "c2f_i1_to_i8";
     if (srcTy == "Bool" && dstTy == "Int32" ) return "c2f_i1_to_i32";
     return "/*unhandled cast from " + srcTy + " to " + dstTy + "*/";
@@ -2828,7 +2844,8 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
 
       if (srcTy == dstTy
        || isNestedCastThatCancelsOut(ce)
-       || isa<CharacterLiteral>(ce->getSubExpr())) {
+       || isa<CharacterLiteral>(ce->getSubExpr())
+       || (optC2FBareLiterals && guaranteedNotToTruncate(ce->getSubExpr(), dstTy, exprTy(ce)))) {
         // don't print anything, no cast needed
       } else {
         cast = intCastFromTo(srcTy, dstTy, exprTy(ce->getSubExpr())->isSignedIntegerType());
@@ -2836,7 +2853,6 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
 
       // TODO some non-failing casts are completely superfluous but others are needed
       // just to preserve types; how to tell the difference...?
-      //   guaranteedNotToTruncate(ce->getSubExpr(), dstTy, exprTy(ce))
 
       if (cast == "") {
         if (isNestedCastThatCancelsOut(ce)) {
@@ -3613,6 +3629,8 @@ bool C2F_FormatStringHandler::HandlePrintfSpecifier(const analyze_printf::Printf
 
   StringRef text(startSpecifier, specifierLen);
   const Expr* e = ce->getArg(fs.getArgIndex() + 1);
+
+  // TODO use fmt instead of type-specialized print functions.
 
   if (text == "%d") {
     std::string tynm = tyName(e->getType().getTypePtr());
