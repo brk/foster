@@ -980,8 +980,6 @@ natBitAnd = { i => j =>
   mkNatInf (natBitAnd_A (natDigits i) (natDigits j))
 };
 
-decrWord = { r => (r^ -Word 1) >^ r; r^ };
-
 print_nat = { a =>
   print_text (foster_nat_to_text_radix a 10);
 };

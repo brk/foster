@@ -53,9 +53,6 @@ primArrayBoxedWrite = { arr => idx => val =>
   end
 };
 
-incrWord = { r : Ref Word => (r^ +Word 1) >^ r };
-decrWord = { r : Ref Word => (r^ -Word 1) >^ r };
-
 seraNumDataBlocksInLastRef = { forall a:Boxed, v : Sera a =>
   case v of $Sera _idxBs _spareB _nElems _nElemsL _nSuperBs _nDataBsL -> _nDataBsL end
 };

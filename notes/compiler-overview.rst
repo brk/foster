@@ -120,7 +120,7 @@ Pass Ordering Issues
 * Inlining is improved when loop headers are inserted earlier, because it's
   generally more profitable to specialize a loop rather than unroll it once.
   But the decision of whether a particular recursive call should become a
-call to the loop header or the original function is improved when the results
+  call to the loop header or the original function is improved when the results
   of inlining are known (in particular, for recursive calls appearing within
   local functions).
 

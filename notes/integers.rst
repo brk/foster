@@ -5,12 +5,14 @@ Hardware provides fixed-width arithmetic. Unfortunately, machine arithmetic
 operations are partial due to preconditions (for division/modulus, shifts)
 and the possibility of overflow (for most operations).
 
-There are, broadly, several ways of handling this situation::
+There are, broadly, several ways of handling this situation:
+
   * "The C approach": declare the special cases to be undefined behavior.
   * "The Java approach": signed overflow behaves as two's complement; other precondition violations handled with exceptions.
   * "The Python approach": handle overflow by promoting to bignums, and precondition violations with exceptions.
 
 Other possibilities:
+
   * Use saturating instead of wrapping arithmetic; both are sometimes useful, but neither provides the mathematically-correct result.
   * Make potentially-overflowing operations perform dynamic checks to detect overflow.
   * Eliminate overflow by producing double-width results

@@ -1,7 +1,7 @@
 Preconditions (etc)
 ===================
 
-An array subscript expression ``a[i]`` can be compiled without a dynamic index
+An array subscript expression ``a.[i]`` can be compiled without a dynamic index
 check iff we can prove that ``i <=u arrayLength a`` (relying on the invariant
 that ``arrayLength a >=s 0``).
 
