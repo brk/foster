@@ -62,11 +62,11 @@ import Foster.Infer(unify)
 import Codec.CBOR.Term
 import Codec.CBOR.Read (deserialiseFromBytes)
 
-import Text.Printf(printf)
+import Text.Printf(printf) -- for toFixed
 import Foster.Output
 import Text.PrettyPrint.ANSI.Leijen((<+>), (<$>), pretty, text, line,
                                      hsep, fill, parens, vcat, red,
-                                     dullyellow)
+                                     dullyellow, Doc)
 import qualified Criterion.Measurement as Criterion(initializeTime, secs)
 
 {-
@@ -621,6 +621,9 @@ runCompiler ci_time wholeprog flagVals outfile = do
                                      mn_time cp_time sc_time nc_time pb_time
                                      (sum (modulesSourceLines wholeprog))
 
+toFixed :: Double -> Doc
+toFixed f = text $ printf "%.1f" f
+
 {-
 minusGCStats (GCStats a2 b2 c2 d2 e2 f2 g2 h2 i2 j2 k2 l2 m2 n2 o2 p2 q2 r2)
              (GCStats a1 b1 c1 d1 e1 f1 g1 h1 i1 j1 k1 l1 m1 n1 o1 p1 q1 r1)
@@ -640,7 +643,7 @@ reportFinalPerformanceNumbers ci_time nqueries querytime tc_time sr_time
        let fmt_pct time = let p = pct time nc_time
                               n = if p < 10.0 then 2 else if p < 100.0 then 1 else 0
                               padding = fill n (text "") in
-                          padding <> parens (text (printf "%.1f" p) <> text "%")
+                          padding <> parens (toFixed p <> text "%")
        let fmt str time = text str <+> (fill 11 $ text $ Criterion.secs time) <+> fmt_pct time
        
        if nqueries > 0
@@ -663,7 +666,7 @@ reportFinalPerformanceNumbers ci_time nqueries querytime tc_time sr_time
                          ,fmt "  capnp-out time:" pb_time
                          ,text "overall wall-clock time:" <+> text (Criterion.secs $ total_time)
                          ,text "# source lines:" <+> pretty wholeProgNumLines
-                         ,text "source lines/second:" <+> text (printf "%.1f" (fromIntegral wholeProgNumLines / total_time))
+                         ,text "source lines/second:" <+> toFixed (fromIntegral wholeProgNumLines / total_time)
                          ]
 
 data CompilerTimings = Timings Double Double Double Double Double Double
