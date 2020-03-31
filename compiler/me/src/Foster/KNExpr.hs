@@ -184,6 +184,11 @@ kNormalize st expr =
       E_AnnVar   _rng (v,_)   -> do v'  <- qv v  ; return $ KNVar v'
       AnnKillProcess _rng t m -> do t'  <- qt t  ; return $ KNKillProcess t' m
 
+      AnnRecord annot _ty labels es -> do
+        -- Evaluate labeled expressions in source order
+        nestedLets (map go es) (\vs ->
+          KNRecord (RecordTypeIL labels (map tidType vs)) labels vs (rangeOf annot))
+
       AnnTuple annot _ kind es -> do nestedLets (map go es) (\vs ->
                                       KNTuple (TupleTypeIL kind (map tidType vs)) vs (rangeOf annot))
       AnnAlloc  rng _t a amr  -> do nestedLets [go a] (\[x] -> KNAlloc (PtrTypeIL $ tidType x) x amr (rangeOf rng))
@@ -444,6 +449,7 @@ kNormalize st expr =
             PrimIntTrunc i1 i2 ->   return $ PrimIntTrunc i1 i2
             PrimInlineAsm ty s c x -> do ty' <- qt ty
                                          return $ PrimInlineAsm ty' s c x
+            FieldLookup name -> return $ FieldLookup name
             LookupEffectHandler tag -> return $ LookupEffectHandler tag
             CoroPrim {} -> error $ "Shouldn't yet have constructed CoroPrim!"
 
@@ -480,6 +486,8 @@ tcToIL st typ = do
                   _ -> tcFails [text "Unable to find effect" <+> text dtname]
      TyAppTC _ _ -> error $ "tcToIL saw TyApp of non-TyCon"
      PrimIntTC  size    -> do return $ PrimIntIL size
+     RecordTypeTC labels types -> do tys <- mapM q types
+                                     return $ RecordTypeIL labels tys
      TupleTypeTC ukind types -> do tys <- mapM q types
                                    kind <- unUnifiedWithDefault ukind KindPointerSized
                                    return $ TupleTypeIL kind tys
@@ -789,6 +797,9 @@ handleCoercionsAndConstraints ae = do
                                          return $ AnnAllocArray _rng _t x aty mb_amr zi
         AnnArrayLit  _rng t exprs -> do  ais <- mapRightM q exprs
                                          return $ AnnArrayLit  _rng t ais
+
+        AnnRecord rng _t labels exprs -> do aies <- mapM q exprs
+                                            return $ AnnRecord rng _t labels aies
 
         AnnTuple rng _t kind exprs -> do aies <- mapM q exprs
                                          return $ AnnTuple rng _t kind aies
@@ -1140,6 +1151,7 @@ collectFunctions :: Fn RecStatus (KNExpr' RecStatus t) t -> [(Ident, Ident, Fn R
 collectFunctions knf = go [] (fnBody knf)
   where go xs e = case e of
           KNLiteral       {} -> xs
+          KNRecord        {} -> xs
           KNTuple         {} -> xs
           KNKillProcess   {} -> xs
           KNVar           {} -> xs
@@ -1184,6 +1196,7 @@ collectMentions knf = go Set.empty (fnBody knf)
           KNArrayPoke   {} -> xs
           KNDeref       {} -> xs
           KNArrayLit _ _ litsvars -> uu xs [v | Right v <- litsvars]
+          KNRecord    _ _ vs _ -> uu xs vs
           KNTuple       _ vs _ -> uu xs vs
           KNAppCtor     _ _ vs _sr -> uu xs vs
           KNCallPrim  _ _ _ vs -> uu xs vs
@@ -1215,6 +1228,7 @@ rebuildWith rebuilder e = q e
     q x = case x of
       KNVar         {} -> x
       KNLiteral     {} -> x
+      KNRecord      {} -> x
       KNTuple       {} -> x
       KNKillProcess {} -> x
       KNCallPrim    {} -> x
@@ -1611,6 +1625,7 @@ knLoopHeaders' expr addLoopHeadersForNonTailLoops = do
     KNVar         {} -> expr
     KNKillProcess {} -> expr
     KNTyApp       {} -> expr
+    KNRecord      {} -> expr
     KNTuple       {} -> expr
     KNAllocArray  {} -> expr
     KNArrayRead   {} -> expr

@@ -42,6 +42,7 @@ data ExprSkel annot ty =
         | E_IntAST        annot String
         | E_RatAST        annot String
         | E_TupleAST      annot Kind [ExprSkel annot ty]
+        | E_RecordAST     annot [T.Text] [ExprSkel annot ty]
         | E_FnAST         annot (FnAST ty)
         | E_MachArrayLit  annot (Maybe ty) [ArrayEntry (ExprSkel annot ty)]
         -- Control flow
@@ -122,6 +123,7 @@ instance Summarizable (ExprAST t) where
             E_StoreAST    {}       -> text $ "StoreAST     "                                   ++ (exprCmnts e)
             E_ArrayRead   {}       -> text $ "SubscriptAST "                                   ++ (exprCmnts e)
             E_ArrayPoke   {}       -> text $ "ArrayPokeAST "                                   ++ (exprCmnts e)
+            E_RecordAST _ labs _   -> text $ "RecordAST " ++ show labs                         ++ (exprCmnts e)
             E_TupleAST    {}       -> text $ "TupleAST     "                                   ++ (exprCmnts e)
             E_TyApp       {}       -> text $ "TyApp        "                                   ++ (exprCmnts e)
             E_Handler     {}       -> text $ "Handler      "                                   ++ (exprCmnts e)
@@ -154,6 +156,7 @@ instance Structured (ExprAST t) where
             E_StoreAST    _rng a b       -> [a, b]
             E_ArrayRead   _rng ari       -> childrenOfArrayIndex ari
             E_ArrayPoke   _rng ari c     -> childrenOfArrayIndex ari ++ [c]
+            E_RecordAST   _rng _ exprs   -> exprs
             E_TupleAST    _rng _ exprs   -> exprs
             E_TyApp       _rng a _t      -> [a]
             E_TyCheck     _rng a _t      -> [a]
@@ -174,6 +177,7 @@ exprAnnot e = case e of
       E_BoolAST       annot _     -> annot
       E_IntAST        annot _     -> annot
       E_RatAST        annot _     -> annot
+      E_RecordAST     annot _ _   -> annot
       E_TupleAST      annot _ _   -> annot
       E_FnAST         annot _     -> annot
       E_LetAST        annot _ _   -> annot

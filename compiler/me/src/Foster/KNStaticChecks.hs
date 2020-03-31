@@ -787,6 +787,7 @@ checkBody expr facts =
     KNStore       {} -> return Nothing
     KNDeref       {} -> return Nothing
 
+    KNRecord      {} -> return Nothing
     KNTuple       {} -> return Nothing
 
     KNTyApp _t _v _ts -> -- We don't return a fact saying (x === v) because

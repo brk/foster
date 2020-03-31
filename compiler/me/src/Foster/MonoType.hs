@@ -222,6 +222,7 @@ alphaRenameMono fn = do
       case e of
       KNLiteral       {}       -> return e
       KNKillProcess   {}       -> return e
+      KNRecord        t ls vs a -> do vs' <- mapM qv vs; t' <- qt t ; return $ KNRecord t' ls vs' a
       KNTuple         t vs a   -> do vs' <- mapM qv vs; t' <- qt t ; return $ KNTuple t' vs' a
       KNCall          t v vs   -> do (v' : vs') <- mapM qv (v:vs); t' <- qt t; return $ KNCall t' v' vs'
       KNCallPrim   sr t p vs   -> do vs' <- mapM qv vs; t' <- qt t; return $ KNCallPrim   sr t' p vs'

@@ -17,7 +17,7 @@ import Control.Monad(liftM, forM, liftM, liftM2, when)
 import qualified Data.Text as T(Text, pack, unpack, length, head)
 import Data.Map(Map)
 import qualified Data.Map as Map(lookup, insert, keys, elems, fromList, toList, null)
-import qualified Data.Set as Set(toList, fromList)
+import qualified Data.Set as Set(toList, fromList, intersection, difference)
 import Data.Maybe (fromMaybe)
 import Data.IORef(readIORef,writeIORef)
 import Data.UnionFind.IO(fresh)
@@ -265,6 +265,7 @@ isValue e = case e of
   AnnCompiles     {} -> True
   E_AnnTyApp _ _ a _ -> isValue a
   AnnAppCtor _ _ _ exprs -> all isValue exprs
+  AnnRecord  _ _ _ exprs -> all isValue exprs
   AnnTuple   _ _ _ exprs -> all isValue exprs
   _ -> False
 
@@ -346,6 +347,10 @@ tcRho ctx expr expTy = do
       E_PrimAST   rng "inline-asm" [LitText s, LitText c, LitBool x] [ty] -> do
         ty' <- tcType ctx ty
         matchExp expTy (AnnPrimitive rng ty' (PrimInlineAsm ty' s c x)) "inline-asm"
+
+      --E_PrimAST   rng "record-lookup" [LitText fieldName] [expr] ->
+      --  tcRhoRecordLookup ctx rng expr fieldName expTy
+
       E_PrimAST   {} -> tcFails [text "Typecheck saw unexpected primitive", text $ show expr]
       E_IntAST    rng txt ->  typecheckInt rng txt           expTy   >>= (\v -> matchExp expTy v "tcInt")
       E_RatAST    rng txt -> (typecheckRat rng txt (expMaybe expTy)) >>= (\v -> matchExp expTy v "tcRat")
@@ -353,6 +358,7 @@ tcRho ctx expr expTy = do
       E_StringAST rng txtorbytes     -> tcRhoTextOrBytes  rng   txtorbytes expTy
       E_MachArrayLit rng mbt args    -> tcRhoArrayLit ctx rng   mbt args   expTy
       E_CallAST   rng base argtup    -> tcRhoCall     ctx rng   base argtup expTy
+      E_RecordAST rng labels exprs   -> tcRhoRecord   ctx rng   labels exprs expTy
       E_TupleAST  rng boxy exprs     -> tcRhoTuple    ctx rng   boxy exprs  expTy
       E_IfAST   rng a b c            -> tcRhoIf       ctx rng   a b c      expTy
       E_FnAST  _rng f                -> tcRhoFn       ctx       f          expTy
@@ -480,6 +486,7 @@ mkAnnPrimitive annot ctx tid =
         Just (NamedPrim tid)      -> NamedPrim tid
         Just (PrimOp nm ty)       -> PrimOp nm ty
         Just (PrimIntTrunc i1 i2) -> PrimIntTrunc i1 i2
+        Just (FieldLookup name  ) -> FieldLookup name
         Just (CoroPrim {}       ) -> error $ "mkAnnPrim saw unexpected CoroPrim"
         Just (PrimInlineAsm {}  ) -> error $ "mkAnnPrim saw unexpected PrimInlineAsm"
         Just (LookupEffectHandler tag) -> LookupEffectHandler tag
@@ -694,6 +701,96 @@ tcRhoAlloc ctx rng e1 rgn expTy = do
     matchExp expTy (AnnAlloc rng (RefTypeTC (typeTC ea)) ea rgn) "alloc"
 -- }}}
 
+analyzeLabels :: [T.Text] -> [T.Text] -> ([T.Text], [T.Text])
+analyzeLabels lX lY =
+  let sX = Set.fromList lX
+      sY = Set.fromList lY
+      sI = Set.intersection sX sY
+  in (Set.toList (Set.difference sX sI), Set.toList (Set.difference sY sI))
+
+--  G |- e1 ::: t1
+--  G |-  .......
+--  G |- en ::: tn
+--  ------------------------------------
+--  G |- (l1: e1, ..., ln: en) ::: (ln: t1, ..., ln: tn)
+tcRhoRecord :: Context SigmaTC -> ExprAnnot -> [T.Text] -> [Term] -> Expected TypeTC -> Tc (AnnExpr RhoTC)
+-- {{{
+tcRhoRecord ctx rng labels exprs expTy = do
+   rct <- case expTy of
+     Infer _                    -> tcRecord ctx rng exprs [Nothing | _ <- exprs]
+     Check t0 -> do
+       t <- repr t0
+       case t of MetaTyVarTC {} -> tcRecord ctx rng exprs [Nothing | _ <- exprs]
+                 RecordTypeTC ctxLabels ts -> do
+                      case analyzeLabels labels ctxLabels of
+                        ([], []) -> do tcRecord ctx rng exprs [Just t  | t <- ts]
+                        (extras, missings) -> do
+                          tcFailsMore [text "Mismatched labels" <+> parens (text $ show $ extras ++ missings) <+> text " for record"
+                                      , string $ highlightFirstLine (rangeOf rng)]
+                      
+                 _ -> tcFailsMore [text $ "Record cannot check against non-record type " ++ show t
+                                  , showStructure t]
+   matchExp expTy rct (highlightFirstLine (rangeOf rng))
+  where
+    tcRecord ctx rng exps typs = do
+      exprs <- typecheckExprsTogether ctx exps typs
+      let tys = map typeTC exprs
+      return $ AnnRecord rng (RecordTypeTC labels tys) labels exprs
+
+    -- Typechecks each expression in the same context
+    typecheckExprsTogether ctx exprs expectedTypes = do
+        sanityCheck (eqLen exprs expectedTypes)
+            ("typecheckExprsTogether: had different number of values ("
+               ++ (show $ length exprs)
+               ++ ") and expected types (" ++ (show $ length expectedTypes)
+               ++ ")\nThis might be caused by a missing semicolon!\n"
+               ++ show exprs ++ " versus \n" ++ show expectedTypes)
+        mapM (\(e,mt) -> case mt of
+                          Nothing -> inferRho ctx e "tuple subexpr"
+                          Just t  -> checkRho ctx e t)
+             (List.zip exprs expectedTypes)
+-- }}}
+
+--  G |- e ::: (l1: t1, ..., ln: tn)
+--  ------------------------------------
+--  G |- e.lX ::: tX
+-- tcRhoRecordLookup :: Context SigmaTC -> ExprAnnot -> Term -> T.Text -> Expected TypeTC -> Tc (AnnExpr RhoTC)
+-- -- {{{
+-- tcRhoRecordLookup ctx rng expr fieldName expTy = do
+--    base <- inferRho ctx expr "indexed-record"
+--    tV <- repr (typeTC base)
+--    let mkRecordLookup tX = (AnnCall rng (AnnPrimitive rng tX (FieldLookup fieldName)) [base])
+
+--    case (tV, expTy) of
+--       (MetaTyVarTC {}, Check tX) -> do
+--             -- Apply constraint that e has a record type mapping fieldName to tX.
+--             tcFailsMore [text $ "Record indexing cannot yet apply constraint to meta type variable " ++ show tV
+--                         , showStructure tV]
+--             -- No need to matchExp because we're just passing through the context-provided type.
+--             return (mkRecordLookup tX)
+
+--       (MetaTyVarTC {}, Infer _) -> do
+--             tX <- newTcUnificationVarTau $ "record_index"
+--             -- Apply constraint that e has a record type mapping fieldName to tX.
+--             tcFailsMore [text $ "Record indexing cannot yet apply constraint to meta type variable " ++ show tV
+--                         , showStructure tV]
+--             matchExp expTy (mkRecordLookup tX) (highlightFirstLine (rangeOf rng))
+
+--       (RecordTypeTC labels tys, _) -> do
+--         -- Check that v is a record type mapping fieldName to tX.
+--         case Map.lookup fieldName (Map.fromList (zip labels tys)) of
+--           Just tX -> do
+--                         matchExp expTy (mkRecordLookup tX) (highlightFirstLine (rangeOf rng))
+--           Nothing -> tcFailsMore [text $ "Record indexing applied to record type without field " ++ show fieldName
+--                         , indent 8 (text (show tV))
+--                         , showStructure tV]
+
+--       _ -> do                   
+--             tcFailsMore [text $ "Record indexing applied to non-record type " ++ show tV
+--                         , showStructure tV]
+
+-- }}}
+
 --  G |- e1 ::: t1
 --  G |-  .......
 --  G |- en ::: tn
@@ -736,8 +833,8 @@ tcRhoTuple ctx rng kind exprs expTy = do
 -----------------------------------------------------------------------
 
 -- G |- e1 ::: Array t
--- ---------------------  e2 ::: t2 where t2 is a word-like type
--- G |- e1 [ e2 ]  ::: t
+-- ----------------------  e2 ::: t2 where t2 is a word-like type
+-- G |- e1 .[ e2 ]  ::: t
 tcRhoArrayRead :: ExprAnnot -> SafetyGuarantee -> AnnExpr SigmaTC -> AnnExpr SigmaTC -> Expected RhoTC -> Tc (AnnExpr RhoTC)
 -- {{{
 tcRhoArrayRead annot sg base aiexpr expTy = do
@@ -1127,6 +1224,9 @@ liftEqUnifiable f u1 u2 =
     (UniVar (x1, _), UniVar (x2, _)) -> x1 == x2
     _ -> False
 
+sameLabels :: [T.Text] -> [T.Text] -> Bool
+sameLabels l1 l2 = l1 == l2
+
 -- TODO maybe this should be monadic, to compute reprs first?
 tcTypeEquiv t1 t2 =
   let q = tcTypeEquiv in
@@ -1134,6 +1234,7 @@ tcTypeEquiv t1 t2 =
      (PrimIntTC            s1 , PrimIntTC          s2   ) -> s1 == s2
      (TyConTC      tcnm1      , TyConTC   tcnm2         ) -> tcnm1 == tcnm2
      (TyAppTC      con1 tys1  , TyAppTC   con2 tys2     ) -> allP tcTypeEquiv (con1:tys1) (con2:tys2)
+     (RecordTypeTC labs1 tys1 , RecordTypeTC labs2 tys2 ) -> sameLabels labs1 labs2 && allP tcTypeEquiv tys1 tys2
      (TupleTypeTC _k1    tys1 , TupleTypeTC _k2    tys2 ) -> {- TODO kinds -} allP tcTypeEquiv tys1 tys2
      (FnTypeTC     s1 t1 fx1 c1 x1 _levels1,
       FnTypeTC     s2 t2 fx2 c2 x2 _levels2) -> allP q s1 s2 && q t1 t2 && q fx1 fx2 && liftEqUnifiable (==) c1 c2 && liftEqUnifiable (==) x1 x2 -- ignore levels?
@@ -1196,6 +1297,8 @@ equivStructureAndVarNames e1 e2 =
       (AnnAllocArray  _ _ e1 t1 mr1 z1, AnnAllocArray  _ _ e2 t2 mr2 z2)  -> q e1 e2 && tcTypeEquiv t1 t2 && mr1 == mr2 && z1 == z2
       (AnnArrayRead   _ _ ai1         , AnnArrayRead   _ _ ai2         )  -> ai1 `qai` ai2
       (AnnArrayPoke   _ _ ai1 e1      , AnnArrayPoke   _ _ ai2 e2      )  -> ai1 `qai` ai2 && q e1 e2
+      (AnnRecord      _ _ l1s e1s     , AnnRecord      _ _ l2s e2s     )  -> -- sorted labels?
+                                                                             l1s == l2s && allP q e1s e2s
       (AnnTuple       _ _ k1 e1s      , AnnTuple       _ _ k2 e2s      )  -> k1 == k2 && allP q e1s e2s
       (AnnCase        _ _ e1 c1s      , AnnCase        _ _ e2 c2s      )  -> q e1 e2 && allP qc c1s c2s
       (E_AnnVar       _ (tid1, mcid1) , E_AnnVar       _ (tid2, mcid2) )  -> qtid tid1 tid2  && mcid1 == mcid2
@@ -1588,6 +1691,7 @@ tcType' ctx refinementArgs ris typ = do
         TyVarAST      tv      -> liftM (TyVarTC tv) genUnifiableVar
         RefTypeAST    ty      -> liftM   RefTypeTC   (q ty)
         ArrayTypeAST  ty      -> liftM   ArrayTypeTC (q ty)
+        RecordTypeAST labels types -> liftM  (RecordTypeTC labels) (mapM q types)
         TupleTypeAST  k types -> liftM  (TupleTypeTC (UniConst k)) (mapM q types)
         TyConAST nam          -> return $ TyConTC nam
         TyAppAST con types    -> do kindCheckDT con types ctx
@@ -2189,6 +2293,7 @@ tcReplaceQuantifiedVars prvNextPairs ty =
         TyAppTC con tys      -> do con' <- q con
                                    tys' <- mapM q tys
                                    return $ TyAppTC con' tys'
+        RecordTypeTC labels types      -> liftM  (RecordTypeTC labels) (mapM q types)
         TupleTypeTC k  types -> liftM (TupleTypeTC k) (mapM q types)
         RefTypeTC    t       -> liftM RefTypeTC    (q t)
         ArrayTypeTC  t       -> liftM ArrayTypeTC  (q t)
@@ -2235,6 +2340,7 @@ resolveType annot origSubst origType = go origSubst origType where
                                          return $ FnTypeTC  ss' t' fx' cc cs lvls
     TyConTC    nam                 -> return $ TyConTC nam
     TyAppTC    con types           -> liftM2 TyAppTC (q con) (mapM q types)
+    RecordTypeTC labels types      -> liftM  (RecordTypeTC labels) (mapM q types)
     TupleTypeTC  kind types        -> liftM  (TupleTypeTC kind) (mapM q types)
     RefinedTypeTC v e args -> do v' <- fmapM_TID q v
                                  return $ RefinedTypeTC v' e args
@@ -2272,6 +2378,7 @@ getFreeTyVars xs = do tvs <- concatMapM (go []) xs
         PrimIntTC         {} -> return []
         TyConTC           {} -> return []
         TyAppTC con types    -> concatMapM (go bound) (con:types)
+        RecordTypeTC _labels types -> concatMapM (go bound) types
         TupleTypeTC _k types     -> concatMapM (go bound) types
         FnTypeTC ss r fx  _ _ _levels   -> concatMapM (go bound) (r:fx:ss)
         ForAllTC  tvs rho        -> go (tyvarsOf tvs ++ bound) rho
@@ -2303,6 +2410,7 @@ tcTypeWellFormed msg ctx typ = do
                                    Nothing -> tcFails [text $ "Unknown type "
                                                         ++ nm ++ " " ++ msg]
         TyAppTC con types     -> mapM_ q (con:types)
+        RecordTypeTC _labels types -> mapM_ q types
         TupleTypeTC _k types  -> mapM_ q types
         FnTypeTC  ss r fx _ _ _levels -> mapM_ q (r:fx:ss)
         RefTypeTC     ty      -> q ty
@@ -2390,6 +2498,7 @@ tcSubst subst typ = go typ
             PrimIntTC  {}           -> typ
             TyConTC    {}           -> typ
             TyAppTC  con types      -> TyAppTC (go con) (map go types)
+            RecordTypeTC labels types -> RecordTypeTC labels (map go types)
             TupleTypeTC  k  types   -> TupleTypeTC k (map go types)
             FnTypeTC  ss r fx cc fp levels -> FnTypeTC (map go ss) (go r) (go fx) cc fp levels
             ForAllTC  tvs rho       -> ForAllTC tvs (go rho)
@@ -2425,6 +2534,7 @@ annSubst subst expr = go expr
             AnnArrayLit  _rng ty exprs           -> AnnArrayLit  _rng (gt ty) (map gle exprs)
             AnnArrayRead _rng ty ari             -> AnnArrayRead _rng (gt ty) (gai ari)
             AnnArrayPoke _rng ty ari c           -> AnnArrayPoke _rng (gt ty) (gai ari) (go c)
+            AnnRecord _rng ty labels exprs       -> AnnRecord    _rng (gt ty) labels (map go exprs)
             AnnTuple _rng ty kind exprs          -> AnnTuple     _rng (gt ty) kind (map go exprs)
             AnnHandler _rng ty fx e bs mbe resid -> AnnHandler   _rng (gt ty) (gt fx) (go e) (map gb bs) (fmap go mbe) resid
             AnnCase _rng ty e bs                 -> AnnCase      _rng (gt ty) (go e) (map gb bs)
@@ -2546,6 +2656,7 @@ instance Expr TypeAST where
         PrimIntAST            {} -> []
         TyConAST              {} -> []
         TyAppAST          con types -> concatMap freeVars (con:types)
+        RecordTypeAST    _ls  types -> concatMap freeVars types
         TupleTypeAST     _k   types -> concatMap freeVars types
         FnTypeAST    s t fx _cc _cs -> concatMap freeVars (t:fx:s)
         ForAllAST  _tvs rho      -> freeVars rho

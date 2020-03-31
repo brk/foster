@@ -739,6 +739,7 @@ data FosterPrim ty = NamedPrim (TypedId ty) -- invariant: global symbol
                    | PrimOp { ilPrimOpName :: String
                             , ilPrimOpType :: ty }
                    | PrimIntTrunc IntSizeBits IntSizeBits -- from, to
+                   | FieldLookup T.Text
                    | CoroPrim  CoroPrim ty ty
                    | PrimInlineAsm ty T.Text T.Text Bool
                    | LookupEffectHandler Uniq
@@ -983,6 +984,7 @@ instance Pretty t => Pretty (FosterPrim t) where
   pretty (CoroPrim c t1 t2) = pretty c <> text ":[" <> pretty t1
                                        <> text "," <+> pretty t2
                                        <> text "]"
+  pretty (FieldLookup fieldName) = text $ "." ++ T.unpack fieldName
   pretty (PrimInlineAsm _ cnt _cns _haseffects) = text "inline-asm" <+> text (show cnt)
   pretty (LookupEffectHandler tag) = text "lookup_handler_for_effect{" <> pretty tag <> text "}"
 

@@ -361,6 +361,7 @@ data Parent ty = ParentTerm (MKTerm ty)
 data MKExpr ty =
           MKKillProcess (Uplink ty) ty T.Text
         | MKLiteral     (Uplink ty) ty Literal
+        | MKRecord      (Uplink ty) ty [T.Text] [FreeVar ty] SourceRange
         | MKTuple       (Uplink ty) ty [FreeVar ty] SourceRange
         | MKAppCtor     (Uplink ty) ty (CtorId, CtorRepr) [FreeVar ty] SourceRange
         | MKCallPrim    (Uplink ty) ty (FosterPrim ty)    [FreeVar ty] SourceRange
@@ -736,6 +737,9 @@ isExprNotTerm expr = do
       qelt (Right v)  = liftM  Right (qv v)
   case expr of
     KNLiteral   ty   lit -> Just $ (,) ".lit" $ \nu' -> return $ MKLiteral nu' ty lit
+    KNRecord    ty ls vs sr -> Just $ (,) ".rcd" $ \nu' -> do
+                                  vs' <- mapM qv vs
+                                  return $ MKRecord nu' ty ls vs' sr
     KNTuple     ty vs sr -> Just $ (,) ".tup" $ \nu' -> do
                                   vs' <- mapM qv vs
                                   return $ MKTuple nu' ty vs' sr
@@ -832,6 +836,7 @@ canRemoveIfDead :: MKExpr ty -> Bool
 canRemoveIfDead expr =
   case expr of
     MKLiteral     {} -> True
+    MKRecord      {} -> True
     MKTuple       {} -> True
     MKKillProcess {} -> False
     MKCallPrim    {} -> False -- TODO refine
@@ -850,6 +855,7 @@ parentLinkE :: MKExpr ty -> Uplink ty
 parentLinkE expr =
   case expr of
     MKLiteral     u       _t _it -> u
+    MKRecord      u     _t _l _s _r -> u
     MKTuple       u     _t _s _r -> u
     MKKillProcess u     _ty _t    -> u
     MKCallPrim    u     _ty _ _s _ -> u
@@ -882,6 +888,7 @@ freeVarsE :: MKExpr ty -> [FreeOcc ty]
 freeVarsE expr =
   case expr of
     MKLiteral     {} -> []
+    MKRecord       _     _t _ls vs _r -> vs
     MKTuple       _     _t vs _r -> vs
     MKKillProcess {} -> []
     MKCallPrim    _     _ty _ vs _ -> vs
@@ -944,6 +951,9 @@ knOfMKExpr mb_retCont expr = do
 
   case expr of
     MKLiteral     _ ty lit -> return $ KNLiteral ty lit
+    MKRecord      _ ty labs vars sr -> do
+                                     vars' <- mapM qv vars
+                                     return $ KNRecord ty labs vars' sr
     MKTuple       _ ty vars sr -> do vars' <- mapM qv vars
                                      return $ KNTuple ty vars' sr
     MKKillProcess _ ty txt     -> return $ KNKillProcess ty txt
@@ -1287,6 +1297,9 @@ copyMKExpr expr = do
       qelt (Right v)  = liftM  Right (qv v)
   case expr of
     MKLiteral     _ ty lit -> withLinkE $ \u -> return $ MKLiteral u ty lit
+    MKRecord      _ ty labs vars sr -> do
+                                     vars' <- mapM qv vars
+                                     withLinkE $ \u -> return $ MKRecord u ty labs vars' sr
     MKTuple       _ ty vars sr -> do vars' <- mapM qv vars
                                      withLinkE $ \u -> return $ MKTuple u ty vars' sr
     MKKillProcess _ ty txt     -> withLinkE $ \u -> return $ MKKillProcess u ty txt
@@ -2492,6 +2505,8 @@ pccOfTopTerm uref subterm = do
                                    put (fns, TopBindLiteral id ty lit : topbinds)
                                    go k
 
+          -- TODO handle top-level records (?)
+
           MKTuple     _ ty fvs _sr -> do
                                    !(fns, topbinds) <- get
                                    bvs <- lift $ mapM freeBinder fvs
@@ -2685,6 +2700,10 @@ letableOfSubexpr subexpr = do
   expr <- readLink "letableOfSubexpr" subexpr
   case expr of
     MKLiteral     _ ty lit -> return $ ILLiteral ty lit
+    MKRecord      _ _ty _labs vars sr -> do
+                                     vars' <- mapM qv vars
+                                     return $ ILTuple KindPointerSized vars' (AllocationSource "record" sr)
+
     MKTuple       _ ty vars sr -> do vars' <- mapM qv vars
                                      case ty of
                                        StructType {} ->
@@ -2818,6 +2837,7 @@ findMatchingArm replaceCaseWith ty v arms lookupVar = go arms NoPossibleMatchYet
                   case (e, p) of
                     (MKLiteral _ _ (LitInt  i1), PR_Atom (P_Int  _ _ i2)) -> nullary $ litIntValue i1 == litIntValue i2
                     (MKLiteral _ _ (LitBool b1), PR_Atom (P_Bool _ _ b2)) -> nullary $ b1 == b2
+                    -- TODO record patterns (?)
                     (MKTuple _ _ args _        , PR_Tuple _ _ pats) -> do
                         parts <- mapM (uncurry matchPatternAgainst) (zip pats args)
                         let pms = concatMapStatuses parts

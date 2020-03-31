@@ -95,6 +95,7 @@ convertExprAST f expr =
     E_TyApp        rng a tys    -> liftM2 (E_TyApp        rng)   (q a) (mapM f tys)
     E_TyCheck      rng a ty     -> liftM2 (E_TyCheck      rng)   (q a) (f ty)
     E_VarAST       rng v        -> liftM  (E_VarAST       rng) (convertEVar f v)
+    E_RecordAST    rng ls exprs -> liftM  (E_RecordAST rng ls) (mapM q exprs)
     E_TupleAST     rng bx exprs -> liftM  (E_TupleAST  rng bx) (mapM q exprs)
     E_ArrayRead    rng (ArrayIndex a b rng2 s) -> do x <- q a
                                                      y <- q b

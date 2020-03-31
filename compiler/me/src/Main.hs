@@ -711,6 +711,7 @@ desugarParsedModule tcenv m = do
           TyAppP (TyConP "Ref"   )   [t] -> liftM  RefTypeAST              (q t)
           TyAppP con types       -> liftM2   TyAppAST (q con) (mapM q types)
           TyConP nam             -> return $ TyConAST nam
+          RecordTypeP labels types -> liftM (RecordTypeAST labels) (mapM q types)
           TupleTypeP k   types   -> liftM (TupleTypeAST k)    (mapM q types)
           ForAllP    tvs t       -> liftM (ForAllAST $ map convertTyFormal tvs) (q t)
           TyVarP     tv          -> do return $ TyVarAST tv

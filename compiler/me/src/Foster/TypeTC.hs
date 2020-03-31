@@ -14,6 +14,8 @@ import Foster.Kind
 import Foster.AnnExpr(AnnExpr)
 import Foster.Config(OrdRef)
 
+import qualified Data.Text as T
+
 import Text.PrettyPrint.ANSI.Leijen
 
 import Data.UnionFind.IO(Point)
@@ -30,6 +32,7 @@ data TypeTC =
            PrimIntTC       IntSizeBits
          | TyConTC         DataTypeName
          | TyAppTC         TypeTC [TypeTC]
+         | RecordTypeTC    [T.Text] [TypeTC]
          | TupleTypeTC     (Unifiable Kind) [TypeTC]
          | RefTypeTC       TypeTC
          | ArrayTypeTC     TypeTC
@@ -100,6 +103,7 @@ instance Pretty TypeTC where
         TyConTC nam                     -> text nam
         TyAppTC con            []       -> pretty con
         TyAppTC con types               -> parens $ pretty con <> hpre (map pretty types)
+        RecordTypeTC labels types      -> text "Record" <> tupled (map (text . T.unpack) labels) <> tupled (map pretty types)
         TupleTypeTC _kind types         -> tupled $ map pretty types
         FnTypeTC     s t fx  cc cs _    -> text "(" <> pretty s <> text " ="
                                                     <> text (uni_briefCC cc) <> text ";fx=" <> pretty fx
@@ -117,6 +121,7 @@ instance Show TypeTC where
         TyAppTC con types -> "(TyAppTC " ++ show con
                                       ++ joinWith " " ("":map show types) ++ ")"
         PrimIntTC size         -> "(PrimIntTC " ++ show size ++ ")"
+        RecordTypeTC labs types -> "(" ++ joinWith ", " [T.unpack l ++ ": " ++ show t | (l, t) <- zip labs types] ++ ")"
         TupleTypeTC _k types   -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
         FnTypeTC  s t fx cc cs _ -> "(" ++ show s ++ " =" ++ uni_briefCC cc ++ ";fx=" ++ show fx ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         ForAllTC ktvs rho      -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
@@ -147,6 +152,7 @@ instance Summarizable TypeTC where
             TyConTC nam          -> text $ nam
             TyAppTC con _types   -> text $ "TyAppTC " ++ show con
             PrimIntTC     size      -> text $ "PrimIntTC " ++ show size
+            RecordTypeTC  {}        -> text $ "RecordTypeTC"
             TupleTypeTC   {}        -> text $ "TupleTypeTC"
             FnTypeTC      {}        -> text $ "FnTypeTC"
             ForAllTC ktvs _rho      -> text $ "ForAllTC " ++ show ktvs
@@ -162,6 +168,7 @@ instance Structured TypeTC where
             TyConTC {}              -> []
             TyAppTC con types       -> con:types
             PrimIntTC       {}      -> []
+            RecordTypeTC  _ types   -> types
             TupleTypeTC  _k types   -> types
             FnTypeTC  ss t fx _cc _cs _ -> ss++[t,fx]
             ForAllTC  _ktvs rho     -> [rho]

@@ -65,6 +65,7 @@ monoPrim subst prim = do
        PrimOp nm ty       -> liftM (PrimOp nm) (qt ty)
        PrimIntTrunc i1 i2 -> return $ PrimIntTrunc i1 i2
        CoroPrim   p t1 t2 -> liftM2 (CoroPrim p) (qt t1) (qt t2)
+       FieldLookup name   -> return (FieldLookup name)
        PrimInlineAsm ty cnt cns fx -> qt ty >>= \ty' -> return $ PrimInlineAsm ty' cnt cns fx
        LookupEffectHandler tag -> return $ LookupEffectHandler tag
 
@@ -85,6 +86,7 @@ monoKN subst inTypeExpr e =
  case e of
   -- These cases are trivially inductive.
   KNLiteral       t lit    -> liftM2 KNLiteral       (qt t) (return lit)
+  KNRecord        t ls vs a -> liftM4 KNRecord       (qt t) (return ls) (mapM qv vs) (return a)
   KNTuple         t vs a   -> liftM3 KNTuple         (qt t) (mapM qv vs) (return a)
   KNKillProcess   t s      -> liftM2 KNKillProcess   (qt t) (return s)
   KNCallPrim   sr t p vs   -> liftM3(KNCallPrim sr)  (qt t) (qp p) (mapM qv vs)
@@ -594,6 +596,8 @@ monoType subst ty =
      TyConIL nam       -> return $ TyCon nam
      TyAppIL con types -> liftM2 TyApp (q con) (mapM q types)
      PrimIntIL size         -> return $ PrimInt size
+     RecordTypeIL labels         types -> -- TODO reorder types according to labels
+                                          liftM TupleType  (mapM q types)
      TupleTypeIL KindAnySizeType types -> liftM StructType (mapM q types)
      TupleTypeIL _               types -> liftM TupleType  (mapM q types)
      FnTypeIL  ss t cc cs -> do ss' <- mapM q ss

@@ -25,6 +25,7 @@ import qualified Data.Text as T
 data AnnExpr ty =
         -- Literals
           AnnLiteral    ExprAnnot ty Literal
+        | AnnRecord     ExprAnnot ty [T.Text] [AnnExpr ty]
         | AnnTuple      ExprAnnot ty Kind [AnnExpr ty]
         | E_AnnFn       (Fn () (AnnExpr ty) ty)
         -- Control flow
@@ -68,7 +69,8 @@ data AnnExpr ty =
 instance TypedWith (AnnExpr ty) ty where
   typeOf annexpr = case annexpr of
      AnnLiteral  _ t _     -> t
-     AnnTuple _ t _ _exprs -> t
+     AnnRecord _ t _labs _exprs -> t
+     AnnTuple _ t _k _exprs -> t
      E_AnnFn annFn         -> fnType annFn
      AnnCall _rng t _ _    -> t
      AnnAppCtor _rng t _ _ -> t
@@ -115,6 +117,7 @@ instance Pretty ty => Summarizable (AnnExpr ty) where
       AnnAllocArray _rng _ _ aty _ _ -> text "AnnAllocArray:: " <> pretty aty
       AnnArrayRead  _rng t _     -> text "AnnArrayRead :: " <> pretty t
       AnnArrayPoke  _rng t _ _   -> text "AnnArrayPoke :: " <> pretty t
+      AnnRecord {}               -> text "AnnRecord    "
       AnnTuple  {}               -> text "AnnTuple     "
       AnnHandler {}              -> text "AnnHandler   "
       AnnCase   {}               -> text "AnnCase      "
@@ -147,6 +150,7 @@ instance Structured (AnnExpr ty) where
       AnnArrayLit  _rng _t exprs           -> rights exprs
       AnnArrayRead _rng _t ari             -> childrenOfArrayIndex ari
       AnnArrayPoke _rng _t ari c           -> childrenOfArrayIndex ari ++ [c]
+      AnnRecord _rng _ _ exprs             -> exprs
       AnnTuple _rng _ _ exprs              -> exprs
       AnnHandler _rng _ _ e bs mb_e _resid -> e:(concatMap caseArmExprs bs)++(case mb_e of
                                                                                   Nothing -> []
@@ -198,6 +202,7 @@ annExprAnnot expr = case expr of
       AnnAllocArray annot _ _ _ _ _ -> annot
       AnnArrayRead annot _ _        -> annot
       AnnArrayPoke annot _ _ _      -> annot
+      AnnRecord    annot _ _ _      -> annot
       AnnTuple     annot _ _ _      -> annot
       AnnHandler  annot _ _ _ _ _ _ -> annot
       AnnCase      annot _ _ _      -> annot

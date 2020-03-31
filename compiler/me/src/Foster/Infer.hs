@@ -6,7 +6,7 @@ module Foster.Infer(
 
 import Prelude hiding ((<$>))
 
-import qualified Data.List as List(length, nub, sortBy)
+import qualified Data.List as List(length, nub, sortBy, sortOn)
 import qualified Data.Set as Set
 import Text.PrettyPrint.ANSI.Leijen
 import Data.UnionFind.IO(descriptor, setDescriptor, equivalent, union)
@@ -137,6 +137,27 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
 
     ((TyAppTC  con1 tys1), (TyAppTC  con2 tys2)) ->
       tcUnifyMoreTypes (con1:tys1) (con2:tys2) constraints
+
+    ((RecordTypeTC labels1 tys1), (RecordTypeTC labels2 tys2)) -> do
+        tcLift $ putStrLn $ "  unifying record types: " ++ show t1 ++ " and " ++ show t2
+        let labs1 = Set.fromList labels1
+            labs2 = Set.fromList labels2
+        case () of
+            _ | Set.size labs1 /= Set.size labs2 -> do
+              tcFailsMore [text $ "Unable to unify records of different sizes"
+                          ++ " ("   ++ show (List.length labels1)
+                          ++ " vs " ++ show (List.length labels2)
+                          ++ ")."]
+            _ | Set.null (Set.difference labs1 labs2) -> do
+                  let sortedByFirst pairs = snd $ unzip $ List.sortOn fst pairs
+                      sortedtys1 = sortedByFirst (zip labels1 tys1)
+                      sortedtys2 = sortedByFirst (zip labels2 tys2)
+                  tcUnifyMoreTypes sortedtys1 sortedtys2 constraints
+            _ -> do 
+              tcFailsMore [text $ "Unable to unify records with different labels"
+                          ++ " ("   ++ show (labels1)
+                          ++ " vs " ++ show (labels2)
+                          ++ ")."]
 
     ((TupleTypeTC kind1 tys1), (TupleTypeTC kind2 tys2)) ->
         if List.length tys1 /= List.length tys2
@@ -355,6 +376,7 @@ updateLevel level typ = do
     TyConTC   {}            -> return ()
     TyVarTC   {}            -> return ()
     TyAppTC  con types      -> mapM_ go (con:types)
+    RecordTypeTC _labs types -> mapM_ go types
     TupleTypeTC _k  types   -> mapM_ go types
     ForAllTC  _tvs rho      -> go rho
     MetaTyVarTC   m         -> do
@@ -416,6 +438,7 @@ collectAllUnificationVars xs = do foldlM go Set.empty xs  >>= return . Set.toLis
             PrimIntTC  _            -> return uvarSet
             TyConTC  {}             -> return uvarSet
             TyAppTC  con types      -> foldlM go uvarSet (con:types)
+            RecordTypeTC _ls types  -> foldlM go uvarSet types -- TODO: row var?
             TupleTypeTC _k  types   -> foldlM go uvarSet types
             FnTypeTC  ss r fx _ _ _ -> foldlM go uvarSet (r:fx:ss)
             ForAllTC  _tvs rho      -> go uvarSet rho
@@ -445,6 +468,7 @@ zonkType x = do
         TyVarTC       {}        -> return x
         TyConTC  nm             -> return $ TyConTC nm
         TyAppTC  con types      -> liftM2 TyAppTC (zonkType con) (mapM zonkType types)
+        RecordTypeTC labs types -> liftM  (RecordTypeTC labs) (mapM zonkType types)
         TupleTypeTC k  types    -> liftM  (TupleTypeTC k) (mapM zonkType types)
         ForAllTC    tvs  rho    -> liftM  (ForAllTC tvs ) (zonkType rho)
         RefTypeTC       ty      -> liftM  (RefTypeTC    ) (zonkType ty)

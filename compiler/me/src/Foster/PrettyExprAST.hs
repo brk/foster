@@ -53,6 +53,7 @@ instance Pretty TypeP where
           TyConP nam          -> text nam
           TyAppP con []       ->          pretty con
           TyAppP con ts       -> parens $ pretty con <+> sep (map pretty ts)
+          RecordTypeP labels ts          -> tupled (map pretty ts) <> text (show labels)
           TupleTypeP  k   ts             -> tupled (map pretty ts) <> text (kindAsHash k)
           FnTypeP    ts r fx _cc _pf _sr ->
                                          text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
@@ -218,6 +219,7 @@ prettyStmt e = case e of
     E_CompilesAST annot (Just e) -> withAnnot annot $ parens' $ text "__COMPILES__" <+> pretty e
     E_ArrayRead   annot ai   -> withAnnot annot $ pretty ai
     E_ArrayPoke   annot ai e -> withAnnot annot $ prettyAtom e <+> text ">^" <+> pretty ai
+    E_RecordAST   annot labs exps -> withAnnot annot $ prettyRecord labs exps
     E_TupleAST    annot _ es -> withAnnot annot $ parens' (hsep $ punctuate comma (map pretty es))
     E_SeqAST (ExprAnnot pre _ post) l r ->
       if null pre && null post
@@ -225,6 +227,13 @@ prettyStmt e = case e of
         else prettyExpr l <> text ";" </> (vcat $ map pretty $ pre ++ post)
                                       <$$> prettyStmt r
     E_FnAST annot fn     -> withAnnot annot $ pretty fn
+
+prettyRecord labs exps =
+    let
+      prettyField (lab, exp) = text (T.unpack lab) <> text ":" <+> pretty exp
+      pairs = map prettyField (zip labs exps)
+    in
+    parens' (hsep $ punctuate comma pairs)
 
 -- Function bodies should not be rendered with alignment,
 -- but other let-bound things should.

@@ -34,12 +34,12 @@ tokens {
   TERMNAME; TYPENAME; TYPEVAR_DECL;
   TERM; PHRASE; PRIMAPP; LVALUE; SUBSCRIPT;
   VAL_TYPE_APP; DEREF; ASSIGN_TO;
-  TUPLE; VAL_ABS; TYP_ABS; TYPE_ATOM; TYANNOT;
+  TUPLE; RECORD; VAL_ABS; TYP_ABS; TYPE_ATOM; TYANNOT;
   TYPE_TYP_APP; TYPE_TYP_ABS;
   KIND_CONST; KIND_TYOP; FORALL_TYPE;
   FUNC_TYPE; REFINED;
   TYPE_CTOR; DATATYPE; CTOR; TYPE_PLACEHOLDER;
-  FORMAL; MODULE; WILDCARD; SNAFUINCLUDE; QNAME;
+  FORMAL; MODULE; WILDCARD; SNAFUINCLUDE; FIELDLOOKUP;
   EFFECT_SINGLE; EFFECT_ROW;
 
   MU; // child marker
@@ -76,13 +76,15 @@ effect_ctor : OF dctor tatom* ('=>' t)?           -> ^(OF dctor ^(MU tatom*) ^(M
 opr     :       SYMBOL | MINUS;
 id      :       SMALL_IDENT | UPPER_IDENT | UNDER_IDENT;
 
+/*
 name    :     id ('.' name -> ^(QNAME id name)
                  |         -> id
                  )
         |       '(' opr ')' -> opr;
+*/
 
-x       :       name -> ^(TERMNAME name);
-a       :       name -> ^(TYPENAME name);
+x       :       nameunq -> ^(TERMNAME nameunq);
+a       :       nameunq -> ^(TYPENAME nameunq);
 
 
 nameunq :      id      -> id
@@ -125,13 +127,15 @@ e       :
 
 binops  : (binop phrase)+;
 binop   : opr          -> opr
-        | '`' name '`' -> name
+        | '`' nameunq  '`' -> nameunq
         ;
 
-nopr    : name | opr ;
+//LABEL 	:	 '%' SMALL_IDENT;
+
+nopr    : nameunq | opr ;
 phrase  :       lvalue+                         -> ^(PHRASE lvalue+)
         |       'prim' nopr tyapp? lvalue*      -> ^(PRIMAPP nopr ^(MU tyapp?) lvalue*);
-lvalue  :              atom suffix*             -> ^(LVALUE atom suffix*);
+lvalue  :           /*LABEL? */ atom suffix*             -> ^(LVALUE atom suffix*);
 
 tyapp   :	':[' t (',' t)* ']'          -> ^(VAL_TYPE_APP t+) // type application
         |	':['  ']'                    -> ^(VAL_TYPE_APP)    // nullary type application
@@ -141,6 +145,7 @@ suffix  :  tyapp
         |  '^'                          -> ^(DEREF)             // dereference
         |  '.[' e ']'                   -> ^(SUBSCRIPT e)
         |  '!'                          -> ^(VAL_APP)		// nullary call
+        |  '.' id		-> ^(FIELDLOOKUP id)
 //      |    '.(' e ')'                 -> ^(VAL_APP e)
   ;
 
@@ -151,7 +156,7 @@ atom    :       // syntactically "closed" terms
   | 'case' e (OF pmatch)+ 'end'         -> ^(CASE e pmatch+) // pattern matching
   | '(' ')'                             -> ^(TUPLE)
   | '(' COMPILES stmts ')'              -> ^(COMPILES stmts)
-  | tuple
+  | tuple_or_record
   | handler
   | val_abs
   ;
@@ -166,9 +171,20 @@ val_abs :
                   // value + type abstraction (terms indexed by terms and types)
     ;
 
+/*
 tuple : '(' e ( AS  t    ')'        -> ^(TYANNOT e t)
                   | (',' e)* ')' hashq  -> ^(TUPLE hashq e+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
                   )
+      ;
+*/
+
+tuple_or_record :
+   '('
+        first=e
+        ( AS  t    ')'        -> ^(TYANNOT $first t)
+        | (',' rest+=e)* ')' hashq  -> ^(TUPLE hashq $first $rest*)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
+        | ':' e (',' x ':' e)* ')'         -> ^(RECORD ^(MU $first x*) ^(MU e*))
+        )
       ;
 
 hashq : '#'?;
@@ -238,8 +254,7 @@ effect : '@' (  a      -> ^(EFFECT_SINGLE a)
 tatom :
     a                                                   // type variables
   | '??' a                              -> ^(TYPE_PLACEHOLDER a)
-  | '(' ')'                             -> ^(TUPLE)
-  | '(' t (',' t)* ')' hashq            -> ^(TUPLE hashq t+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
+  | tuple_or_record_ty
   |
     '{' t  ('=>' t)* effect? '}'    -> ^(FUNC_TYPE ^(TUPLE t+) ^(MU effect?))  // description of terms indexed by terms
 //      | ':{'        (a ':' k '->')+ t '}'     -> ^(TYPE_TYP_ABS a k t)        // type-level abstractions
@@ -247,6 +262,15 @@ tatom :
   // The dollar sign is required to distinguish type constructors
   // from type variables, since we don't use upper/lower case to distinguish.
   ;
+
+tuple_or_record_ty 
+	:	  '(' ')'                             -> ^(TUPLE)
+	| '(' t
+		(
+		  ':::' t (',' x ':::' t)* ')'       -> ^(RECORD ^(MU x*) ^(MU t*))
+		| (',' t)* ')' hashq         -> ^(TUPLE hashq t+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
+		)
+	;
 
 tannots   : tabinding (',' tabinding)* -> ^(BINDING tabinding+);
 tabinding : x '=' e                    -> ^(BINDING x e);

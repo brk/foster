@@ -39,6 +39,13 @@ kwd  s = dullblue  (text s)
 lkwd s = dullwhite (text s)
 end    = lkwd "end"
 
+prettyRecord labs exps =
+    let
+      prettyField (lab, exp) = text (T.unpack lab) <> text ":" <+> pretty exp
+      pairs = map prettyField (zip labs exps)
+    in
+    parens (hsep $ punctuate comma pairs)
+
 {-
 instance Pretty TypeP where
   pretty t = case t of
@@ -112,6 +119,7 @@ prettyAtom e =
     E_AnnVar      {} -> pretty e
     AnnPrimitive  {} -> pretty e
     AnnLiteral    {} -> pretty e
+    AnnRecord     {} -> pretty e
     AnnTuple      {} -> pretty e
     AnnHandler    {} -> pretty e
     AnnCase       {} -> pretty e
@@ -160,6 +168,7 @@ instance Pretty (AnnExpr TypeTC) where
   pretty e =
         case e of
             AnnLiteral annot _ lit  -> withAnnot annot $ pretty lit
+            AnnRecord  annot _ labs es -> withAnnot annot $ prettyRecord labs es
             AnnTuple   annot _ _ es -> withAnnot annot $ parens (hsep $ punctuate comma (map pretty es))
             E_AnnFn    fn           ->                   pretty fn
             AnnIf      annot _ c b1 b2 -> withAnnot annot $

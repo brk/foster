@@ -142,9 +142,11 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
     TList [tok, _,_cbr, TList [name]] | tok `tm` tok_TYPENAME -> cb_parse_typename name
     _ -> error $ "cb_parse_aid failed: " ++ show cbor
 
-  cb_parse_id_str cbor = case cbor of
-    TList [_tok, name,_cbr, _] -> T.unpack (cborText name)
-    _ -> error $ "cb_parse_id_str failed: " ++ show cbor
+  cb_parse_id_text cbor = case cbor of
+    TList [_tok, name,_cbr, _] -> (cborText name)
+    _ -> error $ "cb_parse_id_text failed: " ++ show cbor
+
+  cb_parse_id_str cbor = T.unpack $ cb_parse_id_text cbor
     
   cb_parse_x_str cbor = T.unpack (cb_parse_x_text cbor)
   cb_parse_x_text cbor = case cb_parse_x cbor of
@@ -176,11 +178,6 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
         then rat_ctor annot str
         else int_ctor annot str
     _ -> error $ "cb_parse_lit_num failed: " ++ show cbor
-
-  _cb_parse_name cbor = case cbor of
-    TList [tok, _,_cbr, TList [_id, _name]] | tok `tm` tok_QNAME -> error "name (cb_parse_id id) (cb_parse_name name)"
-    _ -> error $ "cb_parse_name failed: "
-
 
   cb_parse_ctor cbor = case cbor of
     TList [tok, _,_cbr, TList [x]] | tok `tm` tok_CTOR ->
@@ -278,6 +275,11 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
     _ -> error $ "cb_parse_pmatch failed: " ++ show cbor
 
 
+  cb_parse_field_subscript cbor =
+      case cbor of
+        [TList (_tok : name : _)] -> cborText name
+        _ -> error $ "cb_parse_field_subscript"
+
   cb_parse_suffix expr cbor =
    let annot = annotOfCbor cbor in
    case cbor of
@@ -285,6 +287,8 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
     TList [tok, _,_cbr, TList [e]] | tok `tm` tok_SUBSCRIPT    -> parseCallPrim' (T.pack "subscript") [] [expr, cb_parse_e e] annot
     TList [tok, _,_cbr, TList []]  | tok `tm` tok_VAL_APP      -> E_CallAST annot expr []
     TList [tok, _,_cbr, TList tys] | tok `tm` tok_VAL_TYPE_APP -> E_TyApp annot expr (map cb_parse_t tys)
+    TList [tok, _,_cbr, TList [x]] | tok `tm` tok_FIELDLOOKUP  ->
+        mkPrimCall "record-lookup" [LitText $ cb_parse_id_text x] [] [expr] annot
     _ -> error $ "cb_parse_suffix failed: " ++ show cbor
 
   unMu (TList [_, _, _, TList cbors]) = cbors
@@ -305,6 +309,20 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
   isHashMark (TList [tok, _, _cbr, _]) = tok `tm` tok_HASH_MARK
   isHashMark _ = False
 
+  unVar (E_VarAST _annot (VarAST _ txt)) = txt
+  unVar _ = error $ "Expected to have a label in the start of a record type, found some other variety of expression instead!"
+
+  parseLabels :: [CBOR] -> [T.Text]
+  parseLabels [] = error $ "parseLabels expects a non-empty list of labels to parse."
+  parseLabels (e_lab:xs) =
+    --map cb_parse_label xs
+    [unVar $ cb_parse_e e_lab] ++ (map cb_parse_label xs)
+
+  cb_parse_label :: CBOR -> T.Text
+  cb_parse_label cbor = case cbor of
+    TList [tok, _,_cbr, TList [TList [_tok, name,_, _]]] | tok `tm` tok_TERMNAME -> cborText name
+    _ -> error $ "cb_parse_label expected an identifier, instead got " ++ show cbor
+
   cb_parse_atom cbor =
    let annot = annotOfCbor cbor in
    case cbor of
@@ -314,6 +332,10 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
     TList [tok, _,_cbr, TList [name]] | tok `tm` tok_TERMNAME -> cb_parse_termname name
     TList [tok, _,_cbr, TList (e : pmatches)] | tok `tm` tok_CASE -> E_Case annot (cb_parse_e e) (map cb_parse_pmatch pmatches)
     TList [tok, _,_cbr, TList [stmts]] | tok `tm` tok_COMPILES -> E_CompilesAST annot (Just $ cb_parse_stmts stmts)
+    TList [tok, _,_cbr, TList [mu_el_labels, mu_dup1st_exprs]] | tok `tm` tok_RECORD ->
+        let labs = parseLabels (unMu mu_el_labels)
+            exps = map cb_parse_e (tail $ unMu mu_dup1st_exprs)
+        in E_RecordAST annot labs exps
     TList [tok, _,_cbr, TList cbors] | tok `tm` tok_TUPLE ->
       case cbors of
         []           -> E_TupleAST annot KindPointerSized []
@@ -536,6 +558,11 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
         else TyAppP (TyConP name) []
   cb_ty_of_str _ [] = error $ "cb_ty_of_str cannot parse empty name!"
 
+  cb_parse_name_of_ty cbor = case cbor of
+    TList [tok, _,_cbr1, TList [TList [_, _, _cbr2, TList [typename]]]] | tok `tm` tok_TYPE_ATOM ->
+      (cb_parse_typename typename)
+    _ -> error $ "cb_parse_name_of_ty failed : " ++ show cbor
+
   cb_parse_tatom cbor = case cbor of
     TList [tok, _, cbr, TList [typename]] | tok `tm` tok_TYPENAME ->
       cb_ty_of_str cbr (cb_parse_typename typename)
@@ -545,6 +572,11 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
     TList [tok, _,_cbr, TList (hash:tys)] | tok `tm` tok_TUPLE && isHashMark hash
                                                                   -> TupleTypeP KindAnySizeType  (map cb_parse_t tys)
     TList [tok, _,_cbr, TList tys] | tok `tm` tok_TUPLE -> TupleTypeP KindPointerSized (map cb_parse_t tys)
+    TList [tok, _,_cbr, TList [mu_xs, mu_tys_plus1]] | tok `tm` tok_RECORD ->
+      let xs       = map cb_parse_x_text (unMu mu_xs)
+          (cb_t1:cb_tys) = (unMu mu_tys_plus1)
+      in
+        RecordTypeP (T.pack (cb_parse_name_of_ty cb_t1):xs) (map cb_parse_t cb_tys)
     TList [tok, _, cbr, TList [tuple, mu_eff]]        | tok `tm` tok_FUNC_TYPE ->
         let tys = map cb_parse_t (unTuple tuple) in
         let eff = let effp = map cb_parse_eff (unMu mu_eff) in
@@ -679,6 +711,7 @@ parseCallPrim' primname tys args annot = do
 
     case (T.unpack primname, args) of
       ("assert-invariants", _) -> mkPrimCall "assert-invariants" [] [] args annot
+      ("log-type",          _) -> mkPrimCall "log-type"          [] [] args annot
       ("mach-array-literal", _) -> case tys of
                                     []   -> E_MachArrayLit annot Nothing   (map processArrayValue args)
                                     [ty] -> E_MachArrayLit annot (Just ty) (map processArrayValue args)
@@ -855,6 +888,7 @@ attachFormatting expr = do
    E_StoreAST     _ a b      -> liftM3' E_StoreAST    ana (q a) (q b)
    E_TyApp        _ a tys    -> liftM3' E_TyApp       ana (q a) (return tys)
    E_TyCheck      _ a ty     -> liftM3' E_TyCheck     ana (q a) (return ty )
+   E_RecordAST    _ lbs exps -> liftM3' E_RecordAST   ana (return lbs) (mapM q exps)
    E_TupleAST     _ k  exprs -> liftM3' E_TupleAST    ana (return k) (mapM q exprs)
    E_LetRec       _ bnz e    -> liftM3' E_LetRec      ana (mapM convertTermBinding bnz) (q e)
    E_LetAST       _ bnd e    -> liftM3' E_LetAST      ana (convertTermBinding bnd) (q e)
@@ -924,6 +958,7 @@ makeProcsWithin typ = go typ where
   go x = case x of
     TyConP    _nm                 -> x
     TyAppP    con types           -> TyAppP (go con) (map go types)
+    RecordTypeP labels types      -> RecordTypeP labels (map go types)
     TupleTypeP k  types           -> TupleTypeP k (map go types)
     FnTypeP    s t fx _cc _pf src -> FnTypeP (map go s) (go t) (fmap go fx) CCC FT_Proc src
     ForAllP  tvs rho              -> ForAllP tvs (go rho)

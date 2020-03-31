@@ -36,6 +36,7 @@ import Data.IORef
 data KNExpr' r ty =
         -- Literals
           KNLiteral     ty Literal
+        | KNRecord      ty [T.Text] [TypedId ty] SourceRange
         | KNTuple       ty [TypedId ty] SourceRange
         | KNKillProcess ty T.Text
         -- Control flow
@@ -114,6 +115,7 @@ alphaRename' fn = do
           PrimIntIL      {}           -> return $ typ
           TyConIL        {}           -> return $ typ
           TyAppIL     con ts          -> do liftM2 TyAppIL (renameT con) (mapM renameT ts)
+          RecordTypeIL labels ts      -> do liftM (RecordTypeIL labels) (mapM renameT ts)
           TupleTypeIL  k ts           -> do liftM (TupleTypeIL k) (mapM renameT ts)
           CoroTypeIL     s  r         -> do liftM2 CoroTypeIL (renameT s) (renameT r)
           ArrayTypeIL    t            -> do liftM ArrayTypeIL (renameT t)
@@ -198,6 +200,7 @@ alphaRename' fn = do
       case e of
       KNLiteral       {}       -> return e
       KNKillProcess   {}       -> return e
+      KNRecord        t ls vs a -> do vs' <- mapM qv vs; t' <- qt t ; return $ KNRecord t' ls vs' a
       KNTuple         t vs a   -> do vs' <- mapM qv vs; t' <- qt t ; return $ KNTuple t' vs' a
       KNCall          t v vs   -> do (v' : vs') <- mapM qv (v:vs); t' <- qt t; return $ KNCall t' v' vs'
       KNCallPrim   sr t p vs   -> do vs' <- mapM qv vs; t' <- qt t; return $ KNCallPrim   sr t' p vs'
@@ -289,6 +292,7 @@ typeKN :: KNExpr' rs ty -> ty
 typeKN expr =
   case expr of
     KNLiteral       t _      -> t
+    KNRecord        t _ _  _ -> t
     KNTuple         t _  _   -> t
     KNKillProcess   t _      -> t
     KNCall          t _ _    -> t
@@ -339,6 +343,7 @@ instance (Show ty, Show rs) => Summarizable (KNExpr' rs ty) where
             KNArrayRead  t _    -> text $ "KNArrayRead " ++ " :: " ++ show t
             KNArrayPoke  {}     -> text $ "KNArrayPoke "
             KNArrayLit   {}     -> text $ "KNArrayLit  "
+            KNRecord     {}     -> text $ "KNRecord    "
             KNTuple   _ vs _    -> text $ "KNTuple     (size " ++ (show $ length vs) ++ ")"
             KNVar (TypedId t (GlobalSymbol name _))
                                 -> text $ "KNVar(Global):   " ++ T.unpack name ++ " :: " ++ show t
@@ -354,6 +359,7 @@ instance Structured (KNExpr' rs ty) where
         case expr of
             KNLiteral {}            -> []
             KNKillProcess {}        -> []
+            KNRecord   _ _labs vs _ -> map var vs
             KNTuple   _ vs _        -> map var vs
             KNCase _ e arms         -> (var e):(concatMap caseArmExprs arms)
             KNHandler _ _ty _eff action arms mb_xform _resumeid ->
@@ -414,6 +420,7 @@ knSizeHead expr = case expr of
     KNLetRec      {} -> 1
     KNLetFuns     {} -> 1
 
+    KNRecord      {} -> 2
     KNTuple       {} -> 2 -- due to allocation + stores
     KNArrayRead   {} -> 2 -- due to (potential) bounds check
     KNArrayPoke   {} -> 2 -- due to (potential) bounds check
@@ -536,6 +543,7 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
             KNArrayRead  t ai   -> pretty ai <+> pretty t
             KNArrayPoke  t ai v -> prettyId v <+> text ">^" <+> pretty ai <+> pretty t
             KNArrayLit   _t _arr _vals -> text "<...array literal...>"
+            KNRecord     _ _ls vs _ -> text "Record/" <> parens (hsep $ punctuate comma (map pretty vs))
             KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map pretty vs))
             KNCompiles _r _t e  -> parens (text "__COMPILES__" <+> pretty e)
 
@@ -569,6 +577,7 @@ knSubst m expr =
   case expr of
       KNLiteral       {}       -> expr
       KNKillProcess   {}       -> expr
+      KNRecord        t ls vs a -> KNRecord t ls (map qv vs) a
       KNTuple         t vs a   -> KNTuple t (map qv vs) a
       KNCall          t v vs   -> KNCall t (qv v) (map qv vs)
       KNCallPrim   sr t p vs   -> KNCallPrim   sr t p (map qv vs)
@@ -604,6 +613,7 @@ data TypeIL =
            PrimIntIL       IntSizeBits
          | TyConIL         DataTypeName
          | TyAppIL         TypeIL [TypeIL]
+         | RecordTypeIL    [T.Text] [TypeIL]
          | TupleTypeIL     Kind [TypeIL]
          | FnTypeIL        { fnTypeILDomain :: [TypeIL]
                            , fnTypeILRange  :: TypeIL
@@ -625,6 +635,7 @@ instance Show TypeIL where
         TyAppIL con types -> "(TyAppIL " ++ (show con)
                                       ++ joinWith " " ("":map show types) ++ ")"
         PrimIntIL size       -> "(PrimIntIL " ++ show size ++ ")"
+        RecordTypeIL labels typs -> "Record(" ++ joinWith ", " (map show typs) ++ ")" ++ show labels
         TupleTypeIL KindAnySizeType  typs -> "#(" ++ joinWith ", " (map show typs) ++ ")"
         TupleTypeIL _                typs ->  "(" ++ joinWith ", " (map show typs) ++ ")"
         FnTypeIL   s t cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " /*" ++ show cs ++ "*/)"
@@ -641,6 +652,7 @@ instance Summarizable TypeIL where
             TyConIL nam        -> text $ nam
             TyAppIL con _types -> text $ "TyAppIL " ++ show con
             PrimIntIL     size    -> text $ "PrimIntIL " ++ show size
+            RecordTypeIL  {}      -> text $ "RecordTypeIL"
             TupleTypeIL   {}      -> text $ "TupleTypeIL"
             FnTypeIL      {}      -> text $ "FnTypeIL"
             CoroTypeIL    {}      -> text $ "CoroTypeIL"
@@ -656,6 +668,7 @@ instance Structured TypeIL where
             TyConIL {}          -> []
             TyAppIL con types  -> con:types
             PrimIntIL       {}     -> []
+            RecordTypeIL _ls types -> types
             TupleTypeIL _bx types  -> types
             FnTypeIL  ss t _cc _cs -> ss++[t]
             CoroTypeIL s t         -> [s,t]
@@ -675,6 +688,7 @@ instance Kinded TypeIL where
     TyConIL _            -> KindPointerSized
     TyAppIL con _        -> kindOf con
     TyVarIL   _ kind     -> kind
+    RecordTypeIL _ _     -> KindPointerSized
     TupleTypeIL kind _   -> kind
     FnTypeIL    {}       -> KindPointerSized
     CoroTypeIL  {}       -> KindPointerSized

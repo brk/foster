@@ -17,6 +17,7 @@ where
 
 import Data.Map as Map(fromList, toList, Map)
 import Data.Char as Char(isLetter)
+import qualified Data.Text as T
 
 import Text.PrettyPrint.ANSI.Leijen(Pretty(..), text, hsep, (<+>),
                                     parens, tupled, empty)
@@ -34,6 +35,7 @@ data TypeAST =
            PrimIntAST       IntSizeBits
          | TyConAST         DataTypeName
          | TyAppAST         Rho  [Sigma]
+         | RecordTypeAST    [T.Text] [Sigma]
          | TupleTypeAST     Kind [Sigma]
          | RefTypeAST       (Sigma)
          | ArrayTypeAST     (Sigma)
@@ -67,6 +69,7 @@ instance Pretty TypeAST where
         TyConAST nam                    -> text nam
         TyAppAST con []     ->          pretty con
         TyAppAST con types  -> parens $ pretty con <> hpre (map pretty types)
+        RecordTypeAST _labels types     -> text "RecordAST" <> tupled (map pretty types)
         TupleTypeAST k   types          -> tupled (map pretty types) <> text (kindAsHash k)
         FnTypeAST    s t fx cc cs       -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text ";"
                                               <+> pretty fx <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
@@ -102,6 +105,7 @@ instance Summarizable TypeAST where
             PrimIntAST     size            -> text $ "PrimIntAST " ++ show size
             TyConAST       nam             -> text $ nam
             TyAppAST con   _               -> text "(TyAppAST" <+> pretty con <> text ")"
+            RecordTypeAST   _   _          -> text $ "RecordTypeAST"
             TupleTypeAST   k   _           -> text $ "TupleTypeAST" ++ kindAsHash k
             FnTypeAST    {}                -> text $ "FnTypeAST"
             ForAllAST  tvs _rho            -> text $ "ForAllAST " ++ show tvs
@@ -118,6 +122,7 @@ instance Structured TypeAST where
             PrimIntAST         _           -> []
             TyConAST           _           -> []
             TyAppAST     con  types        -> con:types
+            RecordTypeAST  _  types        -> types
             TupleTypeAST  _k  types        -> types
             FnTypeAST   ss t fx _ _        -> ss ++ [t, fx]
             ForAllAST  _tvs rho            -> [rho]
