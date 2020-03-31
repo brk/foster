@@ -1047,15 +1047,6 @@ lookupPrintInt _ _ = Nothing
 showHexy :: (Integral x, Show x) => x -> x -> String
 showHexy bitwidth n = "0x" ++ (map toUpper $ showHex (unsigned bitwidth n) "")
 
-showSigned :: Integer -> Integer -> String
-showSigned bitwidth n =
-  let maxpos = 2 ^ (bitwidth - 1)
-      maxnat = 2 ^ bitwidth in
-  case (n >= maxpos, n < -maxpos) of
-    (True, _) -> showSigned bitwidth $ n - maxnat
-    (_, True) -> showSigned bitwidth $ n + maxnat
-    _ -> show n
-
 unsigned bitwidth n = if n >= 0 then n else (2 ^ bitwidth) + n
 
 -- ByteString -> Text -> String
