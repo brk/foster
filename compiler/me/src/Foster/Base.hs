@@ -56,7 +56,6 @@ data IntSizeBits = I1 | I8 | I16 | I32 | I64 | IWd | IDw -- Word/double-word
 
 data ProcOrFunc   = FT_Proc | FT_Func  deriving (Show, Eq)
 data RecStatus = YesRec | NotRec deriving (Eq, Ord, Show)
-data VarNamespace = VarProc | VarLocal deriving Show
 data TailQ = YesTail | NotTail deriving (Eq, Show)
 data SafetyGuarantee = SG_Static | SG_Dynamic | SG_Unsafe                   deriving (Show, Eq)
 data ArrayIndex expr = ArrayIndex expr expr SourceRange
