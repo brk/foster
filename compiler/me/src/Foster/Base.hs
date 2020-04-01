@@ -84,8 +84,14 @@ instance Kinded TypeFormal where
   kindOf (TypeFormal _ _ kind) = kind
 
 instance Pretty TyVar where
-  pretty (BoundTyVar name _) = text "'" <> text name
-  pretty (SkolemTyVar name uniq _kind) = text "$" <> text name <> text ":" <> pretty uniq
+  pretty = prettyDecorated
+
+prettySrc (BoundTyVar name _) = text name
+prettySrc (SkolemTyVar name uniq _kind) = text "$" <> text name <> text ":" <> pretty uniq
+
+prettyDecorated (BoundTyVar name _) = text "'" <> text name
+prettyDecorated (SkolemTyVar name uniq _kind) = text "$" <> text name <> text ":" <> pretty uniq
+
 
 instance Pretty t => Pretty (MetaTyVar t) where
   pretty m = parens $ text ((mtvDesc m) ++ "~" ++ show (mtvUniq m))

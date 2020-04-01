@@ -74,7 +74,7 @@ instance Pretty TypeAST where
         FnTypeAST    s t fx cc cs       -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text ";"
                                               <+> pretty fx <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
         ForAllAST  tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> pretty rho <> text ")"
-        TyVarAST   tv                   -> text (show tv)
+        TyVarAST   tv                   -> prettySrc tv
         -- MetaTyVar m                     -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> text (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
         RefTypeAST    ty                -> text "(Ref " <> pretty ty <> text ")"
         ArrayTypeAST  ty                -> text "(Array " <> pretty ty <> text ")"
