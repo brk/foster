@@ -485,7 +485,7 @@ mkAnnPrimitive annot ctx tid =
                     (primitiveOperations ctx) of
         Just (NamedPrim tid)      -> NamedPrim tid
         Just (PrimOp nm ty)       -> PrimOp nm ty
-        Just (PrimIntTrunc i1 i2) -> PrimIntTrunc i1 i2
+        Just (PrimOpInt o i1 i2)  -> PrimOpInt o i1 i2
         Just (FieldLookup name  ) -> FieldLookup name
         Just (CoroPrim {}       ) -> error $ "mkAnnPrim saw unexpected CoroPrim"
         Just (PrimInlineAsm {}  ) -> error $ "mkAnnPrim saw unexpected PrimInlineAsm"
@@ -1259,7 +1259,7 @@ equivStructureAndVarNames e1 e2 =
         case (prim1, prim2) of
             (NamedPrim tid1               , NamedPrim tid2              ) -> qtid tid1 tid2
             (PrimOp name1 ty1             , PrimOp name2 ty2            ) -> name1 == name2 && tcTypeEquiv ty1 ty2
-            (PrimIntTrunc isba isbx       , PrimIntTrunc isba2 isbx2    ) -> isba == isba2 && isbx == isbx2
+            (PrimOpInt o1 isba isbx       , PrimOpInt o2 isba2 isbx2    ) -> isba == isba2 && isbx == isbx2 && o1 == o2
             (CoroPrim     p1 tya1 tyb1    , CoroPrim     p2 tya2 tyb2   ) -> p1 == p2 && tcTypeEquiv tya1 tya2 && tcTypeEquiv tyb1 tyb2
             (PrimInlineAsm ty1 txa txb b1 , PrimInlineAsm ty2 tza tzb b2) -> tcTypeEquiv ty1 ty2 && txa == tza && txb == tzb && b1 == b2
             _ -> False

@@ -617,9 +617,6 @@ checkBody expr facts =
         return $ withDecls facts $ \x ->
             return $ (smtArraySizeOf (smtId x) === litOfSize (fromIntegral $ length entries) I64)
 
-    KNCallPrim _ _ (NamedPrim tid) _  | primName tid `elem` ["print_i32", "expect_i32"] -> do
-        return $ Nothing
-
     KNCallPrim _ _ (NamedPrim tid) vs | primName tid `elem` ["assert-invariants"] -> do
         scRunZ3 expr $ scriptImplyingBy' (smtAll (map smtVar vs)) facts
         return $ Nothing
@@ -627,12 +624,6 @@ checkBody expr facts =
     KNCallPrim _ _ (NamedPrim tid) [v] | primName tid `elem` ["prim_arrayLength"] -> do
         return $ withDecls facts $ \x -> return $ smtAll [smtId x === smtArraySizeOf (smtVar v)
                                                          ,smtId x `bvsge` bv 0 64]
-
-    KNCallPrim _ (PrimInt szr) (PrimOp ('s':'e':'x':'t':'_':_) (PrimInt szi)) [v] -> do
-        return $ withDecls facts $ \x -> return $ smtId x === sign_extend (fromIntegral $ intSizeOf szr - intSizeOf szi) (smtVar v)
-
-    KNCallPrim _ (PrimInt szr) (PrimOp ('z':'e':'x':'t':'_':_) (PrimInt szi)) [v] -> do
-        return $ withDecls facts $ \x -> return $ smtId x === zero_extend (fromIntegral $ intSizeOf szr - intSizeOf szi) (smtVar v)
 
     KNCallPrim _ _ (PrimOp opname (PrimInt _)) vs | Just op <- Map.lookup opname fnMap -> do
         return $ withDecls facts $ \x -> return $ smtId x === lift2 op (smtVars vs)
@@ -647,7 +638,15 @@ checkBody expr facts =
     KNCallPrim _ _ (PrimOp "bitashr" (PrimInt _)) vs -> do
         return $ withDecls facts $ \x -> return $ smtId x === lift2 bvashr (smtVars vs)
 
-    KNCallPrim _ _ (PrimIntTrunc _ tosz) [v] -> do
+    KNCallPrim _ _ (PrimOpInt "sext" fromsz tosz) [v] -> do
+        let delta = fromIntegral $ intSizeOf tosz - intSizeOf fromsz
+        return $ withDecls facts $ \x -> return $ smtId x === sign_extend delta (smtVar v)
+
+    KNCallPrim _ _ (PrimOpInt "zext" fromsz tosz) [v] -> do
+        let delta = fromIntegral $ intSizeOf tosz - intSizeOf fromsz
+        return $ withDecls facts $ \x -> return $ smtId x === zero_extend delta (smtVar v)
+
+    KNCallPrim _ _ (PrimOpInt "trunc" _ tosz) [v] -> do
         return $ withDecls facts $ \x -> return $ smtId x === smtTruncToSize (intSizeOf tosz) (smtVar v)
 
     KNCallPrim _ (PrimInt _) (PrimOp "sdiv-unsafe" (PrimInt sz)) vs -> do

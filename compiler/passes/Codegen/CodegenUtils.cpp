@@ -414,22 +414,9 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   Value* VL = args.at(0);
        if (op == "negate") { return b.CreateNeg(VL, "negtmp", this->config.useNUW, this->config.useNSW); }
   else if (op == "bitnot") { return b.CreateNot(VL, "nottmp"); }
-  else if (op == "sext_i64") { return b.CreateSExt(VL, b.getInt64Ty(), "sexti64tmp"); }
-  else if (op == "zext_i64") { return b.CreateZExt(VL, b.getInt64Ty(), "zexti64tmp"); }
-  else if (op == "sext_i32") { return b.CreateSExt(VL, b.getInt32Ty(), "sexti32tmp"); }
-  else if (op == "zext_i32") { return b.CreateZExt(VL, b.getInt32Ty(), "zexti32tmp"); }
-  else if (op == "sext_i16") { return b.CreateSExt(VL, b.getInt16Ty(), "sexti16tmp"); }
-  else if (op == "zext_i16") { return b.CreateZExt(VL, b.getInt16Ty(), "zexti16tmp"); }
-  else if (op == "zext_WordX2") { return b.CreateZExt(VL, getWordX2Ty(b), "zextWx2tmp"); }
-  else if (op == "zext_Word")   { return b.CreateZExt(VL, getWordTy(b),   "zextWtmp"); }
-  else if (op == "sext_WordX2") { return b.CreateZExt(VL, getWordX2Ty(b), "sextWx2tmp"); }
-  else if (op == "sext_Word")   { return b.CreateZExt(VL, getWordTy(b),   "sextWtmp"); }
-  else if (op == "trunc_i8") { return b.CreateTrunc(VL, b.getInt8Ty(), "trunci8tmp"); }
-  else if (op == "trunc_i16"){ return b.CreateTrunc(VL, b.getInt16Ty(), "trunci16tmp"); }
-  else if (op == "trunc_i32"){ return b.CreateTrunc(VL, b.getInt32Ty(), "trunci32tmp"); }
-  else if (op == "trunc_i64"){ return b.CreateTrunc(VL, b.getInt64Ty(), "trunci64tmp"); }
-  else if (op == "trunc_w0") { return b.CreateTrunc(VL, getWordTy(b),   "truncw0tmp"); }
-  else if (op == "trunc_w1") { return b.CreateTrunc(VL, getWordX2Ty(b), "truncw1tmp"); }
+  else if (op == "sext") { return b.CreateSExt(VL, assoc->getLLVMType(), "sexttmp"); }
+  else if (op == "zext") { return b.CreateZExt(VL, assoc->getLLVMType(), "zexttmp"); }
+  else if (op == "trunc")   { return b.CreateTrunc(VL, assoc->getLLVMType(), "trunctmp"); }
   else if (op == "fpext_f64")   { return b.CreateFPExt(VL, b.getDoubleTy(), "fptexttmp"); }
   else if (op == "fptrunc_f32") { return b.CreateFPTrunc(VL, b.getFloatTy(), "fptrunctmp"); }
   else if (op == "ctlz")     { return createCtlz(b, VL, "ctlztmp"); }

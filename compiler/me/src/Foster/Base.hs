@@ -735,10 +735,21 @@ prettyTypedId (TypedId t i) = prettyIdent i <> text " :: " <> pretty t
 -- during typechecking; they must be kept around to be used during handler compilation.
 type ResumeIds = (Ident, Ident)
 
+-- * NamedPrim refers to global (function) symbols provided by the runtime (or interpreter)
+--   rather than via the compiler. Example: prim_print_bytes_stdout.
+-- * PrimOp mostly identifes simple operations open-coded by the compiler.
+--   Examples: fixnum comparisons and bitwise operations.
+--   PrimOps are passed through to the back end, for consumption by CodegenPass::emitPrimitiveOperation().
+-- * PrimOpInt exists because the LLVM backend needs the target type but SMT checking
+--   needs the source type, and PrimOp only provides one type slot.
+-- * FieldLookup "foo" corresponds to the syntax   .foo
+-- * PrimInlineAsm correponds to prim inline-asm; it's special cased to allow static tracking
+--   of the assembly text and constraints.
+-- * LookupEffectHandler is a purely-internal primitive.
 data FosterPrim ty = NamedPrim (TypedId ty) -- invariant: global symbol
                    | PrimOp { ilPrimOpName :: String
                             , ilPrimOpType :: ty }
-                   | PrimIntTrunc IntSizeBits IntSizeBits -- from, to
+                   | PrimOpInt String IntSizeBits IntSizeBits -- from, to
                    | FieldLookup T.Text
                    | CoroPrim  CoroPrim ty ty
                    | PrimInlineAsm ty T.Text T.Text Bool
@@ -980,7 +991,7 @@ instance Pretty ty => Pretty (E_VarAST ty) where
 instance Pretty t => Pretty (FosterPrim t) where
   pretty (NamedPrim (TypedId _ i)) = text (show i)
   pretty (PrimOp nm _ty) = text nm
-  pretty (PrimIntTrunc frm to) = text ("trunc from " ++ show frm ++ " to " ++ show to)
+  pretty (PrimOpInt op frm to) = text (op ++ "from " ++ show frm ++ " to " ++ show to)
   pretty (CoroPrim c t1 t2) = pretty c <> text ":[" <> pretty t1
                                        <> text "," <+> pretty t2
                                        <> text "]"

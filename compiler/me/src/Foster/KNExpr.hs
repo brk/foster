@@ -446,9 +446,9 @@ kNormalize st expr =
                                     return $ NamedPrim tid'
             PrimOp    nm ty   -> do ty' <- qt ty
                                     return $ PrimOp nm ty'
-            PrimIntTrunc i1 i2 ->   return $ PrimIntTrunc i1 i2
             PrimInlineAsm ty s c x -> do ty' <- qt ty
                                          return $ PrimInlineAsm ty' s c x
+            PrimOpInt op fr to -> return $ PrimOpInt op fr to
             FieldLookup name -> return $ FieldLookup name
             LookupEffectHandler tag -> return $ LookupEffectHandler tag
             CoroPrim {} -> error $ "Shouldn't yet have constructed CoroPrim!"

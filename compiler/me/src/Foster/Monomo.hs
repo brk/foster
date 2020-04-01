@@ -63,7 +63,7 @@ monoPrim subst prim = do
   case prim of
        NamedPrim tid      -> liftM NamedPrim (monoVar subst tid)
        PrimOp nm ty       -> liftM (PrimOp nm) (qt ty)
-       PrimIntTrunc i1 i2 -> return $ PrimIntTrunc i1 i2
+       PrimOpInt op i1 i2 -> return $ PrimOpInt op i1 i2
        CoroPrim   p t1 t2 -> liftM2 (CoroPrim p) (qt t1) (qt t2)
        FieldLookup name   -> return (FieldLookup name)
        PrimInlineAsm ty cnt cns fx -> qt ty >>= \ty' -> return $ PrimInlineAsm ty' cnt cns fx

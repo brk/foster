@@ -178,6 +178,6 @@ callprim prim xs =
                 MalSexp [MalAtom "global", MalVar "Pervasives", MalVar "print_int"]] ++ map tid xs
         (NamedPrim (TypedId _ id)) | show id == "opaquely_i32" ->
             tid (head xs)
-        PrimIntTrunc I64 I32 ->
+        (PrimOp name (PrimIntIL I32)) | name == "trunc_i64" ->
             MalSexp $ [MalAtom "convert.i64.i32"] ++ map tid xs
         _ -> error $ "malfunction: KNCallPrim " ++ show prim

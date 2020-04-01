@@ -540,8 +540,8 @@ stepExpr gs expr = do
                           evalNamedPrimitive (T.unpack $ identPrefix id) gs args
           PrimOp op ty -> return $
               withTerm gs (SSTmValue $ evalPrimitiveOp ty op args)
-          PrimIntTrunc from to -> return $
-              withTerm gs (SSTmValue $ evalPrimitiveIntTrunc from to args)
+          PrimOpInt op from to -> return $
+              withTerm gs (SSTmValue $ evalPrimitiveOp (PrimIntIL to) op args)
           CoroPrim prim _t1 _t2 -> evalCoroPrimitive prim gs args
           PrimInlineAsm {} -> error $ "KSmallstep.hs: Interpreter cannot handle inline asm!"
           LookupEffectHandler _ -> error $ "KSmallstep.hs: Interpreter cannot yet look up effect handlers"
@@ -840,19 +840,26 @@ evalPrimitiveIntOp I8        "ctlz"  [SSInt8  i] = SSInt8  (ctlz i 8 )
 evalPrimitiveIntOp I16       "ctlz"  [SSInt16 i] = SSInt16 (ctlz i 16)
 evalPrimitiveIntOp IWd       "ctlz"  [SSIntWd i] = SSIntWd (ctlz i kVirtualWordSize)
 
-evalPrimitiveIntOp _  "sext_i16" [SSInt8  i] = SSInt16 (fromIntegral i)
-evalPrimitiveIntOp _  "sext_i32" [SSInt8  i] = SSInt32 (fromIntegral i)
-evalPrimitiveIntOp _  "sext_i64" [SSInt8  i] = SSInt64 (fromIntegral i)
-evalPrimitiveIntOp _  "sext_i32" [SSInt16 i] = SSInt32 (fromIntegral i)
-evalPrimitiveIntOp _  "sext_i64" [SSInt16 i] = SSInt64 (fromIntegral i)
-evalPrimitiveIntOp _  "sext_i64" [SSInt32 i] = SSInt64 (fromIntegral i)
+evalPrimitiveIntOp I8  "trunc" [SSInt16 z] = SSInt8  $ fromIntegral z
+evalPrimitiveIntOp I8  "trunc" [SSInt32 z] = SSInt8  $ fromIntegral z
+evalPrimitiveIntOp I8  "trunc" [SSInt64 z] = SSInt8  $ fromIntegral z
+evalPrimitiveIntOp I16 "trunc" [SSInt32 z] = SSInt16 $ fromIntegral z
+evalPrimitiveIntOp I16 "trunc" [SSInt64 z] = SSInt16 $ fromIntegral z
+evalPrimitiveIntOp I32 "trunc" [SSInt64 z] = SSInt32 $ fromIntegral z
 
-evalPrimitiveIntOp _  "zext_i16" [SSInt8  i] = SSInt16 $ unsigned 8  (fromIntegral i)
-evalPrimitiveIntOp _  "zext_i32" [SSInt8  i] = SSInt32 $ unsigned 8  (fromIntegral i)
-evalPrimitiveIntOp _  "zext_i64" [SSInt8  i] = SSInt64 $ unsigned 8  (fromIntegral i)
-evalPrimitiveIntOp _  "zext_i32" [SSInt16 i] = SSInt32 $ unsigned 16 (fromIntegral i)
-evalPrimitiveIntOp _  "zext_i64" [SSInt16 i] = SSInt64 $ unsigned 16 (fromIntegral i)
-evalPrimitiveIntOp _  "zext_i64" [SSInt32 i] = SSInt64 $ unsigned 32 (fromIntegral i)
+evalPrimitiveIntOp I16  "sext" [SSInt8  i] = SSInt16 (fromIntegral i)
+evalPrimitiveIntOp I32  "sext" [SSInt8  i] = SSInt32 (fromIntegral i)
+evalPrimitiveIntOp I64  "sext" [SSInt8  i] = SSInt64 (fromIntegral i)
+evalPrimitiveIntOp I32  "sext" [SSInt16 i] = SSInt32 (fromIntegral i)
+evalPrimitiveIntOp I64  "sext" [SSInt16 i] = SSInt64 (fromIntegral i)
+evalPrimitiveIntOp I64  "sext" [SSInt32 i] = SSInt64 (fromIntegral i)
+
+evalPrimitiveIntOp I16  "zext" [SSInt8  i] = SSInt16 $ unsigned 8  (fromIntegral i)
+evalPrimitiveIntOp I32  "zext" [SSInt8  i] = SSInt32 $ unsigned 8  (fromIntegral i)
+evalPrimitiveIntOp I64  "zext" [SSInt8  i] = SSInt64 $ unsigned 8  (fromIntegral i)
+evalPrimitiveIntOp I32  "zext" [SSInt16 i] = SSInt32 $ unsigned 16 (fromIntegral i)
+evalPrimitiveIntOp I64  "zext" [SSInt16 i] = SSInt64 $ unsigned 16 (fromIntegral i)
+evalPrimitiveIntOp I64  "zext" [SSInt32 i] = SSInt64 $ unsigned 32 (fromIntegral i)
 
 evalPrimitiveIntOp I32 "sitofp_f64"     [SSInt32 i] = SSFloat (fromIntegral i)
 evalPrimitiveIntOp I32 "uitofp_f64"     [SSInt32 i] = SSFloat (fromIntegral i)
@@ -885,17 +892,6 @@ toDoubleLikeC i =
 ctpop i n = fromIntegral $ length [x | x <- showBits n i , x == '1']
 
 ctlz  i n = fromIntegral $ length $ takeWhile (=='0') (showBits n i)
-
-evalPrimitiveIntTrunc :: IntSizeBits -> IntSizeBits -> [SSValue] -> SSValue
-evalPrimitiveIntTrunc   _ I8  [SSInt32 i] = SSInt8  $ fromIntegral i
-evalPrimitiveIntTrunc   _ I8  [SSInt64 i] = SSInt8  $ fromIntegral i
-evalPrimitiveIntTrunc   _ I32 [SSInt64 i] = SSInt32 $ fromIntegral i
-
---evalPrimitiveIntTrunc I64 (IWord 0) [SSInt i] = SSInt i
---evalPrimitiveIntTrunc (IWord 1) (IWord 0) [SSInt i] = SSInt (toInteger $ trunc64 i)
-
-evalPrimitiveIntTrunc from to _args =
-  error $ "Smallstep.evalPrimitiveIntTrunc " ++ show from ++ " " ++ show to
 
 -- This relies on the invariant that lists are created & stored densely.
 packBytes :: MachineState -> Array Int Location -> Int32 -> BS.ByteString

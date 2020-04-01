@@ -389,9 +389,9 @@ sizeConversions = [mkTruncate p | p <- allSizePairs, isLarger  p] ++
                   [mkSignExt  p | p <- allSizePairs, isSmaller p] ++
                   [mkZeroExt  p | p <- allSizePairs, isSmaller p]
   where
-    mkSignExt  (a, b) = (,) (mkSignExtName  a b)     $ (,) (mkFnType [PrimIntAST a] [PrimIntAST b] ) $ PrimOp ("sext_" ++ i b) (PrimIntAST a)
-    mkZeroExt  (a, b) = (,) (mkZeroExtName  a b)     $ (,) (mkFnType [PrimIntAST a] [PrimIntAST b] ) $ PrimOp ("zext_" ++ i b) (PrimIntAST a)
-    mkTruncate (a, b) = (,) (mkTruncateName a b)     $ (,) (mkFnType [PrimIntAST a] [PrimIntAST b] ) $ PrimIntTrunc a b
+    mkSignExt  (a, b) = (,) (mkSignExtName  a b)     $ (,) (mkFnType [PrimIntAST a] [PrimIntAST b] ) $ PrimOpInt "sext" a b
+    mkZeroExt  (a, b) = (,) (mkZeroExtName  a b)     $ (,) (mkFnType [PrimIntAST a] [PrimIntAST b] ) $ PrimOpInt "zext" a b
+    mkTruncate (a, b) = (,) (mkTruncateName a b)     $ (,) (mkFnType [PrimIntAST a] [PrimIntAST b] ) $ PrimOpInt "trunc" a b
     mkTruncateName a b = "trunc_" ++ i a ++ "_to_" ++ i b
     mkSignExtName  a b = "sext_"  ++ i a ++ "_to_" ++ i b
     mkZeroExtName  a b = "zext_"  ++ i a ++ "_to_" ++ i b

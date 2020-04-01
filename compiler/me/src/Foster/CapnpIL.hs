@@ -380,15 +380,8 @@ dumpExpr (ILCallPrim t (PrimOp op _ty) args)
 dumpExpr (ILCallPrim t (CoroPrim coroPrim argty retty) args)
         = dumpCallCoroOp t coroPrim argty retty args
 
-dumpExpr (ILCallPrim t (PrimIntTrunc _from to) args)
-        = dumpCallPrimOp t (truncOp to) args
-  where truncOp I1  = "trunc_i1"
-        truncOp I8  = "trunc_i8"
-        truncOp I16 = "trunc_i16"
-        truncOp I32 = "trunc_i32"
-        truncOp I64 = "trunc_i64"
-        truncOp IWd = "trunc_w0"
-        truncOp IDw = "trunc_w1"
+dumpExpr (ILCallPrim t (PrimOpInt op _from _to) args)
+        = dumpCallPrimOp t op args
 
 dumpExpr (ILAppCtor _ _cinfo _ _sr) = error $ "CapnpIL.hs saw ILAppCtor, which"
                                        ++ " should have been translated away..."

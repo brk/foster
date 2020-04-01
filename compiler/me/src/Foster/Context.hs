@@ -56,7 +56,7 @@ data Context ty = Context { contextBindings   :: ContextBindings ty
   primitiveOperations: [immutable]
     When we see  (prim X ...) we use primitiveOperations to get a (possibly)
     more structured representation of X to attach to AnnPrimitive.
-    For example, prim trunc_i32_to_i8 gets mapped to (PrimIntTrunc I32 I8).
+    For example, prim trunc_i32_to_i8 gets mapped to (PrimOp "trunc" I8).
 
   globalIdents: [immutable]
     Not needed by the type checker; used during closure conversion to
@@ -170,7 +170,8 @@ liftPrimOp f primop =
   case primop of
     NamedPrim tid      -> liftM NamedPrim (liftTID f tid)
     PrimOp s ty        -> liftM (PrimOp s) (f ty)
-    PrimIntTrunc s1 s2 -> return $ PrimIntTrunc s1 s2
+    PrimOpInt op fr to -> return $ PrimOpInt op fr to
+    FieldLookup name   -> return $ FieldLookup name
     CoroPrim p t1 t2   -> liftM2 (CoroPrim p) (f t1) (f t2)
     PrimInlineAsm t cnt cns fx -> do t' <- f t
                                      return $ PrimInlineAsm t' cnt cns fx
