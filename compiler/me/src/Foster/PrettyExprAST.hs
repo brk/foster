@@ -172,6 +172,12 @@ formatBytesWord8 isSingleQuote w =
 
 parens' d = {-nest 1-} (parens d)
 
+prettyCallExprs [] = text "!"
+prettyCallExprs es = hang 4 $ sep (map (group.prettyAtom) es)
+
+prettyCallPrim nm []   tys exprs = text "prim" <+> text nm                 <+> prettyCallExprs exprs
+prettyCallPrim nm lits tys exprs = text "prim" <+> text nm <+> pretty lits <+> prettyCallExprs exprs
+
 prettyStmt e = case e of
     E_MachArrayLit annot _mbt args -> withAnnot annot $ parens' $ text "prim mach-array-literal" <+> hsep (map pretty args)
     E_VarAST annot evar     -> withAnnot annot $ pretty evar
@@ -181,14 +187,13 @@ prettyStmt e = case e of
     E_StringAST   annot (SS_Text  r t) -> withAnnot annot $             wasRaw r <> dquotes (text $ concatMap (formatTextChar False) $ T.unpack t)
     E_StringAST   annot (SS_Bytes r b) -> withAnnot annot $ text "b" <> wasRaw r <> dquotes (text $ concatMap (formatBytesWord8 False) $ BS.unpack b)
     E_BoolAST     annot b   -> withAnnot annot $ text $ show b
-    E_PrimAST     annot nm []   _ -> withAnnot annot $ text "prim" <+> text nm
-    E_PrimAST     annot nm lits _ -> withAnnot annot $ text "prim" <+> text nm <+> pretty lits
-    E_CallAST annot e []    -> withAnnot annot $ prettyAtom e <+> text "!"
+    
+    E_CallPrimAST annot nm lits tys exprs -> withAnnot annot $ prettyCallPrim nm lits tys exprs
+
     E_CallAST annot e [e1,e2] | isOperator e
                             -> withAnnot annot $ hang 4 $ group $
                                                  prettyAtom e1 <$> pretty e <+> group (prettyAtom e2)
-    E_CallAST annot e es    -> withAnnot annot $ hang 4 $
-                                                 sep (map (group.prettyAtom) (e:es))
+    E_CallAST annot e es    -> withAnnot annot $ prettyAtom e <+> prettyCallExprs es
     E_LetAST  annot (TermBinding evar bound) expr ->
                                withAnnot annot $
                               {- lkwd "let"

@@ -288,7 +288,7 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
     TList [tok, _,_cbr, TList []]  | tok `tm` tok_VAL_APP      -> E_CallAST annot expr []
     TList [tok, _,_cbr, TList tys] | tok `tm` tok_VAL_TYPE_APP -> E_TyApp annot expr (map cb_parse_t tys)
     TList [tok, _,_cbr, TList [x]] | tok `tm` tok_FIELDLOOKUP  ->
-        mkPrimCall "record-lookup" [LitText $ cb_parse_id_text x] [] [expr] annot
+        E_CallPrimAST annot "record-lookup" [LitText $ cb_parse_id_text x] [] [expr]
     _ -> error $ "cb_parse_suffix failed: " ++ show cbor
 
   unMu (TList [_, _, _, TList cbors]) = cbors
@@ -697,11 +697,6 @@ processArrayValue :: ExprAST TypeP -> ArrayEntry (ExprAST TypeP)
 processArrayValue (E_IntAST annot t) = AE_Int annot t
 processArrayValue expr = AE_Expr expr
 
-mkPrimCall :: String -> [Literal] -> [TypeP] -> [ExprAST TypeP] -> ExprAnnot -> ExprAST TypeP
-mkPrimCall name lits tys args annot =
-    let emptyAnnot = annotForRange (MissingSourceRange "prim") in
-    E_CallAST annot (E_PrimAST emptyAnnot name lits tys) args
-
 parseCallPrim' primname tys args annot = do
     let fixupSubscriptRanges (E_ArrayRead (ExprAnnot pc r tc) (ArrayIndex a b rng sg)) =
           let r' = rangeUnions r [rangeOf a, rangeOf b, r, rng]
@@ -710,8 +705,8 @@ parseCallPrim' primname tys args annot = do
         fixupSubscriptRanges _ = error $ "fixupSubscriptRanges needs an ArrayRead"
 
     case (T.unpack primname, args) of
-      ("assert-invariants", _) -> mkPrimCall "assert-invariants" [] [] args annot
-      ("log-type",          _) -> mkPrimCall "log-type"          [] [] args annot
+      ("assert-invariants", _) -> E_CallPrimAST annot "assert-invariants" [] [] args
+      ("log-type",          _) -> E_CallPrimAST annot "log-type"          [] [] args
       ("mach-array-literal", _) -> case tys of
                                     []   -> E_MachArrayLit annot Nothing   (map processArrayValue args)
                                     [ty] -> E_MachArrayLit annot (Just ty) (map processArrayValue args)
@@ -732,14 +727,12 @@ parseCallPrim' primname tys args annot = do
       ("inline-asm", _) ->
         case (tys, args) of
           ([_], E_StringAST _ (SS_Text _ cnt) : E_StringAST _ (SS_Text _ cns) : E_BoolAST _ sideeffects : args' ) -> do
-            let prim = (E_PrimAST annot "inline-asm"
-                           [LitText cnt, LitText cns, LitBool sideeffects] tys)
-            E_CallAST annot prim args'
+            E_CallPrimAST annot "inline-asm" [LitText cnt, LitText cns, LitBool sideeffects] tys args'
           _ -> error $ "ProtobufFE: inline-asm requires a fn type, two string literals, and a bool"
 
       (name, args) ->
         case (tys, Map.lookup name gFosterPrimOpsTable) of
-          ([], Just _) -> mkPrimCall name [] [] args annot
+          ([], Just _) -> E_CallPrimAST annot name [] [] args
           _ ->
             error $ "ProtobufFE: unknown primitive/arg combo " ++ show primname
                     ++ "\n" ++ showSourceRange (rangeOf annot)
@@ -877,7 +870,6 @@ attachFormatting expr = do
    E_IntAST       _ txt      -> liftM2' E_IntAST      ana (return txt)
    E_RatAST       _ txt      -> liftM2' E_RatAST      ana (return txt)
    E_VarAST       _ v        -> liftM2' E_VarAST      ana (return v)
-   E_PrimAST      _ nm ls ts -> liftM4' E_PrimAST     ana (return nm) (return ls) (return ts)
    E_MachArrayLit _ mbt args -> liftM3' E_MachArrayLit ana (return mbt) (mapM (liftArrayEntryM q) args)
    E_KillProcess  _ e        -> liftM2' E_KillProcess ana (q e)
    E_CompilesAST  _ me       -> liftM2' E_CompilesAST ana (liftMaybeM q me)
@@ -893,6 +885,7 @@ attachFormatting expr = do
    E_LetRec       _ bnz e    -> liftM3' E_LetRec      ana (mapM convertTermBinding bnz) (q e)
    E_LetAST       _ bnd e    -> liftM3' E_LetAST      ana (convertTermBinding bnd) (q e)
    E_CallAST      _ b exprs  -> liftM3' E_CallAST     ana (q b) (mapM q exprs)
+   E_CallPrimAST  _ nm l t e -> liftM5' E_CallPrimAST ana (return nm) (return l) (return t) (mapM q e)
    E_FnAST        _ fn       -> liftM2' E_FnAST       ana (attachFormattingFn fn)
    E_ArrayRead    _ (ArrayIndex a b rng2 s) -> do x <- q a
                                                   y <- q b
@@ -919,9 +912,10 @@ attachFormatting expr = do
                                    an <- ana
                                    return $ E_Case an e' bs'
 
-liftM2' f a b     = do b' <- b;                   a' <- a; return $ f a' b'
-liftM3' f a b c   = do b' <- b; c' <- c;          a' <- a; return $ f a' b' c'
-liftM4' f a b c d = do b' <- b; c' <- c; d' <- d; a' <- a; return $ f a' b' c' d'
+liftM2' f a b       = do b' <- b;                            a' <- a; return $ f a' b'
+liftM3' f a b c     = do b' <- b; c' <- c;                   a' <- a; return $ f a' b' c'
+liftM4' f a b c d   = do b' <- b; c' <- c; d' <- d;          a' <- a; return $ f a' b' c' d'
+liftM5' f a b c d e = do b' <- b; c' <- c; d' <- d; e' <- e; a' <- a; return $ f a' b' c' d' e'
 
 
 liftMaybeM :: Monad m => (a -> m b) -> Maybe a -> m (Maybe b)

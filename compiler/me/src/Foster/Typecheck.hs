@@ -343,15 +343,15 @@ tcRho ctx expr expTy = do
   tcWithScope expr $ do
     case expr of
       E_VarAST    rng v              -> tcRhoVar      ctx rng (evarName v)      expTy
-      E_PrimAST   rng nm [] []       -> tcRhoPrim     ctx rng (T.pack  nm)      expTy
-      E_PrimAST   rng "inline-asm" [LitText s, LitText c, LitBool x] [ty] -> do
+      E_CallPrimAST rng "inline-asm" [LitText s, LitText c, LitBool x] [ty] [] -> do
         ty' <- tcType ctx ty
         matchExp expTy (AnnPrimitive rng ty' (PrimInlineAsm ty' s c x)) "inline-asm"
 
-      --E_PrimAST   rng "record-lookup" [LitText fieldName] [expr] ->
+      --E_CallPrimAST   rng "record-lookup" [LitText fieldName] [expr] ->
       --  tcRhoRecordLookup ctx rng expr fieldName expTy
 
-      E_PrimAST   {} -> tcFails [text "Typecheck saw unexpected primitive", text $ show expr]
+      E_CallPrimAST rng nm [] [] args -> tcRhoCallPrim ctx rng (T.pack nm) args expTy
+      E_CallPrimAST   {} -> tcFails [text "Typecheck saw unexpected primitive", text $ show expr]
       E_IntAST    rng txt ->  typecheckInt rng txt           expTy   >>= (\v -> matchExp expTy v "tcInt")
       E_RatAST    rng txt -> (typecheckRat rng txt (expMaybe expTy)) >>= (\v -> matchExp expTy v "tcRat")
       E_BoolAST   rng b              -> tcRhoBool         rng   b          expTy
@@ -449,24 +449,56 @@ tcSigmaVar ctx annot name = do
 --  G |- v ~~> v ::: r
 -- {{{
 tcRhoVar ctx rng name expTy = do
-     debugIf dbgVar $ green (text "typecheckVar (rho): ") <> text (T.unpack name ++ " :?: " ++ show expTy)
+     debugIf dbgVar $ green (text "typecheckVar (rho): exp_ty ") <> text (T.unpack name ++ " :?: " ++ show expTy)
      v_sigma <- tcSigmaVar ctx rng name
      ann_var <- inst v_sigma ("tcRhoVar[" ++ T.unpack name ++ "]")
      debugIf dbgVar $ green (text "typecheckVar v_sigma: ") <> text (T.unpack name ++ " :: " ++ show (typeTC v_sigma))
      debugIf dbgVar $ green (text "typecheckVar ann_var: ") <> text (T.unpack name ++ " :: " ++ show (typeTC ann_var))
      matchExp expTy ann_var "var"
 
-tcRhoPrim ctx annot name expTy = do
-     case tcSigmaPrim ctx annot name of
+
+tcRhoCallPrim ctx rng name [arg] expTy | name == T.pack "log-type" = do
+    e <- inferSigma ctx arg (T.unpack name)
+    tcLift $ putDocLn $ yellow (text "inferred type of ") <> highlightFirstLineDoc (rangeOf arg) <$> text " is " <> blue (pretty (typeTC e))
+    do t' <- zonkType (typeTC e)
+       tcLift $ putDocLn $ yellow (text "which zonks to ") <> pretty t'
+    matchExp expTy (AnnTuple rng unitTypeTC KindPointerSized []) (T.unpack name)
+
+tcRhoCallPrim ctx rng name args expTy | name == T.pack "assert-invariants" = do
+    levels <- mkLevels
+    let mkFnTypeTC args ret = FnTypeTC args ret emptyEffectTC
+                                      (UniConst FastCC) (UniConst FT_Func) levels
+
+    args <- mapM (\arg -> checkSigma ctx arg boolTypeTC) args
+    let fnty = mkFnTypeTC [boolTypeTC | _ <- args] unitTypeTC
+    let prim = NamedPrim (TypedId fnty (Ident name 1))
+    let primcall = AnnCall rng unitTypeTC (AnnPrimitive rng fnty prim) args
+    id <- tcFresh "assert-invariants-thunk"
+    let thunk = Fn (TypedId (mkFnTypeTC [] unitTypeTC) id) [] primcall () rng
+    matchExp expTy (AnnLetFuns rng [id] [thunk] (AnnTuple rng unitTypeTC KindPointerSized [])) (T.unpack name)
+
+tcRhoCallPrim ctx annot name args expTy = do
+    -- Most (but not all) primitives can be given function-like signatures.
+    -- The special cases should already have been handled.
+    --
+    -- To reduce boilerplate for the remainder, we look up a function type
+    -- associated with each primitive, then type check a synthetic call of
+    -- a "normal" variable.
+    debugIf dbgVar $ green (text "tcRhoCallPrim: ") <> text (T.unpack name ++ " :?: " ++ show expTy)
+    case tcSigmaPrim ctx annot name of
 
        Just v_sigma -> do
+         debugIf dbgVar $ green (text "tcRhoCallPrim: ") <> text (T.unpack name ++ " :?: " ++ show v_sigma)
          ann_var <- inst v_sigma "tcRhoVar"
-         matchExp expTy ann_var "var"
+         debugIf dbgVar $ green (text "tcRhoCallPrim: ") <> text (T.unpack name ++ " :?: " ++ show ann_var)
+         primcall <- tcSigmaCallWithAnnBase ctx annot ann_var args expTy
+         matchExp expTy primcall "var"
 
        Nothing -> do
          tcFails [text $ "Unknown primitive " ++ T.unpack name
                  ,prettyWithLineNumbers (rangeOf annot)
                  ]
+
 
 tcSigmaPrim :: Context SigmaTC -> ExprAnnot -> T.Text -> Maybe (AnnExpr SigmaTC)
 tcSigmaPrim ctx annot name = do
@@ -1078,39 +1110,27 @@ tcRhoCall ctx rng base argstup exp_ty = do
    app <- tcSigmaCall ctx rng base argstup (Infer r)
    instSigma app exp_ty
 
-tryGetVarName (E_VarAST _ v) = T.unpack $ evarName v
+tryGetVarName (E_AnnVar _ (tid, _)) = T.unpack $ identPrefix (tidIdent tid)
+tryGetVarName (AnnPrimitive _ _ fprim) = show fprim
 tryGetVarName _ = ""
 
 tcSigmaCall :: Context SigmaTC -> ExprAnnot -> ExprAST TypeAST
             -> [ExprAST TypeAST] -> Expected SigmaTC -> Tc (AnnExpr SigmaTC)
 
-tcSigmaCall ctx rng (E_PrimAST _ name@"log-type" _ _) [arg] exp_ty = do
-    e <- inferSigma ctx arg name
-    tcLift $ putDocLn $ yellow (text "inferred type of ") <> highlightFirstLineDoc (rangeOf arg) <$> text " is " <> blue (pretty (typeTC e))
-    do t' <- zonkType (typeTC e)
-       tcLift $ putDocLn $ yellow (text "which zonks to ") <> pretty t'
-    matchExp exp_ty (AnnTuple rng unitTypeTC KindPointerSized []) name
-
-tcSigmaCall ctx rng (E_PrimAST _ name@"assert-invariants" _ _) argtup exp_ty = do
-    levels <- mkLevels
-    let mkFnTypeTC args ret = FnTypeTC args ret emptyEffectTC
-                                      (UniConst FastCC) (UniConst FT_Func) levels
-
-    args <- mapM (\arg -> checkSigma ctx arg boolTypeTC) argtup
-    let fnty = mkFnTypeTC [boolTypeTC | _ <- argtup] unitTypeTC
-    let prim = NamedPrim (TypedId fnty (Ident (T.pack name) 1))
-    let primcall = AnnCall rng unitTypeTC (AnnPrimitive rng fnty prim) args
-    id <- tcFresh "assert-invariants-thunk"
-    let thunk = Fn (TypedId (mkFnTypeTC [] unitTypeTC) id) [] primcall () rng
-    matchExp exp_ty (AnnLetFuns rng [id] [thunk] (AnnTuple rng unitTypeTC KindPointerSized [])) name
-
 tcSigmaCall ctx rng base argexprs exp_ty = do
+    annbase <- inferRho ctx base "called base"
+    tcSigmaCallWithAnnBase ctx rng annbase argexprs exp_ty
+
+tcSigmaCallWithAnnBase :: Context SigmaTC -> ExprAnnot -> AnnExpr TypeTC
+            -> [ExprAST TypeAST] -> Expected SigmaTC -> Tc (AnnExpr SigmaTC)
+
+tcSigmaCallWithAnnBase ctx rng annbase argexprs exp_ty = do
         let dbg d = debugIf dbgCalls d
 
         dbg $ text "{{{"
-        annbase <- inferRho ctx base "called base"
+
         let fun_ty = typeTC annbase
-        (args_tys, res_ty_raw, fx, _cc, _, _levels) <- unifyFun fun_ty (length argexprs) ("tSC("++tryGetVarName base++")" ++ highlightFirstLine (rangeOf rng))
+        (args_tys, res_ty_raw, fx, _cc, _, _levels) <- unifyFun fun_ty (length argexprs) ("tSC("++tryGetVarName annbase++")" ++ highlightFirstLine (rangeOf rng))
         dbg $ text "tcSigmaCall: fn type of" <+> pretty annbase <+> text "is " <$$>
                     indent 2 (pretty fun_ty <$$>
                               text ";; cc=" <+> text (show _cc)
@@ -1159,7 +1179,7 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
             debugIf False $ text "ctxFx: " <> pretty ctxFx'
             debugIf False $ text "fx: " <> pretty fx'
             debugIf False $ showStructure fun_ty
-            debugIf False $ text "len argexprs:" <> pretty (length argexprs) <+> text ("tSC("++tryGetVarName base++")")
+            debugIf False $ text "len argexprs:" <> pretty (length argexprs) <+> text ("tSC("++tryGetVarName annbase++")")
             unify fx ctxFx' [text $ "Inconsistent effects at call site: "
                             ,text $ highlightFirstLine (rangeOf rng)
                             ,text $ "Effect of called function:"

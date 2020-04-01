@@ -56,7 +56,7 @@ data ExprSkel annot ty =
         | E_LetRec        annot [TermBinding ty] (ExprSkel annot ty)
         -- Use of bindings
         | E_VarAST        annot (E_VarAST ty)
-        | E_PrimAST       annot String [Literal] [ty]
+        | E_CallPrimAST   annot String [Literal] [ty] [ExprSkel annot ty]
         | E_CallAST       annot (ExprSkel annot ty) [ExprSkel annot ty]
         -- Mutable ref cells
         | E_AllocAST      annot (ExprSkel annot ty) AllocMemRegion
@@ -111,7 +111,8 @@ instance Summarizable (ExprAST t) where
             E_IntAST    _rng txt   -> text $ "IntAST       " ++ txt                            ++ (exprCmnts e)
             E_RatAST    _rng txt   -> text $ "RatAST       " ++ txt                            ++ (exprCmnts e)
             E_CallAST _rng b _args -> text $ "CallAST      " ++ tryGetCallNameE b              ++ (exprCmnts e)
-            E_PrimAST _rng nm _ _  -> text $ "PrimAST      " ++ nm                             ++ (exprCmnts e)
+            E_CallPrimAST _rng nm _ _ _
+                                   -> text $ "CallPrimAST  " ++ nm                             ++ (exprCmnts e)
             E_CompilesAST {}       -> text $ "CompilesAST  "                                   ++ (exprCmnts e)
             E_IfAST       {}       -> text $ "IfAST        "                                   ++ (exprCmnts e)
             E_FnAST    _rng f      -> text $ "FnAST        " ++ T.unpack (fnAstName f)         ++ (exprCmnts e)
@@ -141,13 +142,13 @@ instance Structured (ExprAST t) where
             E_BoolAST     {}             -> []
             E_IntAST      {}             -> []
             E_RatAST      {}             -> []
-            E_PrimAST     {}             -> []
             E_KillProcess {}             -> []
             E_VarAST      {}             -> []
             E_MachArrayLit _rng _ty entries -> [e | AE_Expr e <- entries]
             E_CompilesAST _rng Nothing   -> []
             E_CompilesAST _rng (Just e)  -> [e]
             E_CallAST     _rng b exprs   -> b:exprs
+            E_CallPrimAST  rng _nm _ls _ts exprs -> exprs
             E_IfAST       _rng    a b c  -> [a, b, c]
             E_FnAST       _rng f         -> [fnAstBody f]
             E_SeqAST      _rng  _a _b    -> unbuildSeqs e
@@ -182,7 +183,7 @@ exprAnnot e = case e of
       E_FnAST         annot _     -> annot
       E_LetAST        annot _ _   -> annot
       E_LetRec        annot _ _   -> annot
-      E_PrimAST       annot _ _ _ -> annot
+      E_CallPrimAST   ann _ _ _ _ -> ann
       E_CallAST       annot _ _   -> annot
       E_CompilesAST   annot _     -> annot
       E_KillProcess   annot _     -> annot
