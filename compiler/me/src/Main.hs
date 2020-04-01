@@ -911,18 +911,40 @@ showGeneratedMetaTypeVariables varlist ctx_il =
 dumpAllPrimitives = do
   mapM_ dumpPrimitive (Map.toList gFosterPrimOpsTable)
  where
+    prettySrc (BoundTyVar name _) = text name
+    prettySrc (SkolemTyVar name uniq _kind) = text "$" <> text name <> text ":" <> pretty uniq
+
+    forallPart tvs = hsep $ [text "forall"] ++ map (\(tv, k) -> parens (prettySrc tv <+> text ":" <+> pretty k)) tvs
+
+    textid str = if Char.isAlphaNum (head str)
+                    then         text str
+                    else parens (text str)
+
+    allNames = "abcdefghijklmnop"
+
     dumpPrimitive :: (String, (TypeAST, FosterPrim TypeAST)) -> IO ()
-    dumpPrimitive (name, ((FnTypeAST args ret fx _ _), _primop)) = do
-      let allNames = "abcdefghijklmnop"
-      let namesArgs = [(text (name:[]) , arg) | (name, arg) <- zip allNames args]
-      let textid str = if Char.isAlphaNum (head str)
-                               then         text str
-                               else parens (text str)
+    dumpPrimitive (name, ((FnTypeAST args ret _fx _ _), _primop)) = do
+      
+      let namesArgs = [(text (nameChar:[]) , arg) | (nameChar, arg) <- zip allNames args]
       putDocLn $ (fill 20 $ textid name)
                  <> text " = {"
                      <+> hsep [fill 12 (name <+> text ":" <+> pretty arg) <+> text "=>"
                               | (name, arg) <- namesArgs]
                      <+> fill 23 (text "prim" <+> text name <+> hsep (map fst namesArgs))
-                 <+> text "}; // :: " <> pretty ret <+> text "; fx=" <> pretty fx
+                 <+> text "}; // :: " <> pretty ret -- <+> text "; fx=" <> pretty fx
+    
+    dumpPrimitive (name, ((ForAllAST tvs (FnTypeAST args ret _fx _ _)), _primop)) = do
+      let argNames = [text (nameChar:[]) | (nameChar, _arg) <- zip allNames args]
+      putDocLn $ (fill 20 $ textid name) <+> text "::" <+> forallPart tvs
+                                         <+> text "{" <+>
+                                            hsep (map (\a -> pretty a <+> text "=>") args) <+> pretty ret
+                                         <+> text "}"
+                                         <> text ";"
+      putDocLn $ (fill 20 $ textid name)
+                 <> text " = {"
+                     <+> hsep [fill 12 name <+> text "=>"
+                              | name <- argNames]
+                     <+> fill 23 (text "prim" <+> text name <+> hsep argNames)
+                 <+> text "}; // :: " <> pretty ret -- <+> text "; fx=" <> pretty fx
 
     dumpPrimitive (name, (_ty, _primop)) = error $ "Can't dump primitive " ++ name ++ " yet."
