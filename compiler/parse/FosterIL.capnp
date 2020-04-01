@@ -100,6 +100,8 @@ struct Letable {
     ilnamedtypedecl   @ 19;
     ilunboxedtuple    @ 20;
     ilglobalappctor   @ 21;
+    ilfieldidxopen    @ 22;
+    ilfieldidxclosed  @ 23;
   }
   parts   @ 0 : List(TermVar); # repeated
   tag     @ 1 : Tag;
@@ -119,7 +121,7 @@ struct Letable {
 
   occ          @ 12 : PbOccurrence $optional;
   primopname   @ 13 : Text $optional;
-  primopsize   @ 14 : List(Int64); # TODO use this # optional
+  primopsize   @ 14 : List(Int64); # optional
   ctorinfo     @ 15 : PbCtorInfo $optional;
   arraylit     @ 16 : PbArrayLiteral $optional;
   sourceloc    @ 17 : SourceLocation $optional;

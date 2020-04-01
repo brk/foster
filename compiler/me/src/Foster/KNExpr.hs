@@ -449,7 +449,7 @@ kNormalize st expr =
             PrimInlineAsm ty s c x -> do ty' <- qt ty
                                          return $ PrimInlineAsm ty' s c x
             PrimOpInt op fr to -> return $ PrimOpInt op fr to
-            FieldLookup name -> return $ FieldLookup name
+            FieldLookup name o -> return $ FieldLookup name o
             LookupEffectHandler tag -> return $ LookupEffectHandler tag
             CoroPrim {} -> error $ "Shouldn't yet have constructed CoroPrim!"
 

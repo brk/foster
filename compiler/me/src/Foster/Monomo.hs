@@ -24,7 +24,7 @@ import Text.PrettyPrint.ANSI.Leijen
 
 import Data.Map(Map)
 import Data.Map as Map(lookup, alter, fromList, union, empty, insert)
-import Data.List as List(all)
+import Data.List as List(all, sort, sortOn)
 import Control.Monad(when, liftM, liftM2, liftM3, liftM4)
 import Control.Monad.State(evalStateT, get, gets, put, StateT, liftIO, lift)
 
@@ -65,7 +65,7 @@ monoPrim subst prim = do
        PrimOp nm ty       -> liftM (PrimOp nm) (qt ty)
        PrimOpInt op i1 i2 -> return $ PrimOpInt op i1 i2
        CoroPrim   p t1 t2 -> liftM2 (CoroPrim p) (qt t1) (qt t2)
-       FieldLookup name   -> return (FieldLookup name)
+       FieldLookup name o -> return (FieldLookup name o)
        PrimInlineAsm ty cnt cns fx -> qt ty >>= \ty' -> return $ PrimInlineAsm ty' cnt cns fx
        LookupEffectHandler tag -> return $ LookupEffectHandler tag
 
@@ -89,7 +89,15 @@ monoKN subst inTypeExpr e =
   KNRecord        t ls vs a -> liftM4 KNRecord       (qt t) (return ls) (mapM qv vs) (return a)
   KNTuple         t vs a   -> liftM3 KNTuple         (qt t) (mapM qv vs) (return a)
   KNKillProcess   t s      -> liftM2 KNKillProcess   (qt t) (return s)
-  KNCallPrim   sr t p vs   -> liftM3(KNCallPrim sr)  (qt t) (qp p) (mapM qv vs)
+  KNCallPrim   sr t (FieldLookup name _) [v] -> do
+    case tidType v of
+      RecordTypeIL labels _ -> do
+        t' <- qt t
+        v' <- qv v
+        let (Just offset) = Map.lookup name (canonicalizeRecordLabels labels)
+        return $ KNCallPrim sr t' (FieldLookup name (Just offset)) [v']
+      _ -> error $ "Monomo.hs: Field lookup applied to variable with non-record type!"
+  KNCallPrim   sr t p vs   -> liftM3 (KNCallPrim sr) (qt t) (qp p) (mapM qv vs)
   KNAllocArray    t v amr zi sr -> do t' <- qt t; v' <- qv v; return $ KNAllocArray t' v' amr zi sr
   KNAlloc         t v amr    sr -> liftM4 KNAlloc         (qt t) (qv v) (return amr) (return sr)
   KNDeref         t v      -> liftM2 KNDeref         (qt t) (qv v)
@@ -588,6 +596,15 @@ extendMonoSubst subst monotypes ktyvars =
   let ext = Prelude.zip (map tyvarOf ktyvars) monotypes in
   Map.union (Map.fromList ext) subst
 
+canonicalizeRecordLabels :: [T.Text] -> Map T.Text Int
+canonicalizeRecordLabels labels =
+  let sortedLabels = List.sort labels in
+  Map.fromList (zip sortedLabels [0..])
+
+canonicalizeByRecordLabels :: [a] -> [T.Text] -> [a]
+canonicalizeByRecordLabels things labels =
+  map snd $ List.sortOn fst (zip labels things)
+
 monoType :: MonoSubst -> TypeIL -> Mono MonoType
 monoType subst ty =
   let q = monoType subst
@@ -597,7 +614,8 @@ monoType subst ty =
      TyAppIL con types -> liftM2 TyApp (q con) (mapM q types)
      PrimIntIL size         -> return $ PrimInt size
      RecordTypeIL labels         types -> -- TODO reorder types according to labels
-                                          liftM TupleType  (mapM q types)
+         let typesInFieldOrder = types `canonicalizeByRecordLabels` labels in
+                                          liftM TupleType  (mapM q typesInFieldOrder)
      TupleTypeIL KindAnySizeType types -> liftM StructType (mapM q types)
      TupleTypeIL _               types -> liftM TupleType  (mapM q types)
      FnTypeIL  ss t cc cs -> do ss' <- mapM q ss

@@ -383,8 +383,13 @@ dumpExpr (ILCallPrim t (CoroPrim coroPrim argty retty) args)
 dumpExpr (ILCallPrim t (PrimOpInt op _from _to) args)
         = dumpCallPrimOp t op args
 
+dumpExpr (ILCallPrim t (FieldLookup name (Just offset)) [base])
+        = dumpFieldLookupClosed t name offset base
+
 dumpExpr (ILAppCtor _ _cinfo _ _sr) = error $ "CapnpIL.hs saw ILAppCtor, which"
                                        ++ " should have been translated away..."
+
+dumpExpr other = error $ "CapnpIL.hs : dumpExpr couldn't handle " ++ show other
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -439,6 +444,13 @@ dumpCallCoroOp t coroPrim argty retty args =
         coroFnTag CoroParent = Ilcoroparent
         coroFnTag CoroYield  = Ilcoroyield
         coroFnTag CoroIsDead = Ilcoroisdead
+
+dumpFieldLookupClosed t fieldName offset base =
+    (defaultLetable t Ilfieldidxclosed) {
+        parts_of_Letable = map dumpVar [base],
+        primopname_of_Letable = StrictlyJust $ u8fromText fieldName,
+        primopsize_of_Letable = [fromIntegral offset]
+    }
 
 dumpArrayLength t arr =
     (defaultLetable t Ilarraylength) { parts_of_Letable = [dumpVar arr] }

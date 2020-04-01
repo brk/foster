@@ -332,6 +332,15 @@ LLProc* parseProc(const pb::Proc::Reader& e) {
                        blocks);
 }
 
+LLExpr* parseFieldLookup(const pb::Letable::Reader& e, bool open) {
+  ASSERT(e.getParts().size() == 1) << "field lookup must have base expression";
+  auto mb_offset = e.getPrimopsize();
+  auto offset = mb_offset.size() == 0 ? -1 : mb_offset[0];
+  return new LLRecordIndex(parseTermVar(e.getParts()[0]),
+                           e.getPrimopname(), offset,
+                           open);
+}
+
 LLArrayIndex* parseArrayIndex(const pb::Letable::Reader& e) {
   ASSERT(e.getParts().size() >= 2) << "array_index must have base and index";
   return new LLArrayIndex(parseTermVar( e.getParts()[0]),
@@ -544,6 +553,7 @@ LLExpr* LLExpr_from_pb(const be::Letable::Reader& e) {
   case pb::Letable::Tag::ILUNBOXEDTUPLE:rv =parseUnboxedTuple(e); break;
   case pb::Letable::Tag::ILKILLPROCESS:rv = parseKillProcess(e); break;
   case pb::Letable::Tag::ILGLOBALAPPCTOR:rv = parseGlobalAppCtor(e); break;
+  case pb::Letable::Tag::ILFIELDIDXCLOSED:rv = parseFieldLookup(e, false); break;
 
   default:
     EDiag() << "Unknown protobuf tag: " << int(e.getTag());

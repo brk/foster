@@ -349,6 +349,16 @@ struct LLUnitValue : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
+struct LLRecordIndex : public LLExpr {
+  LLVar* base;
+  std::string fieldname;
+  ssize_t offset;
+  bool open;
+  explicit LLRecordIndex(LLVar* base, string fieldname, ssize_t offset, bool open)
+    : LLExpr("LLRecordIndex"), base(base), fieldname(fieldname), offset(offset), open(open) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
 struct LLArrayIndex {
   LLVar* base;
   LLVar* index;

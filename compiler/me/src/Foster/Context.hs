@@ -171,7 +171,7 @@ liftPrimOp f primop =
     NamedPrim tid      -> liftM NamedPrim (liftTID f tid)
     PrimOp s ty        -> liftM (PrimOp s) (f ty)
     PrimOpInt op fr to -> return $ PrimOpInt op fr to
-    FieldLookup name   -> return $ FieldLookup name
+    FieldLookup name o -> return $ FieldLookup name o
     CoroPrim p t1 t2   -> liftM2 (CoroPrim p) (f t1) (f t2)
     PrimInlineAsm t cnt cns fx -> do t' <- f t
                                      return $ PrimInlineAsm t' cnt cns fx

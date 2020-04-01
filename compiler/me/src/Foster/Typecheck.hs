@@ -347,8 +347,8 @@ tcRho ctx expr expTy = do
         ty' <- tcType ctx ty
         matchExp expTy (AnnPrimitive rng ty' (PrimInlineAsm ty' s c x)) "inline-asm"
 
-      --E_CallPrimAST   rng "record-lookup" [LitText fieldName] [expr] ->
-      --  tcRhoRecordLookup ctx rng expr fieldName expTy
+      E_CallPrimAST rng "record-lookup" [LitText fieldName] [] [expr] ->
+        tcRhoRecordLookup ctx rng expr fieldName expTy
 
       E_CallPrimAST rng nm [] [] args -> tcRhoCallPrim ctx rng (T.pack nm) args expTy
       E_CallPrimAST   {} -> tcFails [text "Typecheck saw unexpected primitive", text $ show expr]
@@ -518,7 +518,7 @@ mkAnnPrimitive annot ctx tid =
         Just (NamedPrim tid)      -> NamedPrim tid
         Just (PrimOp nm ty)       -> PrimOp nm ty
         Just (PrimOpInt o i1 i2)  -> PrimOpInt o i1 i2
-        Just (FieldLookup name  ) -> FieldLookup name
+        Just (FieldLookup name o) -> FieldLookup name o
         Just (CoroPrim {}       ) -> error $ "mkAnnPrim saw unexpected CoroPrim"
         Just (PrimInlineAsm {}  ) -> error $ "mkAnnPrim saw unexpected PrimInlineAsm"
         Just (LookupEffectHandler tag) -> LookupEffectHandler tag
@@ -786,40 +786,40 @@ tcRhoRecord ctx rng labels exprs expTy = do
 --  G |- e ::: (l1: t1, ..., ln: tn)
 --  ------------------------------------
 --  G |- e.lX ::: tX
--- tcRhoRecordLookup :: Context SigmaTC -> ExprAnnot -> Term -> T.Text -> Expected TypeTC -> Tc (AnnExpr RhoTC)
+tcRhoRecordLookup :: Context SigmaTC -> ExprAnnot -> Term -> T.Text -> Expected TypeTC -> Tc (AnnExpr RhoTC)
 -- -- {{{
--- tcRhoRecordLookup ctx rng expr fieldName expTy = do
---    base <- inferRho ctx expr "indexed-record"
---    tV <- repr (typeTC base)
---    let mkRecordLookup tX = (AnnCall rng (AnnPrimitive rng tX (FieldLookup fieldName)) [base])
+tcRhoRecordLookup ctx rng expr fieldName expTy = do
+   base <- inferRho ctx expr "indexed-record"
+   tV <- repr (typeTC base)
+   let mkRecordLookup tX = (AnnCall rng tX (AnnPrimitive rng tX (FieldLookup fieldName Nothing)) [base])
 
---    case (tV, expTy) of
---       (MetaTyVarTC {}, Check tX) -> do
---             -- Apply constraint that e has a record type mapping fieldName to tX.
---             tcFailsMore [text $ "Record indexing cannot yet apply constraint to meta type variable " ++ show tV
---                         , showStructure tV]
---             -- No need to matchExp because we're just passing through the context-provided type.
---             return (mkRecordLookup tX)
+   case (tV, expTy) of
+      (MetaTyVarTC {}, Check tX) -> do
+            -- Apply constraint that e has a record type mapping fieldName to tX.
+            tcFailsMore [text $ "Record indexing cannot yet apply constraint to meta type variable " ++ show tV
+                        , showStructure tV]
+            -- No need to matchExp because we're just passing through the context-provided type.
+            return (mkRecordLookup tX)
 
---       (MetaTyVarTC {}, Infer _) -> do
---             tX <- newTcUnificationVarTau $ "record_index"
---             -- Apply constraint that e has a record type mapping fieldName to tX.
---             tcFailsMore [text $ "Record indexing cannot yet apply constraint to meta type variable " ++ show tV
---                         , showStructure tV]
---             matchExp expTy (mkRecordLookup tX) (highlightFirstLine (rangeOf rng))
+      (MetaTyVarTC {}, Infer _) -> do
+            tX <- newTcUnificationVarTau $ "record_index"
+            -- Apply constraint that e has a record type mapping fieldName to tX.
+            tcFailsMore [text $ "Record indexing cannot yet apply constraint to meta type variable " ++ show tV
+                        , showStructure tV]
+            matchExp expTy (mkRecordLookup tX) (highlightFirstLine (rangeOf rng))
 
---       (RecordTypeTC labels tys, _) -> do
---         -- Check that v is a record type mapping fieldName to tX.
---         case Map.lookup fieldName (Map.fromList (zip labels tys)) of
---           Just tX -> do
---                         matchExp expTy (mkRecordLookup tX) (highlightFirstLine (rangeOf rng))
---           Nothing -> tcFailsMore [text $ "Record indexing applied to record type without field " ++ show fieldName
---                         , indent 8 (text (show tV))
---                         , showStructure tV]
+      (RecordTypeTC labels tys, _) -> do
+        -- Check that v is a record type mapping fieldName to tX.
+        case Map.lookup fieldName (Map.fromList (zip labels tys)) of
+          Just tX -> do
+                        matchExp expTy (mkRecordLookup tX) (highlightFirstLine (rangeOf rng))
+          Nothing -> tcFailsMore [text $ "Record indexing applied to record type without field " ++ show fieldName
+                        , indent 8 (text "The following fields were available: " <> pretty (map show labels))
+                        ]
 
---       _ -> do                   
---             tcFailsMore [text $ "Record indexing applied to non-record type " ++ show tV
---                         , showStructure tV]
+      _ -> do                   
+            tcFailsMore [text $ "Record indexing applied to non-record type " ++ show tV
+                        , showStructure tV]
 
 -- }}}
 
