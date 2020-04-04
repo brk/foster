@@ -1,0 +1,234 @@
+snafuinclude Prelude "prelude";
+snafuinclude Q "pairing-heap";
+snafuinclude Seq "data/seq";
+
+/*
+Port of https://github.com/mapbox/polylabel/blob/master/polylabel.js
+which is distributed under the ISC license:
+        https://github.com/mapbox/polylabel/blob/master/LICENSE
+*/
+
+type case Polygon
+  of $Polygon (Seq (Float64, Float64)) (Seq (Seq (Float64, Float64))) // exterior, interiors/holes
+  ;
+
+linearRingBoundingBox :: { Seq (Float64, Float64) => (Float64, Float64, Float64, Float64) };
+linearRingBoundingBox = { points =>
+   let (x0, y0) = seqIndex points 0 |> unMaybe;
+   minX = prim ref x0;
+   maxX = prim ref x0;
+   minY = prim ref y0;
+   maxY = prim ref y0;
+   seqEnum points { p =>
+     let (x, y) = p;
+     if x <f64 minX^ then x >^ minX; end;
+     if x >f64 maxX^ then x >^ maxX; end;
+     if y <f64 minY^ then y >^ minY; end;
+     if y >f64 maxY^ then y >^ maxY; end;
+   };
+   (minX^, minY^, maxX^, maxY^)
+};
+
+polyExterior = { p : Polygon => case p of $Polygon e _ -> e end };
+polyCombined = { p : Polygon => case p of $Polygon e r -> seqPrepend e r end };
+
+polylabel64 :: { Polygon => Float64 => (Float64, Float64) };
+polylabel64 = { poly => precision =>
+  let (minX, minY, maxX, maxY) = linearRingBoundingBox (polyExterior poly);
+
+  width = maxX -f64 minX;
+  height = maxY -f64 minY;
+  cellSize = min-f64 width height;
+  if cellSize ==f64 0.0
+  then
+    (minX, minY)
+  else
+    h = cellSize `div-f64` 2.0;
+    cellQueue = (mkEmptyPairingHeap !);
+
+    cellQueue = foldRangeByFloat64 minX maxX cellQueue cellSize { x => cellQueue =>
+                    foldRangeByFloat64 minY maxY cellQueue cellSize { y => cellQueue =>
+                        pairingHeapInsert cmpCellMax (mkCell (x +f64 h) (y +f64 h) h poly) cellQueue
+                    } 
+                };
+
+    bestCell = prim ref (getCentroidCell poly);
+
+    half = { f => f `div-f64` 2.0 };
+
+    bboxCell = mkCell (minX +f64 half width) (minY +f64 half height) 0.0 poly;
+    trackBest = { c =>
+        if cellDist c >f64 cellDist bestCell^
+        then c >^ bestCell;
+        end;
+    };
+    
+    trackBest bboxCell;
+
+    cq = prim ref cellQueue;
+
+    qPush = { c => (pairingHeapInsert cmpCellMax c cq^) >^ cq };
+
+    REC loop = {
+        case pairingHeapFindAndDeleteMin cmpCellMax cq^
+        of $None -> ()
+        of $Some (cell, ph) ->
+            ph >^ cq;
+            trackBest cell;
+
+            let ($Cell x y ch d m) = cell;
+            
+            if (m -f64 cellDist bestCell^) <=f64 precision
+            then ()
+            else
+                h = half ch;
+                qPush (mkCell (x -f64 h) (x -f64 h) h poly);
+                qPush (mkCell (x +f64 h) (x -f64 h) h poly);
+                qPush (mkCell (x -f64 h) (x +f64 h) h poly);
+                qPush (mkCell (x +f64 h) (x +f64 h) h poly);
+            end;
+            loop !
+        end
+    };
+    loop !;
+
+    let ($Cell x y _h _d _m) = bestCell^;
+    (x, y)
+  end
+};
+
+cmpCellMax :: { Cell => Cell => Ord };
+cmpCellMax = { c1 => c2 =>
+  let ($Cell _x1 _y1 _h1 _d1 m1) = c1;
+  let ($Cell _x2 _y2 _h2 _d2 m2) = c2;
+  cmp-total-f64 m2 m1
+};
+
+fmtCell = { c =>
+  let ($Cell x y h d m) = c;
+  "(Cell " ++Text ryu-d2fixed 3 x ++Text " "
+           ++Text ryu-d2fixed 3 y ++Text " "
+           ++Text ryu-d2fixed 3 h ++Text " "
+           ++Text ryu-d2fixed 3 d ++Text " "
+           ++Text ryu-d2fixed 3 m ++Text ")"
+};
+
+type case Cell
+    of $Cell Float64 Float64 // cell center x,y
+             Float64 Float64 // half cell size; dist to poly
+             Float64 // max dist to poly within cell
+             ;
+
+cellDist :: { Cell => Float64 };
+cellDist = { c => let ($Cell _x _y _h d _m) = c; d };
+
+/*
+cellHalf :: { Cell => Float64 };
+cellHalf = { c => let ($Cell _x _y h _d _m) = c; h };
+
+cellMax :: { Cell => Float64 };
+cellMax = { c => let ($Cell _x _y _h _d m) = c; m };
+*/
+
+seqEnumPairs :: forall (a:Type) { Seq a => { a => a => () } => () };
+seqEnumPairs = { seq => action =>
+  len = seqLength32 seq;
+  j = prim ref (len -Int32 1);
+
+  enumRange32 0 len { i =>
+    a = seqIndex seq i  |> unMaybe;
+    b = seqIndex seq j^ |> unMaybe;
+    action a b;
+    i >^ j;
+  };
+};
+
+mkCell :: { Float64 => Float64 => Float64 => Polygon => Cell };
+mkCell = { x => y => h => poly =>
+  d = pointToPolyDist x y poly;
+  m = d +f64 (h *f64 sqrt-f64 2.0);
+  Cell x y h d m
+};
+
+pointToPolyDist :: { Float64 => Float64 => Polygon => Float64 };
+pointToPolyDist = { x => y => poly =>
+  inside = prim ref False;
+  minSqDist = prim ref (positiveInfinity-f64 !);
+
+  p = polyCombined poly;
+
+  seqEnum p { ring =>
+    seqEnumPairs ring { a => b =>
+      let (ax, ay) = a;
+      let (bx, by) = b;
+      if { (ay >f64 y) ==Bool (by >f64 y) |> not } `andand` {
+          dx = bx -f64 ax;
+          p = (div-f64 (dx *f64 (y -f64 ay))
+                       (by -f64 ay))
+               +f64 ax;
+          x <f64 p
+      } then
+          (not inside^) >^ inside;  
+      end;
+
+      (min-f64 minSqDist^ (getSegDistSq x y a b)) >^ minSqDist;
+    };
+  };
+
+  sign = if inside^ then 1.0 else -1.0 end;
+  sign *f64 sqrt-f64 minSqDist^
+};
+
+getCentroidCell :: { Polygon => Cell };
+getCentroidCell = { poly =>
+  area = prim ref 0.0;
+  x    = prim ref 0.0;
+  y    = prim ref 0.0;
+  
+  points = polyExterior poly;
+  len = seqLength points;
+
+  seqEnumPairs points { a => b =>
+    let (a0, a1) = a;
+    let (b0, b1) = b;
+
+    f = (a0 *f64 b1) -f64 (b0 *f64 a1);
+    (x^ +f64 ((a0 +f64 b0) *f64 f)) >^ x;
+    (y^ +f64 ((a1 +f64 b1) *f64 f)) >^ y;
+    (f *f64 3) >^ area;
+  };
+  j = prim ref (len -Int32 1);
+
+  if area^ ==f64 0.0
+  then let (p00, p01) = seqIndex points 0 |> unMaybe;
+       mkCell p00                  p01                  0 poly
+  else mkCell (x^ `div-f64` area^) (y^ `div-f64` area^) 0 poly
+  end
+};
+
+sum-of-squared-f64 :: { Float64 => Float64 => Float64 };
+sum-of-squared-f64 = { x => y =>
+  (x *f64 x) +f64 (y *f64 y)
+};
+
+getSegDistSq :: { Float64 => Float64 => (Float64, Float64) => (Float64, Float64) => Float64 };
+getSegDistSq = { px => py => a => b =>
+  let (x, y) = a;
+  let (bx, by) = b;
+  dx = bx -f64 x;
+  dy = by -f64 y;
+
+  let (x, y) = if either (dx !=f64 0.0) (dy !=f64 0.0)
+                then
+                    delta = ((px -f64 x) *f64 dx) +f64 ((py -f64 y) *f64 dy);
+                    t = delta `div-f64` sum-of-squared-f64 dx dy;
+                    case ()
+                      of _ if t >f64 1.0 -> b
+                      of _ if t >f64 0.0 -> (x +f64 (dx *f64 t), y +f64 (dy *f64 t))
+                      of _               -> a
+                    end
+                else a
+                end;
+
+  sum-of-squared-f64 (px -f64 x) (py -f64 y)
+};

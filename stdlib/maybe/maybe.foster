@@ -15,6 +15,14 @@ unMaybe = { x =>
   end
 };
 
+ofMaybe :: forall (a:Type) { a => Maybe a => a };
+ofMaybe = { d => x =>
+  case x
+    of $Some a -> a
+    of $None   -> d;
+  end
+};
+
 isSome :: forall (a:Type) { Maybe a => Bool };
 isSome = { x =>
   case x

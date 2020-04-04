@@ -10,8 +10,14 @@ type case PairingHeap (elem:Type)
       ;
 
 mkEmptyPairingHeap :: forall (a:Type) { PairingHeap a };
-mkEmptyPairingHeap = { forall a:Type,
-  PairingHeapE
+mkEmptyPairingHeap = { PairingHeapE };
+
+pairingHeapIsEmpty :: forall (a:Type) { PairingHeap a => Bool };
+pairingHeapIsEmpty = { h =>
+  case h
+    of $PairingHeapE -> True
+    of _ -> False
+  end
 };
 
 /*

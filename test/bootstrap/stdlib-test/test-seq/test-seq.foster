@@ -63,10 +63,6 @@ print_ftNode_bare = { print_elem_bare => xs =>
   ()
 };
 
-unSeq = { forall a:Type, seq : Seq a =>
-  let ($Seq ft) = seq; ft
-};
-
 seqRangeUp = { n =>
   foldRange 0 n (seqEmpty !) { idx => seq => seqPostpend seq idx };
 };

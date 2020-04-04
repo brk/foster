@@ -1,0 +1,31 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+snafuinclude Ryu "fmt/ryu/ryu-d2fixed";
+snafuinclude Polylabel "geometry/polylabel";
+
+
+test-01 = {
+  a = prim mach-array-literal
+            (0.0, 0.0)
+            (4.0, 0.0)
+            (4.0, 1.0)
+            (1.0, 1.0)
+            (1.0, 4.0)
+            (0.0, 4.0)
+            (0.0, 0.0);
+  r = seqOfArray a;
+  p = Polygon r (seqEmpty !);
+
+  let (px, py) = polylabel64 p 0.1;
+
+  expect_float_f64 0.5625;
+  print_float_f64 px;
+
+  expect_float_f64 0.5625;
+  print_float_f64 py;
+  
+};
+
+main = {
+  test-01 !;
+
+};

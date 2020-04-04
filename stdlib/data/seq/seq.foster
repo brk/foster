@@ -60,6 +60,8 @@ seqConcat = { s1 => s2 =>
 seqLength :: forall (a:Type) { Seq a => Int32 };
 seqLength = { seq => let ($Seq xs) = seq; ftTreeSize ftElemSize xs };
 
+seqLength32 :: forall (a:Type) { Seq a => Int32 };
+seqLength32 = { seq => let ($Seq xs) = seq; ftTreeSize ftElemSize xs };
 
 type case SeqViewR (a:Type)
       of $SV_EmptyR
@@ -190,6 +192,10 @@ seqFindFirstIndex = { seq => pred =>
   loop (unSeq seq) 0
 };
 
+unSeq = { forall a:Type, seq : Seq a =>
+  let ($Seq ft) = seq; ft
+};
+
 // Precondition: input sequence is sorted according to the given ordering.
 //
 // Returns a pair of positions (L, H) identifying the range
@@ -280,6 +286,16 @@ seqPrefixSumFromLeftExclusiveSerial = { seq => op => elt =>
   loop elt seq (seqEmpty !);
 };
 
+seqFold :: forall (a:Type) (b:Type) { Seq a => { a => b => b } => b => b };
+seqFold = { seq => combine => init =>
+  ftFoldlTree combine (unSeq seq) init
+};
+
+seqEnum :: forall (a:Type) { Seq a => { a => () } => () };
+seqEnum = { seq => action =>
+  ftFoldlTree { a => u => action a } (unSeq seq) ()
+};
+
 seqReverse :: forall (a:Type) { Seq a => Seq a };
 seqReverse =  { seq =>
   seqReverseWith seq { x : a => x }
@@ -294,6 +310,11 @@ seqReverseWith =  { seq => reverser =>
 seqFromFunction :: forall (a:Type) { Int32 => { Int32 => a } => Seq a };
 seqFromFunction = { len => f =>
   Seq (ftFromFunction len f)
+};
+
+seqOfArray :: forall (a:Type) { Array a => Seq a };
+seqOfArray = { arr =>
+  seqFromFunction (arrayLength32 arr) { idx => arr.[idx] };
 };
 
 seqToArray :: forall (a:Type) { Seq a => Array a };

@@ -89,6 +89,20 @@ foldRangeWord = { forall t:Type,
   go fst init;
 };
 
+foldRangeByFloat64 = { forall t:Type,
+                  fst : Float64 =>
+                  fin : Float64 =>
+                  init : t =>
+                  incr : Float64 =>
+                  iter : { Float64 => t => t } =>
+  REC go = { n : Float64 => acc : t =>
+      if n >=f64 fin then acc else
+        go (n +f64 incr) (iter n acc)
+      end
+  };
+  go fst init;
+};
+
 /////
 
 // Precondition: fst <= fin
