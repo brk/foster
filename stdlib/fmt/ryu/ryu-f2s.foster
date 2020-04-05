@@ -1,0 +1,584 @@
+snafuinclude Prelude "prelude";
+snafuinclude RyuCommon "fmt/ryu/ryu-common";
+
+/*
+Semi-mechanically translated from C to Foster,
+based on the reference C implementation at
+
+   https://github.com/ulfjack/ryu
+
+which is dual-licensed under Apache 2 and Boost.
+*/
+
+kFLOAT_MANTISSA_BITS = 23;
+kFLOAT_MANTISSA_MASK = 0x7F`FFFF; // (1 << FLOAT_MANTISSA_BITS) - 1;
+
+kFLOAT_EXPONENT_BITS = 8;
+kFLOAT_EXPONENT_MASK = 0xFF; // (1 << FLOAT_EXPONENT_BITS) - 1;
+kFLOAT_EXPONENT_BIAS = 0x7F; // (1 << (FLOAT_EXPONENT_BITS - 1)) - 1;
+
+POS_TABLE_SIZE = 47;
+INV_TABLE_SIZE = 31;
+
+POW5_INV_BITCOUNT = 59;
+POW5_INV_HALF_BITCOUNT = 31;
+
+FLOAT_POW5_INV_SPLIT = prim mach-array-literal
+  576460752303423489 461168601842738791 368934881474191033 295147905179352826
+  472236648286964522 377789318629571618 302231454903657294 483570327845851670
+  386856262276681336 309485009821345069 495176015714152110 396140812571321688
+  316912650057057351 507060240091291761 405648192073033409 324518553658426727
+  519229685853482763 415383748682786211 332306998946228969 531691198313966350
+  425352958651173080 340282366920938464 544451787073501542 435561429658801234
+  348449143727040987 557518629963265579 446014903970612463 356811923176489971
+  570899077082383953 456719261665907162 365375409332725730
+;
+
+FLOAT_POW5_SPLIT = prim mach-array-literal
+  1152921504606846976 1441151880758558720 1801439850948198400 2251799813685248000
+  1407374883553280000 1759218604441600000 2199023255552000000 1374389534720000000
+  1717986918400000000 2147483648000000000 1342177280000000000 1677721600000000000
+  2097152000000000000 1310720000000000000 1638400000000000000 2048000000000000000
+  1280000000000000000 1600000000000000000 2000000000000000000 1250000000000000000
+  1562500000000000000 1953125000000000000 1220703125000000000 1525878906250000000
+  1907348632812500000 1192092895507812500 1490116119384765625 1862645149230957031
+  1164153218269348144 1455191522836685180 1818989403545856475 2273736754432320594
+  1421085471520200371 1776356839400250464 2220446049250313080 1387778780781445675
+  1734723475976807094 2168404344971008868 1355252715606880542 1694065894508600678
+  2117582368135750847 1323488980084844279 1654361225106055349 2067951531382569187
+  1292469707114105741 1615587133892632177 2019483917365790221
+;
+
+f2d-step3 = { vmIsTrailingZeros => vrIsTrailingZeros => lastRemovedDigit => vr => vp => vm => e10 => e2 => m2 => mmShiftB => acceptBounds : Bool =>
+    mmShift = if mmShiftB then 1 else 0 end;
+    mv = 4 *Int32 m2;
+    mp = (4 *Int32 m2) +Int32 2;
+    mm = ((4 *Int32 m2) -Int32 1) -Int32 mmShift;
+
+    if e2 >=SInt32 0
+      then
+           q = log10Pow2 e2;
+           q >^ e10;
+           k = (59 +Int32 (pow5bits q)) -Int32 1;
+           i = ((0 -Int32 e2) +Int32 q) +Int32 k;
+
+           mulPow5InvDivPow2 mv q i >^ vr;
+           mulPow5InvDivPow2 mp q i >^ vp;
+           mulPow5InvDivPow2 mm q i >^ vm;
+
+           if andand
+                  { q !=Int32 0 }
+                  {
+                      (udiv-unsafe-Int32 (vp^ -Int32 1) 10)
+                          <=UInt32 (udiv-unsafe-Int32 vm^ 10)
+                  }
+             then l = ((125 -Int32 64) +Int32 (pow5bits (q -Int32 1)))
+                          -Int32 1;
+                  v* = (urem-unsafe-Int32
+                          (mulPow5InvDivPow2 mv (q -Int32 1)
+                                ((((0 -Int32 e2) +Int32 q) -Int32 1) +Int32 l))
+                          10);
+                  v* >^ lastRemovedDigit;
+                  ()
+           end;
+
+           if q <=UInt32 9
+             then if (urem-unsafe-Int32 mv 5) ==Int32 0
+                    then multipleOfPowerOf5_32 mv q >^ vrIsTrailingZeros;
+                         ()
+                    else if acceptBounds
+                           then
+                                multipleOfPowerOf5_32 mm q >^ vmIsTrailingZeros;
+                                ()
+                           else (vp^ -Int32 (c2f_i1_to_i32
+                                                  (multipleOfPowerOf5_32 mp q))) >^ vp;
+                                ()
+                         end;
+                         ()
+                  end;
+           end;
+           ()
+      else
+           q = log10Pow5 (0 -Int32 e2);
+           (q +Int32 e2) >^ e10;
+
+           i = (0 -Int32 e2) -Int32 q;
+           k = (pow5bits i) -Int32 (125 -Int32 64);
+           j = prim ref (q -Int32 k);
+           (mulPow5divPow2 mv i j^) >^ vr;
+           (mulPow5divPow2 mp i j^) >^ vp;
+           (mulPow5divPow2 mm i j^) >^ vm;
+           if andand
+                  { q !=Int32 0 }
+                  {
+                      (udiv-unsafe-Int32 (vp^ -Int32 1) 10)
+                          <=UInt32 (udiv-unsafe-Int32 vm^ 10)
+                  }
+             then
+                  ((q -Int32 1) -Int32 ((pow5bits (i +Int32 1))
+                                           -Int32 (125 -Int32 64))) >^ j;
+                  (urem-unsafe-Int32
+                      (mulPow5divPow2 mv (i +Int32 1) j^)
+                      10) >^ lastRemovedDigit;
+                  ()
+             else ()
+           end;
+           if q <=UInt32 1
+             then
+                  True >^ vrIsTrailingZeros;
+                  if acceptBounds
+                    then (mmShift ==Int32 1) >^ vmIsTrailingZeros;
+                    else (vp^ -Int32 1) >^ vp;
+                  end;
+             else if q <UInt32 31
+                    then (multipleOfPowerOf2_32 mv (q -Int32 1)) >^ vrIsTrailingZeros;
+                  end;
+           end;
+    end
+};
+
+c2f_i1_to_i32 = { b => if b then 1 else 0 end };
+
+ryuFloat32-f2d :: { Int32 => Int32 => (Int32, Int32) };
+ryuFloat32-f2d = { ieeeMantissa => ieeeExponent =>
+  // By default, the correct mantissa starts with a 1, except for denormal numbers.
+  // We subtract 2 so the bounds computation has 2 additional bits.
+  e2 =
+    if ieeeExponent ==Int32 0 then
+      (1 -Int32 kFLOAT_EXPONENT_BIAS) -Int32 kFLOAT_MANTISSA_BITS
+    else
+      (ieeeExponent -Int32 kFLOAT_EXPONENT_BIAS) -Int32 kFLOAT_MANTISSA_BITS
+    end -Int32 2;
+
+  m2 =
+    if ieeeExponent ==Int32 0 then
+      ieeeMantissa
+    else
+      ieeeMantissa `bitor-Int32` (1 `bitshl-Int32` kFLOAT_MANTISSA_BITS);
+    end;
+
+  acceptBounds = isEven m2;
+
+  // Step 2: Determine the interval of the decimal representation.
+  mv = 4 *Int32 m2;
+  mp = mv +Int32 2;
+
+  mmShift = if either (ieeeMantissa !=Int32 0) (ieeeExponent <=SInt32 1)
+              then 1 else 0 end;
+  mm = mv -Int32 (1 +Int32 mmShift);
+
+  // Step 3: Convert to a decimal power base using 64-bit arithmetic.
+  vmIsTrailingZeros = prim ref False;
+  vrIsTrailingZeros = prim ref False;
+  lastRemovedDigit = prim ref 0;
+  vr = prim ref 0;
+  vp = prim ref 0;
+  vm = prim ref 0;
+  e10 = prim ref 0;
+
+  mmShiftB = oror { ieeeMantissa !=Int32 0 }
+                  { ieeeExponent <=UInt32 1 };
+
+  f2d-step3 vmIsTrailingZeros vrIsTrailingZeros lastRemovedDigit vr vp vm e10 e2 m2 mmShiftB acceptBounds;
+
+/*
+  print_text "after step 3:";
+  print_i1 vmIsTrailingZeros^;
+  print_i1 vrIsTrailingZeros^;
+  print_i32 e10^;
+  */
+
+  // Step 4: Find the shortest decimal representation in the interval of valid representations.
+  removed = prim ref 0;
+  output = prim ref 0;
+  if either vmIsTrailingZeros^ vrIsTrailingZeros^ then
+    // General case, which happens rarely (~4.0%).
+    while { div10 vp^ >SInt32 div10 vm^ } {
+      (if mod10 vm^         ==Int32 0 then vmIsTrailingZeros^ else False end) >^ vmIsTrailingZeros;
+      (if lastRemovedDigit^ ==Int32 0 then vrIsTrailingZeros^ else False end) >^ vrIsTrailingZeros;
+
+      (vr^ |> mod10) >^ lastRemovedDigit;
+      (div10 vr^) >^ vr;
+      (div10 vp^) >^ vp;
+      (div10 vm^) >^ vm;
+      (removed^ +Int32 1) >^ removed;
+    };
+    if vmIsTrailingZeros^ then
+      while { mod10 vm^ ==Int32 0 } {
+        (if lastRemovedDigit^ ==Int32 0 then vrIsTrailingZeros^ else False end) >^ vrIsTrailingZeros;
+        (vr^ |> mod10) >^ lastRemovedDigit;
+        (div10 vr^) >^ vr;
+        (div10 vp^) >^ vp;
+        (div10 vm^) >^ vm;
+        (removed^ +Int32 1) >^ removed;
+        ()
+      };
+    end;
+
+    if both vrIsTrailingZeros^
+           (both (lastRemovedDigit^ ==Int32 5)
+                 (isEven vr^)) then
+      // Round even if the exact number is .....50..0.
+      4 >^ lastRemovedDigit;
+    end;
+
+    // We need to take vr + 1 if vr is outside bounds or we need to round up.
+    outside_bounds = both (vr^ ==Int32 vm^)
+                          (not (both acceptBounds vmIsTrailingZeros^));
+    vr_delta = either outside_bounds (lastRemovedDigit^ >=SInt32 5);
+    (vr^ +Int32 (if vr_delta then 1 else 0 end)) >^ output;
+  else
+    // Specialized for the common case (~96.0%). Percentages below are relative to this.
+    // Loop iterations below (approximately):
+    // 0: 13.6%, 1: 70.7%, 2: 14.1%, 3: 1.39%, 4: 0.14%, 5+: 0.01%
+    while { div10 vp^ >SInt32 div10 vm^ } {
+      (vr^ |> mod10) >^ lastRemovedDigit;
+      (div10 vr^) >^ vr;
+      (div10 vp^) >^ vp;
+      (div10 vm^) >^ vm;
+      (removed^ +Int32 1) >^ removed;
+      ()
+    };
+    // We need to take vr + 1 if vr is outside bounds or we need to round up.
+    vr_delta = either (vr^ ==Int32 vm^) (lastRemovedDigit^ >=SInt32 5);
+    (vr^ +Int32 (if vr_delta then 1 else 0 end)) >^ output;
+  end;
+
+  (e10^ +Int32 removed^, output^)
+};
+
+isEven :: { Int32 => Bool };
+isEven = { x => (x `bitand-Int32` 1) ==Int32 0 };
+
+mod10 :: { Int32 => Int32 };
+mod10 = { x => x `srem!-Int32` 10 };
+
+div10 :: { Int32 => Int32 };
+div10 = { x => x `sdiv-Int32` 10 };
+
+mulPow5InvDivPow2 = { m : Int32 =>
+                      q : Int32 =>
+                      j : Int32 =>
+    mulShift32 m FLOAT_POW5_INV_SPLIT.[q] j;
+};
+
+mulPow5divPow2 = { m : Int32 =>
+                   i : Int32 =>
+                   j : Int32 =>
+    mulShift32 m FLOAT_POW5_SPLIT.[i] j
+};
+
+mulShift32 = { m : Int32 =>
+               factor : Int64 =>
+               shift : Int32 =>
+    factorLo = trunc_i64_to_i32 factor;
+    factorHi = trunc_i64_to_i32 (bitlshr-Int64 factor 32);
+    bits0 = (zext_i32_to_i64 m) *Int64 (zext_i32_to_i64 factorLo);
+    bits1 = (zext_i32_to_i64 m) *Int64 (zext_i32_to_i64 factorHi);
+    sum = (bitlshr-Int64 bits0 32) +Int64 bits1;
+    shiftedSum = bitlshr-Int64 sum (shift -Int32 32 |> zext_i32_to_i64);
+    trunc_i64_to_i32 shiftedSum
+};
+
+multipleOfPowerOf5_32 = { value : Int32 =>
+                          p : Int32 =>
+  (pow5factor_32 value) >=UInt32 p
+};
+
+multipleOfPowerOf2_32 = { value : Int32 =>
+                          p : Int32 =>
+  (bitand-Int32 value ((bitshl-Int32 1 p) -Int32 1)) ==Int32 0
+};
+
+pow5factor_32 :: { Int32 => Int32 };
+pow5factor_32 = { value =>
+  REC loop = { value => count =>
+    q = value `sdiv-Int32` 5;
+    r = value `srem-Int32` 5;
+    if r ==Int32 0
+      then loop q (count +Int32 1)
+      else count
+    end
+  };
+  loop value 0
+};
+
+f2d-toChars-ryuOrig :: { Int32 => Int32 => Bool => Text };
+f2d-toChars-ryuOrig = { mant => expt => sign =>
+  index = prim ref 0;
+  buf = allocDArray 16;
+  put = { c : Int8 => c >^ buf.[index^]; (index^ +Int32 1) >^ index };
+
+  if sign then put "-" end;
+
+  olength = decimalLength9 mant;
+
+  print_text_bare "DIGITS="; print_i32 mant;
+  print_text_bare "OLEN="; print_i32 olength;
+  print_text_bare "EXP="; print_i32 (expt +Int32 olength);
+
+  foldRange 0 (olength -Int32 1) mant { i => output =>
+    c = mod10 output |> trunc_i32_to_i8 |> (+Int8) "0";
+    c >^ buf.[(index^ +Int32 olength) -Int32 i];
+    div10 output
+  } |> { finalDigit =>
+        (finalDigit |> trunc_i32_to_i8 |> (+Int8) "0")
+                                        >^ buf.[index^] };
+
+  if olength >=SInt32 1
+    then
+      ("." as Int8) >^ buf.[index^ +Int32 1];
+      (index^ +Int32 olength +Int32 1) >^ index;
+    else
+      (index^ +Int32 1) >^ index;
+  end;
+
+  put "E";
+
+  expo = prim ref (expt +Int32 (olength -Int32 1));
+
+  if expo^ <SInt32 0
+    then
+      put "-";
+      (0 -Int32 expo^) >^ expo;
+  end;
+
+  if expo^ >=SInt32 10
+    then
+      DIGIT_TABLE.[ expo^ *Int32 2          ] >^ buf.[index^];
+      DIGIT_TABLE.[(expo^ *Int32 2) +Int32 1] >^ buf.[index^ +Int32 1];
+      (2 +Int32 index^) >^ index;
+    else
+      put ("0" +Int8 (trunc_i32_to_i8 expo^));
+  end;
+
+  print_text_bare "index: "; print_i32 index^;
+  prim_print_bytes_stdout buf 0 16;
+  enumRange32 0 16 { i => print_i8x buf.[i] };
+
+
+  TextFragment buf index^
+};
+
+// Writes the decimal representation of the mantissa
+// (least significant digit first) to buf, such that
+// the most significant digit will be written to target.
+//
+writeMantissa = { mant => olength => target => buf =>
+  last = (target +Int32 olength) -Int32 1;
+  foldRange 0 olength mant { i => output =>
+    c = mod10 output |> trunc_i32_to_i8 |> (+Int8) "0";
+    c >^ buf.[last -Int32 i];
+    div10 output
+  };
+  /* |> { finalDigit =>
+    print_text_bare "writeMantissa: final digit is "; print_i32 finalDigit;
+
+        (finalDigit |> trunc_i32_to_i8 |> (+Int8) "0")
+                                        >^ buf.[target] };
+                                        */
+};
+
+// Writes the decimal representation of the exponent to buf
+// starting at index (which will contain a digit or a minus sign).
+//
+writeExponent = { kk => buf => index =>
+  put = { c : Int8 => c >^ buf.[index^]; (index^ +Int32 1) >^ index };
+
+  exp_0 = kk -Int32 1;
+
+  exp = if exp_0 <SInt32 0
+          then
+            put "-";
+            (0 -Int32 exp_0)
+          else
+            exp_0
+        end;
+
+  // Invariant: exp >= 0 && exp < 100.
+
+  if exp >=SInt32 10
+    then
+      DIGIT_TABLE.[ exp *Int32 2          ] >^ buf.[index^];
+      DIGIT_TABLE.[(exp *Int32 2) +Int32 1] >^ buf.[index^ +Int32 1];
+      (2 +Int32 index^) >^ index;
+    else
+      put ("0" +Int8 (trunc_i32_to_i8 exp));
+  end;
+};
+
+f2d-toChars-origAbs :: { Int32 => Int32 => Bool => Text };
+f2d-toChars-origAbs = { mant => expt => sign =>
+  index = prim ref 0;
+  buf = allocDArray 16;
+  put = { c : Int8 => c >^ buf.[index^]; (index^ +Int32 1) >^ index };
+
+  if sign then put "-" end;
+
+  olength = decimalLength9 mant;
+
+  kk = expt +Int32 olength;
+
+  print_text_bare "DIGITS="; print_i32 mant;
+  print_text_bare "OLEN="; print_i32 olength;
+  print_text_bare "EXPt="; print_i32 expt;
+  print_text_bare "EXP="; print_i32 kk;
+
+  writeMantissa mant olength index^ buf;
+
+  if olength >=SInt32 1
+    then
+      ("." as Int8) >^ buf.[index^ +Int32 1];
+      (index^ +Int32 olength +Int32 1) >^ index;
+    else
+      (index^ +Int32 1) >^ index;
+  end;
+
+  put "E";
+
+  writeExponent kk buf index;
+
+  TextFragment buf index^
+};
+
+f2d-toChars :: { Int32 => Int32 => Bool => Text };
+f2d-toChars = { mant => expt => sign =>
+  index = prim ref 0;
+  buf = allocDArray 16;
+  put = { c : Int8 => c >^ buf.[index^]; (index^ +Int32 1) >^ index };
+
+  if sign then put "-" end;
+
+  olength = decimalLength9 mant;
+
+  kk = expt +Int32 olength;
+
+/*
+  print_text "";
+  print_text_bare "        DIGITS="; print_i32 mant;
+  print_text_bare "      OLEN="; print_i32 olength;
+  print_text_bare "      EXPt="; print_i32 expt;
+  print_text_bare "        kk="; print_i32 kk;
+  */
+
+  // Examples:
+  //    1234e7  ==> mant = 1234, olen = 4, expt =  7, kk = 11.
+  //   12.34e7  ==> mant = 1234, olen = 4, expt =  5, kk =  9.
+  //       8e7  ==> mant = 8   , olen = 1, expt =  7, kk =  8.
+  //       8e17 ==> mant = 8   , olen = 1, expt = 17, kk = 18.
+  //    0.1     ==> mant = 1   , olen = 1, expt = -1, kk =  0.
+  //    2.0     ==> mant = 2   , olen = 1, expt =  0, kk =  1.
+  //    2.5     ==> mant = 25  , olen = 2, expt = -1, kk =  1.
+  //    25.0    ==> mant = 25  , olen = 2, expt =  0, kk =  2.
+  //   300.0    ==> mant = 3   , olen = 3, expt =  0, kk =  1.
+  //    0.0012  ==> mant = 12  , olen = 2, expt = -4, kk = -2.
+
+  case olength
+    of _ if both (expt >=SInt32  0) (kk <=SInt32 13) ->
+      // Small enough to write out in full;
+      // mantissa appears entirely before decimal point.
+
+      //print_text_bare "  index="; print_i32 index^;
+
+      writeMantissa mant olength index^ buf;
+
+      // Pad with zeros if needed (when expt > 0).
+      enumRange32 olength kk { i =>
+        ("0" as Int8) >^ buf.[index^ +Int32 i]
+      };
+
+      (index^ +Int32 kk) >^ index;
+      //print_text_bare "nuindex="; print_i32 index^;
+
+      put ".";
+      put "0";
+
+    of _ if both (kk    >SInt32 -6) (kk <=SInt32  0) ->
+      // Mantissa appears entirely after decimal point.
+      put "0";
+      put ".";
+
+      // Pad with zeros if needed.
+      offset = 0 -Int32 kk;
+      enumRange32 0 offset { i =>
+        ("0" as Int8) >^ buf.[index^ +Int32 i]
+      };
+
+      start = index^ +Int32 offset;
+      writeMantissa mant olength start buf;
+      (start +Int32 olength) >^ index;
+    
+    of _ if both (kk    >SInt32  0) (kk <=SInt32 13) ->
+      // Contains an interstitial decimal point
+      // and should be printed in decimal form.
+
+      writeMantissa mant olength index^ buf;
+
+      // Make room for the decimal
+      decpt = index^ +Int32 kk |> zext_i32_to_i64;
+      memcpy_i8_to_at_from_at_len
+        buf (decpt |> (+Int64) 1)
+        buf  decpt
+        ((olength -Int32 kk) |> zext_i32_to_i64);
+
+      ("." as Int8) >^ buf.[decpt];
+
+      (index^ +Int32 olength +Int32 1) >^ index;
+
+    of 1 ->
+      // Exponential notation without interstitial decimal.
+
+      put (trunc_i32_to_i8 mant |> (+Int8) "0");
+      put "e";
+      writeExponent kk buf index;
+
+    of _ ->
+      // Otherwise: either too big or too small to write in full;
+      // format using scientific notation, with decimal after first
+      // digit of mantissa.
+
+      // Write mantissa out, starting where the decimal will be.
+      writeMantissa mant olength (index^ +Int32 1) buf;
+
+      // Copy the first digit leftwards, making room for the decimal.
+      buf.[index^ +Int32 1] >^ buf.[index^];
+      ("." as Int8) >^ buf.[index^ +Int32 1];
+
+      // Write out the exponent.
+      (index^ +Int32 1 +Int32 olength) >^ index;
+      put "e";
+      writeExponent kk buf index;
+  end;
+
+  // Invariant: index now holds the number of written bytes.
+  TextFragment buf index^
+};
+
+
+//ryuFloat32 :: { Float32 => RyuRoundingMode => Text };
+//ryuFloat32 = { value => roundingMode =>
+
+ryuFloat32 :: { Float32 => Text };
+ryuFloat32 = { value =>
+    // Step 1: Decode the floating point number, and unify normalized and subnormal cases.
+    // First, handle all the trivial cases.
+    bits = f32-as-i32 value;
+    case bits
+      of _ if isNaN-f32 value -> "NaN"
+      of 0x7f80`0000 -> "Infinity"
+      of 0xff80`0000 -> "-Infinity"
+      of 0 -> "0.0"
+      of 0x8000`0000 -> "-0.0"
+      of _ ->
+        // Otherwise extract the mantissa and exponent bits and run the full algorithm.
+        ieeeExponent = (bits `bitlshr-Int32` kFLOAT_MANTISSA_BITS) `bitand-Int32` kFLOAT_EXPONENT_MASK;
+        ieeeMantissa = bits `bitand-Int32` kFLOAT_MANTISSA_MASK;
+
+        sign = bits <SInt32 0;
+
+        let (expt, mant) = ryuFloat32-f2d ieeeMantissa ieeeExponent;
+
+        //f2d-toChars-origAbs mant expt sign
+        f2d-toChars mant expt sign
+    end
+};

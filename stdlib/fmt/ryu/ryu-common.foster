@@ -1,0 +1,57 @@
+/*
+Semi-mechanically translated from C to Foster,
+based on the reference C implementation at
+
+   https://github.com/ulfjack/ryu
+
+which is dual-licensed under Apache 2 and Boost.
+*/
+
+
+DIGIT_TABLE = b"""
+0001020304050607080910111213141516171819
+2021222324252627282930313233343536373839
+4041424344454647484950515253545556575859
+6061626364656667686970717273747576777879
+8081828384858687888990919293949596979899""";
+
+
+decimalLength9 = { v : Int32 =>
+  // Function precondition: v is not a 10-digit number.
+  // (f2s: 9 digits are sufficient for round-tripping.)
+  // (d2fixed: We print 9-digit blocks.)
+  case ()
+    of _ if v >=SInt32 100000000 -> 9
+    of _ if v >=SInt32 10000000  -> 8
+    of _ if v >=SInt32 1000000   -> 7
+    of _ if v >=SInt32 100000    -> 6
+    of _ if v >=SInt32 10000     -> 5
+    of _ if v >=SInt32 1000      -> 4
+    of _ if v >=SInt32 100       -> 3
+    of _ if v >=SInt32 10        -> 2
+    of _ -> 1
+  end
+};
+
+// Returns e == 0 ? 1 : [log_2(5^e)]; requires 0 <= e <= 3528.
+log2pow5 = { e : Int32 =>
+  // This approximation works up to the point that the multiplication overflows at e = 3529.
+  // If the multiplication were done in 64 bits, it would fail at 5^4004 which is just greater
+  // than 2^9297.
+  bitlshr-Int32 (e *Int32 1217359) 19
+};
+
+// Returns e == 0 ? 1 : ceil(log_2(5^e)); requires 0 <= e <= 3528.
+pow5bits = { e : Int32 =>
+    (bitlshr-Int32 (e *Int32 1217359) 19) +Int32 1
+};
+
+ceil_log2pow5 = { e : Int32 => (log2pow5 e) +Int32 1 };
+
+log10Pow2 = { e : Int32 =>
+    bitlshr-Int32 (e *Int32 78913) 18
+};
+
+log10Pow5 = { e : Int32 =>
+    bitlshr-Int32 (e *Int32 732923) 20
+};

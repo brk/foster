@@ -1,0 +1,549 @@
+snafuinclude RyuCommon "fmt/ryu/ryu-common";
+snafuinclude RyuTables "fmt/ryu/ryu-tables";
+
+snafuinclude RAB "resizable-array-builder";
+snafuinclude Prelude "prelude";
+
+/*
+Semi-mechanically translated from C to Foster,
+based on the reference C implementation at
+
+   https://github.com/ulfjack/ryu
+
+which is dual-licensed under Apache 2 and Boost.
+*/
+
+kDOUBLE_MANTISSA_BITS = 52;
+kDOUBLE_MANTISSA_MASK = 0x000f`ffff`ffff`ffff; // (1 << DOUBLE_MANTISSA_BITS) - 1;
+
+kDOUBLE_EXPONENT_BITS = 11;
+kDOUBLE_EXPONENT_BIAS = 1023;
+
+kDOUBLE_EXPONENT_MASK = 0x7FF; // (1 << DOUBLE_EXPONENT_BITS) - 1;
+
+kPOW10_ADDITIONAL_BITS = 120;
+
+umul128 = { a : Int64 =>
+            b : Int64 =>
+            productHi : Ref Int64 =>
+    aLo = trunc_i64_to_i32 a;
+    aHi = trunc_i64_to_i32 (bitlshr-Int64 a 32);
+    bLo = trunc_i64_to_i32 b;
+    bHi = trunc_i64_to_i32 (bitlshr-Int64 b 32);
+    b00 = (zext_i32_to_i64 aLo) *Int64 (zext_i32_to_i64 bLo);
+    b01 = (zext_i32_to_i64 aLo) *Int64 (zext_i32_to_i64 bHi);
+    b10 = (zext_i32_to_i64 aHi) *Int64 (zext_i32_to_i64 bLo);
+    b11 = (zext_i32_to_i64 aHi) *Int64 (zext_i32_to_i64 bHi);
+    b00Lo = trunc_i64_to_i32 b00;
+    b00Hi = trunc_i64_to_i32 (bitlshr-Int64 b00 32);
+    mid1 = b10 +Int64 (zext_i32_to_i64 b00Hi);
+    mid1Lo = trunc_i64_to_i32 mid1;
+    mid1Hi = trunc_i64_to_i32 (bitlshr-Int64 mid1 32);
+    mid2 = b01 +Int64 (zext_i32_to_i64 mid1Lo);
+    mid2Lo = trunc_i64_to_i32 mid2;
+    mid2Hi = trunc_i64_to_i32 (bitlshr-Int64 mid2 32);
+    pHi = (b11 +Int64 (zext_i32_to_i64 mid1Hi))
+              +Int64 (zext_i32_to_i64 mid2Hi);
+    pLo = bitor-Int64
+              (bitshl-Int64 (zext_i32_to_i64 mid2Lo) 32)
+              (zext_i32_to_i64 b00Lo);
+
+    pHi >^ productHi;
+    pLo
+};
+
+shiftright128 = { lo : Int64 =>
+                  hi : Int64 =>
+                  dist32 : Int32 =>
+    dist = dist32 |> zext_i32_to_i64;
+    bitor-Int64
+        (bitshl-Int64 hi (64 -Int64 dist))
+        (bitlshr-Int64 lo dist)
+};
+
+
+div5 = { x : Int64 => udiv-unsafe-Int64 x (sext_i32_to_i64 5) };
+/*
+div10 = { x : Int64 => udiv-unsafe-Int64 x (sext_i32_to_i64 10) };
+div100 = { x : Int64 => udiv-unsafe-Int64 x (sext_i32_to_i64 100) };
+div1e8 = { x : Int64 => udiv-unsafe-Int64 x (sext_i32_to_i64 100000000) };
+div1e9 = { x : Int64 => udiv-unsafe-Int64 x (sext_i32_to_i64 1000000000) };
+*/
+
+pow5Factor = { value : Int64 =>
+  REC loop = { count => value =>
+    q = div5 value;
+    r = (trunc_i64_to_i32 value)
+                 -Int32 (5 *Int32 (trunc_i64_to_i32 q));
+    if r ==Int32 0
+      then loop (count +Int32 1) q
+      else count
+    end
+  };
+  loop 0 value
+};
+
+multipleOfPowerOf5 = { value : Int64 => p : Int32 => (pow5Factor value) >=UInt32 p };
+
+multipleOfPowerOf2 = { value : Int64 => p : Int32 =>
+    bitand-Int64 value ((bitshl-Int64 1 (zext_i32_to_i64 p)) -Int64 1)
+                                          ==Int64 0
+};
+
+mulShift64 = { m : Int64 =>
+               mul0 : Int64 =>
+               mul1 : Int64 =>
+               j : Int32 =>
+    high1 = (prim ref 0);
+    low1 = umul128 m mul1 high1;
+    high0 = (prim ref 0);
+    umul128 m mul0 high0;
+    sum = high0^ +Int64 low1;
+    if sum <UInt64 high0^
+      then (high1^ +Int64 1) >^ high1
+    end;
+    shiftright128 sum high1^ (j -Int32 64)
+};
+
+mulShiftAll64 = { m0 : Int64 =>
+                  mul0 : Int64 =>
+                  mul1 : Int64 =>
+                  j : Int32 =>
+                  vp : (Ref Int64) =>
+                  vm : (Ref Int64) =>
+                  mmShift : Int32 =>
+    m = bitshl-Int64 m0 1;
+
+    tmp = (prim ref 0);
+    lo = umul128 m mul0 tmp;
+    hi = (prim ref 0);
+    mid = tmp^ +Int64 (umul128 m mul1 hi);
+    (hi^ +Int64 (if mid <UInt64 tmp^ then 1 else 0 end)) >^ hi;
+
+    lo2 = lo +Int64 mul0;
+    mid2 = (mid +Int64 mul1)
+               +Int64 (if lo2 <UInt64 lo then 1 else 0 end);
+    hi2 = hi^ +Int64 (if mid2 <UInt64 mid then 1 else 0 end);
+    (shiftright128 mid2 hi2 ((j -Int32 64) -Int32 1)) >^ vp;
+
+    if mmShift ==Int32 1
+      then lo3 = lo -Int64 mul0;
+           mid3 = (mid -Int64 mul1)
+                      -Int64 (if lo3 >UInt64 lo then 1 else 0 end);
+           hi3 = hi^ -Int64 (if mid3 >UInt64 mid then 1 else 0 end);
+           (shiftright128 mid3 hi3 ((j -Int32 64) -Int32 1)) >^ vm;
+      else
+           lo3 = lo +Int64 lo;
+           mid3 = (mid +Int64 mid)
+                      +Int64 (sext_i32_to_i64
+                                  if lo3 <UInt64 lo then 1 else 0 end);
+           hi3 = (hi^ +Int64 hi^)
+                     +Int64 (if mid3 <UInt64 mid then 1 else 0 end);
+           lo4 = lo3 -Int64 mul0;
+           mid4 = (mid3 -Int64 mul1)
+                      -Int64 (if lo4 >UInt64 lo3 then 1 else 0 end);
+           hi4 = hi3 -Int64 (if mid4 >UInt64 mid3 then 1 else 0 end);
+           (shiftright128 mid4 hi4 (j -Int32 64)) >^ vm;
+    end;
+    shiftright128 mid hi^ ((j -Int32 64) -Int32 1)
+};
+
+umul256_hi128_lo64 = { aHi : Int64 =>
+                       aLo : Int64 =>
+                       bHi : Int64 =>
+                       bLo : Int64 =>
+    b00Hi = (prim ref 0);
+    b00Lo = (umul128 aLo bLo b00Hi);
+    b01Hi = (prim ref 0);
+    b01Lo = (umul128 aLo bHi b01Hi);
+    b10Hi = (prim ref 0);
+    b10Lo = (umul128 aHi bLo b10Hi);
+    b11Hi = (prim ref 0);
+    b11Lo = (umul128 aHi bHi b11Hi);
+    //_ignored = b00Lo;
+    //_ignored = ptrGet b11Hi;
+    temp1Lo = b10Lo  +Int64 b00Hi^;
+    temp1Hi = b10Hi^ +Int64 (sext_i32_to_i64
+                              if temp1Lo <UInt64 b10Lo then 1 else 0 end);
+    temp2Lo = b01Lo  +Int64 temp1Lo;
+    temp2Hi = b01Hi^ +Int64 (sext_i32_to_i64
+                              if temp2Lo <UInt64 b01Lo then 1 else 0 end);
+    (b11Lo +Int64 temp1Hi) +Int64 temp2Hi
+};
+
+uint128_mod1e9 = { vHi : Int64 =>
+                   vLo : Int64 =>
+    multiplied = umul256_hi128_lo64
+                     vHi
+                     vLo
+                     -8543223759426509417
+                     3560107088838733873;
+    shifted = trunc_i64_to_i32 (bitlshr-Int64 multiplied 29);
+    (trunc_i64_to_i32 vLo) -Int32 (1`000`000`000 *Int32 shifted)
+};
+
+mulShift_mod1e9 = { m : Int64 =>
+                    mul0 : Int64 =>
+                    mul1 : Int64 =>
+                    mul2 : Int64 =>
+                    j : Int32 =>
+    high0 = (prim ref 0);
+    high1 = (prim ref 0);
+    high2 = (prim ref 0);
+    low0 = umul128 m mul0 high0;
+    low1 = umul128 m mul1 high1;
+    low2 = umul128 m mul2 high2;
+
+    s0high = low1 +Int64 high0^;
+    c1 = if s0high <UInt64 low1
+           then 1
+           else 0
+         end;
+    s1low = (low2 +Int64 high1^) +Int64 c1;
+    c2 = if s1low <UInt64 low2
+           then 1
+           else 0
+         end;
+    s1high = high2^ +Int64 c2;
+
+    dist32 = j -Int32 128;
+    shiftedhigh = s1high `bitlshr-Int64` (dist32 |> zext_i32_to_i64);
+    shiftedlow = shiftright128 s1low s1high dist32;
+    uint128_mod1e9 shiftedhigh shiftedlow;
+};
+
+indexForExponent = { e : Int32 => udiv-unsafe-Int32 (e +Int32 15) 16 };
+
+pow10BitsForIndex = { idx : Int32 => (16 *Int32 idx) +Int32 120 };
+
+lengthForIndex = { idx : Int32 =>
+    udiv-unsafe-Int32
+        ((((log10Pow2 (16 *Int32 idx)) +Int32 1) +Int32 16) +Int32 8)
+        9
+};
+
+
+paddedWithThisManyLeftZeros :: { Text => Int32 => Text };
+paddedWithThisManyLeftZeros = { t => n =>
+  if n ==Int32 0 then t else
+    (t ++Text "0") `paddedWithThisManyLeftZeros` (n -Int32 1)
+  end
+};
+
+rabAppendThisManyLeftZeros :: { ResizableArrayBuilder => Int32 => () };
+rabAppendThisManyLeftZeros = { rab => n =>
+  enumRange32 0 n { i => rabAppendWord8 rab "0"; };
+};
+
+append_nine_digits :: { ResizableArrayBuilder => Int32 => () };
+append_nine_digits = { rab => digits =>
+  if digits ==Int32 0
+  then rabAppendThisManyLeftZeros rab 9
+  else index = rabSize rab;
+       REC loop = { i => d =>
+         if i <SWord 5
+         then c    = srem!-Int32 d 10`000;
+              next = sdiv!-Int32 d 10`000;
+              c0 = srem!-Int32 c 100 `bitshl-Int32` 1; 
+              c1 = sdiv!-Int32 c 100 `bitshl-Int32` 1;
+              base = index +Word (5 -Word i);
+              rabWriteWord8 rab (base +Word 0) DIGIT_TABLE.[c1];
+              rabWriteWord8 rab (base +Word 1) DIGIT_TABLE.[c1 +Int32 1];
+              rabWriteWord8 rab (base +Word 2) DIGIT_TABLE.[c0];
+              rabWriteWord8 rab (base +Word 3) DIGIT_TABLE.[c0 +Int32 1];
+              loop (i +Word 4) next
+         else
+              rabWriteWord8 rab index ("0" +Int8 (trunc_i32_to_i8 d));
+         end
+       };
+       loop 0 digits
+  end
+};
+
+append_n_digits :: { ResizableArrayBuilder => Int32 => Int32 => () };
+append_n_digits = { rab => digits => olength =>
+  if digits ==Int32 0
+  then rabAppendThisManyLeftZeros rab olength
+  else  
+        mod10 = { x => x `srem!-Int32` 10 };
+        div10 = { x => x `sdiv-Int32` 10 };
+
+        target = rabSize rab |> trunc_Word_to_i32;
+        last = (target +Int32 olength) -Int32 1;
+
+        //print_text_bare "target offset: "; print_i32 target;
+        //print_text_bare "last   offset: "; print_i32 last;
+        //print_text_bare "digits ::::::: "; print_i32 digits;
+
+        fin = foldRange 0 olength digits { i => output =>
+            c = mod10 output |> trunc_i32_to_i8 |> (+Int8) "0";
+            rabWriteWord8 rab (last -Int32 i |> zext_i32_to_Word) c;
+            div10 output
+        };
+
+  /*
+       index = rabSize rab +Word (zext_i32_to_Word n);
+
+        REC loop = { i => d =>
+         if i <SWord 5
+         then c    = srem!-Int64 d 10`000 |> trunc_i64_to_i32;
+              next = sdiv!-Int64 d 10`000;
+              c0 = srem-Int32! c 100 `bitshl-Int32` 1; 
+              c1 = sdiv-Int32! c 100 `bitshl-Int32` 1;
+              base = index +Word (5 -Word i);
+              rabWriteWord8 rab (base +Word 3) DIGIT_TABLE.[c0 +Int32 1];
+              rabWriteWord8 rab (base +Word 2) DIGIT_TABLE.[c0];
+              rabWriteWord8 rab (base +Word 1) DIGIT_TABLE.[c1 +Int32 1];
+              rabWriteWord8 rab (base +Word 0) DIGIT_TABLE.[c1];
+         else
+              rabWriteWord8 rab index ("0" +Int8 digits);
+         end
+       };
+       loop 0 digits
+       */
+  end
+};
+
+/*
+append_c_digits :: { ResizableArrayBuilder => Int32 => Int32 => () };
+append_c_digits = { rab => count => digits =>
+  if digits ==Int32 0
+  then rabAppendThisManyLeftZeros rab olength
+  else  
+        mod10 = { x => x `srem!-Int32` 10 };
+        div10 = { x => x `sdiv-Int32` 10 };
+
+        target = rabSize rab |> trunc_Word_to_i32;
+        last = (target +Int32 count) -Int32 1;
+
+        fin = foldRange 0 olength digits { i => output =>
+            c = mod10 output |> trunc_i32_to_i8 |> (+Int8) "0";
+            rabWriteWord8 rab (last -Int32 i |> zext_i32_to_Word) c;
+            div10 output
+        };
+  end
+};
+*/
+
+fmtPortionBeforeDecimal :: { ResizableArrayBuilder => Int32 => Int64 => Bool => Int32 => () };
+fmtPortionBeforeDecimal = { rab => e2 => m2 => sign => precision =>
+  if sign then rabAppendWord8 rab "-" end;
+
+  nonzero = prim ref False;
+
+  if e2 >=SInt32 -52
+  then
+    idx = if e2 <SInt32 0
+          then 0
+          else indexForExponent e2
+          end;
+    p10bits = pow10BitsForIndex idx;
+    len = lengthForIndex idx;
+    i = prim ref (len -Int32 1);
+    while
+        { i^ >=SInt32 0 }
+        {
+            j = p10bits -Int32 e2;
+            offset = (v_POW10_OFFSET.[idx] +Int32 i^) *Int32 3;
+            mul0 = v_POW10_SPLIT.[offset];
+            mul1 = v_POW10_SPLIT.[offset +Int32 1];
+            mul2 = v_POW10_SPLIT.[offset +Int32 2];
+
+            digits = mulShift_mod1e9
+                        (bitshl-Int64 m2 8)
+                        mul0 mul1 mul2
+                        (j +Int32 8);
+
+/*
+            print_text_bare "j = "; print_i32 j;
+            print_text_bare "offset (equiv) = "; print_i32 (v_POW10_OFFSET.[idx] +Int32 i^);
+            print_text_bare "mul0 = "; print_i64x mul0;
+            print_text_bare "mul1 = "; print_i64x mul1;
+            print_text_bare "mul2 = "; print_i64x mul2;
+*/
+            if nonzero^
+            then
+                //print_text_bare "appending nine digits: "; print_i32 digits;
+                append_nine_digits rab digits;
+            else
+                if digits !=Int32 0
+                then olength = decimalLength9 digits;
+                     append_n_digits rab digits olength;
+                     True >^ nonzero;
+                end; 
+            end;
+            decrInt32 i;
+            ()
+        }; 
+    end;
+
+    if nonzero^ then () else rabAppendWord8 rab "0" end;
+    if precision >SInt32 0 then rabAppendWord8 rab "." end;
+};
+
+fmtPortionAfterDecimal = { rab => e2 => m2 => precision : Int32 =>
+    if e2 >=SInt32 0
+      then rabAppendThisManyLeftZeros rab precision
+            
+      else idx = sdiv-unsafe-Int32 (0 -Int32 e2) 16;
+           blocks = (sdiv-unsafe-Int32 precision 9) +Int32 1;
+           roundUp = prim ref 0;
+           i = prim ref 0;
+           mb2 = v_MIN_BLOCK_2.[idx] |> zext_i8_to_i32;
+           if blocks <=UInt32 mb2
+           then 
+                blocks >^ i;
+                rabAppendThisManyLeftZeros rab precision;
+            else
+                if i^ <UInt32 mb2
+                then 
+                        mb2 >^ i;
+                        rabAppendThisManyLeftZeros rab (9 *Int32 i^);
+                end; 
+            end;
+
+            REC loop = {
+                if i^ <SInt32 blocks
+                then
+                
+                    ADDITIONAL_BITS_2 = 120;
+                    j = ADDITIONAL_BITS_2 +Int32 
+                            ((0 -Int32 e2)
+                                -Int32 (16 *Int32 idx));
+                    p = (v_POW10_OFFSET_2.[idx] +Int32 i^)
+                            -Int32 (zext_i8_to_i32 v_MIN_BLOCK_2.[idx]);
+
+                    if p >=SInt32 v_POW10_OFFSET_2.[idx +Int32 1]
+                    then fill = precision -Int32 (9 *Int32 i^);
+                        rabAppendThisManyLeftZeros rab fill;
+                        () // break
+                    else
+
+                        offset = p *Int32 3;
+                        mul0 = v_POW10_SPLIT_2.[offset];
+                        mul1 = v_POW10_SPLIT_2.[offset +Int32 1];
+                        mul2 = v_POW10_SPLIT_2.[offset +Int32 2];
+                        digits = mulShift_mod1e9
+                                    (bitshl-Int64 m2 8)
+                                    mul0 mul1 mul2
+                                    (j +Int32 8);
+
+                        if i^ <SInt32 (blocks -Int32 1)
+                        then append_nine_digits rab digits;
+                             incrInt32 i;
+                             loop !;
+                        else
+                            maximum = precision -Int32 (9 *Int32 i^);
+                            lastDigit = prim ref 0;
+                            shiftedDigits = foldRange 0 (9 -Int32 maximum) digits { k => digits =>
+                                mod10 = { x => x `srem!-Int32` 10 };
+                                div10 = { x => x `sdiv-Int32` 10 };
+
+                                mod10 digits >^ lastDigit;
+                                div10 digits
+                            };
+
+                            if lastDigit^ !=Int32 5
+                            then (if lastDigit^ >SInt32 5 then 1 else 0 end) >^ roundUp;
+                            else requiredTwos = (0 -Int32 e2) -Int32 precision -Int32 1;
+                                trailingZeros =
+                                    { requiredTwos <=SInt32 0 } `oror` {
+                                        { requiredTwos <SInt32 60 } `andand` { multipleOfPowerOf2 m2 requiredTwos }
+                                    };
+                                if trailingZeros then 2 else 1 end >^ roundUp;
+                            end;
+
+                            if maximum >SInt32 0
+                            then //append_c_digits rab maximum digits
+                                 append_n_digits rab shiftedDigits maximum;
+                            end;
+
+                            () // break
+                        end
+                    end
+                end;
+            };
+            loop !;
+
+            if roundUp^ !=Int32 0
+            then index = prim ref (rabSize rab);
+                 roundIndex = index^;
+                 c = prim ref ("X" as Int8);
+
+                 REC loop = { roundIndex_prev : Word => dotIndex : Int32 => roundUp : Int32 =>
+                    roundIndex = roundIndex_prev -Word 1;
+                    if roundIndex !=Word -1
+                      then rabReadWord8 rab roundIndex >^ c
+                    end;
+                      
+                    case ()
+                      of _ if (roundIndex ==Word -1) `either` (c^ ==Int8 "-") ->
+                            rabWriteWord8 rab (roundIndex +Word 1) "1";
+                            if dotIndex >SInt32 0
+                              then
+                                rabWriteWord8 rab (dotIndex          |> zext_i32_to_Word) "0";
+                                rabWriteWord8 rab (dotIndex +Int32 1 |> zext_i32_to_Word) "1";
+                            end;
+                            rabWriteWord8 rab (postincrWord index) "0";
+                      of _ if c^ ==Int8 "." ->
+                            loop roundIndex (roundIndex |> trunc_Word_to_i32) roundUp
+                      of _ if c^ ==Int8 "9" ->
+                            rabWriteWord8 rab roundIndex "0";
+                            loop roundIndex dotIndex 1
+                      of _ if (roundUp ==Int32 2) `both` (isEven-Int8 c^) ->
+                            ()
+                      of _ ->
+                            rabWriteWord8 rab roundIndex (c^ +Int8 1)
+                    end;
+                 };
+
+                 dotIndex = 0;
+                 loop roundIndex dotIndex roundUp^
+           end; 
+    end
+};
+
+ryu-d2fixed :: { Int32 => Float64 => Text };
+ryu-d2fixed = { precision => value =>
+    // Step 1: Decode the floating point number, and unify normalized and subnormal cases.
+    // First, handle all the trivial cases.
+    bits = f64-as-i64 value;
+    case bits
+      of _ if isNaN-f64 value -> "NaN"
+      of 0x7ff0`0000`0000`0000 -> "Infinity"
+      of 0xfff0`0000`0000`0000 -> "-Infinity"
+      of 0 -> "0." `paddedWithThisManyLeftZeros` precision
+      of 0x8000`0000`0000`0000 ->
+             "-0." `paddedWithThisManyLeftZeros` precision
+      of _ ->
+        // Otherwise extract the mantissa and exponent bits and run the full algorithm.
+        ieeeExponent = (bits `bitlshr-Int64` kDOUBLE_MANTISSA_BITS) `bitand-Int64` kDOUBLE_EXPONENT_MASK;
+        ieeeMantissa = bits `bitand-Int64` kDOUBLE_MANTISSA_MASK;
+
+        sign = bits <SInt64 0;
+
+        e2 =
+            if ieeeExponent ==Int64 0 then
+                (1 -Int64 kDOUBLE_EXPONENT_BIAS) -Int64 kDOUBLE_MANTISSA_BITS
+            else
+                (ieeeExponent -Int64 kDOUBLE_EXPONENT_BIAS) -Int64 kDOUBLE_MANTISSA_BITS
+            end |> trunc_i64_to_i32;
+
+        m2 =
+            if ieeeExponent ==Int64 0 then
+                ieeeMantissa
+            else
+                ieeeMantissa `bitor-Int64` (1 `bitshl-Int64` kDOUBLE_MANTISSA_BITS);
+            end;
+
+        rab = newResizableArrayBuilder !;
+
+        //print_text_bare "e2: "; print_i32 e2;
+        //print_text_bare "m2: "; print_i64 m2;
+
+        fmtPortionBeforeDecimal rab e2 m2 sign precision;
+        fmtPortionAfterDecimal rab e2 m2 precision;
+
+        rab |> rabToRawArray |> textFromRawASCII
+    end
+};
