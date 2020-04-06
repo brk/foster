@@ -167,10 +167,11 @@ endif (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NO_RTTI_FLAG})
 endif (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NDEBUG_FLAG})
 
 
-execute_process(COMMAND ${LLVM_CONFIG} --libfiles OUTPUT_VARIABLE LLVM_LIBS)
-execute_process(COMMAND ${LLVM_CONFIG} --libdir OUTPUT_VARIABLE LLVM_LIBDIR)
+execute_process(COMMAND ${LLVM_CONFIG} --libfiles    OUTPUT_VARIABLE LLVM_LIBS)
+execute_process(COMMAND ${LLVM_CONFIG} --libdir      OUTPUT_VARIABLE LLVM_LIBDIR)
+execute_process(COMMAND ${LLVM_CONFIG} --system-libs OUTPUT_VARIABLE LLVM_SYSLIBS)
 
-string(STRIP "${LLVM_LIBS}" LLVM_LIBS)
+string(STRIP "${LLVM_LIBS} ${LLVM_SYSLIBS}" LLVM_LIBS)
 string(STRIP "${LLVM_LIBDIR}" LLVM_LIBDIR)
 
 # Unfortunately CMake does the wrong thing when we try to link against
