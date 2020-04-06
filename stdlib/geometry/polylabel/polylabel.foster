@@ -1,6 +1,7 @@
 snafuinclude Prelude "prelude";
 snafuinclude Q "pairing-heap";
 snafuinclude Seq "data/seq";
+snafuinclude Ryu "fmt/ryu/ryu-d2fixed";
 
 /*
 Port of https://github.com/mapbox/polylabel/blob/master/polylabel.js

@@ -1,7 +1,5 @@
 snafuinclude PreludePrintExpect "prelude/print-expect";
-snafuinclude Ryu "fmt/ryu/ryu-d2fixed";
 snafuinclude Polylabel "geometry/polylabel";
-
 
 test-01 = {
   a = prim mach-array-literal
