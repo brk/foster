@@ -16,13 +16,15 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Analysis/ConstantFolding.h"
 
+#include "base/LLVMUtils.h"
+
 using namespace llvm;
 
 STATISTIC(NumSpecialized, "Number of allocations specialized");
 
 namespace {
 
-class SpecializeAllocations : public BasicBlockPass {
+class SpecializeAllocations : public FunctionPass {
   Constant *memalloc;
   Constant *memalloc_16;
   Constant *memalloc_32;
@@ -30,7 +32,7 @@ class SpecializeAllocations : public BasicBlockPass {
   bool ready;
 public:
   static char ID;
-  explicit SpecializeAllocations() : BasicBlockPass(ID),
+  explicit SpecializeAllocations() : FunctionPass(ID),
         memalloc(NULL), memalloc_16(NULL), memalloc_32(NULL), memalloc_48(NULL), ready(false) {}
 
   llvm::StringRef getPassName() const { return "SpecializeAllocations"; }
@@ -50,7 +52,8 @@ public:
     return doInitialization(*F.getParent());
   }
 
-  bool runOnBasicBlock(BasicBlock &BB);
+  void runOnBasicBlock(BasicBlock&, bool&);
+  virtual bool runOnFunction(Function& F);
 };
 
 char SpecializeAllocations::ID = 0;
@@ -83,13 +86,7 @@ bool SpecializeAllocations::doInitialization(Module &M) {
 // runOnBasicBlock - This method does the actual work of converting
 // instructions over, assuming that the pass has already been initialized.
 //
-bool SpecializeAllocations::runOnBasicBlock(BasicBlock &BB) {
-  if (!BB.getParent()->hasGC()) return false;
-  if (!ready) return false;
-
-  bool Changed = false;
-  assert(memalloc && memalloc_16 && "Pass not initialized!");
-
+void SpecializeAllocations::runOnBasicBlock(BasicBlock& BB, bool& Changed) {
   BasicBlock::InstListType &BBIL = BB.getInstList();
   const DataLayout& TD = BB.getParent()->getParent()->getDataLayout();
 
@@ -170,6 +167,18 @@ bool SpecializeAllocations::runOnBasicBlock(BasicBlock &BB) {
         }
       }
     }
+  }
+}
+
+bool SpecializeAllocations::runOnFunction(Function& F) {
+  if (!isFosterFunction(F)) return false;
+  if (!ready) return false;
+  
+  assert(memalloc && memalloc_16 && "Pass not initialized!");
+
+  bool Changed = false;
+  for (BasicBlock& BB : F) {
+    runOnBasicBlock(BB, Changed);
   }
 
   return Changed;

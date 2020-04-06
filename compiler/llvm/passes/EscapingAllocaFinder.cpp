@@ -11,6 +11,7 @@
 #include "llvm/ADT/StringSwitch.h"
 
 #include "base/GenericGraph.h"
+#include "base/LLVMUtils.h"
 
 #include <set>
 #include <map>
@@ -35,7 +36,7 @@ struct EscapingAllocaFinder : public FunctionPass {
   virtual llvm::StringRef getPassName() const { return "EscapingAllocaFinder"; }
 
   virtual bool runOnFunction(Function& F) {
-    if (!F.hasGC()) return false;
+    if (!isFosterFunction(F)) return false;
 
     std::set<llvm::Value*> allocas;
 

@@ -13,6 +13,7 @@
 #include "llvm/IR/CallSite.h"
 
 #include "base/GenericGraph.h"
+#include "base/LLVMUtils.h"
 
 #include <set>
 #include <map>
@@ -24,12 +25,12 @@ using namespace llvm;
 
 namespace {
 
-struct CallingConventionChecker : public BasicBlockPass {
+struct CallingConventionChecker : public FunctionPass {
   Constant *memalloc;
   Constant *memalloc_16;
 public:
   static char ID;
-  explicit CallingConventionChecker() : BasicBlockPass(ID),
+  explicit CallingConventionChecker() : FunctionPass(ID),
         memalloc(NULL), memalloc_16(NULL) {}
 
   llvm::StringRef getPassName() const { return "CallingConventionChecker"; }
@@ -44,7 +45,8 @@ public:
     return doInitialization(*F.getParent());
   }
 
-  bool runOnBasicBlock(BasicBlock &BB);
+  virtual bool runOnFunction(Function& F);
+  void runOnBasicBlock(BasicBlock&, bool&);
 };
 
 char CallingConventionChecker::ID = 0;
@@ -70,9 +72,19 @@ bool CallingConventionChecker::doInitialization(Module &M) {
   return true;
 }
 
-bool CallingConventionChecker::runOnBasicBlock(BasicBlock &BB) {
-  if (!BB.getParent()->hasGC()) return false;
+bool CallingConventionChecker::runOnFunction(Function& F) {
+  if (!isFosterFunction(F)) return false;
+
   bool Changed = false;
+  for (BasicBlock& BB : F) {
+    runOnBasicBlock(BB, Changed);
+  }
+
+  return Changed;
+}
+
+
+void CallingConventionChecker::runOnBasicBlock(BasicBlock &BB, bool& Changed) {
   bool sawSuspiciousCalls = false;
 
   for (Instruction& Iref : BB) {
@@ -93,6 +105,4 @@ bool CallingConventionChecker::runOnBasicBlock(BasicBlock &BB) {
   }
 
   if (sawSuspiciousCalls) exit(1);
-
-  return Changed;
 }

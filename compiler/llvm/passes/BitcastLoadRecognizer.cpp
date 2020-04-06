@@ -97,9 +97,9 @@ bool by_index_offset(Idx* a, Idx* b) {
   return a->index_offset < b->index_offset;
 }
 
-struct BitcastLoadRecognizer : public BasicBlockPass {
+struct BitcastLoadRecognizer : public FunctionPass {
   static char ID;
-  BitcastLoadRecognizer() : BasicBlockPass(ID) {}
+  BitcastLoadRecognizer() : FunctionPass(ID) {}
 
   llvm::StringRef getPassName() const { return "BitcastLoadRecognizer"; }
 
@@ -331,8 +331,18 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
     return true;
   }
 
+  bool runOnFunction(Function& F) {
+    if (!isFosterFunction(F)) return false;
 
-  virtual bool runOnBasicBlock(BasicBlock& BB) {
+    bool Changed = false;
+    for (BasicBlock& BB : F) {
+      runOnBasicBlock(BB, Changed);
+    }
+
+    return Changed;
+  }
+
+  void runOnBasicBlock(BasicBlock& BB, bool& Changed) {
     std::set<Value*>  willBeDead;
 
     // Iterate over the instructions in reverse order so that we see
@@ -435,7 +445,6 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
 
       }
     }
-    return false;
   }
 };
 
