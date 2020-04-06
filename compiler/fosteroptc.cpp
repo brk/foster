@@ -488,8 +488,8 @@ void runInternalizePasses(Module* mod) {
 }
 
 llvm::sys::fs::OpenFlags
-fdFlagsForObjectType(TargetMachine::CodeGenFileType filetype) {
-  if (filetype == TargetMachine::CGFT_ObjectFile) {
+fdFlagsForObjectType(CodeGenFileType filetype) {
+  if (filetype == CGFT_ObjectFile) {
     return llvm::sys::fs::OpenFlags::F_None;
   }
   return llvm::sys::fs::OpenFlags::F_Text;
@@ -504,20 +504,20 @@ std::string HOST_TRIPLE = LLVM_DEFAULT_TARGET_TRIPLE;
 #endif
 
 void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
-  auto filetype = TargetMachine::CGFT_ObjectFile;
+  auto filetype = CGFT_ObjectFile;
   if (pystring::endswith(filename, ".s")) {
-    filetype = TargetMachine::CGFT_AssemblyFile;
+    filetype = CGFT_AssemblyFile;
   } else if (pystring::endswith(filename, ".o")
          || pystring::endswith(filename, ".obj")) {
-    filetype = TargetMachine::CGFT_ObjectFile;
+    filetype = CGFT_ObjectFile;
   } else {
     ASSERT(false) << "Expected filename " << filename
                   << " to end with .s or .o or .obj";
   }
 
-  ScopedTimer timer((filetype == TargetMachine::CGFT_AssemblyFile) ? "llvm.llc"
-                   :(filetype == TargetMachine::CGFT_ObjectFile)   ? "llvm.llc+"
-                                                                   : "llvm.llc?");
+  ScopedTimer timer((filetype == CGFT_AssemblyFile) ? "llvm.llc"
+                   :(filetype == CGFT_ObjectFile)   ? "llvm.llc+"
+                                                    : "llvm.llc?");
 
   llvm::Triple triple(mod->getTargetTriple());
   if (triple.getTriple().empty()) {

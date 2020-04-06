@@ -217,7 +217,7 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
     /*Name=*/        "__foster_typemap_" + name,
     /*InsertBefore=*/NULL,
     /*ThreadLocal=*/ GlobalVariable::NotThreadLocal);
-  typeMapVar->setAlignment(16);
+  typeMapVar->setAlignment(llvm::MaybeAlign(16));
 
   std::string wrapped;
   raw_string_ostream ss(wrapped); ss << name << " = " << *ty;
@@ -230,7 +230,7 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
       /*Linkage=*/     GlobalValue::PrivateLinkage,
       /*Initializer=*/ cname,
       /*Name=*/        ".typename." + name);
-  typeNameVar->setAlignment(1);
+  typeNameVar->setAlignment(llvm::MaybeAlign(1));
 
 
   std::vector<Constant*> typeMapOffsets;
@@ -453,6 +453,6 @@ void CodegenPass::emitTypeMapListGlobal() {
       /*Linkage=*/     GlobalValue::ExternalLinkage,
       /*Initializer=*/ carr,
       /*Name=*/        "foster__typeMapList");
-  typeMapListGlobal->setAlignment(8);
+  typeMapListGlobal->setAlignment(llvm::MaybeAlign(8));
 }
 

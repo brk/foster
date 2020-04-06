@@ -4,7 +4,7 @@ cmake_minimum_required (VERSION 3.4.3)
 # ~~~~~~~~~~~~~~~~~~~~
 
 set(PYTHON python3)
-set(LLVM_VERSION 9.0.0)
+set(LLVM_VERSION 10.0.0)
 
 find_program(LLVM_CONFIG NAMES llvm-config llvm-config-${LLVM_VERSION}
   PATHS
@@ -171,12 +171,13 @@ execute_process(COMMAND ${LLVM_CONFIG} --libfiles    OUTPUT_VARIABLE LLVM_LIBS)
 execute_process(COMMAND ${LLVM_CONFIG} --libdir      OUTPUT_VARIABLE LLVM_LIBDIR)
 execute_process(COMMAND ${LLVM_CONFIG} --system-libs OUTPUT_VARIABLE LLVM_SYSLIBS)
 
-string(STRIP "${LLVM_LIBS} ${LLVM_SYSLIBS}" LLVM_LIBS)
-string(STRIP "${LLVM_LIBDIR}" LLVM_LIBDIR)
+string(STRIP "${LLVM_LIBS}"    LLVM_LIBS)
+string(STRIP "${LLVM_LIBDIR}"  LLVM_LIBDIR)
+string(STRIP "${LLVM_SYSLIBS}" LLVM_SYSLIBS)
 
 # Unfortunately CMake does the wrong thing when we try to link against
 # LLVM when the OS includes libLLVM in the system lib directory.
-set(LLVM_LDFLAGS "-L${LLVM_LIBDIR} ${LLVM_LIBS}")
+set(LLVM_LDFLAGS "-L${LLVM_LIBDIR} ${LLVM_LIBS} ${LLVM_SYSLIBS}")
 
 # (X)Ubuntu 17.10 ships with LLVM 5.0 in /usr/lib/x86_64-linux-gnu/libLLVM-5.0.so
 # which confuses CMake into thinking it doesn't need to provide an RPATH

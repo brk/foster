@@ -120,7 +120,7 @@ llvm::Value* emitBitcast(llvm::Value* v, llvm::Type* dstTy, llvm::StringRef msg 
     ASSERT(false) << "cannot cast " << str(srcTy) << " to " << str(dstTy) << "\n" << str(v);
   }
   if (dstTy->isPointerTy() != srcTy->isPointerTy()) {
-    builder.GetInsertBlock()->getParent()->dump();
+    llvm::errs() << builder.GetInsertBlock()->getParent() << "\n";
     ASSERT(false) << "cannot cast " << str(srcTy) << " to " << str(dstTy) << "\ndue to pointer-type mismatch\n" << str(v);
   }
 
@@ -176,7 +176,7 @@ llvm::Value* emitGCWriteOrStore(CodegenPass* pass,
     }
   }
 
-  builder.GetInsertBlock()->getParent()->dump();
+  llvm::errs() << builder.GetInsertBlock()->getParent() << "\n";
   ASSERT(false) << "in basic block " << builder.GetInsertBlock()->getName() << ":\n"
           << "ELIDING STORE DUE TO MISMATCHED TYPES:\n"
           << "    ptr type: " << str(ptr->getType()) << "\n"
@@ -374,19 +374,19 @@ CodegenPass::CodegenPass(llvm::Module* m, CodegenPassConfig config)
     // No attribute mangling for functions outside the runtime.
     llvm::AttributeList attrs = f->getAttributes();
     auto FI = llvm::AttributeList::FunctionIndex;
-    if (!attrs.hasAttribute(FI, "no-frame-pointer-elim")) {
-      attrs = attrs.addAttribute(f->getContext(), FI,
-        llvm::Attribute::get(f->getContext(), "no-frame-pointer-elim", "true"));
-    }
 
     llvm::AttrBuilder toremove;
     toremove.addAttribute(
         llvm::Attribute::get(f->getContext(), "stack-protector-buffer-size", "8"));
+    toremove.addAttribute(
+        llvm::Attribute::get(f->getContext(), "frame-pointer", "none"));
     attrs = attrs.removeAttributes(f->getContext(), FI, toremove);
 
     llvm::AttrBuilder toadd;
     toadd.addAttribute(
         llvm::Attribute::get(f->getContext(), "foster-fn"));
+    toadd.addAttribute(
+        llvm::Attribute::get(f->getContext(), "frame-pointer", "all")); // TODO non-leaf
     attrs = attrs.addAttributes(f->getContext(), FI, toadd);
 
     this->fosterFunctionAttributes = attrs;
@@ -421,8 +421,8 @@ llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
 
   Value* hstr_bytes; Value* len;
   if (tryBindArray(this, hstr, /*out*/ hstr_bytes, /*out*/ len)) {
-    builder.CreateMemCpy(hstr_bytes, /* dst align */ 4,
-                               cstr, /* src align */ 4,
+    builder.CreateMemCpy(hstr_bytes, /* dst align */ llvm::MaybeAlign(4),
+                               cstr, /* src align */ llvm::MaybeAlign(4),
                                sz);
   } else { ASSERT(false); }
 
@@ -754,7 +754,7 @@ llvm::Value* allocateSlot(CodegenPass* pass, LLVar* rootvar) {
     auto padded_ty = llvm::StructType::get(foster::fosterLLVMContext,
                                             { builder.getInt64Ty(), builder.getInt64Ty(), ty });
     llvm::AllocaInst* slot = CreateEntryAlloca(padded_ty, rootvar->getName());
-    slot->setAlignment(16);
+    slot->setAlignment(llvm::MaybeAlign(16));
     builder.CreateStore(builder.CreatePtrToInt(typemap, builder.getInt64Ty()),
                         getPointerToIndex(slot, builder.getInt32(1), ""));
     return getPointerToIndex(slot, builder.getInt32(2), "past_tymap");
@@ -1117,7 +1117,7 @@ llvm::GlobalVariable* emitPrivateGlobal(CodegenPass* pass,
       /*Linkage=*/     llvm::GlobalValue::PrivateLinkage,
       /*Initializer=*/ val,
       /*Name=*/        name);
-  globalVar->setAlignment(16);
+  globalVar->setAlignment(llvm::MaybeAlign(16));
   return globalVar;
 }
 
@@ -1213,7 +1213,7 @@ llvm::Value* LLGlobalSymbol::codegenCallee(CodegenPass* pass) {
 llvm::Value* LLVar::codegen(CodegenPass* pass) {
   llvm::Value* v = pass->valueSymTab.lookup(getName());
   if (!v) {
-    builder.GetInsertBlock()->getParent()->dump();
+    llvm::errs() << builder.GetInsertBlock()->getParent() << "\n";
     pass->valueSymTab.dump(llvm::errs());
     ASSERT(false) << "\n\n\t\tUnknown variable name " << this->name << " in CodegenPass"
                   << " in block " << builder.GetInsertBlock()->getName()
@@ -1308,7 +1308,7 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
     llvm::Type* pad  = llvm::ArrayType::get(builder.getInt8Ty(), 8 - ptrsize);
     llvm::StructType* sty = llvm::StructType::get(builder.getContext(), { pad8, typemap_type, pad, ty });
     llvm::AllocaInst* cell = CreateEntryAlloca(sty, "stackref");
-    cell->setAlignment(16);
+    cell->setAlignment(llvm::MaybeAlign(16));
     llvm::Value* slot = getPointerToIndex(cell, builder.getInt32(3), "stackref_slot");
     builder.CreateStore(ti, getPointerToIndex(cell, builder.getInt32(1), "stackref_meta"));
     return slot;
@@ -1497,8 +1497,8 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
       int64_t size_in_bytes = pass->mod->getDataLayout().getTypeAllocSize(elt_ty)
                                   * this->args.size();
       
-      builder.CreateMemCpy(heapmem, 1,
-                           arrayVariableToPointer(arrayGlobal), 1,
+      builder.CreateMemCpy(heapmem, llvm::MaybeAlign(1),
+                           arrayVariableToPointer(arrayGlobal), llvm::MaybeAlign(1),
                            size_in_bytes);
 
       // Copy any non-constant values to the heap array

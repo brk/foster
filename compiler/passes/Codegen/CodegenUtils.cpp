@@ -81,7 +81,7 @@ void checkPointerToIndex(Value* ptrToCompositeValue,
       << "\non val of type "     << str(ptrToCompositeValue->getType())
       << "\nwith value "         << str(ptrToCompositeValue);
   } else {
-    builder.GetInsertBlock()->getParent()->dump();
+    llvm::errs() << builder.GetInsertBlock()->getParent() << "\n";
     ASSERT(false) << "Pointer to non-composite type "
                   <<  str(ptrToCompositeValue->getType())
                   << "passed to getPointerToIndex(" << str(idxValue)
@@ -119,7 +119,7 @@ Constant* getSlotName(llvm::AllocaInst* stackslot, CodegenPass* pass) {
       /*Linkage=*/     GlobalValue::PrivateLinkage,
       /*Initializer=*/ cslotname,
       /*Name=*/        ".slotname." + slotname);
-  slotnameVar->setAlignment(1);
+  slotnameVar->setAlignment(llvm::MaybeAlign(1));
 
   return llvm::ConstantExpr::getBitCast(arrayVariableToPointer(slotnameVar),
                                         builder.getInt8PtrTy());
@@ -224,7 +224,7 @@ CodegenPass::emitMalloc(TypeAST* typ,
 
   llvm::Type* ty = typ->getLLVMType();
   if (init) {
-    builder.CreateMemSet(mem, builder.getInt8(0), slotSizeOf(ty), /*align*/ 4);
+    builder.CreateMemSet(mem, builder.getInt8(0), slotSizeOf(ty), llvm::MaybeAlign(4));
   }
 
   return builder.CreateBitCast(mem, ptrTo(ty), "ptr");
@@ -456,7 +456,7 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   Value* VR = args.at(1);
 
   if ((VL->getType() != VR->getType()) && op != "fpowi") {
-    b.GetInsertBlock()->getParent()->dump();
+    llvm::errs() << b.GetInsertBlock()->getParent() << "\n";
     ASSERT(false) << "primop values for " << op << " did not have equal types\n"
            << "VL: " << str(VL) << " :: " << str(VL->getType()) << "\n"
            << "VR: " << str(VR) << " :: " << str(VR->getType()) << "\n"

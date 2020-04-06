@@ -302,7 +302,7 @@ llvm::Constant* getNullOrZero(llvm::Type* t) {
   } else if (t->isFloatingPointTy()) {
     return llvm::ConstantFP::get(t, 0.0);
   } else {
-    t->dump();
+    //t->dump();
     assert(false && "getNullOrZero given improper type");
     return NULL;
   }
@@ -322,6 +322,6 @@ llvm::PointerType* getHeapPtrTo(llvm::Type* t) {
 }
 
 bool isFosterFunction(llvm::Function& F) {
-  return F.hasFnAttribute("foster");
+  return F.hasFnAttribute("foster-fn");
 }
 

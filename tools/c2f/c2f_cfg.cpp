@@ -1191,7 +1191,7 @@ static QualType getReferenceInitTemporaryType(ASTContext &Context,
     // Skip through the temporary-materialization expression.
     if (const MaterializeTemporaryExpr *MTE
           = dyn_cast<MaterializeTemporaryExpr>(Init)) {
-      Init = MTE->GetTemporaryExpr();
+      Init = MTE->getSubExpr();
       if (FoundMTE)
         *FoundMTE = true;
       continue;
@@ -3707,7 +3707,7 @@ tryAgain:
       // Find the expression whose lifetime needs to be extended.
       E = const_cast<Expr *>(
           cast<MaterializeTemporaryExpr>(E)
-              ->GetTemporaryExpr()
+              ->getSubExpr()
               ->skipRValueSubobjectAdjustments(CommaLHSs, Adjustments));
       // Visit the skipped comma operator left-hand sides for other temporaries.
       for (const Expr *CommaLHS : CommaLHSs) {

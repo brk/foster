@@ -3567,25 +3567,34 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
   // This method prints those comments which occur between lastloc and loc.
   // We could be more aggressive about updating lastsize to avoid repeated inspection of comments.
   void emitCommentsFromBefore(SourceLocation loc) {
-    ArrayRef<RawComment*> comments = rawcomments->getComments();
-    for (unsigned i = rawcomments_lastsize; i < comments.size(); ++i) {
-      if (FC.isFromMainFile(comments[i]->getBeginLoc())) {
-        if (FC.getSourceMgr().isBeforeInTranslationUnit(comments[i]->getBeginLoc(), loc)) {
+    auto fid = FC.getSourceMgr().getFileID(loc);
+    const std::map<unsigned, RawComment *>* rawMap = rawcomments->getCommentsInFile(fid);
+    if (!rawMap) return;
+
+    auto it = (rawcomments_lastoffset == -1) ? rawMap->begin() : rawMap->lower_bound(rawcomments_lastoffset);
+    while (it != rawMap->end()) {
+      auto comment = it->second;
+
+      if (FC.isFromMainFile(comment->getBeginLoc())) {
+        if (FC.getSourceMgr().isBeforeInTranslationUnit(comment->getBeginLoc(), loc)) {
           // If we don't have a last location, or if the comment comes
           // after the last location, emit it.
-          if (!lastloc.isValid() || FC.getSourceMgr().isBeforeInTranslationUnit(lastloc, comments[i]->getBeginLoc())) {
-            llvm::outs() << FC.getText(*comments[i]) << "\n";
-            rawcomments_lastsize = i + 1;
+          if (!lastloc.isValid() || FC.getSourceMgr().isBeforeInTranslationUnit(lastloc, comment->getBeginLoc())) {
+            llvm::outs() << FC.getText(*comment) << "\n";
           }
         }
       }
+
+      rawcomments_lastoffset = it->first;
+      ++it;
     }
+
     lastloc = loc;
   }
 
   void Initialize(ASTContext& ctx) override {
     rawcomments = &(ctx.getRawCommentList());
-    rawcomments_lastsize = 0;
+    rawcomments_lastoffset = 0;
     Ctx = &ctx;
     currStmt = nullptr;
   }
@@ -3603,7 +3612,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
 
 private:
   RawCommentList* rawcomments;
-  int             rawcomments_lastsize;
+  int             rawcomments_lastoffset;
   SourceLocation  lastloc;
   VarMutabilityAndPointernessTracker vmpt;
   VoidPtrCasts voidPtrCasts;
@@ -3754,7 +3763,7 @@ public:
   C2F_TypeDeclHandler_FA() {}
 
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI, StringRef file) override {
-    return llvm::make_unique<C2F_TypeDeclHandler>(CI.getSourceManager());
+    return std::make_unique<C2F_TypeDeclHandler>(CI.getSourceManager());
   }
 };
 
@@ -3763,7 +3772,7 @@ public:
   C2F_GlobalVariableDetector_FA() {}
 
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI, StringRef file) override {
-    return llvm::make_unique<C2F_GlobalVariableDetector>(CI.getSourceManager());
+    return std::make_unique<C2F_GlobalVariableDetector>(CI.getSourceManager());
   }
 };
 
@@ -3774,7 +3783,7 @@ public:
   C2F_FrontendAction() {}
 
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI, StringRef file) override {
-    return llvm::make_unique<MyASTConsumer>(CI);
+    return std::make_unique<MyASTConsumer>(CI);
   }
 };
 
