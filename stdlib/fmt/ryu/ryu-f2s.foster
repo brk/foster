@@ -10,13 +10,6 @@ based on the reference C implementation at
 which is dual-licensed under Apache 2 and Boost.
 */
 
-kFLOAT_MANTISSA_BITS = 23;
-kFLOAT_MANTISSA_MASK = 0x7F`FFFF; // (1 << FLOAT_MANTISSA_BITS) - 1;
-
-kFLOAT_EXPONENT_BITS = 8;
-kFLOAT_EXPONENT_MASK = 0xFF; // (1 << FLOAT_EXPONENT_BITS) - 1;
-kFLOAT_EXPONENT_BIAS = 0x7F; // (1 << (FLOAT_EXPONENT_BITS - 1)) - 1;
-
 POS_TABLE_SIZE = 47;
 INV_TABLE_SIZE = 31;
 

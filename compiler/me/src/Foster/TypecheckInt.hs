@@ -125,13 +125,16 @@ typecheckRat annot originalText expTy = do
       if exptTooLargeForType expt ty then
          tcFails [text "Exponent too large", highlightFirstLineDoc (rangeOf annot)]
        else
-        case Atto.parseOnly Atto.double $ T.pack clean of
-          Left err -> tcFails [text "Failed to parse rational portion" <+> parens (text clean)
+        -- We rely on Attoparsec to reconstruct the proper Double value here
+        -- because the straightforward DIY approach of just parsing the clean part
+        -- and multiplying by ``10 ** expt`` does not produce bit-precise results.
+        -- For example, ``3e50 == (3.0 * (10 ** 50))`` is ``False``!
+        case Atto.parseOnly Atto.double $ T.pack (clean ++ "e" ++ show expt) of
+          Left err -> tcFails [text "Failed to parse rational " <+> parens (text $ clean ++ "e" ++ show expt)
                               ,highlightFirstLineDoc (rangeOf annot)
                               ,text "Error was:"
                               ,indent 8 (text err) ]
-          Right val0 -> do
-            let val = (val0 * (10 ** (fromIntegral expt)) :: Double)
+          Right val -> do
             tcMaybeWarnMisleadingRat (rangeOf annot) cleanE val
             return (AnnLiteral annot ty (LitFloat $ LiteralFloat val originalText))
     _ -> error $ "Unexpected rational literal base " ++ show base

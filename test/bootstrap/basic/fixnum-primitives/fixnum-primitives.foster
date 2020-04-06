@@ -2,6 +2,7 @@ snafuinclude Bits "bitwise";
 snafuinclude Prelude "prelude";
 
 snafuinclude Ryu "fmt/ryu/ryu-d2fixed";
+snafuinclude Ryu "fmt/ryu/ryu-d2s";
 
 main = {
   trunc8-test   !;
@@ -293,7 +294,61 @@ test-float-classification = {
   td "FP_Infinite" ninf64;
   td "FP_NaN" nan64;
 
+  test-d2fixed !;
+
+  test-d2s !;
+};
+
+test-d2s = {
+
+  expect_text "345.0";
+  print_text (ryuFloat64 345.0);
+
+  expect_text "34500.0";
+  print_text (ryuFloat64 34500.0);
+
+  expect_text "34500000000.0";
+  print_text (ryuFloat64 34500000000.0);
+
+  expect_text "3.45e13";
+  print_text (ryuFloat64 34500000000000.0);
+
+  //print_text (ryuFloat64 123.7891);
+  //print_text (ryuFloat64 12300.0);
+
+  expect_text "34.56";
+  print_text (ryuFloat64 34.56);
+
+  expect_text "0.0345";
+  print_text (ryuFloat64 0.0345);
+
+  expect_text "3.45e-10";
+  print_text (ryuFloat64 0.000000000345);
+
+  expect_text "4e50";
+  print_text (ryuFloat64 4.e50);
+
+  expect_text "3e50";
+  print_text (ryuFloat64 3.e50);
+
+  expect_text "0b0100101001101001101010001001011000101000001111011001011011100110";
+  print_i64b 0x4a69a896283d96e6;
+
+  expect_text "0b0100101001101001101010001001011000101000001111011001011011100111";
+  print_i64b 0x4a69a896283d96e7;
+
+  expect_text "1.844674407370955e19";
+  print_text (ryuFloat64 18446744073709549568.0);
+};
+
+test-d2fixed = {
   ed = { t => n => d => expect_text t; print_text (ryu-d2fixed n d); };
+
+  inf32 = positiveInfinity-f32 !;
+  nan32 = 0.0 `div-f32` 0.0;
+
+  ninf64 = negativeInfinity-f64 !;
+  nan64 = 0.0 `div-f64` 0.0;
 
   ed "-Infinity" 3 ninf64;
   ed "NaN"       3 nan64;

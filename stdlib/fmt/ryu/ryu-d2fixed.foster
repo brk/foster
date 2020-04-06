@@ -13,82 +13,15 @@ based on the reference C implementation at
 which is dual-licensed under Apache 2 and Boost.
 */
 
-kDOUBLE_MANTISSA_BITS = 52;
-kDOUBLE_MANTISSA_MASK = 0x000f`ffff`ffff`ffff; // (1 << DOUBLE_MANTISSA_BITS) - 1;
-
-kDOUBLE_EXPONENT_BITS = 11;
-kDOUBLE_EXPONENT_BIAS = 1023;
-
-kDOUBLE_EXPONENT_MASK = 0x7FF; // (1 << DOUBLE_EXPONENT_BITS) - 1;
-
-kPOW10_ADDITIONAL_BITS = 120;
-
-umul128 = { a : Int64 =>
-            b : Int64 =>
-            productHi : Ref Int64 =>
-    aLo = trunc_i64_to_i32 a;
-    aHi = trunc_i64_to_i32 (bitlshr-Int64 a 32);
-    bLo = trunc_i64_to_i32 b;
-    bHi = trunc_i64_to_i32 (bitlshr-Int64 b 32);
-    b00 = (zext_i32_to_i64 aLo) *Int64 (zext_i32_to_i64 bLo);
-    b01 = (zext_i32_to_i64 aLo) *Int64 (zext_i32_to_i64 bHi);
-    b10 = (zext_i32_to_i64 aHi) *Int64 (zext_i32_to_i64 bLo);
-    b11 = (zext_i32_to_i64 aHi) *Int64 (zext_i32_to_i64 bHi);
-    b00Lo = trunc_i64_to_i32 b00;
-    b00Hi = trunc_i64_to_i32 (bitlshr-Int64 b00 32);
-    mid1 = b10 +Int64 (zext_i32_to_i64 b00Hi);
-    mid1Lo = trunc_i64_to_i32 mid1;
-    mid1Hi = trunc_i64_to_i32 (bitlshr-Int64 mid1 32);
-    mid2 = b01 +Int64 (zext_i32_to_i64 mid1Lo);
-    mid2Lo = trunc_i64_to_i32 mid2;
-    mid2Hi = trunc_i64_to_i32 (bitlshr-Int64 mid2 32);
-    pHi = (b11 +Int64 (zext_i32_to_i64 mid1Hi))
-              +Int64 (zext_i32_to_i64 mid2Hi);
-    pLo = bitor-Int64
-              (bitshl-Int64 (zext_i32_to_i64 mid2Lo) 32)
-              (zext_i32_to_i64 b00Lo);
-
-    pHi >^ productHi;
-    pLo
-};
-
-shiftright128 = { lo : Int64 =>
-                  hi : Int64 =>
-                  dist32 : Int32 =>
-    dist = dist32 |> zext_i32_to_i64;
-    bitor-Int64
-        (bitshl-Int64 hi (64 -Int64 dist))
-        (bitlshr-Int64 lo dist)
-};
+//kPOW10_ADDITIONAL_BITS = 120;
 
 
 div5 = { x : Int64 => udiv-unsafe-Int64 x (sext_i32_to_i64 5) };
 /*
 div10 = { x : Int64 => udiv-unsafe-Int64 x (sext_i32_to_i64 10) };
 div100 = { x : Int64 => udiv-unsafe-Int64 x (sext_i32_to_i64 100) };
-div1e8 = { x : Int64 => udiv-unsafe-Int64 x (sext_i32_to_i64 100000000) };
 div1e9 = { x : Int64 => udiv-unsafe-Int64 x (sext_i32_to_i64 1000000000) };
 */
-
-pow5Factor = { value : Int64 =>
-  REC loop = { count => value =>
-    q = div5 value;
-    r = (trunc_i64_to_i32 value)
-                 -Int32 (5 *Int32 (trunc_i64_to_i32 q));
-    if r ==Int32 0
-      then loop (count +Int32 1) q
-      else count
-    end
-  };
-  loop 0 value
-};
-
-multipleOfPowerOf5 = { value : Int64 => p : Int32 => (pow5Factor value) >=UInt32 p };
-
-multipleOfPowerOf2 = { value : Int64 => p : Int32 =>
-    bitand-Int64 value ((bitshl-Int64 1 (zext_i32_to_i64 p)) -Int64 1)
-                                          ==Int64 0
-};
 
 mulShift64 = { m : Int64 =>
                mul0 : Int64 =>
@@ -103,49 +36,6 @@ mulShift64 = { m : Int64 =>
       then (high1^ +Int64 1) >^ high1
     end;
     shiftright128 sum high1^ (j -Int32 64)
-};
-
-mulShiftAll64 = { m0 : Int64 =>
-                  mul0 : Int64 =>
-                  mul1 : Int64 =>
-                  j : Int32 =>
-                  vp : (Ref Int64) =>
-                  vm : (Ref Int64) =>
-                  mmShift : Int32 =>
-    m = bitshl-Int64 m0 1;
-
-    tmp = (prim ref 0);
-    lo = umul128 m mul0 tmp;
-    hi = (prim ref 0);
-    mid = tmp^ +Int64 (umul128 m mul1 hi);
-    (hi^ +Int64 (if mid <UInt64 tmp^ then 1 else 0 end)) >^ hi;
-
-    lo2 = lo +Int64 mul0;
-    mid2 = (mid +Int64 mul1)
-               +Int64 (if lo2 <UInt64 lo then 1 else 0 end);
-    hi2 = hi^ +Int64 (if mid2 <UInt64 mid then 1 else 0 end);
-    (shiftright128 mid2 hi2 ((j -Int32 64) -Int32 1)) >^ vp;
-
-    if mmShift ==Int32 1
-      then lo3 = lo -Int64 mul0;
-           mid3 = (mid -Int64 mul1)
-                      -Int64 (if lo3 >UInt64 lo then 1 else 0 end);
-           hi3 = hi^ -Int64 (if mid3 >UInt64 mid then 1 else 0 end);
-           (shiftright128 mid3 hi3 ((j -Int32 64) -Int32 1)) >^ vm;
-      else
-           lo3 = lo +Int64 lo;
-           mid3 = (mid +Int64 mid)
-                      +Int64 (sext_i32_to_i64
-                                  if lo3 <UInt64 lo then 1 else 0 end);
-           hi3 = (hi^ +Int64 hi^)
-                     +Int64 (if mid3 <UInt64 mid then 1 else 0 end);
-           lo4 = lo3 -Int64 mul0;
-           mid4 = (mid3 -Int64 mul1)
-                      -Int64 (if lo4 >UInt64 lo3 then 1 else 0 end);
-           hi4 = hi3 -Int64 (if mid4 >UInt64 mid3 then 1 else 0 end);
-           (shiftright128 mid4 hi4 (j -Int32 64)) >^ vm;
-    end;
-    shiftright128 mid hi^ ((j -Int32 64) -Int32 1)
 };
 
 umul256_hi128_lo64 = { aHi : Int64 =>
