@@ -354,6 +354,7 @@ d2d-toChars = { mant => expt => sign =>
   output-low32 = { i : Int32 => output2b : Int32 =>
 
     kk = expt +Int32 olength;
+
     /*
     print_text_bare "DIGITS="; print_i64 (zext_i32_to_i64 output2b);
     print_text_bare "OLEN="; print_i32 olength;
@@ -361,9 +362,9 @@ d2d-toChars = { mant => expt => sign =>
     print_text_bare "EXP="; print_i32 kk;
     print_text_bare "i="; print_i32 i;
     */
-
+  
     case olength
-        of _ if both (expt >=SInt32  0) (kk <=SInt32 13) ->
+        of _ if both (expt >=SInt32  0) (kk <=SInt32 18) ->
             // Small enough to write out in full;
             // mantissa appears entirely before decimal point.
 
@@ -383,7 +384,7 @@ d2d-toChars = { mant => expt => sign =>
             put ".";
             put "0";
 
-        of _ if both (kk    >SInt32 -6) (kk <=SInt32  0) ->
+        of _ if both (kk    >SInt32 -9) (kk <=SInt32  0) ->
             // Mantissa appears entirely after decimal point.
             
             put "0";
@@ -399,7 +400,7 @@ d2d-toChars = { mant => expt => sign =>
             writeMantissa mant olength start buf;
             (start +Int32 olength) >^ index;
             
-        of _ if both (kk    >SInt32  0) (kk <=SInt32 13) ->
+        of _ if both (kk    >SInt32  0) (kk <=SInt32 18) ->
             // Contains an interstitial decimal point
             // and should be printed in decimal form.
 
