@@ -1,8 +1,13 @@
 Dive Into Foster
 ================
 
+Foster is an evolving language.
+This document introduces what exists, then discusses potential future features.
+
 Current Status
 --------------
+
+We begin, as is tradition, by saying hello.
 
 Hello World
 ~~~~~~~~~~~
@@ -15,8 +20,12 @@ Here's the Foster version of 'Hello, World'::
       print_text "Hello, World";
     };
 
-The syntax for importing code is a temporary placeholder, mirroring the fact
+Two shortcomings are already apparent.
+First, the syntax for importing code is a temporary placeholder, mirroring the fact
 that the implementation (essentially a slightly smarter ``#include``) is a temporary hack.
+A proper module system is planned future work.
+Second, Foster also currently lacks any form of overloading or ad-hoc polymorphism;
+there is no generic ``print`` function.
 
 Running Code
 ~~~~~~~~~~~~
@@ -33,6 +42,7 @@ To run an individual file, use ``runfoster``:
     :2016-09-07 16:06:11 ~/foster/_obj/ $ runfoster scratchpad.foster
     Hello, world!
 
+Alternatively, use ``fosterc`` to compile to an executable.
 
 The ``test/bootstrap`` directory contains the primary regression suite for
 the compiler. The ``gotest.sh`` script finds and run tests by name, and
@@ -142,14 +152,25 @@ and turn operators into names with parens::
 Line comments use ``//`` like in C++.
 Less obviously, ``/* ... */`` is a *nesting* block comment.
 
-Operators
-~~~~~~~~~
+Identifiers
+~~~~~~~~~~~
+
+Names must start with a letter or underscore,
+and may be followed by letters, digits, underscores,
+or any the following: ``+*!><?-=``.
+(Notably absent: ``^``, because it's a postfix operator; ``foo^`` must parse as ``foo ^``).
+
+Operators start with one of the above symbol characters,
+and may contain embedded ``^`` characters as well as any legal name character.
+
+Operator Syntax
+~~~~~~~~~~~~~~~
 
 Unlike C, there's no overloading or implicit conversion, so ``+Int32``
 is a separate function from ``+Int64``. Also, signedness is a property of
 operations rather than values: there are separate
 ``>UInt32`` and ``>SInt32`` primitives, but no separate add/mul/etc functions,
-which produce identical bit values for "signed" and "unsigned" values.
+which produce identical bitpatterns for "signed" and "unsigned" values.
 
 There are explicit checked add/sub/mul operators,
 which do come in signed and unsigned variants:
@@ -170,11 +191,32 @@ Expressions
 
 A function body, as demonstrated above, is a series of parameters,
 followed by a series of bindings or expressions, such as function calls,
-which are Haskell/ML style: ``fn arg1 arg2``. Unlike those languages,
+which are written in Haskell/ML style: ``f arg1 arg2``. Unlike those languages,
 functions aren't curried. That is, there's a distinction between a function
 that takes two arguments, and one that takes one argument and returns a function
-that takes another argument. Calling a function that returns a function
-must be ``(fn arg1) arg2``.
+that takes another argument. To call a function that returns a function, use
+``(f arg1) arg2``.
+
+A function literal of zero arguments can be called with a postfix ``!``.
+Thus ``{ e } !`` is semantically equivalent to ``e``. This idiom is
+sometimes useful to give tightly scoped names to parts of expressions,
+as in ``{ foo = bar baz; do-something-with foo }``.
+
+Precedence
+++++++++++
+
+``bits `bitand-Int64` mask ==Int64 0``
+=
+``bits `bitand-Int64` (mask ==Int64 0)``
+
+whereas
+
+``bitand-Int64 bits mask ==Int64 0``
+=
+``(bitand-Int64 bits mask) ==Int64 0``
+
+The Pipe Operator
++++++++++++++++++
 
 Functions can also be applied F#-style, using the pipe operator:
 ``arg2 |> fn arg1 |> { x => foo x y }``.
@@ -201,18 +243,32 @@ minimal syntactic overhead with a function literal.
   use something like ``..`` for near, mirroring/reflecting the
   connection between record field lookup and functional methods.
 
-A function literal of zero arguments can be called with a postfix ``!``.
-Thus ``{ e } !`` is semantically equivalent to ``e``. This idiom is
-sometimes useful to give tightly scoped names to parts of expressions,
-as in ``{ foo = bar baz; do-something-with foo }``.
+Other expressions include pattern matches
+``case e of p1 -> e1 of p2 -> e2 end``, conditionals ``if a then b else c end``,
+tuples ``(a, b, c)``, records ``(x : a, y : b, z : c)``, and literals.
 
-Other expressions include numbers (integer literals of unconstrained size,
-plus floating point rational numbers), strings (Python-like syntax: single or double quotes,
+Literals
+++++++++
+
+Foster has integer literals of unconstrained size,
+plus floating point rational numbers.
+
+Strings use Python-like syntax: single or double quotes,
 in single or triple-pair flavors; :doc:`strings` can be prefixed with ``r`` to
 disable escaping, or ``b`` to produce bytestrings ``(Array Int8)`` instead
-of ``Text``; there is no primitive character type), pattern matches
-``case e of p1 -> e1 of p2 -> e2 end``, conditionals ``if a then b else c end``,
-tuples ``(a, b, c)``, and booleans ``True``/``False``.
+of ``Text``; there is no primitive character type).
+
+There are also boolean literals ``True``/``False`` (of type ``Bool``).
+
+Numeric Literals
+++++++++++++++++
+
+Foster currently enforces a strict lexical distinction between integer and
+floating point values. 
+Integers are allowed to be written in exponential notation (``1e10``)
+but if it doesn't have a dot in it, it will not be treated as a floating
+point number.
+(This is likely to be relaxed in the future.)
 
 Once upon a time, numbers had Fortress-style radix suffixes (like ``8FFF_16``)
 but now we use regular hex/binary prefix syntax (``0b1101``). Numbers can have
@@ -254,9 +310,12 @@ the literal ``4294967296`` cannot be::
       print_i32 4294967296;
                 ~~~~~~~~~~
 
-Note that fixnum literals describe bit patterns; thus ``255 ==Int8 -1``
-is true, whereas ``255 ==Int32 -1`` is false; the bit pattern denoted by
-the literal ``-1`` depends on its assigned type.
+Note that integer literals describe twos-complement bit patterns.
+Thus ``255 ==Int8 -1`` is true, whereas ``255 ==Int32 -1`` is false.
+The bit pattern denoted by the literal ``-1`` depends on its assigned type.
+
+Pattern Matching
+++++++++++++++++
 
 Pattern matches can have guards, and non-binding or-patterns are supported::
 
@@ -269,6 +328,9 @@ Pattern matches can have guards, and non-binding or-patterns are supported::
     end
 
 Pattern matching doesn't currently support arrays or string constants.
+
+Other Expressions
++++++++++++++++++
 
 One interesting expression form is ``(__COMPILES__ e)``,
 which evaluates (at compile time) to a boolean value reflecting whether
@@ -304,13 +366,20 @@ for what data structures?
 Statements
 ~~~~~~~~~~
 
-Within a function body: bindings or expressions. Bindings of recursive functions
-use a ``REC`` marker. As with most functional languages, recursion is the most
-primitive looping construct; there is no primitive equivalent to ``for`` or ``while``
-loops. Part of the reason is that we can then also exclude ``break`` and ``continue``
+A function body is a sequence of statements, which are bindings or expressions.
+The last statement in the sequence must be an expression.
+Statements also appear within control-flow expressions like ``if`` and ``case``.
+Semicolons separate statements.
+A terminating semicolon on the last expression is allowed; unlike in Rust, its presence
+has no semantic meaning.
+
+Bindings of recursive functions
+use a ``REC`` marker. Recursion is the only primitive looping construct;
+there is no primitive equivalent to ``for`` or ``while`` loops.
+Part of the reason is that we can then also exclude ``break`` and ``continue``
 statements, which in turn means that functional abstraction becomes more powerful:
 unlike in a language with that sort of semi-structured control flow, we can
-add function wrappers to arbitrary expressions without "blocking" any such control flow.
+add function wrappers to arbitrary expressions without disrupting any such control flow.
 
 Destructuring binds are supported for tuples::
 
@@ -389,7 +458,7 @@ An example to demonstrate the syntax for doing so::
 
 This allows ``(MyEffectType Foo)`` to be used as an effect, for any boxed type Foo.
 It also declares functions to *perform* particular effects.
-In this example, the compiler would generate symbols with the following types:
+In this example, the compiler would generate symbols with the following types::
 
     do_MyEffect      :: forall (a:Boxed) { a              => Int32 @(MyEffectType a) };
     do_MyOtherEffect :: forall (a:Boxed) { Int32 => Int64 => a     @(MyEffectType a) };
@@ -455,7 +524,7 @@ Types
 ~~~~~
 
 Polymorphism
-************
+++++++++++++
 
 Functions can be given polymorphic type annotations::
 
@@ -495,10 +564,10 @@ type parameters (e.g. for effects, and regions if/when we get 'em).
 
 Foster allows explicit instantiation of polymorphic values,
 the syntax for which (``:[t]``) echoes the syntax for array
-indexing (``:[e]``).
+indexing (``.[e]``).
 
 Refinements
-***********
++++++++++++
 
 Unlike most languages, we support refinement types, which are statically
 checked using an SMT solver. Foster's approach, which merely propagates and
@@ -568,8 +637,8 @@ we automatically produce the following Foster code::
 
     main = { print_i32 (foo (bitshl-Int32 3 3)) };
 
-A script called ``csmith-minimal.sh`` generates random C programs
-(in a restricted subset of C), which can be fed into ``c2foster``.
+A script called ``csmith-minimal.sh`` directs `Csmith <https://embed.cs.utah.edu/csmith/>`_ to generate random C programs
+in a restricted subset of C, which can be fed into ``c2foster``.
 
 Implementation
 --------------
