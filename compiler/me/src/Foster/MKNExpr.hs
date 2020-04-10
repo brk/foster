@@ -390,7 +390,7 @@ data MKTerm ty =
         -- Control flow
         | MKCase        (Uplink ty) ty (FreeVar ty) [MKCaseArm (Subterm ty) ty]
         | MKIf          (Uplink ty) ty (FreeVar ty) (Subterm ty) (Subterm ty)
-        | MKCall        (Uplink ty) ty (FreeVar ty)       [FreeVar ty] (ContVar ty)
+        | MKCall        (Uplink ty) ty (FreeVar ty)       [FreeVar ty] (ContVar ty) CallAnnot
         | MKCont        (Uplink ty) ty (ContVar ty)       [FreeVar ty]
 
 -- Does double duty, representing both regular functions and continuations.
@@ -667,7 +667,7 @@ mkOfKN_Base expr k = do
 
         KNHandler {} -> error $ "MKNExpr.sh should not see KNHandler!"
 
-        KNCall       ty v vs -> do
+        KNCall       ty v vs ca -> do
             (v':vs') <- qvs (v:vs)
             case k of
                 CC_Tail jb -> do
@@ -676,13 +676,13 @@ mkOfKN_Base expr k = do
                       return $ MKCont nu  ty v' vs'
                     else do
                       kv <- lift $ mkFreeOccForBinder jb
-                      return $ MKCall nu  ty v' vs' kv
+                      return $ MKCall nu  ty v' vs' kv ca
 
                 CC_Base kf -> do
                   liftIO $ putDocLn $ text "saw non-tail call of " <> pretty v
                   genContinuation ".clco" ".clcx" ty kf nu $ \nu' jb -> do
                       kv <- lift $ mkFreeOccForBinder jb
-                      return $ MKCall nu'  ty v' vs' kv
+                      return $ MKCall nu'  ty v' vs' kv ca
 
         KNLetRec  xs es rest -> do 
             let vs = map (\(x,e) -> (TypedId (typeKN e) x)) (zip xs es)
@@ -880,7 +880,7 @@ parentLinkT expr =
     MKRelocDoms   u _vs _k      -> u
     MKCase        u  _ty _ _arms  -> u
     MKIf          u  _ty _ _e1 _e2 -> u
-    MKCall        u     _ty _ _s _   -> u
+    MKCall        u     _ty _ _s _ _ -> u
     MKCont        u     _ty _ _s     -> u
 
 
@@ -918,7 +918,7 @@ directFreeVarsT expr =
     MKRelocDoms   _      vs     _k   -> vs
     MKCase        _  _ty v _arms     -> [v]
     MKIf          _  _ty v _e1 _e2   -> [v]
-    MKCall        _     _ty v vs c   -> c:v:vs
+    MKCall        _     _ty v vs c _ -> c:v:vs
     MKCont        _     _ty c vs     -> c  :vs
 
 data MaybeCont ty = YesCont (MKBoundVar ty)
@@ -1016,15 +1016,15 @@ knOfMK mb_retCont term0 = do
                                         k'  <- q k
                                         return $ mkKNLetFuns  xs' fns' k' sr
 
-    MKCall        _u  ty v vs _c   -> do
+    MKCall        _u  ty v vs _c ca -> do
       (v':vs') <- mapM qv (v:vs)
       cvb <- freeBinder _c
       if --trace ("MKCall comparing " ++ (show $ pretty cvb) ++ " vs " ++ (show $ pretty mb_retCont)) $
             YesCont cvb == mb_retCont || isMainFnVar v'
-        then return $ KNCall       ty v' vs'
+        then return $ KNCall       ty v' vs' ca
         else do xid <- ccFreshId $ T.pack ".ctmp"
-                return $ mkKNLetVal xid (KNCall ty v' vs')
-                          (KNCall (tidType $ boundVar cvb) (boundVar cvb) [TypedId ty xid])
+                return $ mkKNLetVal xid (KNCall ty v' vs' ca)
+                          (KNCall (tidType $ boundVar cvb) (boundVar cvb) [TypedId ty xid] CA_None)
       
     -- TODO if we can match   letcont j x = ... in MKCall v vs j
     --      and j has no other uses,
@@ -1041,7 +1041,7 @@ knOfMK mb_retCont term0 = do
           case --trace ("MKCont comparing " ++ (show $ pretty cvb) ++ " vs " ++ (show $ pretty mb_retCont)) $
                  vs' of
             [v] | isReturn -> return $ KNVar v
-            _ -> return $ KNCall ty (boundVar cvb) vs'
+            _ -> return $ KNCall ty (boundVar cvb) vs' CA_None
 
 mkKNLetRec [] [] k = k
 mkKNLetRec xs es k = KNLetRec xs es k
@@ -1087,8 +1087,8 @@ collectRedexes ref valbindsref expbindsref funbindsref
       Nothing -> return ()
       Just term -> do
         case term of
-          MKCall _ _ fo _ _ -> whenNotM (isMainFn fo) (markRedex subterm)
-          MKCont {}         -> markRedex subterm
+          MKCall _ _ fo _ _ _ -> whenNotM (isMainFn fo) (markRedex subterm)
+          MKCont {}           -> markRedex subterm
           _ -> markAndFindSubtermsOf term >>= mapM_ go
           where markAndFindSubtermsOf term =
                     case term of
@@ -1208,7 +1208,7 @@ classifyRedex' fnbinder (Just fn) (Just fnlink) args knownFns = do
                          bindNonRecOccCounts <- mapM (\occ -> do
                             Just tm <- readOrdRef (freeLink occ)
                             case tm of
-                              MKCall _ _ v _ _ -> do
+                              MKCall _ _ v _ _ _ -> do
                                 vb <- freeBinder v
                                 return (if vb == fnbinder || vb == mkfnVar fn then 0 else (1 :: Int))
                               _ -> return 1) bindoccs
@@ -1415,9 +1415,9 @@ copyMKTerm term = do
                                         withLinkT $ \u -> lift $ do
                                           let rv = MKCase u ty v' arms'
                                           backpatchT rv (map mkcaseArmBody arms')
-    MKCall        _u  ty v vs _c   -> do mapM qv (v:vs) >>= \(v':vs') ->
-                                          qv  _c        >>= \c'  ->
-                                           withLinkT $ \u -> lift $ return $ MKCall u       ty v' vs' c' 
+    MKCall        _u  ty v vs c ca -> do mapM qv (v:vs) >>= \(v':vs') ->
+                                          qv   c        >>= \c'  ->
+                                           withLinkT $ \u -> lift $ return $ MKCall u       ty v' vs' c' ca
     MKCont        _u  ty _c vs     -> do mapM qv    vs  >>= \    vs' ->
                                           qv  _c        >>= \c'  ->
                                            withLinkT $ \u -> return $ MKCont u       ty c' vs'
@@ -1517,7 +1517,7 @@ mknInline subterm mainCont mb_gas = do
                         replaceWith bindingWorklistRef link subterm newthing
 
                   case mredex of
-                    MKCall _up _ty callee args kv -> do
+                    MKCall _up _ty callee args kv ca -> do
                       knownFns   <- liftIO $ readIORef fr
                       aliases    <- liftIO $ readIORef ar
                       (peekedThroughBitcast, situation) <- classifyRedex callee args knownFns aliases
@@ -1615,7 +1615,7 @@ mknInline subterm mainCont mb_gas = do
                         SomethingElse _fn fnlink -> do
                           do  redex <- knOfMK (mbContOf $ mkfnCont _fn) mredex
                               dbgDoc $ text "SomethingElse (inlineNorF): " <+> align (pretty redex)
-                          if shouldInlineRedex mredex _fn
+                          if shouldInlineRedex mredex _fn ca
                             then do
                                   do  v <- freeBinder callee
                                       dbgDoc $ green (text "copying and inlining SE ") <+> pretty (tidIdent $ boundVar v)
@@ -1699,7 +1699,7 @@ mknInline subterm mainCont mb_gas = do
                         SomethingElse _fn _fnlink -> do
                           do  redex <- knOfMK (mbContOf $ mkfnCont _fn) mredex
                               dbgIf dbgCont $ text "SomethingElseC: " <+> pretty redex
-                          if shouldInlineRedex mredex _fn
+                          if shouldInlineRedex mredex _fn CA_None
                             then do
                                   dbgIf dbgCont $ text "skipping inlining continuation redex...?"
                                   {-
@@ -1813,7 +1813,7 @@ doContifyWith_part1 cont bv fn occs wr fd bindingWorklistRef = do
       Just (MKRelocDoms {}) ->
         return ()
 
-      Just tm@(MKCall uplink ty v vs _cont) -> do
+      Just tm@(MKCall uplink ty v vs _cont _ca) -> do
         linkResult <- getActiveLinkFor tm
         case linkResult of
           ActiveSubterm target -> do
@@ -1866,12 +1866,12 @@ considerFunctionForArityRaising expBindsMapRef bindingWorklistRef fn fnlink call
     then do -- Replace each call site to pass the tuple parameters instead of the tuple.
             mapM_ (\ (DC_WithTuple calltm tupleparts) -> do
               case calltm of
-                MKCall uplink ty v _tup sr -> do
+                MKCall uplink ty v _tup sr ca -> do
                   linkResult <- getActiveLinkFor calltm
                   case linkResult of
                     ActiveSubterm target -> do
                       tupleparts' <- mapM (\fv -> freeBinder fv >>= mkFreeOccForBinder) tupleparts
-                      let newterm = MKCall uplink ty v tupleparts' sr -- TODO: kosher to reuse uplink?
+                      let newterm = MKCall uplink ty v tupleparts' sr ca -- TODO: kosher to reuse uplink?
                       replaceTermWith bindingWorklistRef target calltm newterm
                     _ -> do
                       return (error "skipping call because we didn't find an active subterm (!?)")
@@ -1951,7 +1951,7 @@ allSameNonZeroLength (d:rest)= go rest (tupLen d)
 isDirectCallWithKnownTupleArg expBindsMap fnvar occ = do
   mb_tm <- readOrdRef (freeLink occ)
   case mb_tm of
-    Just tm@(MKCall _ _ v [arg] _) -> do
+    Just tm@(MKCall _ _ v [arg] _ _ca) -> do
       vb <- freeBinder v
       va <- freeBinder arg
       if vb /= fnvar then return DC_Other else
@@ -1971,7 +1971,7 @@ isRecursiveButNotTailRecursive fn = do
   isRecAndNotTailRec <- mapM (\occ -> do
       tm <- readLink "isRecursiveButNotTailRecursive" (freeLink occ)
       case tm of
-        MKCall _ _ v _ k -> do
+        MKCall _ _ v _ k _ca -> do
           vb <- freeBinder v
           kb <- freeBinder k
           return $ vb == mkfnVar fn && (Just kb) /= mkfnCont fn
@@ -1995,7 +1995,7 @@ createLetFunAndCall fn outerBinder ty up args kv = do
   kv'   <-      freeBinder kv   >>=      mkFreeOccForBinder
 
   callLink <- newOrdRef Nothing
-  _ <- installLinks callLink $ MKCall up' ty callee args' kv'
+  _ <- installLinks callLink $ MKCall up' ty callee args' kv' CA_None
 
   known <- mkKnown' outerBinder fn
   letfuns <- backpatchT (MKLetFuns up [known] callLink (MissingSourceRange "outerbinder")) [callLink]
@@ -2272,7 +2272,7 @@ contOfCall bv occ = do
         do dbgDoc $ red $ text "contOfCall: free link w/ no term for" <> pretty bv
         return NonCall
 
-    Just tm@(MKCall _ _ty v _vs cont) -> do
+    Just tm@(MKCall _ _ty v _vs cont _ca) -> do
         vb <- freeBinder v
         if vb == bv
           then -- It's a call to the function being considered
@@ -2313,7 +2313,7 @@ calleeOfCont occ = do
         do dbgDoc $ red $ text "free link w/ no term for cont " <> pretty bv
         return Nothing
 
-    Just (MKCall _ _ty v _vs _cont) -> do
+    Just (MKCall _ _ty v _vs _cont _ca) -> do
         bv <- freeBinder v
         return $ Just bv
                   
@@ -2322,13 +2322,16 @@ calleeOfCont occ = do
          dbgDoc $ text "calleeOfCont: non call for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
       return Nothing
 
-shouldInlineRedex _mredex _fn =
+shouldInlineRedex _mredex _fn ca =
   -- TODO use per-call-site annotation, when we have such things.
   {-
   let id = tidIdent (boundVar (mkfnVar _fn)) in
   T.pack "doinline_" `T.isInfixOf` identPrefix id
   -}
-  False
+  case ca of
+    CA_DoInline -> True
+    CA_NoInline -> False
+    CA_None -> False
 
 replaceWith :: Pretty ty => IORef (WorklistQ (MKBoundVar ty)) -> Subterm ty ->
                Subterm ty -> Subterm ty -> Compiled ()
@@ -2612,7 +2615,7 @@ cffnOfMKCont cv (MKFn _v vs _ subterm _isrec _annot) = do
                                              -- then resume building this particular block.
                                              go k head insns
 
-          MKCall        _u ty v vs contvar -> do
+          MKCall        _u ty v vs contvar _ca -> do
                                  blockid <- blockIdOf' contvar
                                  (v' : vs') <- mapM qv (v:vs)
                                  --dbgDoc $ text $ "putting block with ending call " ++ show (tidIdent $ boundVar cv)

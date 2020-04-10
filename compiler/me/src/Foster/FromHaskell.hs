@@ -56,11 +56,11 @@ convertHaskellToFoster hspath fosterpath = do
         H.App e1 e2 -> app e1 (e2:es)
 
         H.Var (H.UnQual (H.Symbol "$")) -> app (head es) (tail es)
-        H.Var qname -> E_CallAST noAnnot (expOfQName qname) (map expOfExp es)
+        H.Var qname -> E_CallAST noAnnot (expOfQName qname) (map expOfExp es) CA_None
         H.Con (H.Special (H.TupleCon _boxed _n)) -> E_TupleAST noAnnot (error "kind2") (map expOfExp es)
-        H.Con (H.Special H.Cons)     -> E_CallAST noAnnot (mkVarE "Cons") (map expOfExp es)
+        H.Con (H.Special H.Cons)     -> E_CallAST noAnnot (mkVarE "Cons") (map expOfExp es) CA_None
 
-        _ -> E_CallAST noAnnot (expOfExp e) (map expOfExp es)
+        _ -> E_CallAST noAnnot (expOfExp e) (map expOfExp es) CA_None
 
       mkLetS [] e = e
       mkLetS (s:stmts) e =
@@ -99,7 +99,7 @@ convertHaskellToFoster hspath fosterpath = do
         H.If c t e -> E_IfAST noAnnot (expOfExp c) (expOfExp t) (expOfExp e)
 
         H.List exps ->
-          foldr (\e _l -> E_CallAST noAnnot (mkVarE "Cons") [expOfExp e]) (mkVarE "Nil") exps
+          foldr (\e _l -> E_CallAST noAnnot (mkVarE "Cons") [expOfExp e] CA_None) (mkVarE "Nil") exps 
           --E_MachArrayLit noAnnot Nothing [AE_Expr (expOfExp e) | e <- exps]
 
         H.Paren e -> expOfExp e

@@ -41,7 +41,7 @@ data AnnExpr ty =
         -- Use of bindings
         | E_AnnVar      ExprAnnot (TypedId ty, Maybe CtorId)
         | AnnPrimitive  ExprAnnot ty (FosterPrim ty)
-        | AnnCall       ExprAnnot ty (AnnExpr ty) [AnnExpr ty]
+        | AnnCall       ExprAnnot ty (AnnExpr ty) [AnnExpr ty] CallAnnot
         | AnnAppCtor    ExprAnnot ty CtorId       [AnnExpr ty]
         -- Mutable ref cells
         | AnnAlloc      ExprAnnot ty              (AnnExpr ty) AllocMemRegion
@@ -72,7 +72,7 @@ instance TypedWith (AnnExpr ty) ty where
      AnnRecord _ t _labs _exprs -> t
      AnnTuple _ t _k _exprs -> t
      E_AnnFn annFn         -> fnType annFn
-     AnnCall _rng t _ _    -> t
+     AnnCall _rng t _ _ _  -> t
      AnnAppCtor _rng t _ _ -> t
      AnnCompiles _ t _     -> t
      AnnKillProcess _ t _  -> t
@@ -102,7 +102,7 @@ instance Pretty ty => Summarizable (AnnExpr ty) where
       AnnLiteral _ ty (LitFloat f) -> text "AnnFloat     " <> text (litFloatText f) <> text " :: " <> pretty ty
       AnnLiteral _ ty (LitByteArray _) -> text "AnnBytes     " <> text " :: " <> pretty ty
 
-      AnnCall     _rng t _b _args-> text "AnnCall      :: " <> pretty t
+      AnnCall     _rng t _b _ _  -> text "AnnCall      :: " <> pretty t
       AnnAppCtor  _rng t _ _     -> text "AnnAppCtor   :: " <> pretty t
       AnnCompiles _rng _ cr      -> text "AnnCompiles  " <> pretty cr
       AnnKillProcess _rng t msg  -> text "AnnKillProcess " <> string (show msg) <> text  " :: " <> pretty t
@@ -133,7 +133,7 @@ instance Structured (AnnExpr ty) where
   childrenOf e =
     case e of
       AnnLiteral {}                        -> []
-      AnnCall _r _t b exprs                -> b:exprs
+      AnnCall _r _t b exprs _              -> b:exprs
       AnnAppCtor _r _t _cid exprs          -> exprs
       AnnCompiles  _rng _ (CompilesResult (OK     e)) -> [e]
       AnnCompiles  _rng _ (CompilesResult (Errors _)) -> []
@@ -186,7 +186,7 @@ instance (Structured ty, Pretty ty) => AExpr (AnnExpr ty) where
 annExprAnnot :: AnnExpr ty -> ExprAnnot
 annExprAnnot expr = case expr of
       AnnLiteral   annot _ _        -> annot
-      AnnCall      annot _ _ _      -> annot
+      AnnCall      annot _ _ _ _    -> annot
       AnnAppCtor   annot _ _ _      -> annot
       AnnCompiles  annot _ _        -> annot
       AnnKillProcess annot _ _      -> annot

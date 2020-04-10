@@ -107,12 +107,12 @@ monoKN subst inTypeExpr e =
   KNArrayLit      t arr xs -> liftM3 KNArrayLit      (qt t) (qv arr) (mapRightM qv xs)
   KNVar                  v -> liftM  KNVar                  (qv v)
   KNCompiles    r t e      -> liftM2 (KNCompiles r) (qt t) (qq e)
-  KNCall          t v vs   -> do t' <- qt t
+  KNCall          t v vs c -> do t' <- qt t
                                  let t'' = substRefinementArgs v t' vs
                                  --liftIO $ putStrLn "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
                                  --liftIO $ putStrLn $ show t'
                                  --liftIO $ putStrLn $ show t''
-                                 liftM2 (KNCall t'') (qv v) (mapM qv vs)
+                                 liftM3 (KNCall t'') (qv v) (mapM qv vs) (return c)
   KNRelocDoms ids e -> liftM (KNRelocDoms ids) (qq e)
   -- The cases involving sub-expressions are syntactically heavier,
   -- but are still basically trivially inductive.
@@ -177,10 +177,10 @@ monoKN subst inTypeExpr e =
       -- TODO this is wrong, should use the outty from typechecking.
       let resumefnty = FnType [resumeargty] t' FastCC FT_Func
       let resumefn = Fn (TypedId resumefnty resumeidG) [TypedId PtrTypeUnknown resargid]
-                      (KNCall t' (TypedId fnty gofnidL) [TypedId coroty coroid, TypedId resumeargty resargid])
+                      (KNCall t' (TypedId fnty gofnidL) [TypedId coroty coroid, TypedId resumeargty resargid] CA_None)
                       NotRec annot
       let resumebarefn = Fn (TypedId resumefnty resumebareidG) [TypedId PtrTypeUnknown resargid]
-                      (KNCall t' (TypedId fnty gofnidL) [TypedId coroty coroid, TypedId resumeargty resargid])
+                      (KNCall t' (TypedId fnty gofnidL) [TypedId coroty coroid, TypedId resumeargty resargid] CA_None)
                       NotRec annot
       let vs = [TypedId coroty coroid, TypedId inputargty argid]
 
@@ -191,7 +191,7 @@ monoKN subst inTypeExpr e =
                  Just x -> do xformid <- lift $ ccFreshId $ T.pack "xformid"
                               return (mkKNLetVal xformid x $
                                      (KNCall resumeargty (TypedId (typeKN x) xformid)
-                                              [TypedId resumeargty ylded]))
+                                              [TypedId resumeargty ylded]) CA_None)
       liftIO $ putStrLn $ "line 186"
       let body = --KNLetVal effectid (KNLiteral unitty (LitText $ T.pack $ show t')) $
                  mkKNLetVal effectid (KNCallPrim (rangeOf annot) i64 (PrimOp "tag_of_effect" fx') []) $
@@ -216,7 +216,7 @@ monoKN subst inTypeExpr e =
         (mkKNLetVal actionid e'
         (mkKNLetVal gencoroid (KNCallPrim (rangeOf annot) coroty (CoroPrim CoroCreate inputargty resumeargty)
                           [TypedId (FnType [] t' FastCC FT_Func) actionid])
-            (KNCall t' (TypedId fnty gofnidL) [TypedId coroty gencoroid, TypedId unitty unitid]))))
+            (KNCall t' (TypedId fnty gofnidL) [TypedId coroty gencoroid, TypedId unitty unitid] CA_None))))
         (MissingSourceRange "KNHandler")
 
   -- Here are the interesting bits:

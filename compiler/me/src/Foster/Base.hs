@@ -53,11 +53,13 @@ data CallConv = CCC | FastCC deriving (Eq, Show, Ord)
 type LogInt = Int
 data IntSizeBits = I1 | I8 | I16 | I32 | I64 | IWd | IDw -- Word/double-word
                  deriving (Eq, Show, Ord)
-
+data CallAnnot = CA_None
+               | CA_DoInline
+               | CA_NoInline deriving (Eq, Show, Ord)
 data ProcOrFunc   = FT_Proc | FT_Func  deriving (Show, Eq)
 data RecStatus = YesRec | NotRec deriving (Eq, Ord, Show)
 data TailQ = YesTail | NotTail deriving (Eq, Show)
-data SafetyGuarantee = SG_Static | SG_Dynamic | SG_Unsafe                   deriving (Show, Eq)
+data SafetyGuarantee = SG_Static | SG_Dynamic | SG_Unsafe   deriving (Show, Eq)
 data ArrayIndex expr = ArrayIndex expr expr SourceRange
                                             SafetyGuarantee deriving (Show, Eq)
 

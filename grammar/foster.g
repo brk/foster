@@ -131,9 +131,10 @@ binop   : opr          -> opr
         ;
 
 //LABEL 	:	 '%' SMALL_IDENT;
+inlined :	 '#(inlined)';
 
 nopr    : nameunq | opr ;
-phrase  :       lvalue+                         -> ^(PHRASE lvalue+)
+phrase  :       lvalue+ inlined?                        -> ^(PHRASE ^(MU inlined?) lvalue+)
         |       'prim' nopr tyapp? lvalue*      -> ^(PRIMAPP nopr ^(MU tyapp?) lvalue*);
 lvalue  :           /*LABEL? */ atom suffix*             -> ^(LVALUE atom suffix*);
 

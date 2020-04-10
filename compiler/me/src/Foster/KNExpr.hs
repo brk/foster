@@ -289,7 +289,7 @@ kNormalize st expr =
                                   [b', c' ] <- mapM go [b, c]
                                   nestedLets [return a'] (\[v] -> KNIf t' v b' c')
 
-      AnnCall annot t b args -> do
+      AnnCall annot t b args ca -> do
             ti <- qt t
             case b of
                 -- Calls to primitives are OK; other uses of primitives
@@ -298,7 +298,7 @@ kNormalize st expr =
                    prim' <- ilPrim prim
                    nestedLets (map go args) (\vars -> KNCallPrim (rangeOf annot) ti prim' vars)
 
-                _else -> do knCall ti b args
+                _else -> do knCall ti b args ca
 
       AnnAppCtor annot t c es -> do
         let repr = lookupCtorRepr (lookupCtor c)
@@ -322,10 +322,10 @@ kNormalize st expr =
         qt = tcToIL st
         qv (TypedId t i) = do t' <- qt t ; return (TypedId t' i)
 
-        knCall t (E_AnnVar _ (v,_)) es = do
-                           v' <- qv v
-                           nestedLets (     map go es) (\    vars  -> KNCall t v' vars)
-        knCall t b es = do nestedLets (go b:map go es) (\(vb:vars) -> KNCall t vb vars)
+        knCall t (E_AnnVar _ (v,_)) es ca = do
+                              v' <- qv v
+                              nestedLets (     map go es) (\    vars  -> KNCall t v' vars ca)
+        knCall t b es ca = do nestedLets (go b:map go es) (\(vb:vars) -> KNCall t vb vars ca)
 
         compileHandlerArms :: [CaseArm Pattern (AnnExpr TypeTC) TypeTC]
                         -> KN [CaseArm PatternRepr KNExpr TypeIL]
@@ -370,7 +370,7 @@ kNormalize st expr =
                               then return $ KNKillProcess t (T.pack $ "guarded pattern match failed")
                               else go arms
                   let kont = kontOf body
-                  let callkont = KNCall t (TypedId kty kid) []
+                  let callkont = KNCall t (TypedId kty kid) [] CA_None
                   clump' <- case clump of
                               -- Single arm with guard?
                               [CaseArm p e (Just g' ) b r] -> do
@@ -819,9 +819,9 @@ handleCoercionsAndConstraints ae = do
                                          return $ AnnCase _rng t ei bsi
         AnnAppCtor _rng t cid args -> do argsi <- mapM q args
                                          return $ AnnAppCtor _rng t cid argsi
-        AnnCall annot t b args -> do
+        AnnCall annot t b args ca -> do
             (bi:argsi) <- mapM q (b:args)
-            return $ AnnCall annot t bi argsi
+            return $ AnnCall annot t bi argsi ca
 
         E_AnnTyApp rng t e raw_argtys  -> do
                 ae     <- q e
@@ -1204,7 +1204,7 @@ collectMentions knf = go Set.empty (fnBody knf)
           KNAlloc       _ v _ _sr -> vv xs v
           KNTyApp       _ v _  -> vv xs v
           KNStore     _  v1 v2 -> vv (vv xs v1) v2
-          KNCall        _ v vs -> vv (uu xs vs) v
+          KNCall      _ v vs _ -> vv (uu xs vs) v
           KNIf          _ v e1 e2   -> go (go (vv xs v) e1) e2
           KNLetVal      _   e1 e2 _ -> go (go xs e1) e2
           KNHandler _ _  _ ea arms mb _ -> let es = concatMap caseArmExprs arms
@@ -1574,7 +1574,7 @@ knLoopHeaderCensus tailq activeids expr = go' tailq expr where
 
       go b
 
-    KNCall _ v vs -> do
+    KNCall _ v vs _ -> do
       st <- get
       id <- lookupId (tidIdent v)
       if (tailq == YesTail || nontail st) && Set.member id activeids
@@ -1686,7 +1686,7 @@ knLoopHeaders' expr addLoopHeadersForNonTailLoops = do
                         v''nt = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id''nt
                         body' = if tc
                                   then KNLetFuns [ id' ] [ fn'inr ]
-                                        (KNCall (typeKN (fnBody fn)) v'inr (dropUselessArgs mt vs' ))
+                                        (KNCall (typeKN (fnBody fn)) v'inr (dropUselessArgs mt vs' ) CA_None)
                                         sr
                                   else body
                         fn'nt = Fn  { fnVar   = v''nt
@@ -1701,7 +1701,7 @@ knLoopHeaders' expr addLoopHeadersForNonTailLoops = do
                 -- The "original" fn definition, which calls the middle wrapper with the relevant args.
                 vars'' = renameUsefulArgs mt vs'
                 body'' = KNLetFuns [ id'mid ] [ fn'mid ]
-                          (KNCall (typeKN (fnBody fn)) v'mid (dropUselessArgs mt vs' ))
+                          (KNCall (typeKN (fnBody fn)) v'mid (dropUselessArgs mt vs' ) CA_None)
                           sr
                 fn' = Fn  { fnVar   = fnVar fn
                           , fnVars  = vars''
@@ -1721,7 +1721,7 @@ knLoopHeaders' expr addLoopHeadersForNonTailLoops = do
 
     -- If we see a *tail* call to a recursive function, replace it with
     -- the appropriate pre-computed call to the corresponding loop header.
-    KNCall ty v vs -> do
+    KNCall ty v vs ca -> do
       case qv (tidIdent v) of
         Just (LoopSummary (LoopHeader id _ _ idnt _) mt _tc _ntc)
           | (tailq == YesTail || addLoopHeadersForNonTailLoops)
@@ -1729,7 +1729,7 @@ knLoopHeaders' expr addLoopHeadersForNonTailLoops = do
           ->
              let targetId = if tailq == YesTail then id else idnt in
              KNCall ty (TypedId (selectUsefulArgs targetId mt (tidType v)) targetId)
-                       (dropUselessArgs mt vs)
+                       (dropUselessArgs mt vs) ca
         _ -> expr
 
 -- Drop formal param types from the function type if the corresponding

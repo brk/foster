@@ -190,10 +190,11 @@ prettyStmt e = case e of
     
     E_CallPrimAST annot nm lits tys exprs -> withAnnot annot $ prettyCallPrim nm lits tys exprs
 
-    E_CallAST annot e [e1,e2] | isOperator e
+    E_CallAST annot e [e1,e2] _ | isOperator e
                             -> withAnnot annot $ hang 4 $ group $
                                                  prettyAtom e1 <$> pretty e <+> group (prettyAtom e2)
-    E_CallAST annot e es    -> withAnnot annot $ prettyAtom e <+> prettyCallExprs es
+    E_CallAST annot e es _TODOcallAnnot
+                            -> withAnnot annot $ prettyAtom e <+> prettyCallExprs es
     E_LetAST  annot (TermBinding evar bound) expr ->
                                withAnnot annot $
                               {- lkwd "let"

@@ -192,10 +192,10 @@ instance Pretty (AnnExpr TypeTC) where
                                    <$> pretty expr
             E_AnnVar   annot (tid, _) -> withAnnot annot $ pretty tid
             AnnPrimitive annot _ prim -> withAnnot annot $ pretty prim
-            AnnCall   annot _ e []    -> withAnnot annot $ pretty e <+> text "!"
-            AnnCall   annot _ e [e1,e2] | isOperator e
+            AnnCall   annot _ e [] _  -> withAnnot annot $ pretty e <+> text "!"
+            AnnCall   annot _ e [e1,e2] _ | isOperator e
                                       -> withAnnot annot $ pretty e1 <+> pretty e <+> pretty e2
-            AnnCall    annot _ e es   -> withAnnot annot $ pretty e <+> hsep (map prettyAtom es)
+            AnnCall    annot _ e es _ -> withAnnot annot $ pretty e <+> hsep (map prettyAtom es)
             AnnAppCtor annot _ e es   -> withAnnot annot $ pretty e <+> hsep (map prettyAtom es)
 
             AnnAlloc annot _ e _rgn  -> withAnnot annot $ parens $ text "ref" <+> pretty e

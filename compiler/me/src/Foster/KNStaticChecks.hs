@@ -680,7 +680,7 @@ checkBody expr facts =
 
     -- TODO we should return something involving the return-refinement type
     -- if the called function has one...
-    KNCall ty v vs -> do
+    KNCall ty v vs _ -> do
         -- Do any of the called function's args have preconditions?
         case tidType v of
           FnType formals _ _ _ -> do

@@ -438,7 +438,7 @@ typecheckModule verboseMode pauseOnErrors flagvals modast tcenv0 = do
         return $ AnnCall (annotForRange $ MissingSourceRange "buildExprSCC'main!") unitTypeTC
                                                 (E_AnnVar (annotForRange $ MissingSourceRange "buildExprSCC'main")
                                                           (TypedId mainty (GlobalSymbol (T.pack "main") NoRename), Nothing))
-                                                []
+                                                [] CA_None
 
      let mTC' = ModuleIL (buildExprSCC' annexprs call_of_main)
                          (externalModuleDecls mTC)

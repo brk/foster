@@ -224,7 +224,7 @@ alphaRenameMono fn = do
       KNKillProcess   {}       -> return e
       KNRecord        t ls vs a -> do vs' <- mapM qv vs; t' <- qt t ; return $ KNRecord t' ls vs' a
       KNTuple         t vs a   -> do vs' <- mapM qv vs; t' <- qt t ; return $ KNTuple t' vs' a
-      KNCall          t v vs   -> do (v' : vs') <- mapM qv (v:vs); t' <- qt t; return $ KNCall t' v' vs'
+      KNCall          t v vs c -> do (v' : vs') <- mapM qv (v:vs); t' <- qt t; return $ KNCall t' v' vs' c
       KNCallPrim   sr t p vs   -> do vs' <- mapM qv vs; t' <- qt t; return $ KNCallPrim   sr t' p vs'
       KNAppCtor       t c vs sr -> do vs' <- mapM qv vs; t' <- qt t; return $ KNAppCtor t' c vs' sr
       KNAllocArray    t v amr zi sr -> do t' <- qt t; v' <- qv v; return $ KNAllocArray t' v' amr zi sr

@@ -219,8 +219,13 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
 
   cb_parse_phrase :: CBOR -> ExprAST TypeP
   cb_parse_phrase cbor = case cbor of
-    TList [tok, _,_cbr, TList [lvalue]] | tok `tm` tok_PHRASE -> cb_parse_lvalue lvalue
-    TList [tok, _, cbr, TList lvalues]  | tok `tm` tok_PHRASE -> cb_parse_call (annotOfCbr cbr) (map cb_parse_lvalue lvalues)
+    TList [tok, _,_cbr, TList [_mu,       lvalue] ] | tok `tm` tok_PHRASE ->
+      cb_parse_lvalue lvalue
+    TList [tok, _, cbr, TList (mu_inlined:lvalues)] | tok `tm` tok_PHRASE ->
+      let ca = case unMu mu_inlined of
+                  [] -> CA_None
+                  _ -> CA_DoInline in
+      cb_parse_call (annotOfCbr cbr) (map cb_parse_lvalue lvalues) ca
     TList [tok, _,_cbr, TList (nopr : mu_mb_tyapp : lvalues)] | tok `tm` tok_PRIMAPP ->
       cb_parse_primapp (cb_parse_Text nopr) (unMu mu_mb_tyapp) (map cb_parse_lvalue lvalues) (annotOfCbor cbor)
     _ -> error $ "cb_parse_phrase failed: " ++ show cbor
@@ -236,18 +241,18 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
                 other   -> error $ "cb_parse_primapp tyapp: " ++ show other in
     parseCallPrim' nopr tys exprs annot
 
-  cb_parse_call annot baseargs =
+  cb_parse_call annot baseargs caDefault =
     case baseargs of
       (E_VarAST _ v : args) | evarName v == T.pack "|>" ->
         case args of
           -- foo froz |> bar baz ~~~> bar baz (foo froz)
-          [eexpr, E_CallAST _rng subbase subargs] | not (Prelude.null subargs)
-                        -> E_CallAST annot subbase (subargs ++ [eexpr])
+          [eexpr, E_CallAST _rng subbase subargs ca] | not (Prelude.null subargs)
+                        -> E_CallAST annot subbase (subargs ++ [eexpr]) ca
           -- foo |> bar !   ~~~> (bar !) foo
           -- foo |> bar     ~~~> (bar  ) foo
-          [eexpr, rest] -> E_CallAST annot rest [eexpr]
+          [eexpr, rest] -> E_CallAST annot rest [eexpr] caDefault
           _ -> error $ "cb_parse_call given unexpected args input: " ++ show args
-      (base : args) -> E_CallAST annot base args
+      (base : args) -> E_CallAST annot base args caDefault
       _ -> error "cb_parse_call with no callee??"
 
   cb_parse_lvalue cbor = case cbor of
@@ -274,25 +279,26 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
         CaseArm (cb_parse_p p) (cb_parse_stmts stmts) Nothing               [] (cb_parse_range cbr)
     _ -> error $ "cb_parse_pmatch failed: " ++ show cbor
 
-
+{-
   cb_parse_field_subscript cbor =
       case cbor of
         [TList (_tok : name : _)] -> cborText name
         _ -> error $ "cb_parse_field_subscript"
+-}
 
   cb_parse_suffix expr cbor =
    let annot = annotOfCbor cbor in
    case cbor of
     TList [tok, _,_cbr, TList []]  | tok `tm` tok_DEREF        -> E_DerefAST annot expr
     TList [tok, _,_cbr, TList [e]] | tok `tm` tok_SUBSCRIPT    -> parseCallPrim' (T.pack "subscript") [] [expr, cb_parse_e e] annot
-    TList [tok, _,_cbr, TList []]  | tok `tm` tok_VAL_APP      -> E_CallAST annot expr []
+    TList [tok, _,_cbr, TList []]  | tok `tm` tok_VAL_APP      -> E_CallAST annot expr [] CA_None
     TList [tok, _,_cbr, TList tys] | tok `tm` tok_VAL_TYPE_APP -> E_TyApp annot expr (map cb_parse_t tys)
     TList [tok, _,_cbr, TList [x]] | tok `tm` tok_FIELDLOOKUP  ->
         E_CallPrimAST annot "record-lookup" [LitText $ cb_parse_id_text x] [] [expr]
     _ -> error $ "cb_parse_suffix failed: " ++ show cbor
 
   unMu (TList [_, _, _, TList cbors]) = cbors
-  unMu cbor = error $ "unMu give non-array: " ++ show cbor
+  unMu cbor = error $ "unMu given non-array: " ++ show cbor
 
   cb_parse_range cbr = case cbr of
     TList [startline, startcol, endline, endcol] ->
@@ -450,7 +456,7 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
           let annot = (ExprAnnot [] (combineRanges x y) []) in
           case vop of
             (VarOpPair _ o) | o == T.pack ">^" -> parseCallPrim' (T.pack "store") [] [x,y] annot
-            (VarOpPair op _) -> cb_parse_call annot [op, x, y]
+            (VarOpPair op _) -> cb_parse_call annot [op, x, y] CA_None
         leftAssoc (y:x:args) (op:ops) pairs = go ((combine x op y):args) ops pairs
         leftAssoc _ _ _ = error "leftAssoc invariant violated"
 
@@ -884,7 +890,7 @@ attachFormatting expr = do
    E_TupleAST     _ k  exprs -> liftM3' E_TupleAST    ana (return k) (mapM q exprs)
    E_LetRec       _ bnz e    -> liftM3' E_LetRec      ana (mapM convertTermBinding bnz) (q e)
    E_LetAST       _ bnd e    -> liftM3' E_LetAST      ana (convertTermBinding bnd) (q e)
-   E_CallAST      _ b exprs  -> liftM3' E_CallAST     ana (q b) (mapM q exprs)
+   E_CallAST      _ b  es ca -> liftM4' E_CallAST     ana (q b) (mapM q es) (return ca)
    E_CallPrimAST  _ nm l t e -> liftM5' E_CallPrimAST ana (return nm) (return l) (return t) (mapM q e)
    E_FnAST        _ fn       -> liftM2' E_FnAST       ana (attachFormattingFn fn)
    E_ArrayRead    _ (ArrayIndex a b rng2 s) -> do x <- q a

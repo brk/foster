@@ -162,9 +162,9 @@ inferSigmaHelper ctx (E_TyCheck annot e ta) _msg = do
 inferSigmaHelper ctx (E_VarAST rng v) _msg = tcSigmaVar ctx rng (evarName v)
 inferSigmaHelper ctx (E_FnAST _rng f)  msg = do r <- newTcRef (error $ "inferSigmaFn: empty result: " ++ msg)
                                                 tcSigmaFn  ctx f (Infer r)
-inferSigmaHelper ctx (E_CallAST   rng base argtup) msg = do
+inferSigmaHelper ctx (E_CallAST   rng base argtup ca) msg = do
                 r <- newTcRef (error $ "inferSigmaFn: empty result: " ++ msg)
-                tcSigmaCall     ctx rng   base argtup (Infer r)
+                tcSigmaCall     ctx rng   base argtup ca (Infer r)
 inferSigmaHelper ctx e msg = do
     debugIf dbgSigma $ text $ "inferSigmaHelper " ++ highlightFirstLine (rangeOf e)
     debugIf dbgSigma $ showStructure e
@@ -357,7 +357,7 @@ tcRho ctx expr expTy = do
       E_BoolAST   rng b              -> tcRhoBool         rng   b          expTy
       E_StringAST rng txtorbytes     -> tcRhoTextOrBytes  rng   txtorbytes expTy
       E_MachArrayLit rng mbt args    -> tcRhoArrayLit ctx rng   mbt args   expTy
-      E_CallAST   rng base argtup    -> tcRhoCall     ctx rng   base argtup expTy
+      E_CallAST   rng base argtup ca -> tcRhoCall     ctx rng   base argtup ca expTy
       E_RecordAST rng labels exprs   -> tcRhoRecord   ctx rng   labels exprs expTy
       E_TupleAST  rng boxy exprs     -> tcRhoTuple    ctx rng   boxy exprs  expTy
       E_IfAST   rng a b c            -> tcRhoIf       ctx rng   a b c      expTy
@@ -472,7 +472,7 @@ tcRhoCallPrim ctx rng name args expTy | name == T.pack "assert-invariants" = do
     args <- mapM (\arg -> checkSigma ctx arg boolTypeTC) args
     let fnty = mkFnTypeTC [boolTypeTC | _ <- args] unitTypeTC
     let prim = NamedPrim (TypedId fnty (Ident name 1))
-    let primcall = AnnCall rng unitTypeTC (AnnPrimitive rng fnty prim) args
+    let primcall = AnnCall rng unitTypeTC (AnnPrimitive rng fnty prim) args CA_None
     id <- tcFresh "assert-invariants-thunk"
     let thunk = Fn (TypedId (mkFnTypeTC [] unitTypeTC) id) [] primcall () rng
     matchExp expTy (AnnLetFuns rng [id] [thunk] (AnnTuple rng unitTypeTC KindPointerSized [])) (T.unpack name)
@@ -491,7 +491,7 @@ tcRhoCallPrim ctx annot name args expTy = do
          debugIf dbgVar $ green (text "tcRhoCallPrim: ") <> text (T.unpack name ++ " :?: " ++ show v_sigma)
          ann_var <- inst v_sigma "tcRhoVar"
          debugIf dbgVar $ green (text "tcRhoCallPrim: ") <> text (T.unpack name ++ " :?: " ++ show ann_var)
-         primcall <- tcSigmaCallWithAnnBase ctx annot ann_var args expTy
+         primcall <- tcSigmaCallWithAnnBase ctx annot ann_var args CA_None expTy
          matchExp expTy primcall "var"
 
        Nothing -> do
@@ -791,7 +791,7 @@ tcRhoRecordLookup :: Context SigmaTC -> ExprAnnot -> Term -> T.Text -> Expected 
 tcRhoRecordLookup ctx rng expr fieldName expTy = do
    base <- inferRho ctx expr "indexed-record"
    tV <- repr (typeTC base)
-   let mkRecordLookup tX = (AnnCall rng tX (AnnPrimitive rng tX (FieldLookup fieldName Nothing)) [base])
+   let mkRecordLookup tX = (AnnCall rng tX (AnnPrimitive rng tX (FieldLookup fieldName Nothing)) [base] CA_None)
 
    case (tV, expTy) of
       (MetaTyVarTC {}, Check tX) -> do
@@ -1101,13 +1101,13 @@ tcRhoTyCheck ctx annot e tya expTy = do
 -- G |- b e1 ... en ~~> f a1 ... an ::: sr
 -- {{{
 tcRhoCall :: Context SigmaTC -> ExprAnnot
-              -> ExprAST TypeAST -> [ExprAST TypeAST]
+              -> ExprAST TypeAST -> [ExprAST TypeAST] -> CallAnnot
               -> Expected SigmaTC -> Tc (AnnExpr RhoTC)
-tcRhoCall ctx rng base argstup exp_ty = do
+tcRhoCall ctx rng base argstup ca exp_ty = do
    -- TODO think harder about when it's safe to push exp_ty down
    debug $ "tcRhoCall " ++ show exp_ty
    r <- newTcRef (error $ "tcRho>SigmaCall: empty result: ")
-   app <- tcSigmaCall ctx rng base argstup (Infer r)
+   app <- tcSigmaCall ctx rng base argstup ca (Infer r)
    instSigma app exp_ty
 
 tryGetVarName (E_AnnVar _ (tid, _)) = T.unpack $ identPrefix (tidIdent tid)
@@ -1115,16 +1115,16 @@ tryGetVarName (AnnPrimitive _ _ fprim) = show fprim
 tryGetVarName _ = ""
 
 tcSigmaCall :: Context SigmaTC -> ExprAnnot -> ExprAST TypeAST
-            -> [ExprAST TypeAST] -> Expected SigmaTC -> Tc (AnnExpr SigmaTC)
+            -> [ExprAST TypeAST] -> CallAnnot -> Expected SigmaTC -> Tc (AnnExpr SigmaTC)
 
-tcSigmaCall ctx rng base argexprs exp_ty = do
+tcSigmaCall ctx rng base argexprs ca exp_ty = do
     annbase <- inferRho ctx base "called base"
-    tcSigmaCallWithAnnBase ctx rng annbase argexprs exp_ty
+    tcSigmaCallWithAnnBase ctx rng annbase argexprs ca exp_ty
 
 tcSigmaCallWithAnnBase :: Context SigmaTC -> ExprAnnot -> AnnExpr TypeTC
-            -> [ExprAST TypeAST] -> Expected SigmaTC -> Tc (AnnExpr SigmaTC)
+            -> [ExprAST TypeAST] -> CallAnnot -> Expected SigmaTC -> Tc (AnnExpr SigmaTC)
 
-tcSigmaCallWithAnnBase ctx rng annbase argexprs exp_ty = do
+tcSigmaCallWithAnnBase ctx rng annbase argexprs ca exp_ty = do
         let dbg d = debugIf dbgCalls d
 
         dbg $ text "{{{"
@@ -1188,22 +1188,22 @@ tcSigmaCallWithAnnBase ctx rng annbase argexprs exp_ty = do
                             ,indent 4 (pretty ctxFx')]
           else return ()
 
-        let app = mkAnnCall rng res_ty annbase args
+        let app = mkAnnCall rng res_ty annbase args ca
         dbg $ text "call: overall ty is " <> pretty (typeTC app)
         rv <- matchExp exp_ty app "tcSigmaCall"
         dbg $ text "}}}"
         return rv
 
-mkAnnCall rng res_ty annbase args =
+mkAnnCall rng res_ty annbase args ca =
   case annbase of
     -- Strip type application to make it clear to KN that we're using
     -- primitives in a first-order way.
     E_AnnTyApp _ _ annprim@(AnnPrimitive _ _ (NamedPrim (TypedId _ (GlobalSymbol gs _)))) [_argty]
          | T.unpack gs `elem` ["prim_arrayLength"]
-      -> AnnCall rng res_ty annprim args
+      -> AnnCall rng res_ty annprim args ca
     E_AnnTyApp _ _ annprim@(AnnPrimitive _ _ (PrimOp nm _)) [_argty]
       | nm `elem` ["=="]
-      -> AnnCall rng res_ty annprim args
+      -> AnnCall rng res_ty annprim args ca
 
     E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim (TypedId _ (GlobalSymbol gs _)))) [argty]
          | T.unpack gs == "allocDArray"
@@ -1212,7 +1212,7 @@ mkAnnCall rng res_ty annbase args =
            _ -> error $ "saw anncall of " ++ show annbase ++ " with args: " ++ show args
     E_AnnVar _rng (_tid, Just cid)
       -> AnnAppCtor rng res_ty cid  args
-    _ -> AnnCall rng res_ty annbase args
+    _ -> AnnCall rng res_ty annbase args ca
 
 unifyFun :: RhoTC -> Int -> String -> Tc ([SigmaTC], RhoTC, RhoTC, Unifiable CallConv, Unifiable ProcOrFunc, Levels)
 unifyFun (FnTypeTC args res fx cc ft levels) _ _msg = return (args, res, fx, cc, ft, levels)
@@ -1301,7 +1301,7 @@ equivStructureAndVarNames e1 e2 =
             _ -> False in
   case (e1, e2) of
       (AnnLiteral     _ _ lit1        , AnnLiteral     _ _ lit2        )  -> lit1 == lit2
-      (AnnCall        _ _ e1c e1s     , AnnCall        _ _ e2c e2s     )  -> allP q (e1c:e1s) (e2c:e2s)
+      (AnnCall        _ _ e1c e1s _   , AnnCall        _ _ e2c e2s _   )  -> allP q (e1c:e1s) (e2c:e2s)
       (AnnAppCtor     _ _ c1  e1s     , AnnAppCtor     _ _ c2  e2s     )  -> c1 == c2 && allP q e1s e2s
       (AnnCompiles    _ _ cr1         , AnnCompiles    _ _ cr2         )  -> cr1 `qcr` cr2
       (AnnKillProcess _ ty1 t1        , AnnKillProcess _ ty2 t2        )  -> t1 == t2 && tcTypeEquiv ty1 ty2
@@ -2541,7 +2541,7 @@ annSubst subst expr = go expr
         go expr = do
           case expr of
             E_AnnFn annFn                        -> E_AnnFn (gf annFn)
-            AnnCall _rng ty b exprs              -> AnnCall _rng (gt ty) (go b) (map go exprs)
+            AnnCall _rng ty b exprs ca           -> AnnCall _rng (gt ty) (go b) (map go exprs) ca
             AnnAppCtor _rng ty cid exprs         -> AnnAppCtor _rng (gt ty) cid (map go exprs)
             AnnIf        _rng ty a b c           -> AnnIf        _rng (gt ty) (go a) (go b) (go c)
             AnnLetVar    _rng id a b             -> AnnLetVar    _rng id (go a) (go b)

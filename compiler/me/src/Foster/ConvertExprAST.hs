@@ -107,7 +107,8 @@ convertExprAST f expr =
     E_Case         rng e arms   -> liftM2 (E_Case         rng) (q e) (mapM qa arms)
     E_LetRec       rng bnz e    -> liftM2 (E_LetRec       rng) (mapM (convertTermBinding f) bnz) (q e)
     E_LetAST       rng bnd e    -> liftM2 (E_LetAST       rng) (convertTermBinding f bnd) (q e)
-    E_CallAST      rng b exprs  -> liftM2 (E_CallAST      rng) (q b) (mapM q exprs)
+    E_CallAST      rng b exprs callAnnot
+                                -> liftM3 (E_CallAST      rng) (q b) (mapM q exprs) (return callAnnot)
     E_CallPrimAST  rng nm ls ts exprs
                                 -> liftM2 (E_CallPrimAST  rng nm ls) (mapM f ts) (mapM q exprs)
     E_FnAST        rng fn       -> liftM  (E_FnAST        rng) (convertFun f fn)
