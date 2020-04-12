@@ -1171,7 +1171,7 @@ data RedexSituation t =
        CallOfUnknownFunction
      | CallOfNonInlineableFunction (MKFn (Subterm t) t) (Link (MKFn (Subterm t) t))
      | CallOfSingletonFunction (MKFn (Subterm t) t)
-     | CallOfDonatableFunction (MKFn (Subterm t) t)
+     | CallOfDonatableFunction (MKFn (Subterm t) t) [(Int, FreeOcc t)]
      | SomethingElse           (MKFn (Subterm t) t) (Link (MKFn (Subterm t) t))
 
 classifyRedex :: (Pretty t)
@@ -1205,7 +1205,7 @@ classifyRedex' fnbinder (Just fn) (Just fnlink) args knownFns = do
                    -> do return $ CallOfNonInlineableFunction fn fnlink
     (True, NotRec) -> do return $ CallOfSingletonFunction fn
     _ -> do
-      donationss <- mapM (\(arg, binder) -> do
+      donationss <- mapM (\(n, (arg, binder)) -> do
                          argsingle <- freeOccIsSingleton arg
                          argboundfn <- lookupBinding arg knownFns
                          bindoccs <- collectOccurrences binder
@@ -1221,13 +1221,19 @@ classifyRedex' fnbinder (Just fn) (Just fnlink) args knownFns = do
                          let bindsingle = sum bindNonRecOccCounts <= 1
 
                          if argsingle && isJust argboundfn && bindsingle
-                           then return [(arg, binder)]
+                           then return [(n, arg)]
                            else return []
-                         ) (zip args (mkfnVars fn))
+                         ) (zip [0..] $ zipSameLength args (mkfnVars fn))
       let donations = concat donationss
       if null donations || mkfnUnrollCount fn > 0
-        then return $ SomethingElse fn fnlink
-        else return $ CallOfDonatableFunction fn
+        then do ccWhen (return $ null donations) $ do
+                  noccs <- dlcCount fnbinder
+                  dbgDoc $ yellow (pretty fnbinder) <> text "      not donatable because no donations; #occs "
+                                <> pretty noccs <> text "; rec? " <> pretty (mkfnIsRec fn)
+                ccWhen (return $ mkfnUnrollCount fn > 0) $ do
+                  dbgDoc $ text "  not donatable because unroll count > 0"
+                return $ SomethingElse fn fnlink
+        else return $ CallOfDonatableFunction fn donations
 -- }}}
 
 -- {{{
@@ -1235,8 +1241,9 @@ type MKRenamed t = WithBinders t
 
 runCopyMKFn :: (Pretty t, Show t, AlphaRenamish t RecStatus)
             => MKFn (Subterm t) t -> Map Ident (MKBoundVar t)
+            -> [(Int, FreeOcc t)]
             -> Compiled (MKFn (Subterm t) t)
-runCopyMKFn mkfn bindings = evalStateT (copyMKFn mkfn) bindings
+runCopyMKFn mkfn bindings donations = evalStateT (copyMKFn mkfn donations) bindings
 
 copyBinder :: String -> MKBoundVar t -> MKRenamed t (MKBoundVar t)
 copyBinder msg b = do
@@ -1272,12 +1279,14 @@ copyFreeOcc fv = do
     Just binder -> lift $ mkFreeOccForBinder binder
     Nothing     -> lift $ mkFreeOccForBinder b
 
+-- TODO increment unroll count?
 copyMKFn :: (Pretty t, Show t, AlphaRenamish t RecStatus)
          => MKFn (Subterm t) t
+         -> [(Int, FreeOcc t)]
          -> MKRenamed t (MKFn (Subterm t) t)
-copyMKFn fn = do
-  v'  <-       copyBinder "mkFnVar"   (mkfnVar fn)
-  vs' <- mapM (copyBinder "mkFnVars") (mkfnVars fn)
+copyMKFn fn donations = do
+  v'  <-       copyBinder "mkfnVar"   (mkfnVar fn)
+  vs' <- mapM (copyBinder "mkfnVars") (mkfnVars fn)
   cont' <- case mkfnCont fn of
              Nothing -> return Nothing
              Just cf ->
@@ -1288,6 +1297,11 @@ copyMKFn fn = do
   link' <- case body of
                 Just term -> copyMKTerm term
                 Nothing   -> return (mkfnBody fn)
+  -- We don't really have infrastructure for changing the formal arguments of a function,
+  -- so we eagerly remove specialized formals here. This will leave call sites temporarily
+  -- inconsistent; if the caller passes donations, it's the caller's responsibility to
+  -- fix up call sites.
+  --vs'' <- lift $ specializeArgs donations vs'
   let fn' = fn { mkfnVar = v' , mkfnVars = vs' , mkfnBody = link' , mkfnCont = cont' }
   lift $ backpatchFn fn'
   return fn'
@@ -1351,7 +1365,7 @@ copyMKTerm term = do
       qf link = do
           mb_fn <- lift $ readOrdRef link
           case mb_fn of
-            Just fn -> do fn' <- copyMKFn fn
+            Just fn -> do fn' <- copyMKFn fn []
                           lift $ newOrdRef (Just fn')
             Nothing -> return link
   let qv = copyFreeOcc
@@ -1560,7 +1574,7 @@ mknInline subterm mainCont mb_gas = do
                           -- However, arg substitutions should be re-inspected.
                           enqueueOccurrences wr args
 
-                        CallOfDonatableFunction fn -> do
+                        CallOfDonatableFunction fn donations -> do
                           do  redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
                               dbgDoc $ text "CallOfDonatableFunction: " <+> pretty redex
                           flags <- gets ccFlagVals
@@ -1568,17 +1582,26 @@ mknInline subterm mainCont mb_gas = do
                             then do
                               ccWhen ccVerbose $ do
                                   v <- freeBinder callee
+                                  dbgDoc $ blue (text "fnVar: ") <+> pretty (tidIdent $ boundVar $  mkfnVar fn)
+                                  dbgDoc $ blue (text "    v: ") <+> pretty (tidIdent $ boundVar v)
                                   dbgDoc $ green (text "copying and inlining DF ") <+> pretty (tidIdent $ boundVar v)
                                   --kn1 <- knOfMKFn (mbContOf $ mkfnCont fn) fn
                                   --dbgDoc $ text $ "pre-copy fn is " ++ show (pretty kn1)
                                   return ()
-                              fn' <- runCopyMKFn fn Map.empty
-                              ccWhen ccVerbose $ do
-                                  kn1 <- knOfMKFn (mbContOf $ mkfnCont fn) fn'
-                                  dbgDoc $ text $ "post-copy fn is " ++ show (pretty kn1)
+
+                              -- TODO we should really replace the function later on, after we've codegenned the call.
+                              -- At this point, only the internal calls exist.
+
+                              -- TODO we should also be more careful about putting cloned global functions in global context,
+                              -- OR making sure to localize their names first...
+                              do
+                                  v <- freeBinder callee
+                                  dbgDoc $ blue (text "fnVar fn : ") <+> pretty (tidIdent $ boundVar $ mkfnVar fn)
+                                  dbgDoc $ blue (text "callee/v : ") <+> pretty (tidIdent $ boundVar   v)
+
                               -- TODO Recursive-but-not-tail-recursive functions (RBNTRF)
                               --      will have a recursive call in the body, so we can't
-                              --      simply use betaReduceOnlyCall as theres more than 1 call.
+                              --      simply use betaReduceOnlyCall as there's more than 1 call.
                               --
                               --      Most functions will be given loop headers in KNExpr,
                               --      but an un-eliminated loop header within a RBNTRF
@@ -1587,34 +1610,82 @@ mknInline subterm mainCont mb_gas = do
                               --      If the generated fn' isn't singleton/dead, it should
                               --      be inserted next to the original fn. (TODO)
 
-                              rbntr <- isRecursiveButNotTailRecursive fn'
+                              rbntr <- isRecursiveButNotTailRecursive fn
                               newbody <- if rbntr then do
+                                            --fn' <- runCopyMKFn fn Map.empty donations
                                             -- We don't modify the known function list, so the recursive call in
                                             -- the copied body will bottom out and not do any loop unrolling.
                                             
-                                            dbgDoc $ red $ text "isRecursiveButNotTailRecursive!"
+                                            dbgDoc $ red $ text "isRecursiveButNotTailRecursive! unroll count before is "
+                                                              <> pretty (mkfnUnrollCount fn)
                                             -- We must disable recursive inlining or else we'd infinitely regress!
                                             
-                                            knfn <- knOfMKFn NoCont $ fn'
+                                            -- Note: the conversion between KN and MK doesn't rename
+                                            -- variables, so we do so explicitly.
+                                            knfn <- knOfMKFn (mbContOf $ mkfnCont fn) $ fn
+
+                                            ccWhen ccVerbose $ do
+                                                dbgDoc $ text $ "post-copy fn is " ++ show (pretty knfn)
 
                                             let sr = MissingSourceRange "CallOfDonatableFunction"
-                                            kn' <- knLoopHeaders' (KNLetFuns [tidIdent $ fnVar knfn] [knfn] (KNVar $ fnVar knfn) sr)
+                                            kn'0 <- knLoopHeaders' (KNLetFuns [tidIdent $ fnVar knfn] [knfn] (KNVar $ fnVar knfn) sr)
                                                                   True
-                                            let (KNLetFuns [id'] [knfn'] _ _sr) = kn'
-                                            dbgDoc $ text $ "loop-headered fn is " ++ show (pretty knfn')
+                                            let (KNLetFuns [id'0] [knfn'0] _ _sr) = kn'0
+                                            id'1 <- case id'0 of
+                                                     GlobalSymbol txt _ -> do
+                                                        ccFreshId (txt `T.append` T.pack "_ren_")
+                                                     _ -> return id'0 -- already renamed!
+                                            knfn' <- alphaRenameMonoWithState knfn'0 (Map.fromList [(id'0, id'1)])
+                                            dbgDoc $ dullgreen $ text "loop-headered+renamed fn " <> prettyIdent id'1 <> text (" is " ++ show (pretty knfn'))
 
                                             let unrolled = mkfnUnrollCount fn + 1
-                                            (_, fn'') <- evalStateT (mkOfKNFn unrolled Nothing (id' , knfn')) $
-                                              Map.fromList [(tidIdent $ boundVar b, b) | (b,_) <- Map.toList knownFns]
+                                                knownState = [(tidIdent $ boundVar b, b) | (b,_) <- Map.toList knownFns]
+                                            dbgDoc $ text "   known state: " <> pretty [(id, b) | (id, b) <- knownState]
+                                            (_, fn'') <- evalStateT (do
+                                                            --bv1 <- genBinder (T.unpack $ identPrefix id'1) (tidType $ fnVar knfn'0)
+                                                            --m <- get
+                                                            --put $ extend m [id'1] [bv1]
+                                                            mkOfKNFn unrolled Nothing (id'1 , knfn')) $
+                                              Map.fromList knownState
 
-                                            -- We reuse the pieces of the original MKCall because it's now dead.
-                                            createLetFunAndCall fn'' (mkfnVar fn'') _ty _up args kv
+                                            let vs' = mkfnVars fn''
+                                            vs'' <- specializeArgs donations vs'
+                                            let fn'3 = fn'' { mkfnVars = vs'' }
+                                            
+                                            dbgDoc $ blue (text "       id': ") <+> pretty (id'1)
+                                            dbgDoc $ blue (text "fnVar fn'': ") <+> pretty (tidIdent $ boundVar $ mkfnVar fn'3)
+
+                                            case id'0 of
+                                              GlobalSymbol {} -> do
+                                                dbgDoc $ text "TODO: do a better job of handling global symbols by putting them at top-level..."
+                                                do  noccs <- dlcCount (mkfnVar fn'3)
+                                                    dbgDoc $ text "before createLetFunAndCall, #noccs of " <> pretty id'1 <> text " is " <> pretty noccs
+                                                newbody <- createLetFunAndCall fn'3 (mkfnVar fn'3) _ty _up args kv
+                                                do  noccs <- dlcCount (mkfnVar fn'3)
+                                                    dbgDoc $ text "after createLetFunAndCall, #noccs of " <> pretty id'1 <> text " is " <> pretty noccs
+                                                -- Make sure the old occ is dead before specializing.
+                                                killOccurrence        bindingWorklistRef callee
+                                                do  noccs <- dlcCount (mkfnVar fn'3)
+                                                    dbgDoc $ text "after killing old callee occ, #noccs of " <> pretty id'1 <> text " is " <> pretty noccs
+                                                specializeDonatedArgs bindingWorklistRef wr fn'3 donations
+                                                do  noccs <- dlcCount (mkfnVar fn'3)
+                                                    dbgDoc $ text "after specializing donated args, #noccs of " <> pretty id'1 <> text " is " <> pretty noccs
+                                                return newbody
+                                              _ -> do
+                                                -- We reuse the pieces of the original MKCall because it's now dead.
+                                                createLetFunAndCall fn'' (mkfnVar fn'') _ty _up args kv
                                           
-                                          else do betaReduceOnlyCall fn' args kv     wr fd
+                                          else do
+                                            fn' <- runCopyMKFn fn Map.empty []
+                                            betaReduceOnlyCall fn' args kv     wr fd
                                 
                               replaceActiveSubtermWith newbody
                               -- No need to kill the old binding, since the body was duplicated.
 
+                              dbgDoc $ green $ text "Replaced donatable call with new body (next: collecting redexes)"
+                              do mk <- readLink "1657" newbody
+                                 kn <- knOfMK NoCont mk
+                                 dbgDoc $ indent 8 $ pretty kn
                               collectRedexes wr kr er fr fd ar relocDomMarkers newbody
 
                             else return ()
@@ -1628,7 +1699,7 @@ mknInline subterm mainCont mb_gas = do
                                       dbgDoc $ green (text "copying and inlining SE ") <+> pretty (tidIdent $ boundVar v)
                                       --kn1 <- knOfMK (YesCont mainCont) term
                                       --dbgDoc $ text $ "knOfMK, term is " ++ show (pretty kn1)
-                                  fn' <- runCopyMKFn _fn Map.empty
+                                  fn' <- runCopyMKFn _fn Map.empty []
                                   newbody <- betaReduceOnlyCall fn' args kv    wr fd
                                   replaceActiveSubtermWith newbody
                                   killOccurrence bindingWorklistRef callee
@@ -1687,7 +1758,7 @@ mknInline subterm mainCont mb_gas = do
                                             dbgDoc $ text "      post-kill occ count: " <> pretty c) args
 
 
-                        CallOfDonatableFunction fn -> do
+                        CallOfDonatableFunction fn _donations -> do
                           do  redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
                               dbgDoc $ text "CallOfDonatableCont: " <+> pretty redex
                           return ()
@@ -1721,7 +1792,7 @@ mknInline subterm mainCont mb_gas = do
                       go (gas - 1)
 
                     MKLetFuns _u knowns fnrest _sr -> do
-                      dbgIf dbgCont $ (text "analyzing for contifiability:")
+                      dbgIf dbgCont $ dullyellow $ (text "analyzing for contifiability:")
                           <+> align (vsep (map (pretty.tidIdent.boundVar.fst) knowns))
                       knownFns   <- liftIO $ readIORef fr
                       contifiability <- analyzeContifiability knowns knownFns
@@ -1973,7 +2044,8 @@ isDirectCallWithKnownTupleArg expBindsMap fnvar occ = do
                  _ -> return DC_Other
     _ -> return DC_Other
 
-
+-- Checks the given function to see if it has any occurrences which are calls
+-- that use a different return continuation than the function itself.
 isRecursiveButNotTailRecursive fn = do
   occs <- collectOccurrences (mkfnVar fn)
   isRecAndNotTailRec <- mapM (\occ -> do
@@ -1982,6 +2054,7 @@ isRecursiveButNotTailRecursive fn = do
         MKCall _ _ v _ k _ca -> do
           vb <- freeBinder v
           kb <- freeBinder k
+          -- Probably need to also make sure the args don't mention the fn var.
           return $ vb == mkfnVar fn && (Just kb) /= mkfnCont fn
         _ -> return False
     ) occs
@@ -2330,6 +2403,50 @@ calleeOfCont occ = do
          dbgDoc $ text "calleeOfCont: non call for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
       return Nothing
 
+--specializeDonatedArgs ::
+--            -> [(Int, FreeOcc t)] ->
+--            MKRenamed 
+specializeDonatedArgs bindingWorklistRef wr fn donations = do
+  let callee = mkfnVar fn
+
+  occs <- collectOccurrences callee
+  mapM_ (\occ -> do
+    Just tm <- readOrdRef (freeLink occ)
+    case tm of
+      MKCall uplink ty v vs c ca -> do
+        bv <- freeBinder v
+        if bv == callee
+          then do status <- getActiveLinkFor tm
+                  case status of
+                    TermIsDead -> return ()
+                    ActiveSubterm link -> do
+                      let (_, vars) = matchArgs donations vs
+                      -- Create a new call node which drops specialized args.
+                      let newterm = MKCall uplink ty v vars c ca
+                      dbgDoc $ yellow $ text "specializeDonatedArgs specializing call:"
+                      replaceTermWith bindingWorklistRef link tm newterm
+          else return ()
+    ) occs
+
+  -- Note: assuming here that copyMKFn already called specializeArgs.
+  let donatedVals = map snd donations
+  mapM_ (\donVal -> do
+    -- Make sure that the usages of the values that were substituted
+    -- by specializeArgs are re-examined.
+    bv <- freeBinder donVal
+    occs <- collectOccurrences bv
+    mapM_ (\occ -> do
+        let link = freeLink occ
+        -- "markRedex" in collectRedexes
+        dbgDoc $ text "specializeDonatedArgs marking occ of " <> pretty bv
+        do tm <- readLink "specializeDonatedArgs" $ freeLink occ
+           kn <- knOfMK NoCont tm
+           dbgDoc $ indent 2 (pretty kn)
+        liftIO $ modIORef' wr (\w -> worklistAdd w link)
+      ) occs
+                      
+    ) donatedVals
+
 shouldInlineRedex _mredex _fn ca =
   -- TODO use per-call-site annotation, when we have such things.
   {-
@@ -2352,6 +2469,13 @@ replaceWith bindingWorklistRef activeLink poss_indir_target newsubterm = do
 replaceTermWith :: Pretty ty => IORef (WorklistQ (MKBoundVar ty)) -> Subterm ty ->
                    MKTerm ty -> MKTerm ty -> Compiled ()
 replaceTermWith bindingWorklistRef activeLink oldterm newterm = do
+  do okn <- knOfMK NoCont oldterm
+     nkn <- knOfMK NoCont newterm
+     dbgDoc $ text "replacing "
+             <$> indent 8 (pretty okn)
+             <$> text "with"
+             <$> indent 8 (pretty nkn)
+
   writeOrdRef activeLink           (Just newterm)
 
   let oldoccs = directFreeVarsT oldterm
@@ -2373,6 +2497,9 @@ killOccurrence bindingWorklistRef fo = do
        writeOrdRef r Nothing
        liftIO $ modIORef' bindingWorklistRef (\w -> worklistAdd w b)
      else do
+       dbgDoc $ text "killing occurrence of " <> pretty b
+       nob <- dlcCount b
+       dbgDoc $ text "num occs before: " <> pretty nob
        n <- dlcNext fo
        p <- dlcPrev fo
        writeOrdRef (dlcNextRef p) n
@@ -2387,6 +2514,9 @@ killOccurrence bindingWorklistRef fo = do
           else do fo'' <- dlcNext fo
                   writeOrdRef r $ Just fo''
       _ -> return ()
+
+    noa <- dlcCount b
+    dbgDoc $ text "num occs after: " <> pretty noa
 
 killBinding fo knownFns aliases = do
     origBinding <- freeBinder fo
@@ -2412,6 +2542,30 @@ lookupBinding' binding m = do
       Just link -> readOrdRef link
 
 zipSameLength = zip
+
+
+matchArgs donations vs0 =
+  let match [] [] acc = reverse acc
+      match [] ((_,v):vs) acc = match [] vs (Right v:acc)
+      match d@((n, arg):rest) ((m,v):vs) acc = do
+              case () of
+                _ | n >  m ->
+                  match d    vs ((Right v):acc)
+                _ | n == m ->
+                  match rest vs ((Left (arg, v)):acc)
+                _ | n <  m ->
+                  error $ "how did we get n < m ???"    
+  in partitionEithers $ match donations (zip [0..] vs0) []
+
+-- Return the args that were not specialized.
+specializeArgs :: (Pretty t) =>
+                  [(Int, FreeOcc t)]
+               -> [MKBoundVar t]
+               -> Compiled [MKBoundVar t]
+specializeArgs donations vs0 = do
+  let (matches, vars) = matchArgs donations vs0
+  mapM_ substVarForBound matches
+  return vars
 
 betaReduceOnlyCall fn args kv    wr fd = do
     mapM_ substVarForBound (zip args (mkfnVars fn))
@@ -2474,16 +2628,17 @@ pccOfTopTerm uref subterm = do
               dbgDoc $ text "pccOfTopTerm saw nulled-out function link " <> pretty x
             return ()
           Just fn -> do
-          {--
+            {-
             do
               knfn <- lift $ knOfMKFn NoCont fn
               dbgIf dbgFinal $ indent 10 (pretty x)
               dbgIf dbgFinal $ indent 20 (pretty knfn)
               dbgIf dbgFinal $ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-             --}
+              dbgIf dbgFinal $ yellow $ pretty (mkfnVar fn)
+              -}
 
             dbgDoc $ text "cffnOfMKFn from link # " <> pretty (ordRefUniq link)
-            cffn <- lift $ cffnOfMKFn uref fn
+            cffn <- lift $ cffnOfMKFn uref fn x
             !(fns, topbinds) <- get
             put (cffn : fns, topbinds)
 
@@ -2599,11 +2754,11 @@ cffnOfMKCont cv (MKFn _v vs _ subterm _isrec _annot _unrollCount) = do
                                                   mb_mkfn <- readOrdRef link
                                                   case mb_mkfn of
                                                     Nothing -> do
-                                                      --dbgDoc2 $ text $ "cffnOfMKCont removed dead fn: " ++ show (tidIdent $ boundVar bv)
+                                                      dbgDoc $ text $ "cffnOfMKCont removed dead fn: " ++ show (tidIdent $ boundVar bv)
                                                       return []
                                                     Just mkfn -> do
                                                       dbgDoc $ text "read fn from link # " <> pretty (ordRefUniq link)
-                                                      cffn <- cffnOfMKFn uref mkfn
+                                                      cffn <- cffnOfMKFn uref mkfn bv
                                                       return [(tidIdent (boundVar bv), cffn)] ) knowns
                                               let (ids, fns) = unzip (concat idsfnss)
                                               if null fns   -- avoid empty ILetFuns
@@ -2671,8 +2826,8 @@ cffnOfMKCont cv (MKFn _v vs _ subterm _isrec _annot _unrollCount) = do
           cffnOfMKCont vx (MKFn vx vars Nothing subterm _isrec _annot _unrollCount)
           return blockid
 
-cffnOfMKFn :: IORef Uniq -> MKFn (Subterm MonoType) MonoType -> Compiled CFFn
-cffnOfMKFn uref (MKFn v vs (Just cont) term isrec annot unrollCount) = do
+cffnOfMKFn :: IORef Uniq -> MKFn (Subterm MonoType) MonoType -> MKBoundVar MonoType -> Compiled CFFn
+cffnOfMKFn uref (MKFn v vs (Just cont) term isrec annot unrollCount) bv = do
   -- Generate a pseudo-entry continuation to match Hoopl's semantics for graphs.
 
 
@@ -2688,7 +2843,11 @@ cffnOfMKFn uref (MKFn v vs (Just cont) term isrec annot unrollCount) = do
   --dbgDoc $ vcat (map pretty allblocks)
   --dbgDoc $ indent 20 (pretty graph)
 
-  dbgDoc $ text "converted function, type is " <> pretty (tidType (boundVar v))
+  noccsI <- dlcCount v
+  noccsE <- dlcCount bv
+  dbgDoc $ blue $ text "converted function " <> pretty v <> text ", type is " <> pretty (tidType (boundVar v))
+    <+> text "    #occs = " <> pretty (noccsI, noccsE)
+  showOccsOfBinder bv
 
   return $ Fn { fnVar = boundVar v,
                 fnVars = map boundVar vs,
@@ -2889,6 +3048,14 @@ findMatchingArm replaceCaseWith ty v arms lookupVar = go arms NoPossibleMatchYet
                 go ((MatchDef xs):rest) acc = go rest (xs : acc)
                 go ((MatchSeq _ ):_rst) _   = error $ "can't yet process MatchSeq embedded..."
 
+showOccsOfBinder bv = do
+  occs <- dlcToList bv
+  let showOcc occ = do
+        tm <- readLink "showOccsOfBinder" (freeLink occ)
+        kn <- knOfMK NoCont tm
+        dbgDoc $ text "((*)" <> indent 1 (pretty kn) <$> text ")"
+  mapM_ showOcc occs
+
 {-
 -- TODO handle partial matches:
 --        case (v1,v2) of (True, x) -> f(x)
@@ -2899,7 +3066,7 @@ findMatchingArm replaceCaseWith ty v arms lookupVar = go arms NoPossibleMatchYet
 
 dbgDoc :: MonadIO m => Doc -> m ()
 dbgDoc d =
-  if False
+  if True
     then liftIO $ putDocLn d
     else return ()
 
@@ -2909,5 +3076,5 @@ dbgIf cond d =
     then liftIO $ putDocLn d
     else return ()
 
-dbgCont = False
+dbgCont = True
 dbgFinal = False
