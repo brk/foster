@@ -401,6 +401,7 @@ data MKFn expr ty
                        , mkfnBody  :: expr
                        , mkfnIsRec :: RecStatus
                        ,_mkfnAnnot :: ExprAnnot
+                       , mkfnUnrollCount :: Int
                        } deriving Show -- For KNExpr and KSmallstep
 
 data MKCaseArm expr ty = MKCaseArm { _mkcaseArmPattern  :: PatternRepr ty
@@ -515,11 +516,11 @@ backpatchFn f@(MKFn {}) = do
 unsafeForceCont id = T.pack "forcecont_" `T.isPrefixOf` (identPrefix id)
 
 mkOfKNFn :: (ty ~ MonoType) =>
-            Maybe (ContinuationContext ty)
+            Int -> Maybe (ContinuationContext ty)
          -> (Ident, Fn RecStatus (KNExpr' RecStatus ty) ty)
          -> WithBinders ty (Bool, MKFn (Subterm ty) ty)
 
-mkOfKNFn mb_k (localname, Fn v vs expr isrec annot) = do
+mkOfKNFn unrollCount mb_k (localname, Fn v vs expr isrec annot) = do
     m <- get
     v' <- mkBinder v
     vs' <- mapM mkBinder vs
@@ -528,7 +529,7 @@ mkOfKNFn mb_k (localname, Fn v vs expr isrec annot) = do
       (Just k, True) -> do
         expr' <- mkOfKN_Base expr k -- TODO maybe need to separately track ret k?
         put m
-        let f' = MKFn v' vs' Nothing expr' isrec annot
+        let f' = MKFn v' vs' Nothing expr' isrec annot unrollCount
         lift $ backpatchFn f'
         return (False, f')
 
@@ -539,7 +540,7 @@ mkOfKNFn mb_k (localname, Fn v vs expr isrec annot) = do
 
         expr' <- mkOfKN_Base expr (CC_Tail jb)
         put m
-        let f' = MKFn v' vs' (Just jb) expr' isrec annot
+        let f' = MKFn v' vs' (Just jb) expr' isrec annot unrollCount
         lift $ backpatchFn f'
         return (True, f')
 
@@ -623,7 +624,9 @@ mkOfKN_Base expr k = do
             -- letcont j x = [[e2]] k   in    ((e1)) j
             body <- mkOfKN_Base e2 k
 
-            let contfn = MKFn jbx [xb] Nothing body NotRec (annotForRange $ MissingSourceRange "cont")
+            let unrollCount = 0
+                contfn = MKFn jbx [xb] Nothing body NotRec
+                              (annotForRange $ MissingSourceRange "cont") unrollCount
             known <- lift $ mkKnown' jb contfn
             lift $ backpatchFn contfn
 
@@ -704,7 +707,8 @@ mkOfKN_Base expr k = do
             let vs = map (\(x,fn) -> (TypedId (fnType fn) x)) (zip ids fns)
             m <- get
             binders <- mapM mkBinder vs
-            fcfs' <- mapM (mkOfKNFn (Just k)) (zip ids fns)
+            let unrollCount = 0
+            fcfs' <- mapM (mkOfKNFn unrollCount (Just k)) (zip ids fns)
             rest' <- mkOfKN_Base st k
             fknowns <- lift $ mapM (uncurry mkKnown') (zip binders [f | (True,  f) <- fcfs'])
             cknowns <- lift $ mapM (uncurry mkKnown') (zip binders [f | (False, f) <- fcfs'])
@@ -823,7 +827,9 @@ genContinuation contName contBindName ty_x (kf, resTy) nu restgen = do
     
     body <- kf xo
 
-    let contfn = MKFn jbx [xb] Nothing body NotRec (annotForRange $ MissingSourceRange "cont")
+    let unrollCount = 0
+        contfn = MKFn jbx [xb] Nothing body NotRec
+                      (annotForRange $ MissingSourceRange "cont") unrollCount
     known <- lift $ mkKnown' jb contfn
     lift $ backpatchFn contfn
 
@@ -928,7 +934,7 @@ data MaybeCont ty = YesCont (MKBoundVar ty)
 mbContOf Nothing = NoCont
 mbContOf (Just c) = YesCont c
 
-knOfMKFn mb_retCont (MKFn v vs mb_cont expr isrec annot) = do
+knOfMKFn mb_retCont (MKFn v vs mb_cont expr isrec annot _unrollCount) = do
       let qb (MKBound tid _) = tid
       expr' <- do let rc = case --trace ("picking new continuation for " ++ show (pretty v) ++ "from: " ++ show (pretty (mb_retCont, mb_cont))) $
                                  (mb_retCont, mb_cont) of 
@@ -1219,7 +1225,7 @@ classifyRedex' fnbinder (Just fn) (Just fnlink) args knownFns = do
                            else return []
                          ) (zip args (mkfnVars fn))
       let donations = concat donationss
-      if null donations
+      if null donations || mkfnUnrollCount fn > 0
         then return $ SomethingElse fn fnlink
         else return $ CallOfDonatableFunction fn
 -- }}}
@@ -1597,7 +1603,8 @@ mknInline subterm mainCont mb_gas = do
                                             let (KNLetFuns [id'] [knfn'] _ _sr) = kn'
                                             dbgDoc $ text $ "loop-headered fn is " ++ show (pretty knfn')
 
-                                            (_, fn'') <- evalStateT (mkOfKNFn Nothing (id' , knfn')) $
+                                            let unrolled = mkfnUnrollCount fn + 1
+                                            (_, fn'') <- evalStateT (mkOfKNFn unrolled Nothing (id' , knfn')) $
                                               Map.fromList [(tidIdent $ boundVar b, b) | (b,_) <- Map.toList knownFns]
 
                                             -- We reuse the pieces of the original MKCall because it's now dead.
@@ -1931,6 +1938,7 @@ considerFunctionForArityRaising expBindsMapRef bindingWorklistRef fn fnlink call
                        , mkfnBody  = newbody
                        , mkfnIsRec = (mkfnIsRec fn)
                        ,_mkfnAnnot = (_mkfnAnnot fn)
+                       , mkfnUnrollCount = (mkfnUnrollCount fn)
                        }
             writeOrdRef fnlink (Just newfn)
     else do dbgDoc $ text "not all calls with known tuples"
@@ -2556,7 +2564,7 @@ qv (DLCNode fop _ _) = do bound <- liftIO $ repr (fopPoint fop) >>= descriptor
                           return $ boundVar bound
 
 cffnOfMKCont :: MKBoundVar MonoType -> MKFn (Subterm MonoType) MonoType -> BlockAccum ()
-cffnOfMKCont cv (MKFn _v vs _ subterm _isrec _annot) = do
+cffnOfMKCont cv (MKFn _v vs _ subterm _isrec _annot _unrollCount) = do
   headerBlockId <- blockIdOf cv
   let head = ILabel (headerBlockId, map boundVar vs)
   dbgDoc $ text "cffnOfMKCont head = " <> pretty head
@@ -2660,15 +2668,17 @@ cffnOfMKCont cv (MKFn _v vs _ subterm _isrec _annot) = do
           ref <- lift $ newOrdRef Nothing
           let vx = MKBound (TypedId (TyApp (TyCon "Bool") []) id) ref
 
-          cffnOfMKCont vx (MKFn vx vars Nothing subterm _isrec _annot)
+          cffnOfMKCont vx (MKFn vx vars Nothing subterm _isrec _annot _unrollCount)
           return blockid
 
 cffnOfMKFn :: IORef Uniq -> MKFn (Subterm MonoType) MonoType -> Compiled CFFn
-cffnOfMKFn uref (MKFn v vs (Just cont) term isrec annot) = do
+cffnOfMKFn uref (MKFn v vs (Just cont) term isrec annot unrollCount) = do
   -- Generate a pseudo-entry continuation to match Hoopl's semantics for graphs.
+
+
   (rk, st) <- runStateT (blockIdOf cont) (uref, Map.empty, [])
   (_,_,blocks) <- execStateT
-        (cffnOfMKCont v (MKFn v vs Nothing term isrec annot))
+        (cffnOfMKCont v (MKFn v vs Nothing term isrec annot unrollCount))
         st
 
   --dbgDoc $ text $ "# blocks for " ++ show (tidIdent $ boundVar v) ++ " = " ++ show (length allblocks)
