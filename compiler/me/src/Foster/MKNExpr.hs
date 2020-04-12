@@ -1425,12 +1425,12 @@ copyMKTerm term = do
 
 mknInline :: Subterm MonoType -> MKBoundVar MonoType -> Maybe Int -> Compiled ()
 mknInline subterm mainCont mb_gas = do
-    wr <- liftIO $ newIORef worklistEmpty
-    kr <- liftIO $ newIORef Map.empty
-    er <- liftIO $ newIORef Map.empty
-    fr <- liftIO $ newIORef Map.empty
-    fd <- liftIO $ newIORef Map.empty
-    ar <- liftIO $ newIORef Map.empty
+    wr <- liftIO $ newIORef worklistEmpty -- "worklist ref"
+    kr <- liftIO $ newIORef Map.empty -- "known vals ref"
+    er <- liftIO $ newIORef Map.empty -- "expr (valbinds) ref"
+    fr <- liftIO $ newIORef Map.empty -- "fn link ref"
+    fd <- liftIO $ newIORef Map.empty -- "fn defs ref"
+    ar <- liftIO $ newIORef Map.empty -- "alises ref"
     bindingWorklistRef <- liftIO $ newIORef worklistEmpty
     relocDomMarkers <- liftIO $ newIORef Map.empty
     --term <- readLink "mknInline" subterm
