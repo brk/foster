@@ -11,7 +11,7 @@ import Prelude hiding ((<$>))
 
 import Foster.Base
 import Foster.KNUtil
-import Foster.Config (Compiled, CompilerContext(ccUniqRef))
+import Foster.Config (Compiled, CompilerContext(ccUniqRef), ccWhen, ccVerbose)
 
 import Text.PrettyPrint.ANSI.Leijen
 
@@ -131,12 +131,14 @@ instance AlphaRenamish MonoType RecStatus where
   ccAlphaRename = alphaRenameMono
 
 alphaRenameMono :: Fn r (KNExpr' RecStatus MonoType) MonoType -> Compiled (Fn r (KNExpr' RecStatus MonoType) MonoType)
-alphaRenameMono fn = do
-  renamed <- evalStateT (renameFn fn) (MonoRenameState Map.empty)
+alphaRenameMono fn = alphaRenameMonoWithState fn Map.empty
 
-  --liftIO $ do
-  --    putDoc $ text "mono-fn: " <$> showFnStructure fn
-  --    putDoc $ text "renamed: " <$> showFnStructure renamed
+alphaRenameMonoWithState fn map = do
+  renamed <- evalStateT (renameFn fn) (MonoRenameState map)
+
+  ccWhen ccVerbose $ do
+      liftIO $ putDoc $ text "mono-fn: " <$> showFnStructure fn
+      liftIO $ putDoc $ text "renamed: " <$> showFnStructure renamed
 
   return renamed
    where
@@ -156,19 +158,20 @@ alphaRenameMono fn = do
 
     renameV :: TypedId MonoType -> MonoRenamed (TypedId MonoType)
     renameV (TypedId ty id@(GlobalSymbol t _alt)) = do
-        -- We want to rename any locally-bound functions that might have
-        -- been duplicated by monomorphization.
-        if T.pack "<anon_fn"  `T.isInfixOf` t ||
-           T.pack ".anon."    `T.isInfixOf` t ||
-           T.pack ".kn.thunk" `T.isPrefixOf` t
-          then do state <- get
-                  case Map.lookup id (monoRenameMap state) of
-                    Nothing  -> do id' <- renameI id
-                                   ty' <- renameT ty
-                                   return (TypedId ty' id' )
-                    Just _u' -> error "can't rename a global variable twice!"
-          else do ty' <- renameT ty
-                  return $ TypedId ty' id
+      do ty' <- renameT ty
+         state <- get
+         case Map.lookup id (monoRenameMap state) of
+            Nothing ->
+              -- We want to rename any locally-bound functions that
+              -- might have been duplicated by monomorphization.
+              if T.pack "<anon_fn"  `T.isInfixOf` t ||
+                 T.pack ".anon."    `T.isInfixOf` t ||
+                 T.pack ".kn.thunk" `T.isPrefixOf` t
+                  then do
+                        id' <- renameI id
+                        return (TypedId ty' id' )
+                  else  return (TypedId ty' id  )
+            Just id' -> return (TypedId ty' id' )
 
     renameV     (TypedId ty id) = do
       state <- get
