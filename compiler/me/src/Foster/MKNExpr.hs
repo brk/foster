@@ -17,7 +17,7 @@ import Foster.MonoType
 import Foster.Letable
 import Foster.Kind
 
-import Control.Monad(liftM)
+import Control.Monad(liftM, when)
 import Control.Monad.State(gets, get, put, lift, forM_,
                            StateT, evalStateT, execStateT, runStateT)
 import Data.IORef(IORef, readIORef, newIORef, writeIORef)
@@ -1543,15 +1543,17 @@ mknInline subterm mainCont mb_gas = do
                       (peekedThroughBitcast, situation) <- classifyRedex callee args knownFns aliases
                       case situation of
                         CallOfNonInlineableFunction fn fnlink -> do
-                          --do  redex <- knOfMK NoCont mredex
-                          --    dbgDoc $ text "CallOfNonInlineableFunction: " <+> pretty redex
+                          ccWhen ccVerbose $ do
+                              redex <- knOfMK NoCont mredex
+                              dbgDoc $ text "CallOfNonInlineableFunction: " <+> pretty redex
                           
                           if peekedThroughBitcast
                             then return ()
                             else considerFunctionForArityRaising er bindingWorklistRef fn fnlink callee
 
                         CallOfUnknownFunction -> do
-                          do  redex <- knOfMK NoCont mredex
+                          ccWhen ccVerbose $ do
+                              redex <- knOfMK NoCont mredex
                               dbgDoc $ text "CallOfUnknownFunction: " <+> pretty redex
                           return ()
 
@@ -1683,9 +1685,10 @@ mknInline subterm mainCont mb_gas = do
                               -- No need to kill the old binding, since the body was duplicated.
 
                               dbgDoc $ green $ text "Replaced donatable call with new body (next: collecting redexes)"
-                              do mk <- readLink "1657" newbody
-                                 kn <- knOfMK NoCont mk
-                                 dbgDoc $ indent 8 $ pretty kn
+                              ccWhen ccVerbose $ do
+                                p <- prettyLinkM newbody
+                                dbgDoc $ indent 8 p
+
                               collectRedexes wr kr er fr fd ar relocDomMarkers newbody
 
                             else return ()
@@ -2169,8 +2172,9 @@ analyzeContifiability knowns knownFns = do
                 case mb_tm of
                   Nothing -> do dbgIf dbgCont $ text "    no occ??"
                                 return ()
-                  Just tm -> do kn <- knOfMK NoCont tm
-                                dbgIf dbgCont $ text "    occ: " <> indent 2 (pretty kn)
+                  Just tm -> do when dbgCont $ do
+                                    kn <- knOfMK NoCont tm
+                                    dbgDoc $ text "    occ: " <> indent 2 (pretty kn)
                                 return ()) occs
               case allFoundConts mbs_conts of
                 Nothing -> return HadUnknownContinuations
@@ -2362,9 +2366,10 @@ contOfCall bv occ = do
           else -- It's a call to some other function, our function is one of its args.
                 -- We could possibly contify if we knew whether the callee will only
                 -- tail call our function, but as of yet we don't track that information.
-            do do kn <- knOfMK NoCont tm
+            do ccWhen ccVerbose $ do
+                  kn <- knOfMK NoCont tm
                   dbgDoc $ text "contOfCall: call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
-                  return $ HigherOrder
+               return $ HigherOrder
 
     Just (MKCont _ _ cont _vs) -> do
         vb <- freeBinder cont
@@ -2380,9 +2385,11 @@ contOfCall bv occ = do
       -}
 
     Just tm -> do
-      do kn <- knOfMK NoCont tm
-         dbgDoc $ text "contOfCall: non call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
-         --dbgDoc $ indent 10 (showStructure kn)
+      when dbgCont $ do
+        kn <- knOfMK NoCont tm
+        dbgDoc $ text "contOfCall: non call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
+        --dbgDoc $ indent 10 (showStructure kn)
+
       return NonCall
 
 -- Collect the function vars associated with every use of a continuation variable.
@@ -2399,13 +2406,11 @@ calleeOfCont occ = do
         return $ Just bv
                   
     Just tm -> do
-      do kn <- knOfMK NoCont tm
-         dbgDoc $ text "calleeOfCont: non call for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
+      ccWhen ccVerbose $ do
+          kn <- knOfMK NoCont tm
+          dbgDoc $ text "calleeOfCont: non call for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
       return Nothing
 
---specializeDonatedArgs ::
---            -> [(Int, FreeOcc t)] ->
---            MKRenamed 
 specializeDonatedArgs bindingWorklistRef wr fn donations = do
   let callee = mkfnVar fn
 
@@ -2438,10 +2443,8 @@ specializeDonatedArgs bindingWorklistRef wr fn donations = do
     mapM_ (\occ -> do
         let link = freeLink occ
         -- "markRedex" in collectRedexes
-        dbgDoc $ text "specializeDonatedArgs marking occ of " <> pretty bv
-        do tm <- readLink "specializeDonatedArgs" $ freeLink occ
-           kn <- knOfMK NoCont tm
-           dbgDoc $ indent 2 (pretty kn)
+        -- do dbgDoc $ text "specializeDonatedArgs marking occ of " <> pretty bv
+        --    prettyLinkM link >>= (\p -> dbgDoc $ indent 2 p)
         liftIO $ modIORef' wr (\w -> worklistAdd w link)
       ) occs
                       
@@ -2469,13 +2472,6 @@ replaceWith bindingWorklistRef activeLink poss_indir_target newsubterm = do
 replaceTermWith :: Pretty ty => IORef (WorklistQ (MKBoundVar ty)) -> Subterm ty ->
                    MKTerm ty -> MKTerm ty -> Compiled ()
 replaceTermWith bindingWorklistRef activeLink oldterm newterm = do
-  do okn <- knOfMK NoCont oldterm
-     nkn <- knOfMK NoCont newterm
-     dbgDoc $ text "replacing "
-             <$> indent 8 (pretty okn)
-             <$> text "with"
-             <$> indent 8 (pretty nkn)
-
   writeOrdRef activeLink           (Just newterm)
 
   let oldoccs = directFreeVarsT oldterm
@@ -3048,12 +3044,17 @@ findMatchingArm replaceCaseWith ty v arms lookupVar = go arms NoPossibleMatchYet
                 go ((MatchDef xs):rest) acc = go rest (xs : acc)
                 go ((MatchSeq _ ):_rst) _   = error $ "can't yet process MatchSeq embedded..."
 
+
+prettyLinkM link = do
+  tm <- readLink "prettyLinkM" $ link
+  kn <- knOfMK NoCont tm
+  return $ pretty kn
+
 showOccsOfBinder bv = do
   occs <- dlcToList bv
   let showOcc occ = do
-        tm <- readLink "showOccsOfBinder" (freeLink occ)
-        kn <- knOfMK NoCont tm
-        dbgDoc $ text "((*)" <> indent 1 (pretty kn) <$> text ")"
+        p <- prettyLinkM (freeLink occ)
+        dbgDoc $ text "((*)" <> indent 1 p <$> text ")"
   mapM_ showOcc occs
 
 {-
