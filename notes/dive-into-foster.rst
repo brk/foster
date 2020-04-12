@@ -615,6 +615,104 @@ A less-silly example is in the Foster implementation of ``siphash``,
 which uses the ``subscript-static`` primitive to perform array indexing
 safely without runtime bounds checking.
 
+Examples
+--------
+
+ldexp/scalbn
+~~~~~~~~~~~~
+
+Here is the C implementation of the standard library function ``scalbn`` (commonly used via ``ldexp``)
+from `Musl <http://musl.libc.org/>`_:
+
+.. code-block:: text
+
+    double scalbn(double x, int n)
+    {
+        union {double f; uint64_t i;} u;
+        double_t y = x;
+
+        if (n > 1023) {
+            y *= 0x1p1023;
+            n -= 1023;
+            if (n > 1023) {
+                y *= 0x1p1023;
+                n -= 1023;
+                if (n > 1023)
+                   n = 1023;
+            }
+        } else if (n < -1022) {
+            /* make sure final n < -53 to avoid double
+              rounding in the subnormal range */
+            y *= 0x1p-1022 * 0x1p53;
+            n += 1022 - 53;
+            if (n < -1022) {
+                y *= 0x1p-1022 * 0x1p53;
+                n += 1022 - 53;
+                if (n < -1022)
+                    n = -1022;
+            }
+        }
+        u.i = (uint64_t)(0x3ff+n)<<52;
+        x = y * u.f;
+        return x;
+    }
+
+Here is the equivalent code rendered in Foster::
+
+    pow2-Float64 :: { Float64 => Int32 => Float64 };
+    pow2-Float64 = { x => i =>
+      times2tothe = { x : Float64 => n : Int32 =>
+        pow2 = (0x3ff +Int64 zext_i64_to_i32 n) `bitshl-Int64` 52
+                |> i64-as-f64;
+        pow2 *f64 x
+      };
+
+      REC adjust-expt-down = { y : Float64 => n : Int32 => fin : Bool =>
+        ny = y *f64 0x1.0p1023;
+        nn = n -Int32     1023;
+
+        case (fin, nn >SInt32 1023)
+          of (_   , False) -> ny `times2tothe` nn
+          of (True,  True) -> ny `times2tothe` 1023
+          of (False, True) -> adjust-expt-down ny nn True
+        end
+      };
+
+      REC adjust-expt-up = { y : Float64 => n : Int32 => fin : Bool =>
+        // 1022 - 53 = 969
+        ny = y *f64 0x1.0p-969;
+        nn = n +Int32      969;
+
+        case (fin, nn <SInt32 -1022)
+          of (_   , False) -> ny `times2tothe` nn
+          of (True,  True) -> ny `times2tothe` -1022
+          of (False, True) -> adjust-expt-up ny nn True
+        end
+      };
+
+      case ()
+        of _ if i >SInt32 1023  -> adjust-expt-down x i False
+        of _ if i <SInt32 -1022 -> adjust-expt-up   x i False
+        of _ -> x `times2tothe` i
+      end
+    };
+
+A few differences to note:
+
+* The Foster code is slightly longer and more verbose -- 31 lines of code versus 27.
+* In the C code, the code to detect and handle special cases is intertwined;
+  Foster uses local helper functions to separate them.
+* The local helper functions will be boiled away by the compiler. In particlar, observe that
+  the ``adjust-`` functions have only one non-recursive usage; they can be eliminated via contification.
+  The ``times2tothe`` function only occurs in tail position; after the ``adjust-`` functions are
+  dealt with, the other helper will be eligible for elimination.
+* In the C code, mutation can alter the values used by the main operation;
+  in the Foster code, mutation is replaced by explicit naming of functions and altered values.
+* The Foster code is less repetitious; it contains three fewer occurrences of ``1023``.
+* Whereas C uses an generic unsafe primitive (``union``) to convert between
+  unsigned integer bitpatterns and floating-point values,
+  Foster provides a safe specialized primitive.
+
 C2Foster
 --------
 
