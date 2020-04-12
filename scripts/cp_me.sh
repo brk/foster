@@ -1,4 +1,4 @@
 #!/bin/sh
 
-echo Copying `which me` to $1 ...
-cp `which me` $1
+echo Linking `which me` to $1 ...
+rm -f $1 && ln -s `which me` $1
