@@ -1544,8 +1544,8 @@ mknInline subterm mainCont mb_gas = do
                       case situation of
                         CallOfNonInlineableFunction fn fnlink -> do
                           ccWhen ccVerbose $ do
-                              redex <- knOfMK NoCont mredex
-                              dbgDoc $ text "CallOfNonInlineableFunction: " <+> pretty redex
+                              p <- prettyTermM mredex
+                              dbgDoc $ text "CallOfNonInlineableFunction: " <+> p
                           
                           if peekedThroughBitcast
                             then return ()
@@ -1553,8 +1553,8 @@ mknInline subterm mainCont mb_gas = do
 
                         CallOfUnknownFunction -> do
                           ccWhen ccVerbose $ do
-                              redex <- knOfMK NoCont mredex
-                              dbgDoc $ text "CallOfUnknownFunction: " <+> pretty redex
+                              p <- prettyTermM mredex
+                              dbgDoc $ text "CallOfUnknownFunction: " <+> p
                           return ()
 
                         CallOfSingletonFunction fn -> do
@@ -2173,8 +2173,8 @@ analyzeContifiability knowns knownFns = do
                   Nothing -> do dbgIf dbgCont $ text "    no occ??"
                                 return ()
                   Just tm -> do when dbgCont $ do
-                                    kn <- knOfMK NoCont tm
-                                    dbgDoc $ text "    occ: " <> indent 2 (pretty kn)
+                                    p <- prettyTermM tm
+                                    dbgDoc $ text "    occ: " <> indent 2 p
                                 return ()) occs
               case allFoundConts mbs_conts of
                 Nothing -> return HadUnknownContinuations
@@ -2367,8 +2367,8 @@ contOfCall bv occ = do
                 -- We could possibly contify if we knew whether the callee will only
                 -- tail call our function, but as of yet we don't track that information.
             do ccWhen ccVerbose $ do
-                  kn <- knOfMK NoCont tm
-                  dbgDoc $ text "contOfCall: call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
+                  p <- prettyTermM tm
+                  dbgDoc $ text "contOfCall: call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 p
                return $ HigherOrder
 
     Just (MKCont _ _ cont _vs) -> do
@@ -2386,8 +2386,8 @@ contOfCall bv occ = do
 
     Just tm -> do
       when dbgCont $ do
-        kn <- knOfMK NoCont tm
-        dbgDoc $ text "contOfCall: non call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
+        p <- prettyTermM tm
+        dbgDoc $ text "contOfCall: non call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 p
         --dbgDoc $ indent 10 (showStructure kn)
 
       return NonCall
@@ -2407,8 +2407,8 @@ calleeOfCont occ = do
                   
     Just tm -> do
       ccWhen ccVerbose $ do
-          kn <- knOfMK NoCont tm
-          dbgDoc $ text "calleeOfCont: non call for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
+          p <- prettyTermM tm
+          dbgDoc $ text "calleeOfCont: non call for" <> pretty bv <> text ":" <> indent 10 p
       return Nothing
 
 specializeDonatedArgs bindingWorklistRef wr fn donations = do
@@ -3047,6 +3047,9 @@ findMatchingArm replaceCaseWith ty v arms lookupVar = go arms NoPossibleMatchYet
 
 prettyLinkM link = do
   tm <- readLink "prettyLinkM" $ link
+  prettyTermM tm
+
+prettyTermM tm = do
   kn <- knOfMK NoCont tm
   return $ pretty kn
 
