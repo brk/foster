@@ -25,7 +25,7 @@ import Data.UnionFind.IO
 import Control.Monad.IO.Class(MonadIO(..))
 
 import qualified Data.Text as T
-import qualified Data.Set as Set(toList, fromList, empty, insert)
+import qualified Data.Set as Set(toList, fromList, empty, insert, minView)
 import Data.Set(Set)
 import qualified Data.Map as Map
 import Data.Map(Map)
@@ -843,6 +843,19 @@ genContinuation contName contBindName ty_x (kf, resTy) nu restgen = do
     let rv = MKLetCont nu [known] rest'
     lift $ backpatchT rv [rest']
 
+prettyRootTerm :: MKTerm ty -> Doc
+prettyRootTerm term =
+  case term of
+    MKLetVal      {} -> text "MKLetVal    "
+    MKLetRec      {} -> text "MKLetRec    "
+    MKLetFuns     {} -> text "MKLetFuns   "
+    MKLetCont     {} -> text "MKLetCont   "
+    MKRelocDoms   {} -> text "MKRelocDoms "
+    MKCase        {} -> text "MKCase      "
+    MKIf          {} -> text "MKIf        "
+    MKCall        {} -> text "MKCall      "
+    MKCont        {} -> text "MKCont      "
+
 canRemoveIfDead :: MKExpr ty -> Bool
 canRemoveIfDead expr =
   case expr of
@@ -1476,7 +1489,7 @@ processDeadBindings work = do
 
 data MKNInlineState t = MKNInlineState {
   mknPendingSubterms :: IORef (WorklistQ (Subterm t))
-, mknPendingFnIdents :: IORef (Set Ident)
+, mknPendingFnBinders :: IORef (Set (MKBoundVar t))
 , mknKnownTerms      :: IORef (Map (MKBoundVar t) (Link (MKTerm t)))
 , mknKnownExprs      :: IORef (Map (MKBoundVar t) (Link (MKExpr t)))
 , mknFnBinds         :: IORef (Map (MKBoundVar t) (Link (MKFn (Subterm t) t)))
@@ -1498,6 +1511,45 @@ mkMKNInlineState = do
   pf <- liftIO $ newIORef Set.empty -- "pending function idents"
   return $ MKNInlineState wr pf kr er fr fd ar deadBindings relocDomMarkers
 
+reconsiderForContification :: MKNInlineState t -> FreeVar t -> Compiled ()
+reconsiderForContification work fv = do
+  bv <- freeBinder fv
+  dbgDoc $ text "reconsiderForContification: " <> pretty (tidIdent $ boundVar bv)
+  liftIO $ modIORef' (mknPendingFnBinders work) (\w -> Set.insert bv w)
+
+worklistGet' work = do
+  let getPendingFnTerm = do
+        bvset <- liftIO $ readIORef (mknPendingFnBinders work)
+        case Set.minView bvset of
+          Nothing -> return Nothing
+          Just (bv, newset) -> do
+            liftIO $ writeIORef (mknPendingFnBinders work) newset
+            fndefs <- liftIO $ readIORef (mknFnDefs work)
+            dbgDoc $ text "getPendingFnTerm: " <> pretty (tidIdent $ boundVar bv)
+            return $ Map.lookup bv fndefs
+
+      getPendingSubterm = do
+        let wr = mknPendingSubterms work
+        w0 <- liftIO $ readIORef wr
+        case worklistGet w0 of
+          Nothing -> getPendingFnTerm
+          Just (subterm, w) -> do
+            liftIO $ writeIORef wr w
+            return $ Just subterm
+
+  mb_subterm <- getPendingSubterm
+  case mb_subterm of
+    Nothing -> return Nothing
+    Just subterm -> do
+      mb_redex <- readOrdRef subterm
+      case mb_redex of
+        Nothing ->
+          -- If the subterm is dead, move on to the next one.
+          worklistGet' work
+        Just mredex -> do
+          parent <- readOrdRef (parentLinkT mredex)
+          return $ Just (subterm, mredex, parent)
+
 mknInline :: Subterm MonoType -> MKBoundVar MonoType -> Maybe Int -> Compiled ()
 mknInline subterm mainCont mb_gas = do
     work <- mkMKNInlineState
@@ -1515,21 +1567,6 @@ mknInline subterm mainCont mb_gas = do
        dbgDoc $ text $ "collected " ++ show (length (Map.toList f0)) ++ " funbinds..."
 -}
 
-
-    let worklistGet' = do
-          let wr = mknPendingSubterms work
-          w0 <- liftIO $ readIORef wr
-          case worklistGet w0 of
-            Nothing -> return Nothing
-            Just (subterm, w) -> do
-              liftIO $ writeIORef wr w
-              mb_redex <- readOrdRef subterm
-              case mb_redex of
-                Nothing -> worklistGet'
-                Just mredex -> do
-                  parent <- readOrdRef (parentLinkT mredex)
-                  return $ Just (subterm, mredex, parent)
-
     origGas <- case mb_gas of
                     Nothing -> return 42000
                     Just gas -> do liftIO $ putStrLn $ "using gas: " ++ show gas
@@ -1542,7 +1579,7 @@ mknInline subterm mainCont mb_gas = do
              liftIO $ putStrLn $ "gas: " ++ show gas ++ "; step: " ++ show (origGas - gas)
 
            processDeadBindings work
-           mb_mredex_parent <- worklistGet'
+           mb_mredex_parent <- worklistGet' work
            case mb_mredex_parent of
              Nothing -> ccWhen ccVerbose $ do liftIO $ putDocLn $ text "... ran outta work"
              Just (_subterm, mredex, Nothing) -> do
@@ -1761,6 +1798,7 @@ mknInline subterm mainCont mb_gas = do
                         CallOfSingletonFunction fn -> do
                           do  redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
                               dbgDoc $ text "CallOfSingletonCont: " <+> pretty redex
+                              dbgDoc $ text "      #args: " <> pretty (length args)
                           
                               mapM_ (\arg -> do b <- freeBinder arg
                                                 c <- mkbCount b
@@ -1772,8 +1810,16 @@ mknInline subterm mainCont mb_gas = do
                           -- If we are substituting a known argument, we should re-examine the
                           -- substituted occurrences, which might have been made reducible.
                           enqueueKnownOccurrences work fn args
-                          -- We should also queue the callee for re-examination, since it might have become contifiable.
+                          
                           newbody <- betaReduceOnlyCall fn args callee         work
+
+                          -- If inlining produces a new function call, we should also queue the callee for re-examination,
+                          -- since it might have become contifiable.
+                          newbodytm <- readLink "CallOfSingletonCont" newbody
+                          case newbodytm of
+                            MKCall _up _ty newcallee _args _contvar _ca -> do
+                              reconsiderForContification work newcallee
+                            _ -> return ()
                         
                         --  do newbody' <- knOfMK (mbContOf $ mkfnCont fn) newbody
                         --     dbgDoc $ text "CallOfSingletonCont: new: " <+> pretty newbody'
@@ -1872,10 +1918,15 @@ mknInline subterm mainCont mb_gas = do
                                          Just link -> readLink "case.scrut" link >>= return . Just)
                            go gas
 
+                    -- Most likely we're re-examining a function that already got optimized
+                    -- into a continuation. Nothing more to do here!
+                    MKLetCont {} -> go gas
+
                     _ -> do
                       ccWhen ccVerbose $ do
                           kn <- knOfMK (YesCont mainCont) mredex
-                          dbgDoc $ text $ "skipping non-call/cont redex: " ++ show (pretty kn)
+                          dbgDoc $ text "skipping non-call/cont redex " <> prettyRootTerm mredex
+                                 <$> indent 4 (pretty kn)
                       go gas
 
     go origGas
@@ -2408,15 +2459,14 @@ contOfCall bv occ = do
           else 
             do return $ HigherOrder
 
-{-
     Just (MKRelocDoms {}) -> do
       return FakeUsage
-      -}
 
     Just tm -> do
       when dbgCont $ do
         p <- prettyTermM tm
-        dbgDoc $ text "contOfCall: non call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 p
+        dbgDoc $ text "contOfCall: non call w/ unknown cont " <> parens (prettyRootTerm tm)
+                         <> text " for " <> yellow (pretty bv) <> text ":" <> indent 10 p
         --dbgDoc $ indent 10 (showStructure kn)
 
       return NonCall
