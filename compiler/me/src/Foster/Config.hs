@@ -69,8 +69,7 @@ ccFreshId txt = do u <- ccUniq
 
 ccRefreshLocal :: Ident -> Compiled Ident
 ccRefreshLocal (GlobalSymbol t alt) = return $ GlobalSymbol t alt
-ccRefreshLocal (Ident t _) = do u <- ccUniq
-                                return $ Ident t u
+ccRefreshLocal (Ident t _u) = ccFreshId t
 
 ccRecordCFGSizes :: (String, (Int, Int), (Int, Int)) -> Compiled ()
 ccRecordCFGSizes entry = do
