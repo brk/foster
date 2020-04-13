@@ -1450,7 +1450,8 @@ copyMKTerm term = do
   lift $ installLinks link newterm
 
 
-processDeadBindings work bindingWorklistRef = do
+processDeadBindings work = do
+  let bindingWorklistRef = mknDeadBindings work
   w0 <- liftIO $ readIORef bindingWorklistRef
   case worklistGet w0 of
     Nothing -> do return ()
@@ -1468,9 +1469,9 @@ processDeadBindings work bindingWorklistRef = do
                                         text " occurrences in dead expr bound to ") <> red (pretty bv)
                       kn <- knOfMKExpr NoCont e
                       dbgDoc $ indent 8 (pretty kn)
-                      mapM_ (killOccurrence bindingWorklistRef) freeOccs
+                      mapM_ (killOccurrence work) freeOccs
               else return ()
-      processDeadBindings work bindingWorklistRef
+      processDeadBindings work
 
 
 data MKNInlineState t = MKNInlineState {
@@ -1481,6 +1482,7 @@ data MKNInlineState t = MKNInlineState {
 , mknFnBinds         :: IORef (Map (MKBoundVar t) (Link (MKFn (Subterm t) t)))
 , mknFnDefs          :: IORef (Map (MKBoundVar t) (Link (MKTerm t)))
 , mknAliases         :: IORef (Map (MKBoundVar t) (MKBoundVar t))
+, mknDeadBindings    :: IORef (WorklistQ (MKBoundVar t))
 , mknRelocDoms       :: IORef (Map [Ident] (MKTerm t, (Link (MKTerm t))))
 }
 
@@ -1491,13 +1493,13 @@ mkMKNInlineState = do
   fr <- liftIO $ newIORef Map.empty -- "fn link ref"
   fd <- liftIO $ newIORef Map.empty -- "fn defs ref"
   ar <- liftIO $ newIORef Map.empty -- "alises ref"
+  deadBindings <- liftIO $ newIORef worklistEmpty
   relocDomMarkers <- liftIO $ newIORef Map.empty
   pf <- liftIO $ newIORef Set.empty -- "pending function idents"
-  return $ MKNInlineState wr pf kr er fr fd ar relocDomMarkers
+  return $ MKNInlineState wr pf kr er fr fd ar deadBindings relocDomMarkers
 
 mknInline :: Subterm MonoType -> MKBoundVar MonoType -> Maybe Int -> Compiled ()
 mknInline subterm mainCont mb_gas = do
-    bindingWorklistRef <- liftIO $ newIORef worklistEmpty
     work <- mkMKNInlineState
 
     collectRedexes work subterm
@@ -1539,7 +1541,7 @@ mknInline subterm mainCont mb_gas = do
            ccWhen ccVerbose $ do
              liftIO $ putStrLn $ "gas: " ++ show gas ++ "; step: " ++ show (origGas - gas)
 
-           processDeadBindings work bindingWorklistRef
+           processDeadBindings work
            mb_mredex_parent <- worklistGet'
            case mb_mredex_parent of
              Nothing -> ccWhen ccVerbose $ do liftIO $ putDocLn $ text "... ran outta work"
@@ -1560,7 +1562,7 @@ mknInline subterm mainCont mb_gas = do
 
                 ActiveSubterm link -> do
                   let replaceActiveSubtermWith newthing =
-                        replaceWith bindingWorklistRef link subterm newthing
+                        replaceWith work link subterm newthing
 
                   case mredex of
                     MKCall _up _ty callee args kv ca -> do
@@ -1575,7 +1577,7 @@ mknInline subterm mainCont mb_gas = do
                           
                           if peekedThroughBitcast
                             then return ()
-                            else considerFunctionForArityRaising (mknKnownExprs work) bindingWorklistRef fn fnlink callee
+                            else considerFunctionForArityRaising work fn fnlink callee
 
                         CallOfUnknownFunction -> do
                           ccWhen ccVerbose $ do
@@ -1692,10 +1694,10 @@ mknInline subterm mainCont mb_gas = do
                                                 do  noccs <- dlcCount (mkfnVar fn'3)
                                                     dbgDoc $ text "after createLetFunAndCall, #noccs of " <> pretty id'1 <> text " is " <> pretty noccs
                                                 -- Make sure the old occ is dead before specializing.
-                                                killOccurrence        bindingWorklistRef callee
+                                                killOccurrence        work callee
                                                 do  noccs <- dlcCount (mkfnVar fn'3)
                                                     dbgDoc $ text "after killing old callee occ, #noccs of " <> pretty id'1 <> text " is " <> pretty noccs
-                                                specializeDonatedArgs bindingWorklistRef (mknPendingSubterms work) fn'3 donations
+                                                specializeDonatedArgs work fn'3 donations
                                                 do  noccs <- dlcCount (mkfnVar fn'3)
                                                     dbgDoc $ text "after specializing donated args, #noccs of " <> pretty id'1 <> text " is " <> pretty noccs
                                                 return newbody
@@ -1731,12 +1733,12 @@ mknInline subterm mainCont mb_gas = do
                                   fn' <- runCopyMKFn _fn Map.empty []
                                   newbody <- betaReduceOnlyCall fn' args kv   work
                                   replaceActiveSubtermWith newbody
-                                  killOccurrence bindingWorklistRef callee
+                                  killOccurrence work callee
                                   collectRedexes work newbody
                             else do
                               if peekedThroughBitcast
                                 then return ()
-                                else considerFunctionForArityRaising (mknKnownExprs work) bindingWorklistRef _fn fnlink callee
+                                else considerFunctionForArityRaising work _fn fnlink callee
                       go (gas - 1)
                     
                     MKCont _up _ty callee args -> do
@@ -1843,17 +1845,15 @@ mknInline subterm mainCont mb_gas = do
                         CantContifyNestedTailCalls -> do  dbgIf dbgCont $ red (text "can't contify with nested tail call...")
                                                           return ()
                         ContifyWith cont bv fn occs -> do
-                            doContifyWith_part1 cont bv fn occs work bindingWorklistRef
-                            doContifyWith_part2 cont [bv] [fn]
-                                  bindingWorklistRef (mknRelocDoms work) mredex fnrest replaceActiveSubtermWith
+                            doContifyWith_part1 cont bv fn occs work
+                            doContifyWith_part2 cont [bv] [fn] work mredex fnrest replaceActiveSubtermWith
 
                         ContifyWithMulti cont bvs_occs_fns -> do
                             mapM_ (\(bv, occs, fn) -> do
-                               doContifyWith_part1 cont bv fn occs work bindingWorklistRef
+                               doContifyWith_part1 cont bv fn occs work
                                ) bvs_occs_fns
                             let (bvs, _, fns) = unzip3 bvs_occs_fns
-                            doContifyWith_part2 cont bvs fns
-                                  bindingWorklistRef (mknRelocDoms work) mredex fnrest replaceActiveSubtermWith
+                            doContifyWith_part2 cont bvs fns work mredex fnrest replaceActiveSubtermWith
 
                       go (gas - 1)
 
@@ -1900,7 +1900,7 @@ enqueueOccurrences work args = do
                   liftIO $ modIORef' (mknPendingSubterms work) (\w -> worklistAddList w $ map freeLink occs)
   mapM_ nq args
 
-doContifyWith_part1 cont bv fn occs work bindingWorklistRef = do
+doContifyWith_part1 cont bv fn occs work = do
   dbgIf dbgCont $ green (text "       should contify!")
 
   -- Replace uses of return continuation with common cont target.
@@ -1928,14 +1928,14 @@ doContifyWith_part1 cont bv fn occs work bindingWorklistRef = do
         case linkResult of
           ActiveSubterm target -> do
             let newterm = MKCont uplink ty v vs -- TODO: kosher to reuse uplink?
-            replaceTermWith bindingWorklistRef target tm newterm
+            replaceTermWith work target tm newterm
             writeOrdRef (freeLink occ) (Just newterm)
           TermIsDead -> do
             liftIO $ putStrLn $ "WARNING: term is dead..."
             return ()) occs
 
-doContifyWith_part2 _cont bvs fns bindingWorklistRef relocDomMarkers mredex fnrest replaceActiveSubtermWith = do
-  rdm <- liftIO $ readIORef relocDomMarkers
+doContifyWith_part2 _cont bvs fns work mredex fnrest replaceActiveSubtermWith = do
+  rdm <- liftIO $ readIORef (mknRelocDoms work)
   let ids = map (tidIdent.boundVar) bvs
   (target, targetrest) <-
       case Map.lookup ids rdm of
@@ -1961,14 +1961,14 @@ doContifyWith_part2 _cont bvs fns bindingWorklistRef relocDomMarkers mredex fnre
     ActiveSubterm link -> do
       contfns <- mapM (\(fn, bv) -> mkKnown' bv $ fn { mkfnCont = Nothing }) (zip fns bvs)
       let letcont = MKLetCont (parentLinkT target) contfns targetrest
-      replaceTermWith bindingWorklistRef link target letcont
+      replaceTermWith work link target letcont
     TermIsDead -> return ()
 
 -- A function is eligible for arity raising if every usage is a call
 -- (no higher-order usages) and every call passes a known tuple.
 --
-considerFunctionForArityRaising expBindsMapRef bindingWorklistRef fn fnlink callee = do
-  expBindsMap <- liftIO $ readIORef expBindsMapRef -- for looking up tuple params
+considerFunctionForArityRaising work fn fnlink callee = do
+  expBindsMap <- liftIO $ readIORef (mknKnownExprs work) -- for looking up tuple params
   calleeb <- freeBinder callee
   occs <- collectOccurrences calleeb
   directs <- mapM (isDirectCallWithKnownTupleArg expBindsMap calleeb) occs
@@ -1982,7 +1982,7 @@ considerFunctionForArityRaising expBindsMapRef bindingWorklistRef fn fnlink call
                     ActiveSubterm target -> do
                       tupleparts' <- mapM (\fv -> freeBinder fv >>= mkFreeOccForBinder) tupleparts
                       let newterm = MKCall uplink ty v tupleparts' sr ca -- TODO: kosher to reuse uplink?
-                      replaceTermWith bindingWorklistRef target calltm newterm
+                      replaceTermWith work target calltm newterm
                     _ -> do
                       return (error "skipping call because we didn't find an active subterm (!?)")
                 _ -> error $ "line 1782 invariant violated") directs
@@ -2026,8 +2026,8 @@ considerFunctionForArityRaising expBindsMapRef bindingWorklistRef fn fnlink call
             newfnvar <- evalStateT (mkBinder (TypedId newfntype newfnid)) Map.empty
 
             -- Make sure we examine the tuple for subsequent optimizations (e.g. case-of-tuple elimination).
-            liftIO $ modIORef' bindingWorklistRef (\w -> worklistAdd w tupbnd)
-            liftIO $ modIORef' expBindsMapRef (\m -> Map.insert tupbnd tuplink m)
+            liftIO $ modIORef' (mknDeadBindings work) (\w -> worklistAdd w tupbnd)
+            liftIO $ modIORef' (mknKnownExprs work) (\m -> Map.insert tupbnd tuplink m)
 
             -- Apply variable substitutions to ensure the new types take effect.
             substVarForVar''  newfnvar (           mkfnVar  fn)
@@ -2440,8 +2440,9 @@ calleeOfCont occ = do
           dbgDoc $ text "calleeOfCont: non call for" <> pretty bv <> text ":" <> indent 10 p
       return Nothing
 
-specializeDonatedArgs bindingWorklistRef wr fn donations = do
+specializeDonatedArgs work fn donations = do
   let callee = mkfnVar fn
+      wr = mknPendingSubterms work
 
   occs <- collectOccurrences callee
   mapM_ (\occ -> do
@@ -2458,7 +2459,7 @@ specializeDonatedArgs bindingWorklistRef wr fn donations = do
                       -- Create a new call node which drops specialized args.
                       let newterm = MKCall uplink ty v vars c ca
                       dbgDoc $ yellow $ text "specializeDonatedArgs specializing call:"
-                      replaceTermWith bindingWorklistRef link tm newterm
+                      replaceTermWith work link tm newterm
           else return ()
     ) occs
 
@@ -2490,17 +2491,17 @@ shouldInlineRedex _mredex _fn ca =
     CA_NoInline -> False
     CA_None -> False
 
-replaceWith :: Pretty ty => IORef (WorklistQ (MKBoundVar ty)) -> Subterm ty ->
+replaceWith :: Pretty ty => MKNInlineState ty -> Subterm ty ->
                Subterm ty -> Subterm ty -> Compiled ()
-replaceWith bindingWorklistRef activeLink poss_indir_target newsubterm = do
+replaceWith work activeLink poss_indir_target newsubterm = do
   oldterm <- readLink "replaceWith" poss_indir_target
   newterm <- readLink "replaceWith" newsubterm
-  replaceTermWith bindingWorklistRef activeLink oldterm newterm
+  replaceTermWith work activeLink oldterm newterm
   writeOrdRef poss_indir_target     (Just newterm)
 
-replaceTermWith :: Pretty ty => IORef (WorklistQ (MKBoundVar ty)) -> Subterm ty ->
+replaceTermWith :: Pretty ty => MKNInlineState ty -> Subterm ty ->
                    MKTerm ty -> MKTerm ty -> Compiled ()
-replaceTermWith bindingWorklistRef activeLink oldterm newterm = do
+replaceTermWith work activeLink oldterm newterm = do
   ccWhen ccVerbose $ do
     po <- prettyTermM oldterm
     pn <- prettyTermM newterm
@@ -2510,13 +2511,13 @@ replaceTermWith bindingWorklistRef activeLink oldterm newterm = do
 
   let oldoccs = directFreeVarsT oldterm
   let newoccs = directFreeVarsT newterm
-  mapM_ (killOccurrence bindingWorklistRef) (oldoccs `butnot` newoccs)
+  mapM_ (killOccurrence work) (oldoccs `butnot` newoccs)
   mapM_ (\fv -> setFreeLink fv newterm) newoccs
   readOrdRef (parentLinkT oldterm) >>= writeOrdRef (parentLinkT newterm)
 
-killOccurrence :: Pretty ty => IORef (WorklistQ (MKBoundVar ty)) ->
+killOccurrence :: Pretty ty => MKNInlineState ty ->
                   FreeVar ty -> Compiled ()
-killOccurrence bindingWorklistRef fo = do
+killOccurrence work fo = do
     b@(MKBound _v r) <- freeBinder fo -- r :: OrdRef (Maybe (FreeOcc tyx))
 
     isSingleton <- freeOccIsSingleton fo
@@ -2525,7 +2526,7 @@ killOccurrence bindingWorklistRef fo = do
        ccWhen ccVerbose $ do
          dbgDoc $ red (text "killing singleton binding ") <> prettyId _v
        writeOrdRef r Nothing
-       liftIO $ modIORef' bindingWorklistRef (\w -> worklistAdd w b)
+       liftIO $ modIORef' (mknDeadBindings work) (\w -> worklistAdd w b)
      else do
        dbgDoc $ text "killing occurrence of " <> pretty b
        nob <- dlcCount b
