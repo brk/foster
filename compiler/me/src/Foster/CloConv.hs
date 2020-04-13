@@ -651,7 +651,7 @@ instance Pretty CCBody where
 instance Pretty TypeLL where pretty t = text (show t) -- TODO fix
 
 instance Pretty CCProc where
- pretty proc = pretty (procIdent proc) <+> list (map pretty (procVars proc))
+ pretty proc = pretty (procIdent proc) <+> list (map prettyTypedVar (procVars proc))
                <$> text "{"
                <$> indent 4 (pretty (procBlocks proc))
                <$> text "}"
