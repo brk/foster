@@ -20,7 +20,11 @@ import Control.Monad.State
 
 import Text.PrettyPrint.ANSI.Leijen
 
-import Compiler.Hoopl
+import Compiler.Hoopl(UniqueMonad(..), C, O, NonLocal(..), Graph,
+                      Block, Label, Graph', freshLabel, intToUnique,
+                      blockJoin, blockGraph, blockFromList, foldGraphNodes,
+                      mapGraphBlocks, mapBlock', emptyClosedGraph,
+                      mkFirst, mkMiddle, mkMiddles, mkLast, (<*>), (|*><*|))
 
 import Foster.Base
 import Foster.CFG
