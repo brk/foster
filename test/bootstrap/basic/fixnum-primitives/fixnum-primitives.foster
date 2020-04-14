@@ -423,9 +423,9 @@ test-float-sorting = {
   l = listOf (prim mach-array-literal 2.0 -2.0 -1.0 1. 0.0 ninf pinf nzero2 3.0 -3.0 nan nzero1 );
   s = listSortBy cmpGT l;
 
-  expect_text "[2.0, -2.0, -1.0, 1.0, 0.0, -Infinity, Infinity, -0.0, 3.0, -3.0, NaN, 0.0]";
+  expect_text "[2.0, -2.0, -1.0, 1.0, 0.0, -Infinity, Infinity, -0.0, 3.0, -3.0, NaN, -0.0]";
   listShow { f : Float64 => ryu-d2fixed 1 f } l |> print_text;
-  expect_text "[-Infinity, -3.0, -2.0, -1.0, -0.0, 0.0, 0.0, 1.0, 2.0, 3.0, Infinity, NaN]";
+  expect_text "[-Infinity, -3.0, -2.0, -1.0, -0.0, -0.0, 0.0, 1.0, 2.0, 3.0, Infinity, NaN]";
   listShow { f : Float64 => ryu-d2fixed 1 f } s |> print_text;
 
 };
