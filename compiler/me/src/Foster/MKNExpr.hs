@@ -2396,6 +2396,12 @@ collectOccurrences bv = do
   initss <- mapM (\fv -> do
                 mb_tm <- readOrdRef (freeLink fv)
                 case mb_tm of
+                  -- If we don't ignore MKRelocDoms here, we wind up with miscompilations
+                  -- because contified functions that were relocated will be kept alive
+                  -- by the MKRelocDoms node, and will fail codegen due to missing labels.
+                  Just (MKRelocDoms {}) -> do
+                    return []
+
                   Just (MKLetVal _ (_v, exprlink) _tmlink) -> do
                     expr <- readLink "collectOccurrences" exprlink
                     case expr of
