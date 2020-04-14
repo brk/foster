@@ -2254,7 +2254,7 @@ analyzeContifiability knowns knownFns = do
                                 return ()
                   Just tm -> do when dbgCont $ do
                                     p <- prettyTermM tm
-                                    dbgDoc $ text "    occ: " <> indent 2 p
+                                    dbgDoc $ text "    occ: " <> prettyRootTerm tm <$> indent 2 p
                                 return ()) occs
               case allFoundConts mbs_conts of
                 Nothing -> return HadUnknownContinuations
