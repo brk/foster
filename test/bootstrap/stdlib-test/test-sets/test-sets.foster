@@ -1,4 +1,4 @@
-snafuinclude Sets "set";
+snafuinclude Set "data/set";
 
 print_bil = { lst : List { Int64 } =>
   print_text_bare "[";
