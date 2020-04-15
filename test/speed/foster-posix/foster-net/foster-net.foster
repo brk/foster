@@ -2,7 +2,7 @@ snafuinclude Posix "io/posix";
 snafuinclude Text  "text";
 snafuinclude Map   "data/map";
 snafuinclude Range   "range";
-snafuinclude Bitwise "bitwise";
+snafuinclude Bitwise "math/bitwise";
 snafuinclude Prelude "prelude";
 snafuinclude TcpReassembly "net/tcp-reassembly";
 

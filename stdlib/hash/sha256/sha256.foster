@@ -1,5 +1,5 @@
 snafuinclude Prelude "prelude";
-snafuinclude Bitwise "bitwise";
+snafuinclude Bitwise "math/bitwise";
 
 // based on http://pastebin.com/raw.php?i=ZmkCyJmU
 

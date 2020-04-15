@@ -1,4 +1,4 @@
-snafuinclude Bignum "bignum";
+snafuinclude Bignum "math/bignum";
 
 main = {
   n0 = tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1);

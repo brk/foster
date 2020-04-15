@@ -1,5 +1,5 @@
 snafuinclude PreludePrintExpect "prelude/print-expect";
-snafuinclude Bignum "bignum";
+snafuinclude Bignum "math/bignum";
 snafuinclude Text "text";
 
 print_int :: { Int => () };

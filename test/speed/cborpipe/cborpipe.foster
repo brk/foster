@@ -1,6 +1,6 @@
 snafuinclude Prelude "prelude";
 snafuinclude Posix "io/posix";
-snafuinclude Bitwise "bitwise";
+snafuinclude Bitwise "math/bitwise";
 snafuinclude Bytes "bytes";
 snafuinclude CBOR "encoding/cbor";
 snafuinclude Bench "bench/measure";

@@ -1,5 +1,5 @@
-snafuinclude Big "bignum";
-snafuinclude Nat "bignat";
+snafuinclude Big "math/bignum";
+snafuinclude Nat "math/bignat";
 
 main = {
   //t0 !;

@@ -1,5 +1,5 @@
 snafuinclude Bytes "bytes";
-snafuinclude Bitwise "bitwise";
+snafuinclude Bitwise "math/bitwise";
 snafuinclude Prelude "prelude";
 snafuinclude RAB "resizable-array-builder";
 

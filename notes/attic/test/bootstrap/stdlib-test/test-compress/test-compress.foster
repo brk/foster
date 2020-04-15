@@ -1,7 +1,7 @@
 snafuinclude Bytes "bytes";
 snafuinclude RAB "resizable-array-builder";
 snafuinclude Prelude "prelude";
-snafuinclude Bitwise "bitwise";
+snafuinclude Bitwise "math/bitwise";
 
 type case DeflateBlockType
        of $DeflateNonCompressedBlock // 0

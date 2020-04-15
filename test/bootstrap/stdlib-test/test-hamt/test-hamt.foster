@@ -1,6 +1,6 @@
 snafuinclude SparseArray "data/sparse-array";
 
-snafuinclude Bitwise "bitwise";
+snafuinclude Bitwise "math/bitwise";
 snafuinclude Maybe "maybe";
 snafuinclude Prelude "prelude";
 snafuinclude Text "text";

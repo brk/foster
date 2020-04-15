@@ -1,4 +1,4 @@
-snafuinclude Bitwise "bitwise";
+snafuinclude Bitwise "math/bitwise";
 snafuinclude PreludePrintExpect "prelude/print-expect";
 
 main = {

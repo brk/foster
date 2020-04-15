@@ -1,5 +1,5 @@
 snafuinclude Prelude "prelude";
-snafuinclude Bignum  "bignum";
+snafuinclude Bignum  "math/bignum";
 
 // Transliteration of Computer Language Benchmarks Game
 // program for Ruby contributed by Rick Branson

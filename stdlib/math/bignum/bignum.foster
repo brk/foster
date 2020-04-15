@@ -1,4 +1,4 @@
-snafuinclude Bignat "bignat";
+snafuinclude Bignat "math/bignat";
 
 type case IntInf
       of $IntInf NatInf Bool

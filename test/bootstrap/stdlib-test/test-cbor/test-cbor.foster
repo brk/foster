@@ -1,6 +1,6 @@
 snafuinclude Cbor "encoding/cbor";
 snafuinclude List "list";
-snafuinclude Bitwise "bitwise";
+snafuinclude Bitwise "math/bitwise";
 snafuinclude PreludePrintExpect "prelude/print-expect";
 
 main = {

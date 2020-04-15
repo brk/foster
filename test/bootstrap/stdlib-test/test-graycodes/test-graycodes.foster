@@ -1,6 +1,6 @@
 snafuinclude PreludePrintExpect "prelude/print-expect";
 snafuinclude PreludeFolds "prelude-folds";
-snafuinclude Bitwise "bitwise";
+snafuinclude Bitwise "math/bitwise";
 
 main = {
     /*

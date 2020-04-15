@@ -1,4 +1,4 @@
-snafuinclude Bits "bitwise";
+snafuinclude Bits "math/bitwise";
 snafuinclude Prelude "prelude";
 
 snafuinclude Ryu "fmt/ryu/ryu-d2fixed";
