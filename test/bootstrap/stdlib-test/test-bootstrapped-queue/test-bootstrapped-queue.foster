@@ -1,4 +1,4 @@
-snafuinclude BootstrappedQ "bootstrapped-queue";
+snafuinclude BootstrappedQ "data/bootstrapped-queue";
 
 snafuinclude PreludePrintExpect "prelude/print-expect";
 

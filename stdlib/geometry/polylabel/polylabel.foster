@@ -1,5 +1,5 @@
 snafuinclude Prelude "prelude";
-snafuinclude Q "pairing-heap";
+snafuinclude Q "data/pairing-heap";
 snafuinclude Seq "data/seq";
 snafuinclude Ryu "fmt/ryu/ryu-d2fixed";
 

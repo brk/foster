@@ -1,5 +1,5 @@
 snafuinclude Prelude "prelude";
-snafuinclude PairingHeap "pairing-heap";
+snafuinclude PairingHeap "data/pairing-heap";
 
 print_bil = { lst =>
   print_text_bare "[";
