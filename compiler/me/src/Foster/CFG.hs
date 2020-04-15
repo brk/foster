@@ -34,10 +34,16 @@ import Foster.Letable(Letable(..))
 
 import qualified Control.Applicative as AP(Applicative(..))
 
-import Compiler.Hoopl
+import Compiler.Hoopl(UniqueMonad, CheckpointMonad, Checkpoint, HooplNode(..), Label, LabelsPtr,
+                      NonLocal(..), InfiniteFuelMonad, Fuel, C, O, Block, MaybeO(NothingO), Graph,
+                      Graph'(GMany), restart, checkpoint, freshUnique, targetLabels, successors,
+                      runWithFuel, mapElems, intToUnique, blockToList, mkLast, (|*><*|), catGraphs,
+                      postorder_dfs, blockSplit, emptyClosedGraph, foldGraphNodes, foldBlockNodesF,
+                      blockGraph)
 import qualified Compiler.Hoopl as H((<*>))
 import Text.PrettyPrint.ANSI.Leijen
 
+import qualified Data.Text as T
 import qualified Data.Set as Set
 import Data.Set(Set)
 import Control.Monad.State
