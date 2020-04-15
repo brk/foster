@@ -534,6 +534,9 @@ modf-Float64 = { value =>
 
   kDOUBLE_EXPONENT_BIAS = 1023;
   kDOUBLE_MANTISSA_BITS = 52;
+  kDOUBLE_EXPONENT_MASK = 0x7FF;
+  kDOUBLE_MANTISSA_MASK = 0x000f`ffff`ffff`ffff; // (1 << DOUBLE_MANTISSA_BITS) - 1;
+  
   ieeeExponent = (bits `bitlshr-Int64` kDOUBLE_MANTISSA_BITS) `bitand-Int64` kDOUBLE_EXPONENT_MASK;
   expo = ieeeExponent -Int64 kDOUBLE_EXPONENT_BIAS;
   signedZero = { bits `bitand-Int64` (1 `bitshl-Int64` 63) |> i64-as-f64 };
