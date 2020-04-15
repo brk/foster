@@ -1,4 +1,4 @@
-snafuinclude Cbor "cbor";
+snafuinclude Cbor "encoding/cbor";
 snafuinclude List "list";
 snafuinclude Bitwise "bitwise";
 snafuinclude PreludePrintExpect "prelude/print-expect";

@@ -2,7 +2,7 @@ snafuinclude Prelude "prelude";
 snafuinclude Posix "io/posix";
 snafuinclude Bitwise "bitwise";
 snafuinclude Bytes "bytes";
-snafuinclude CBOR "cbor";
+snafuinclude CBOR "encoding/cbor";
 snafuinclude Bench "bench/measure";
 
 // Try testing with

@@ -1,6 +1,6 @@
 snafuinclude Text "text";
 snafuinclude Prelude "prelude";
-snafuinclude Base64 "base64";
+snafuinclude Base64 "encoding/base64";
 
 // Foster version of
 // https://github.com/kostya/benchmarks/blob/master/base64/test.c
