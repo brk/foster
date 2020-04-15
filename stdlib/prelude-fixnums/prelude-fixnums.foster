@@ -267,6 +267,14 @@ isNaN-f64 = { f =>
   end
 };
 
+isFinite-f64 = { f =>
+  case classify-f64 f
+    of $FP_NaN      -> False
+    of $FP_Infinite -> False
+    of _ -> True
+  end
+};
+
 positiveInfinity-f32 :: { Float32 };
 positiveInfinity-f32 = { 0x7f80`0000 |> i32-as-f32 };
 
@@ -456,3 +464,103 @@ isEven-Int8  = { x : Int8  => bitand-Int8  x 1 ==Int8  0 };
 isEven-Int32 = { x : Int32 => bitand-Int32 x 1 ==Int32 0 };
 isEven-Int64 = { x : Int64 => bitand-Int64 x 1 ==Int64 0 };
 isEven-Word  = { x : Word  => bitand-Word  x 1 ==Word  0 };
+
+////
+
+// Computes x * (2^i).
+// Corresponds to the C math function `ldexp` (and, on most systems, `scalbn`).
+pow2-Float64 :: { Float64 => Int32 => Float64 };
+pow2-Float64 = { x => i =>
+  // This implementation ported from musl: https://git.musl-libc.org/cgit/musl/tree/src/math/scalbn.c
+
+  times2tothe = { x : Float64 => n : Int32 =>
+    kDOUBLE_EXPONENT_BIAS = 1023;
+    kDOUBLE_MANTISSA_BITS = 52;
+    pow2 = (kDOUBLE_EXPONENT_BIAS +Int64 zext_i32_to_i64 n) `bitshl-Int64` kDOUBLE_MANTISSA_BITS
+            |> i64-as-f64;
+    pow2 *f64 x
+  };
+
+  REC adjust-expt-down = { y : Float64 => n : Int32 => fin : Bool =>
+    ny = y *f64 0x1.0p1023;
+    nn = n -Int32     1023;
+
+    case (fin, nn >SInt32 1023)
+      of (_   , False) -> ny `times2tothe` nn
+      of (True,  True) -> ny `times2tothe` 1023
+      of (False, True) -> adjust-expt-down ny nn True
+    end
+  };
+
+  REC adjust-expt-up = { y : Float64 => n : Int32 => fin : Bool =>
+    // 1022 - 53 = 969
+    ny = y *f64 0x1.0p-969;
+    nn = n +Int32      969;
+
+    case (fin, nn <SInt32 -1022)
+      of (_   , False) -> ny `times2tothe` nn
+      of (True,  True) -> ny `times2tothe` -1022
+      of (False, True) -> adjust-expt-up ny nn True
+    end
+  };
+
+  case ()
+    of _ if i >SInt32 1023  -> adjust-expt-down x i False
+    of _ if i <SInt32 -1022 -> adjust-expt-up   x i False
+    of _ -> x `times2tothe` i
+  end
+};
+
+// Decomposes the given floating point number into integral and fractional parts.
+// Examples:
+//    123.456 => ( 123.0,  0.456)
+//   -123.456 => (-123.0, -0.456)
+//     -0.456 => (  -0.0, -0.456)
+//   -123.0   => (-123.0, -0.0)
+//    1.1e17  => (11e16 ,  0.0)
+//    1.234e1 => (12.0  ,  0.34)
+//        NaN => (NaN   ,  0.0)
+// Note, however, that due to the varying density of floating point numbers,
+// the actual computed fractional value may differ slightly from the mathematically
+// correct value. For example, the fractional portion of 123.456 is
+//    0.45600000000000307 = 0x1.d2f1a9fbe7700p-2 = i64-as-f64 0x3fdd2f1a9fbe7700
+// instead of the value one might hope for:
+//    0.456               = 0x1.d2f1a9fbe76c9p-2 = i64-as-f64 0x3fdd2f1a9fbe76c9
+// However, when added to 123.0, both values yield 123.456 (= 0x1.edd2f1a9fbe77p+6).
+modf-Float64 :: { Float64 => (Float64, Float64) };
+modf-Float64 = { value =>
+  // This implementation ported from musl: https://git.musl-libc.org/cgit/musl/tree/src/math/modf.c
+  bits = f64-as-i64 value;
+
+  kDOUBLE_EXPONENT_BIAS = 1023;
+  kDOUBLE_MANTISSA_BITS = 52;
+  ieeeExponent = (bits `bitlshr-Int64` kDOUBLE_MANTISSA_BITS) `bitand-Int64` kDOUBLE_EXPONENT_MASK;
+  expo = ieeeExponent -Int64 kDOUBLE_EXPONENT_BIAS;
+  signedZero = { bits `bitand-Int64` (1 `bitshl-Int64` 63) |> i64-as-f64 };
+
+  case ()
+    of _ if expo <SInt64 0 -> // Absolute value less than one
+      (signedZero !, value)
+    of _ if expo >=SInt64 52 -> // Beyond this point, only integers are represented
+      (value, signedZero !)
+    of _ ->
+      mask = kDOUBLE_MANTISSA_MASK `bitlshr-Int64` expo;
+      if (bits `bitand-Int64` mask) ==Int64 0
+      then (value, signedZero !)
+      else intPart = bits `bitand-Int64` (bitnot-Int64 mask) |> i64-as-f64;
+           (intPart, value -f64 intPart)
+      end
+  end
+};
+
+////
+/*
+roundWithToPrecisionBase2-Float64 :: { Int32 => { Float64 => Float64 } => Float64 => Float64 };
+roundWithToPrecisionBase2-Float64 = { p => func => val =>
+  prec = min-Int32 p 292;
+  if isFinite-f64 val
+  then 
+  else func val
+  end
+};
+*/
