@@ -1,6 +1,6 @@
 snafuinclude Text "text";
 //snafuinclude Seq "data/seq";
-snafuinclude List "list";
+snafuinclude List "data/list";
 snafuinclude Prelude "prelude";
 snafuinclude Bench "bench/measure";
 

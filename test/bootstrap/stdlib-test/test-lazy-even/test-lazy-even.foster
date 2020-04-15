@@ -1,5 +1,5 @@
 snafuinclude Streams "streams";
-snafuinclude List    "list";
+snafuinclude List    "data/list";
 snafuinclude PreludePrintExpect "prelude/print-expect";
 
 /* fails in ProtobufFE "can't parse empty seq"

@@ -1,4 +1,4 @@
-snafuinclude List "list";
+snafuinclude List "data/list";
 
 type case Lazy (a:Type)
   of $LazyDelay (Ref (LazyThing a))

@@ -4,7 +4,7 @@ snafuinclude Bitwise "math/bitwise";
 snafuinclude Maybe "maybe";
 snafuinclude Prelude "prelude";
 snafuinclude Text "text";
-snafuinclude List "list";
+snafuinclude List "data/list";
 
 snafuinclude KnuthLCG "prng/knuthLCG";
 snafuinclude RandomGen "random/gen";

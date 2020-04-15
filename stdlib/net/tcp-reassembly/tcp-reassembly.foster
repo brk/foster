@@ -1,5 +1,5 @@
 snafuinclude Ord "ord";
-snafuinclude List "list";
+snafuinclude List "data/list";
 snafuinclude Prelude "prelude";
 snafuinclude Range "range";
 

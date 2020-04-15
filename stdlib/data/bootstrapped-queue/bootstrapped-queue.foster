@@ -1,4 +1,4 @@
-snafuinclude List "list";
+snafuinclude List "data/list";
 snafuinclude Lazy "lazy";
 snafuinclude Ord  "ord";
 snafuinclude Maybe "maybe";

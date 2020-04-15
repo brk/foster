@@ -1,4 +1,4 @@
-snafuinclude List "list";
+snafuinclude List "data/list";
 snafuinclude Maybe "maybe";
 snafuinclude Prelude "prelude";
 snafuinclude Vlist "data/vlist";

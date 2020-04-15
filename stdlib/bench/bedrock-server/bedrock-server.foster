@@ -1,4 +1,4 @@
-snafuinclude List "list";
+snafuinclude List "data/list";
 
 max = { a => b =>
   if a <UInt32 b then b else a end

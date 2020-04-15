@@ -1,5 +1,5 @@
 snafuinclude Prelude "prelude";
-snafuinclude List    "list";
+snafuinclude List    "data/list";
 
 /*
   Based on the (BSD-licensed) implementation of Data.IntMap in
