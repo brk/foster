@@ -25,6 +25,7 @@ import Text.PrettyPrint.ANSI.Leijen(Pretty(..), text, hsep, (<+>),
 import Foster.Base
 import Foster.Kind
 import Foster.ExprAST
+import Foster.SourceRange(SourceRange(MissingSourceRange))
 
 type Sigma = TypeAST
 type Rho   = TypeAST -- No top-level ForAll

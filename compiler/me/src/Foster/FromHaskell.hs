@@ -17,6 +17,7 @@ import Foster.Base
 import Foster.ExprAST
 import Foster.ParsedType
 import Foster.PrettyExprAST(prettyTopLevelFn)
+import Foster.SourceRange(SourceRange(MissingSourceRange))
 
 convertHaskellToFoster hspath fosterpath = do
   res <- parseFile hspath

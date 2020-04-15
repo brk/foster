@@ -58,6 +58,9 @@ import Foster.ConvertExprAST
 import Foster.MainOpts
 import Foster.MKNExpr
 import Foster.Infer(unify)
+import Foster.SourceRange(SourceRange(..), SourceLines(SourceLines), rangeOf,
+          showSourceRange, appendSourceLines, highlightFirstLineDoc,
+          prettyWithLineNumbers)
 
 import Codec.CBOR.Term
 import Codec.CBOR.Read (deserialiseFromBytes)
@@ -297,7 +300,7 @@ typecheckModule verboseMode pauseOnErrors flagvals modast tcenv0 = do
               when verboseMode $ do liftIO $ putStrLn "~~~ Typechecking the module's context failed"
               return (Errors os)
       dups -> return (Errors $ [text "Unable to check module due to duplicate bindings: "
-                               ] ++ (map (prettyWithLineNumbers.rangeOf.snd) (concat dups)))
+                               ] ++ (map (prettyWithLineNumbers . rangeOf . snd) (concat dups)))
     return rv
  where
    mkContext :: [ContextBinding t] -> [ContextBinding t]

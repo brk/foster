@@ -36,6 +36,8 @@ import Foster.TypeTC
 import Foster.AnnExpr
 import Foster.Infer(zonkType)
 import Foster.Typecheck(tcTypeWellFormed, tcReplaceQuantifiedVars)
+import Foster.SourceRange(SourceRange(..), rangeOf, prettyWithLineNumbers,
+          highlightFirstLine, highlightFirstLineDoc, prettySourceRangeInfo)
 
 import Text.PrettyPrint.ANSI.Leijen
 

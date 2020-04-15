@@ -24,6 +24,8 @@ import Foster.Letable
 import Foster.Avails
 --import Foster.Output
 import Foster.MainOpts (getNoPreAllocOpt)
+import Foster.SourceRange(SourceRange(..), SourceLines, rangeOf)
+
 import Data.Map(Map)
 import Data.List(zipWith4)
 import Data.Maybe(fromMaybe)

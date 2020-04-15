@@ -33,6 +33,9 @@ import Foster.Context
 import Foster.TypecheckInt(typecheckInt, typecheckRat)
 import Foster.Output(OutputOr(Errors, OK), putDocLn)
 import Foster.PrettyAnnExpr()
+import Foster.SourceRange(SourceRange(..), rangeOf,
+          highlightFirstLine, highlightFirstLineDoc, showSourceRange, prettyWithLineNumbers)
+
 import Text.PrettyPrint.ANSI.Leijen
 
 data TCWanted = TCSigma | TCRho deriving Show

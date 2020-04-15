@@ -23,6 +23,7 @@ import Foster.ExprAST
 import Foster.TypeAST
 import Foster.TypeTC
 import Foster.Config(OrdRef(..))
+import Foster.SourceRange(SourceRange, rangeOf, highlightFirstLineDoc, prettySourceRangeInfo)
 
 import Text.PrettyPrint.ANSI.Leijen
 import Foster.Output

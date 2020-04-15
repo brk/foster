@@ -22,6 +22,7 @@ import Foster.Base
 import Foster.KNUtil
 import Foster.Config
 import Foster.Output(putDocLn)
+import Foster.SourceRange(SourceRange(..), rangeOf, prettyWithLineNumbers)
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T

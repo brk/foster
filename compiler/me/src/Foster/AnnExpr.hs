@@ -10,6 +10,7 @@ module Foster.AnnExpr (AnnExpr(..), annExprAnnot) where
 import Foster.Base
 import Foster.Kind
 import Foster.TypeAST()
+import Foster.SourceRange(SourceRanged, rangeOf)
 
 import Text.PrettyPrint.ANSI.Leijen
 import Foster.Output(OutputOr(..))

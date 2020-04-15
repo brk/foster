@@ -85,6 +85,7 @@ executable me
       Foster.MonoType
       Foster.Monomo
       Foster.Output
+      Foster.SourceRange
       Foster.ParsedType
       Foster.PatternMatch
       Foster.PrettyAnnExpr

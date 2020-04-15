@@ -17,6 +17,7 @@ import Foster.MonoType
 import Foster.ConvertExprAST()
 import Foster.Context
 import Foster.Output
+import Foster.SourceRange(SourceRange(..), rangeOf, prettyWithLineNumbers)
 
 import qualified Data.Text as T
 

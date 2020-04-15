@@ -11,14 +11,15 @@ import Prelude hiding ((<$>))
 
 import Foster.Kind
 import Foster.Output
+import Foster.SourceRange(SourceLines, SourceRange, SourceRanged, rangeOf)
 
 import Data.IORef(IORef, readIORef, writeIORef)
-import Data.Set as Set(fromList, toList, difference, insert, empty, member,
+import qualified Data.Set as Set(empty)
+import Data.Set as Set(fromList, toList, difference, insert, member,
                         null, intersection)
-import Data.Sequence as Seq(Seq, length, index, (><))
+import Data.List as List(intercalate)
 import Data.Map as Map(Map, fromListWith)
 import Data.Set as Set(Set, unions)
-import Data.List as List(replicate, intersperse)
 import qualified Data.Graph as Graph(SCC(..), stronglyConnComp)
 
 import Text.PrettyPrint.ANSI.Leijen
@@ -392,129 +393,6 @@ data ToplevelBinding ty = TopBindArray Ident ty [Literal]
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||| Source Ranges ||||||||||||||||||||||||{{{
 
--- Note: sourceRangeLines is *all* lines, not just those in the range.
-data SourceRange = SourceRange { sourceRangeStartLine :: {-# UNPACK #-} !Int
-                               , sourceRangeStartCol  :: {-# UNPACK #-} !Int
-                               , sourceRangeEndLine   :: {-# UNPACK #-} !Int
-                               , sourceRangeEndCol    :: {-# UNPACK #-} !Int
-                               , sourceRangeLines :: !SourceLines
-                               , sourceRangeFile  :: !(Maybe String)
-                               }
-                  | MissingSourceRange !String
-
-instance Eq SourceRange where
-  (MissingSourceRange s1) == (MissingSourceRange s2) = s1 == s2
-  (SourceRange a b c d _ f1) == (SourceRange w x y z _ f2) = (a, b, c, d, f1) == (w, x, y, z, f2)
-  _ == _ = False
-
-class SourceRanged a
-  where rangeOf :: a -> SourceRange
-
--- Used in ProtobufFE and Typecheck.hs.
-rangeSpanOf :: SourceRanged a => SourceRange -> [a] -> SourceRange
-rangeSpanOf defaultRange ranged =
-    let ranges = map rangeOf ranged in
-    rangeUnions defaultRange ranges
-
-rangeUnions defaultRange allRanges = rsp defaultRange [r | r@(SourceRange _ _ _ _ _ _) <- allRanges]
-  where rsp defaultRange [] = defaultRange
-        rsp __ ranges@(b:_) = SourceRange (sourceRangeStartLine b)
-                                          (sourceRangeStartCol  b)
-                                          (sourceRangeEndLine $ last ranges)
-                                          (sourceRangeEndCol  $ last ranges)
-                                          (sourceRangeLines b)
-                                          (sourceRangeFile  b)
-
-sourceLineStart :: SourceRange -> String
-sourceLineStart (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
-sourceLineStart (SourceRange _ _ _ _ _lines Nothing) = "<unknown file>"
-sourceLineStart (SourceRange bline bcol _ _ _lines (Just filepath)) =
-    filepath ++ ":" ++ show bline ++ ":" ++ show bcol
-
-prettyWithLineNumbers :: SourceRange -> Doc
-prettyWithLineNumbers (MissingSourceRange s) = text $ "<missing range: " ++ s ++ ">"
-prettyWithLineNumbers (SourceRange bline bcol eline ecol lines _filepath) =
-        line <> showSourceLinesNumbered bline bcol eline ecol lines <> line
-
-showSourceRange :: SourceRange -> String
-showSourceRange (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
-showSourceRange (SourceRange bline bcol eline ecol lines _filepath) =
-         "\n" ++ showSourceLines bline bcol eline ecol lines ++ "\n"
-
-prettySourceRangeInfo :: SourceRange -> Doc
-prettySourceRangeInfo (MissingSourceRange s) = text $ "<missing range: " ++ s ++ ">"
-prettySourceRangeInfo (SourceRange bline bcol _eline _ecol _lines mb_filepath) =
-  let path = case mb_filepath of Nothing -> "<missing source file path>"
-                                 Just fp -> fp in
-  text path <> text ":" <> pretty (bline + 1) <> text ":" <> pretty bcol
-
-highlightFirstLineDoc :: SourceRange -> Doc
-highlightFirstLineDoc (MissingSourceRange s) = text $ "<missing range: " ++ s ++ ">"
-highlightFirstLineDoc (SourceRange bline bcol eline ecol lines _filepath) =
-    line <> highlightLineDoc bline bcol fcol lines <> line
-      where fcol  = if bline == eline then ecol else Prelude.length lineb
-            lineb = sourceLine lines bline
-
-highlightFirstLine :: SourceRange -> String
-highlightFirstLine (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
-highlightFirstLine (SourceRange bline bcol eline ecol lines _filepath) =
-    "\n" ++ highlightLine bline bcol fcol lines ++ "\n"
-      where fcol  = if lineb == linee then ecol else Prelude.length lineb
-            lineb = sourceLine lines bline
-            linee = sourceLine lines eline
-
--- If a single line is specified, show it with highlighting;
--- otherwise, show the lines spanning the two locations (inclusive).
-highlightLine line bcol ecol lines =
-    joinWith "\n" [sourceLine lines line, highlightLineRange bcol ecol]
-
-highlightLineDoc line bcol ecol lines =
-    vcat [text $ sourceLine lines line, text $ highlightLineRange bcol ecol]
-
--- If a single line is specified, show it with highlighting;
--- otherwise, show the lines spanning the two locations (inclusive).
-showSourceLines bline bcol eline ecol lines =
-    if bline == eline
-        then joinWith "\n" [sourceLine lines bline, highlightLineRange bcol ecol]
-        else joinWith "\n" [sourceLine lines n | n <- [bline..eline]]
-
-showSourceLinesNumbered bline bcol eline ecol lines =
-    if bline == eline
-        then vsep [sourceLineNumbered lines bline
-                  ,lineNumberPadding <> text (highlightLineRange bcol ecol)]
-        else vsep [sourceLineNumbered lines n | n <- [bline..eline]]
-
--- Generates a string of spaces and twiddles which underlines
--- a given range of characters.
-highlightLineRange :: Int -> Int -> String
-highlightLineRange bcol ecol =
-    let len = ecol - bcol in
-    if len <= 0
-        then ""
-        else (List.replicate bcol ' ') ++ (List.replicate len '~')
-
-reprSourceRange (MissingSourceRange s) = text "(MissingSourceRange " <> text s <> text ")"
-reprSourceRange (SourceRange bline bcol eline ecol _lines _filepath) =
-  parens (text "SourceRange" <+> pretty bline <+> pretty bcol <+> pretty eline
-                             <+> pretty ecol <+> pretty _filepath)
-
-data SourceLines = SourceLines !(Seq T.Text)
-
-appendSourceLines (SourceLines s1) (SourceLines s2) = SourceLines (s1 >< s2)
-
-sourceLine :: SourceLines -> Int -> String
-sourceLine (SourceLines seq) n =
-    if n < 0 || Seq.length seq <= n
-        then "<no line " ++ show n ++ " of "
-                         ++ (show $ Seq.length seq) ++ ">"
-        else (T.unpack $ Seq.index seq n)
-
-sourceLineNumbered :: SourceLines -> Int -> Doc
-sourceLineNumbered (SourceLines seq) n =
-    fill 8 (pretty (n + 1) <> text ":") <> text (T.unpack $ Seq.index seq n)
-
-lineNumberPadding = fill 8 PP.empty
-
 data Formatting = Comment    {-SourceRange-} String
                 | BlankLine
                 deriving Show
@@ -669,7 +547,7 @@ collectDuplicatesBy f items =
 
 joinWith :: String -> [String] -> String
 joinWith _ [] = ""
-joinWith s ss = foldr1 (++) (intersperse s ss)
+joinWith s ss = intercalate s ss
 
 prependedTo :: String -> T.Text -> T.Text
 prependedTo str txt = T.pack str `T.append` txt

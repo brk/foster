@@ -9,6 +9,7 @@ module Foster.Primitives where
 import Foster.Base
 import Foster.Kind
 import Foster.ParsedType
+import Foster.SourceRange(SourceRange(MissingSourceRange))
 
 import qualified Data.Text as T
 

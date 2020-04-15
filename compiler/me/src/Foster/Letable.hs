@@ -9,13 +9,13 @@ module Foster.Letable where
 
 import Foster.Base(Literal(..), CtorId, CtorRepr(..), ArrayIndex(..),
                    AllocMemRegion, AllocInfo(..), Occurrence, AllocationSource,
-                   SourceRange,
                    FosterPrim(..),
                    TypedId(..), mapRight, ZeroInit,
                    TExpr(freeTypedIds), TypedWith(..))
 import Foster.MonoType
 import Foster.TypeLL
 import Foster.Kind
+import Foster.SourceRange(SourceRange)
 
 import qualified Data.Text as T
 

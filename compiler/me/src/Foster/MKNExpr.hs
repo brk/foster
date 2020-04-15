@@ -2,7 +2,7 @@
 -- RecursiveDo is used in dlcSingleton
 
 module Foster.MKNExpr (MKBound(MKBound), mkOfKNMod, mknInline,
-                       pccOfTopTerm, knOfMK, readLink, MaybeCont(..)) where
+                       pccOfTopTerm, knOfMK, MaybeCont(..)) where
 
 import Foster.Base
 import Foster.Config
@@ -13,9 +13,10 @@ import Foster.Worklist
 import Foster.Output(putDocLn)
 
 import Foster.CFG
-import Foster.MonoType
+import Foster.MonoType(MonoType(..), alphaRenameMonoWithState, boolMonoType)
 import Foster.Letable
 import Foster.Kind
+import Foster.SourceRange(SourceRange(..))
 
 import Control.Monad(liftM, when)
 import Control.Monad.State(gets, get, put, lift, forM_,

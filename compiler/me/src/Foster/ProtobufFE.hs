@@ -13,6 +13,8 @@ import Foster.ExprAST
 import Foster.ParsedType
 import Foster.TypeAST(gFosterPrimOpsTable)
 import Foster.Tokens
+import Foster.SourceRange(SourceRange(..), SourceLines(SourceLines), SourceRanged,
+          rangeOf, rangeUnions, showSourceRange)
 
 import Codec.CBOR.Term
 

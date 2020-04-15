@@ -18,6 +18,7 @@ import Foster.Base
 import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeTC
+import Foster.SourceRange(SourceRange, highlightFirstLine, highlightFirstLineDoc, rangeOf)
 
 tryParseInt :: SourceRange -> String -> Either String LiteralInt
 tryParseInt rng originalText =

@@ -15,11 +15,12 @@ where
 
 import Foster.Base(Structured(..), Summarizable(..), Literal, TypeFormal,
                    ToplevelItem(..), ModuleAST(..), CallAnnot,
-                   SourceRanged(..), TypedId(..), ArrayIndex(..),
+                   TypedId(..), ArrayIndex(..),
                    AllocMemRegion, childrenOfArrayIndex, ArrayEntry(..),
                    CaseArm(..), caseArmExprs, EPattern(..), E_VarAST(..),
-                   ExprAnnot(..), rangeOf, annotComments, showComments)
+                   ExprAnnot(..), annotComments, showComments)
 import Foster.Kind
+import Foster.SourceRange(SourceRanged, rangeOf)
 
 import Data.Maybe(maybeToList)
 import Text.PrettyPrint.ANSI.Leijen

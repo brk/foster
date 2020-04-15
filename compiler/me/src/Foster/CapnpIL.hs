@@ -17,6 +17,8 @@ import qualified Foster.CloConv as CC(Proc(..))
 import Foster.TypeLL
 import Foster.Letable hiding (Letable)
 import qualified Foster.Letable as IL
+import Foster.SourceRange(SourceRange(..), SourceLines(SourceLines),
+          highlightFirstLine, showSourceRange, rangeOf)
 
 import qualified Data.ByteString as BS(writeFile)
 import Data.Foldable(toList)

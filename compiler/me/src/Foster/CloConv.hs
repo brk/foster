@@ -32,6 +32,7 @@ import Foster.TypeLL
 import Foster.MonoType
 import Foster.Letable
 import Foster.PatternMatch
+import Foster.SourceRange(SourceRange(..), rangeOf, highlightFirstLine)
 
 -- | Closure conversion and lambda lifting.
 -- |

@@ -18,6 +18,7 @@ import Data.Map(Map)
 import qualified Data.Map  as Map(lookup, size)
 
 import Foster.Base
+import Foster.SourceRange(SourceRange)
 
 import Text.PrettyPrint.ANSI.Leijen hiding (column)
 

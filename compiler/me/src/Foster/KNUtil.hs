@@ -13,6 +13,7 @@ import Foster.Base
 import Foster.Kind
 import Foster.PrettyAnnExpr
 import Foster.Config(Compiled, CompilerContext(ccUniqRef))
+import Foster.SourceRange(SourceRange)
 
 import Text.PrettyPrint.ANSI.Leijen
 

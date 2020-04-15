@@ -10,6 +10,7 @@ where
 import Foster.Base
 import Foster.Kind
 import Foster.ExprAST
+import Foster.SourceRange(SourceRange)
 
 import Data.Maybe (maybeToList)
 import qualified Data.Text as T
