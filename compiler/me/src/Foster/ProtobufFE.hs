@@ -20,7 +20,7 @@ import Codec.CBOR.Term
 
 import Data.Foldable (toList)
 import Data.List(groupBy, foldl', isInfixOf)
-import qualified Data.Sequence as Seq
+import qualified Data.Sequence as Seq(Seq, fromList, spanl, null)
 import qualified Data.Map as Map(lookup)
 
 import Data.Char(isLower, isPunctuation, isSymbol, isHexDigit, digitToInt, chr)

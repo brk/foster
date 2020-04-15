@@ -21,7 +21,8 @@ import Foster.CFG
 import Foster.CloConv
 import Foster.TypeLL
 import Foster.Letable
-import Foster.Avails
+import Foster.Avails(AvailMap, botAvailMap, emptyAvailMap, intersectAvailMap,
+                               lookupAvailMap, insertAvailMap)
 --import Foster.Output
 import Foster.MainOpts (getNoPreAllocOpt)
 import Foster.SourceRange(SourceRange(..), SourceLines, rangeOf)

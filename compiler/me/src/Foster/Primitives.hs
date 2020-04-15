@@ -6,8 +6,8 @@
 
 module Foster.Primitives where
 
-import Foster.Base
-import Foster.Kind
+import Foster.Base(DataType(..), TypeFormal(TypeFormal), DataCtor(DataCtor), CtorRepr(..))
+import Foster.Kind(Kind(..))
 import Foster.ParsedType
 import Foster.SourceRange(SourceRange(MissingSourceRange))
 

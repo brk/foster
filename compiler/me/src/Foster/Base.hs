@@ -23,9 +23,9 @@ import Data.Set as Set(Set, unions)
 import qualified Data.Graph as Graph(SCC(..), stronglyConnComp)
 
 import Text.PrettyPrint.ANSI.Leijen
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
-import qualified Data.Text as T
-import qualified Data.ByteString as B
+import qualified Text.PrettyPrint.ANSI.Leijen as PP(empty)
+import qualified Data.Text as T(Text, pack, unpack, append)
+import qualified Data.ByteString as B(ByteString)
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

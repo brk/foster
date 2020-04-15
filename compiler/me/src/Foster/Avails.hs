@@ -5,33 +5,25 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.Avails where
+module Foster.Avails(AvailMap, botAvailMap, emptyAvailMap, intersectAvailMap,
+                               lookupAvailMap, insertAvailMap) where
 
 import qualified Data.Set as Set(union, insert, delete, size, intersection,
-                                 difference, singleton, empty, toList, map,
+                                 difference, singleton, empty, toList,
                                  null)
-import qualified Data.Map.Strict as Map(insertWith, unionWith, empty, toList,
-                                        size, lookup, fromList)
+import qualified Data.Map.Strict as Map(insertWith, unionWith, empty,
+                                        size, lookup)
 import Data.Set(Set)
 import Data.Map(Map)
 
 data AvailSet elts = UniverseMinus !(Set elts) | Avail !(Set elts)
         deriving Show
 
-mapAvailSet f   (UniverseMinus elts) = (UniverseMinus $ Set.map f elts)
-mapAvailSet f   (Avail         elts) = (Avail         $ Set.map f elts)
-
-delAvails       (UniverseMinus elts) es = UniverseMinus (Set.union es elts)
-delAvails       (Avail         elts) es = Avail (availFrom elts (UniverseMinus es))
-
 addAvail        (UniverseMinus elts) e  = UniverseMinus (Set.delete e elts)
 addAvail        (Avail         elts) e  = Avail         (Set.insert e elts)
 
 availFrom    es (UniverseMinus elts)    = Set.difference   es elts
 availFrom    es (Avail         elts)    = Set.intersection es elts
-
-lessAvail    es (UniverseMinus elts)    = Set.intersection es elts
-lessAvail    es (Avail         elts)    = Set.difference   es elts
 
 availIn e a = not $ Set.null $ availFrom (Set.singleton e) a
 
@@ -73,21 +65,4 @@ lookupAvailMap key (AvailMap a m) =
                Nothing -> []
                Just vs -> vs
    else []
-
-concretizeAvail fk (Avail s)         = Avail (Set.map fk s)
-concretizeAvail fk (UniverseMinus s) = UniverseMinus (Set.map fk s)
-concretizeAvailMap fk fv (AvailMap a m) =
-  (concretizeAvail fk a
-  ,   Map.fromList [(fk k, fv v) | (k, v) <- Map.toList m
-                                 , availIn k a])
-
---instance Show (AvailSet LLVar) where
---  show (UniverseMinus elts) = "(UniverseMinus " ++ show (map tidIdent $ Set.toList elts) ++ ")"
---  show (Avail         elts) = "(Avail "         ++ show (map tidIdent $ Set.toList elts) ++ ")"
---
---ptidIdent (x,y) = (tidIdent x, tidIdent y)
---instance Show (AvailSet (LLVar, LLVar)) where
---  show (UniverseMinus elts) = "(UniverseMinus " ++ show (map ptidIdent $ Set.toList elts) ++ ")"
---  show (Avail         elts) = "(Avail "         ++ show (map ptidIdent $ Set.toList elts) ++ ")"
---
 
