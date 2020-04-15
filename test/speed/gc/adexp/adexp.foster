@@ -1,5 +1,5 @@
 snafuinclude Prelude "prelude";
-snafuinclude Map "map";
+snafuinclude Map "data/map";
 snafuinclude Measure "bench/measure";
 
 // This program re-implements the ADEXP parsing code from the following blog posts:

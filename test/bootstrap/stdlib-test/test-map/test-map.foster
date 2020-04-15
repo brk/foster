@@ -1,4 +1,4 @@
-snafuinclude Maps "map";
+snafuinclude Maps "data/map";
 snafuinclude PreludePrintExpect "prelude/print-expect";
 
 print_i64_f_pair_bare = { p =>
