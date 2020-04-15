@@ -1,4 +1,4 @@
-snafuinclude WordMaps "wordmap";
+snafuinclude WordMap "data/wordmap";
 
 print_i64_f_pair_bare = { p : (Word, { Int64 }) =>
   case p of (k, vf) ->

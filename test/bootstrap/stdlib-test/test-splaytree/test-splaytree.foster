@@ -1,4 +1,4 @@
-snafuinclude Splaytree "splaytree";
+snafuinclude Splaytree "data/splaytree";
 
 spaces = { n : Int32 =>
   REC go = { n => acc =>
