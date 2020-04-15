@@ -67,8 +67,8 @@ instance NonLocal Insn where
                           where blockLabel (_, label) = label
 
 instance HooplNode Insn where
-  mkBranchNode l = ILast (CFCont ("hoopl.br", l)  [])
-  mkLabelNode  l = ILabel       (("hoopl.br", l), [])
+  mkBranchNode l = ILast (CFCont (T.pack "hoopl.br", l)  [])
+  mkLabelNode  l = ILabel       ((T.pack "hoopl.br", l), [])
 
 blockTargetsOf :: Insn O C -> [BlockId]
 blockTargetsOf (ILast last) =
@@ -86,7 +86,7 @@ type BlockEntry = BlockEntry' MonoType
 type BlockEntry' t = (BlockId, [TypedId t])
 
 -- We pair a name for later codegen with a label for Hoopl's NonLocal class.
-type BlockId = (String, Label)
+type BlockId = (T.Text, Label)
 
 -- ||||||||||||||||||||| CFG Pretty Printing ||||||||||||||||||||{{{
 
@@ -123,7 +123,7 @@ instance Pretty (Graph Insn O O) where
 prettyInsn :: Insn e x -> Doc -> Doc
 prettyInsn i d = d <$> pretty i
 
-prettyBlockId (b,l) = text b <> text "." <> text (show l)
+prettyBlockId (b,l) = text (T.unpack b) <> text "." <> text (show l)
 
 instance Pretty (Insn e x) where
   pretty (ILabel   bentry     ) = line <> prettyBlockId (fst bentry) <+> list (map pretty (snd bentry))
@@ -172,8 +172,8 @@ instance Pretty t => Pretty (Letable t) where
 
 instance Pretty BasicBlockGraph where
  pretty bbg =
-         (indent 4 (text "ret k =" <+> pretty (bbgRetK bbg)
-                <$> text "entry =" <+> pretty (fst $ bbgEntry bbg)
+         (indent 4 (text "ret k =" <+> prettyBlockId (bbgRetK bbg)
+                <$> text "entry =" <+> prettyBlockId (fst $ bbgEntry bbg)
                 <$> text "------------------------------"))
           <> pretty (bbgBody bbg)
 

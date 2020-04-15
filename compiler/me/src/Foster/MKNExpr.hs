@@ -2683,9 +2683,9 @@ betaReduceOnlyCall fn args kv    work = do
 
 
 
-baFresh :: String -> BlockAccum BlockId
-baFresh s = do u <- freshLabel;
-               return {- (trace ("new label " ++ show u ++ " for string " ++ s) -} (s, u)
+baFresh :: T.Text -> BlockAccum BlockId
+baFresh txt = do u <- freshLabel;
+                 return {- (trace ("new label " ++ show u ++ " for string " ++ s) -} (txt, u)
 
 baNewUniq :: BlockAccum Uniq
 baNewUniq = do (uref, _, _) <- get ; mutIORef uref (+1)
@@ -2793,7 +2793,7 @@ blockIdOfIdent id = do
   (u, m, blocks) <- get
   case Map.lookup id m of
     Nothing -> do
-      blockid <- baFresh (T.unpack $ identPrefix id)
+      blockid <- baFresh (identPrefix id)
       put (u, Map.insert id blockid m, blocks)
       return blockid
     Just b  -> return b

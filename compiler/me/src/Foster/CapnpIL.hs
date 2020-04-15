@@ -46,7 +46,7 @@ stringSG SG_Static  = u8fromString "static"
 stringSG SG_Dynamic = u8fromString "dynamic"
 stringSG SG_Unsafe  = u8fromString "static"
 
-dumpBlockId (str, lab) = u8fromString (str ++ "." ++ show lab)
+dumpBlockId (txt, lab) = u8fromText (txt `T.append` T.pack "." `T.append` T.pack (show lab))
 
 dumpIdent :: Ident -> CapnpText
 dumpIdent (GlobalSymbol name NoRename)  = u8fromText name

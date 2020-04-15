@@ -317,7 +317,7 @@ compileDecisionTree scrutinee (DT_Leaf armid varoccs) = do
         case Map.lookup armid wrappers of
            Just id -> do return $ BlockFin emptyClosedGraph id (DTO_Leaf armid varoccs)
            Nothing -> do let binders = map (emitOccurrence scrutinee) varoccs
-                         (id, block) <- ilmNewBlock ".leaf" binders
+                         (id, block) <- ilmNewBlock (T.pack ".leaf") binders
                             --(\entryid -> CCLast entryid $ CCCont armid (map (llv.fst) varoccs)) -- TODO
                             (\entryid -> CCLast entryid $ CCCont armid []) -- TODO
                          ilmAddWrapper armid id
@@ -340,7 +340,7 @@ compileDecisionTree scrutinee (DT_Switch occ subtrees maybeDefaultDt) = do
          Just id -> do return (id, emptyClosedGraph)
          Nothing -> do scrut_occ_id <- ilmFresh (T.pack "scrut.occ")
                        let scrut_occ = TypedId (occType scrutinee occ) scrut_occ_id
-                       (id, blockg) <- ilmNewBlock ".dt.switch"
+                       (id, blockg) <- ilmNewBlock (T.pack ".dt.switch")
                          [emitOccurrence scrutinee (scrut_occ, occ)]
                          (\entryid -> CCLast entryid $ mkSwitch (llv scrut_occ) (zip ctors ids) maybeDefaultId)
                        ilmAddDecisionTree dto id
@@ -446,7 +446,7 @@ closureOfKnFn infoMap (self_id, fn) = do
                               norange  = MissingSourceRange ""
             -- We change the entry block of the new body (versus the old).
             lab <- freshLabel
-            let bid = ((".env.caseof", lab), [envVar])
+            let bid = ((T.pack ".env.caseof", lab), [envVar])
             let caseblock = mkFirst (ILabel bid) <*>
                             mkMiddles []         <*>
                             mkLast (ILast cfcase)
@@ -533,10 +533,11 @@ ilmFresh :: T.Text -> ILM Ident
 ilmFresh t = do u <- ilmNewUniq
                 return (Ident t u)
 
-ilmNewBlock :: String -> [Insn' O O] -> (BlockId -> Insn' O C) -> ILM (BlockId, BlockG)
-ilmNewBlock s mids last = do u <- freshLabel
-                             let id = (s, u)
-                             return $ (id, mkBlockG (id,[]) mids (last id))
+ilmNewBlock :: T.Text -> [Insn' O O] -> (BlockId -> Insn' O C) -> ILM (BlockId, BlockG)
+ilmNewBlock txt mids last = do
+    u <- freshLabel
+    let id = (txt, u)
+    return $ (id, mkBlockG (id,[]) mids (last id))
 
 ilmAddDecisionTree dto id = do old <- get
                                put old { ilmDecisionTrees = Map.insert dto id
@@ -580,7 +581,7 @@ instance UniqueMonad (State ILMState) where
 prettyInsn' :: Insn' e x -> Doc -> Doc
 prettyInsn' i d = d <$> pretty i
 
-prettyBlockId (b,l) = text b <> text "." <> text (show l)
+prettyBlockId (b,l) = text (T.unpack b) <> text "." <> text (show l)
 
 instance Pretty Enabled where
   pretty (Enabled _) = text "Enabled"
@@ -631,8 +632,8 @@ instance Pretty Closure where
 
 instance Pretty BasicBlockGraph' where
  pretty bbg =
-         (indent 4 (text "ret k =" <+> pretty (bbgpRetK bbg)
-                <$> text "entry =" <+> pretty (fst $ bbgpEntry bbg)
+         (indent 4 (text "ret k =" <+> prettyBlockId (bbgpRetK bbg)
+                <$> text "entry =" <+> prettyBlockId (fst $ bbgpEntry bbg)
                 <$> text "------------------------------"))
           <> pretty (bbgpBody bbg)
 
