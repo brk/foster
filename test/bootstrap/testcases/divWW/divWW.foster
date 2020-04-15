@@ -1,0 +1,16 @@
+main = {
+  if opaquely_i32 0 ==Int32 1 then
+    a = divWW !;
+    b = divWW !;
+    ()
+  end;
+};
+
+// At one point, this was miscompiled: the 'returns' function
+// would be contified but the calls not updated.
+divWW = {
+    returns = { un21 => q0 => (un21 -Word q0) };
+    if True then
+            returns 2 3
+    else    returns 4 5 end
+};

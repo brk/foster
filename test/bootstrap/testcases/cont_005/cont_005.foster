@@ -10,6 +10,9 @@ flip = { maxn : Int32 =>
   t = allocDArray:[Int32] 16;
   done = (prim ref False);
 
+  // This gets relocated to the closure body of the until loop below.
+  flipb = {
+
   REC flip-helper-b = { i : Int32 => n : Int32 =>
     if i <SInt32 n then
       s.[i] >^ t.[i];
@@ -17,8 +20,7 @@ flip = { maxn : Int32 =>
     else () end
   };
 
-  // This gets relocated to the closure body of the until loop below.
-  flipb = {
+
     flip-helper-b 0 maxn;
     expect_i32 maxn;
   };
@@ -34,4 +36,5 @@ main = {
       flip n;
       print_i32 n;
 };
+
 

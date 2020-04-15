@@ -1,0 +1,147 @@
+/********
+
+type case WordMap (a:Boxed)
+       of $WordMapBin (WordMap a)
+       of $WordMapTip Word /* key */   a
+       of $WordMapNil
+       ;
+
+// The fruits give names to the bindings introduced for TyApp nodes.
+
+// O(lg n)
+wordMapInsertWith :: forall (a:Boxed) { { a => a => a } => Word => a => WordMap a => WordMap a };
+wordMapInsertWith = { f => k => x : a => s =>
+  zzzz = { w : Word =>
+           xp : a =>
+           yp : a => f xp yp };
+  pear = wordMapInsertWithKey:[a];
+  pear zzzz k x s
+};
+
+wordMapInsertWithKey :: forall (a:Boxed) { { Word => a => a => a } => Word => a => WordMap a => WordMap a };
+wordMapInsertWithKey = { f => k => x : a => s =>
+  go = {
+      case s
+        of $WordMapBin l ->
+            // The presence of the "go" wrapper fn here makes this call
+            // recursive but not tail recursive (when first inspected,
+            // before the wrapper is eliminated.)
+            apple = wordMapInsertWithKey:[a];
+            apple f k x l
+        of _ -> banana = WordMapNil:[a];
+                banana
+      end
+  };
+  go !;
+};
+
+/*
+// O(lg n)
+wordMapInsertWithKey :: forall (a:Boxed) { { Word => a => a => a } => Word => a => WordMap a => WordMap a };
+wordMapInsertWithKey = { f => k => x : a => s =>
+  REC go = { s =>
+      case s
+        of $WordMapNil            -> WordMapTip k x
+        of $WordMapTip ky y       -> WordMapTip k x
+        of $WordMapBin p m l r    ->
+           WordMapBin p m (wordMapInsertWithKey f k x l) r
+      end
+  };
+  go s;
+};
+*/
+
+////////////
+
+// O(n+m)
+wordMapUnion :: forall (a:Boxed) { WordMap a => WordMap a => WordMap a };
+wordMapUnion = { s1 => s2 =>
+  fff = { ky : a => y : a => y };
+  case s2
+    of $WordMapTip k x -> 
+        watermelon = wordMapInsertWith:[a];
+        watermelon fff k x s1 // BAD
+
+        //OK: wordMapInsertWithKey { w => xp => yp => { ky => y => y } xp yp } k x t
+    of _ -> s2
+  end
+};
+
+*******/
+
+
+type case WordMap
+       of $WordMapBin (WordMap)
+       of $WordMapTip Word /* key */   Int32
+       of $WordMapNil
+       ;
+
+// O(lg n)
+wordMapInsertWith :: { { Int32 => Int32 => Int32 } => Word => Int32 => WordMap => WordMap };
+wordMapInsertWith = { fA => kA => xA => sA =>
+  zzzz = { w : Word =>
+           xp : Int32 =>
+           yp : Int32 => fA xp yp };
+  // What happens here (I think) is that this call is considered donatable because it
+  // passes a literal function; we copy and inline the definition of `wordMapInsertWithKey`,
+  // which then produces a copy where fB is bound to the zzzz function literal; thus,
+  // because the recursive call in *that* function is not tail recursive, it's also considered
+  // donatable...
+  wordMapInsertWithKey zzzz kA xA sA
+};
+
+wordMapInsertWithKey :: { { Word => Int32 => Int32 => Int32 } => Word => Int32 => WordMap => WordMap };
+wordMapInsertWithKey = { fB => kB => xB => sB =>
+  go = {
+      case sB
+        of $WordMapBin l ->
+            // The presence of the "go" wrapper fn here makes this call
+            // recursive but not tail recursive (when first inspected,
+            // before the wrapper is eliminated.)
+            xx = fB kB xB xB;
+            wordMapInsertWithKey fB kB xx l
+        of _ -> WordMapNil
+      end
+  };
+  go !;
+};
+
+/*
+// O(lg n)
+wordMapInsertWithKey :: forall (a:Boxed) { { Word => a => a => a } => Word => a => WordMap a => WordMap a };
+wordMapInsertWithKey = { f => k => x : a => s =>
+  REC go = { s =>
+      case s
+        of $WordMapNil            -> WordMapTip k x
+        of $WordMapTip ky y       -> WordMapTip k x
+        of $WordMapBin p m l r    ->
+           WordMapBin p m (wordMapInsertWithKey f k x l) r
+      end
+  };
+  go s;
+};
+*/
+
+////////////
+
+// O(n+m)
+wordMapUnion :: { WordMap => WordMap => WordMap };
+wordMapUnion = { s1 => s2 =>
+  fff = { ky : Int32 => y : Int32 => y };
+  case s2
+    of $WordMapTip k x -> 
+        wordMapInsertWith fff k x s1 // BAD
+
+        //OK: wordMapInsertWithKey { w => xp => yp => { ky => y => y } xp yp } k x t
+    of _ -> s2
+  end
+};
+
+
+main = {
+  m1 = WordMapNil;
+  m2 = WordMapNil;
+  m3 = wordMapUnion m1 m2;
+  m4 = wordMapUnion m2 m1;
+    ()
+};
