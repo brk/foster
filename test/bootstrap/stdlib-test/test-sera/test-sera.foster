@@ -1,7 +1,7 @@
 snafuinclude List "list";
 snafuinclude Maybe "maybe";
 snafuinclude Prelude "prelude";
-snafuinclude Vlist "vlist";
+snafuinclude Vlist "data/vlist";
 snafuinclude Bitwise "bitwise";
 
 snafuinclude Prelude "prelude";

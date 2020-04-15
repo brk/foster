@@ -1,5 +1,5 @@
 snafuinclude Prelude "prelude";
-snafuinclude Vlist   "vlist";
+snafuinclude Vlist   "data/vlist";
 snafuinclude Measure "bench/measure";
 
 type case BoxedInt64 of $BoxedInt64 Int64;
