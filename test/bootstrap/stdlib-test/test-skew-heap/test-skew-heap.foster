@@ -1,0 +1,27 @@
+snafuinclude SkewHeap "data/skew-heap";
+snafuinclude PreludePrintExpect "prelude/print-expect";
+snafuinclude Prelude "prelude";
+
+skew-extract! = { cmp => h =>
+  case skew-extract cmp h
+    of $Some xh -> xh
+    of $None    -> prim kill-entire-process "cannot skew-extract from nothingness"
+  end
+};
+
+main = {
+  cmp = cmpSInt64;
+  h0 = skew-singleton 1 |> skew-insert cmp 9 |> skew-insert cmp 3
+        |> skew-insert cmp 8 |> skew-insert cmp 4 |> skew-insert cmp 5
+        |> skew-insert cmp 2 |> skew-insert cmp 7 |> skew-insert cmp 6;
+
+  expect_i64 1; let (x, h1) = skew-extract! cmp h0; print_i64 x;
+  expect_i64 2; let (x, h2) = skew-extract! cmp h1; print_i64 x;
+  expect_i64 3; let (x, h3) = skew-extract! cmp h2; print_i64 x;
+  expect_i64 4; let (x, h4) = skew-extract! cmp h3; print_i64 x;
+  expect_i64 5; let (x, h5) = skew-extract! cmp h4; print_i64 x;
+  expect_i64 6; let (x, h6) = skew-extract! cmp h5; print_i64 x;
+  expect_i64 7; let (x, h7) = skew-extract! cmp h6; print_i64 x;
+  expect_i64 8; let (x, h8) = skew-extract! cmp h7; print_i64 x;
+  expect_i64 9; let (x, h9) = skew-extract! cmp h8; print_i64 x;
+};

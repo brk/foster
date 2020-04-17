@@ -1,0 +1,49 @@
+snafuinclude Prelude "prelude";
+snafuinclude Maybe   "maybe";
+
+// Skew heaps can be used as functional priority queues, with the caveat
+// that they do not provide a stable ordering for equivalent elements.
+
+type case SkewHeap (a:Type)
+  of $SkewNil
+  of $SkewObj a (SkewHeap a) (SkewHeap a)
+  ;
+
+skew-empty :: forall (a:Type) { SkewHeap a };
+skew-empty = { SkewNil };
+
+skew-singleton :: forall (a:Type) { a => SkewHeap a };
+skew-singleton = { e => SkewObj e SkewNil SkewNil };
+
+skew-merge :: forall (a:Type) { { a => a => Ord } => SkewHeap a => SkewHeap a => SkewHeap a };
+skew-merge = { cmp => t1 => t2 =>
+  case (t1, t2)
+    of ($SkewNil, _) -> t2
+    of (_, $SkewNil) -> t1
+    of ($SkewObj v1 l1 r1, $SkewObj v2 l2 r2) ->
+    case cmp v1 v2
+      of $LT or $EQ -> SkewObj v1 (skew-merge cmp t2 r1) l1
+      of $GT        -> SkewObj v2 (skew-merge cmp t1 r2) l2
+    end
+  end
+};
+
+skew-insert :: forall (a:Type) { { a => a => Ord } => a => SkewHeap a => SkewHeap a };
+skew-insert = { cmp => e => t =>
+  skew-merge cmp (skew-singleton e) t
+};
+
+/* TODO bad! tc cycle (e & t swapped)
+skew-insert :: forall (a:Type) { { a => a => Ord } => SkewHeap a => a => SkewHeap a };
+skew-insert = { cmp => e => t =>
+  skew-merge cmp (skew-singleton e) t
+};
+*/
+
+skew-extract :: forall (a:Type) { { a => a => Ord } => SkewHeap a => Maybe (a, SkewHeap a) };
+skew-extract = { cmp => t =>
+  case t
+    of $SkewObj x l r -> Some (x, skew-merge cmp l r)
+    of $SkewNil       -> None
+  end
+};
