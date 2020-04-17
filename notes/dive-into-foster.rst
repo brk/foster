@@ -332,19 +332,6 @@ Pattern matching doesn't currently support arrays or string constants.
 Other Expressions
 +++++++++++++++++
 
-One interesting expression form is ``(prim __COMPILES__ e)``,
-which evaluates (at compile time) to a boolean value reflecting whether
-the provided expression was well-typed.
-This can be useful to make sure that "improper" usage of an API
-is being prevented by the type system.
-
-.. note::
-
-  Pedantic note: ``__COMPILES__`` does not undo the effects of type checking
-  its argument; thus, by modifying unification variables, adding a
-  ``__COMPILES__`` primitive to working code can cause other code to fail
-  to type check properly.
-
 Foster provides partial syntactic support for mutable references and arrays.
 Arrays allow indexing with postfix ``.[idx]`` syntax.
 References can be dereferenced with postfix ``^`` and assigned to with the
@@ -362,6 +349,50 @@ for arrays, we get by with ``prim mach-array-literal 1 2 3``.
 It's ugly but it retains flexibility.
 Better syntax will likely come in the future, but a big question is:
 for what data structures?
+
+Primitives
+++++++++++
+
+To reduce the syntactic surface area of the language, Foster has a system of **primitives**.
+Primitives can only be called directly; they cannot be passed around as callable values the
+way that normal functions can. A primitive call is prefixed by the token ``prim``.
+Primitives provide a means of extending the language without needing to modify the language's grammar.
+
+Many operators in other languages with built-in syntax (in other languages and in Foster)
+can be recast as primitives. Beyond the basic arithmetic operators, examples include
+the subscript syntax (``a.[b]`` is equivalent to ``prim subscript a b``)
+and deref syntax (``a^`` is equivalent to ``prim deref a``).
+
+Other syntactic elements of Foster can be conceptually translated to primitive calls.
+For example, the tuple syntax ``(a, b, c)`` is equivalent to ``prim tuple a b c``,
+and it would be possible to recast ``if-then-else`` as a primitive as well.
+But not everything; neither function definitions nor pattern matching can be recast as primitive calls.
+
+Some elements that would be syntax in other languages remain primitive-only in Foster, for now,
+such as ``mach-array-literal``.
+
+Finally, Foster has some primitives without close analogues in other languages.
+``assert-invariants`` hooks into the compiler's static analysis machinery,
+and halts compilation if the given expression cannot be statically shown to be true.
+``log-type`` directs the compiler to print out the inferred type of the given expression.
+
+In addition to ``subscript``, which will (usually) require dynamic bounds checks to ensure safety,
+there are variants that give the programmer more control. ``subscript-static`` requires a static
+proof of safety, and in return guarantees that no dynamic bounds check will be emitted.
+``subscript-unsafe``, as its name implies, omits the bounds check without proof.
+
+The call ``prim __COMPILES__ e`` takes an expression and evaluates (at compile time)
+to a boolean value reflecting whether the provided expression was well-typed.
+This can be useful to make sure that "improper" usage of an API
+is being prevented by the type system.
+
+.. note::
+
+  Pedantic note: ``__COMPILES__`` does not undo the effects of type checking
+  its argument; thus, by modifying unification variables, adding a
+  ``__COMPILES__`` primitive to working code can cause other code to fail
+  to type check properly.
+
 
 Statements
 ~~~~~~~~~~
