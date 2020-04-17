@@ -2,7 +2,7 @@ snafuinclude Text "text";
 
 main = {
   expect_i1 False;
-  print_i1 (__COMPILES__
+  print_i1 (prim __COMPILES__
     case (1,2)
       of (_, _, _) -> 0
       of _ -> 1

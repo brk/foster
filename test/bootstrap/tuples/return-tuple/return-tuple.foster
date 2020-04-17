@@ -25,7 +25,7 @@ main = {
   print_0_of_t_i32_i1 (tuple_from (opaquely_i32 42) True);
 
   expect_i1 True;
-  print_i1 (__COMPILES__ ());
+  print_i1 (prim __COMPILES__ ());
 
   expect_i32 43;
   print_0_of_t_i32_i1 (tuple_from_if (opaquely_i32 43) True);

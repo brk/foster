@@ -8,10 +8,10 @@ main = {
 
   // Make sure that we give consistent treatment to the return type
   // of recursively bound functions.
-  expect_i1 False; print_i1 (__COMPILES__ print_i1 (test-rec-ret0 !));
-  expect_i1 False; print_i1 (__COMPILES__ print_i1 (test-rec-ret1 !));
-  expect_i1 False; print_i1 (__COMPILES__ print_i1 (test-rec-let 3));
-  expect_i1 False; print_i1 (__COMPILES__ print_i1 (test-rec-ret 3));
+  expect_i1 False; print_i1 (prim __COMPILES__ (print_i1 (test-rec-ret0 !)));
+  expect_i1 False; print_i1 (prim __COMPILES__ (print_i1 (test-rec-ret1 !)));
+  expect_i1 False; print_i1 (prim __COMPILES__ (print_i1 (test-rec-let 3)));
+  expect_i1 False; print_i1 (prim __COMPILES__ (print_i1 (test-rec-ret 3)));
 
   expect_i32 (0 -Int32 1) ; print_i32 (test-rec-ret 3);
 

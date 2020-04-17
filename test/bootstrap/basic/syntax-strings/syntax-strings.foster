@@ -8,7 +8,7 @@ main = {
   print_i1 ( 'a' ==Int8 97);
 
   expect_i1 False;
-  print_i1 (__COMPILES__ "本" ==Int8 0);
+  print_i1 (prim __COMPILES__ ("本" ==Int8 0));
 
   expect_text "abc";
   print_text  """abc""";

@@ -1,4 +1,5 @@
 main = {
-  expect_i1(false);
-  print_i1(__COMPILES__ { print_i32 42)} );
+  if (prim __COMPILES__ { print_i32 42)} )
+  then ()
+  end;
 };

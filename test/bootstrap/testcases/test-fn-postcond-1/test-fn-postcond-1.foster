@@ -19,10 +19,10 @@ main = {
   print_i1 kk;
 
   expect_i1 False;
-  print_i1 (__COMPILES__ prim assert-invariants qq);
+  print_i1 (prim __COMPILES__ (prim assert-invariants qq));
 
   expect_i1 True;
-  print_i1 (__COMPILES__ prim assert-invariants kk);
+  print_i1 (prim __COMPILES__ (prim assert-invariants kk));
 
   ()
 };

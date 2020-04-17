@@ -16,27 +16,27 @@ ret-ref = { x => x };
 
 others-notok = {
   expect_i1 False;
-  print_i1 (__COMPILES__ { 0 }; ());
+  print_i1 (prim __COMPILES__ { { 0 }; () });
 
   expect_i1 False;
-  print_i1 (__COMPILES__ (2,3); ());
+  print_i1 (prim __COMPILES__ { (2,3); () });
   
   expect_i1 False;
-  print_i1 (__COMPILES__ True; ());
+  print_i1 (prim __COMPILES__ { True; () });
 
   expect_i1 False;
-  print_i1 (__COMPILES__ 3.4; ());
+  print_i1 (prim __COMPILES__ { 3.4; () });
 
   expect_i1 False;
-  print_i1 (__COMPILES__ "foo"; ());
+  print_i1 (prim __COMPILES__ { "foo"; () });
 
   expect_i1 True;
-  print_i1 (__COMPILES__ if True then 3 else 4 end; ());
+  print_i1 (prim __COMPILES__ { if True then 3 else 4 end; () });
 
   expect_i1 False;
-  print_i1 (__COMPILES__ if True then 3.4 else 4.3 end; ());
+  print_i1 (prim __COMPILES__ { if True then 3.4 else 4.3 end; () });
 
   expect_i1 True;
-  print_i1 (__COMPILES__ ret-ref () ; ());
+  print_i1 (prim __COMPILES__ { ret-ref () ; () });
 
 };

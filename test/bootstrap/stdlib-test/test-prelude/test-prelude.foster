@@ -106,10 +106,10 @@ test-misc-1 = {
 
 test-misc-2 = {
   expect_i1 True;
-  print_i1 (__COMPILES__ { x : BInt => 0 });
+  print_i1 (prim __COMPILES__ { x : BInt => 0 });
 
   expect_i1 False;
-  print_i1 (__COMPILES__ { x : DoesNotExist => 0 });
+  print_i1 (prim __COMPILES__ { x : DoesNotExist => 0 });
 
   expect_i32 0;
   expect_i32 1;

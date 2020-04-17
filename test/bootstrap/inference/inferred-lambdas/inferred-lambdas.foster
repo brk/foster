@@ -13,9 +13,9 @@ main = {
   // unlike ML and Haskell, we treat this as an error, rather than
   // triggering automatic generalization of its type.
   expect_i1 False;
-  print_i1 (__COMPILES__ { x => x } );
+  print_i1 (prim __COMPILES__ { x => x } );
 */
 
   expect_i1 True;
-  print_i1 (__COMPILES__ { x : () => x } );
+  print_i1 (prim __COMPILES__ { x : () => x } );
 };

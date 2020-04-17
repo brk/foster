@@ -2,17 +2,17 @@ fn "main" () {
   expect_i32(42) ;  print_i32( array { 42, 43 }[0] )
 
   //expect_i1(false) // Unlike tuples, arrays must contain only 1 type
-  //print_i1(__COMPILES__ array { 42, true }[1] )
+  //print_i1(prim __COMPILES__ (array { 42, true }.[1]) )
 
   //expect_i32(44) ;  print_i32( array { 42, 43, 44 }[2] )
 
   //expect_i32(45) ;  print_i32( array { 45, 46, 47 }[0] )
 
   //expect_i1(false) // LLVM does not do bounds checking of arrays, but we do...
-  //print_i1(__COMPILES__ array { 42, 43, 44 }[333] )
+  //print_i1(prim __COMPILES__ (array { 42, 43, 44 }.[333]) )
 
-  //expect_i1(false) ;  print_i1(__COMPILES__ array { 42, 43, 44 }[true] )
+  //expect_i1(false) ;  print_i1(prim __COMPILES__ (array { 42, 43, 44 }.[true]) )
 
-  //expect_i1(false) ;   print_i1(__COMPILES__ array {} [0] )
+  //expect_i1(false) ;   print_i1(prim __COMPILES__ (array {} .[0]) )
 }
 

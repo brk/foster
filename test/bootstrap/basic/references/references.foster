@@ -9,8 +9,8 @@ main = {
   tuprefs2  !;
   hof-until !;
 
-  expect_i1 False; print_i1 (__COMPILES__ 0 >^ 0);
-  expect_i1 False; print_i1 (__COMPILES__ r = (prim ref 0); r >^ r);
+  expect_i1 False; print_i1 (prim __COMPILES__ { 0 >^ 0 });
+  expect_i1 False; print_i1 (prim __COMPILES__ { r = (prim ref 0); r >^ r });
 };
 
 

@@ -34,7 +34,7 @@ posListMaxAlt2 = { plist => intListMax plist 0 };
 main = {
   dai = arrayLenRet 0 16;
   expect_i1 True;
-  print_i1 (__COMPILES__ prim assert-invariants (prim_arrayLength dai ==Int64 16));
+  print_i1 (prim __COMPILES__ (prim assert-invariants (prim_arrayLength dai ==Int64 16)));
 
   // Note: the return type of this function is not directly a refinement type,
   // but it does contain a refinement type which refers to the function's

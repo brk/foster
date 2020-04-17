@@ -2,7 +2,7 @@ snafuinclude Text "text";
 
 main = {
   expect_i1 True;
-  print_i1 (__COMPILES__
+  print_i1 (prim __COMPILES__
       {
       runST : forall (a:Boxed) {  (forall (s:Boxed) { s => a }) => a }
       =>
@@ -13,7 +13,7 @@ main = {
     });
 
   expect_i1 False;
-  print_i1 (__COMPILES__
+  print_i1 (prim __COMPILES__
           {
           runST : forall (a:Boxed) {  (forall (s:Boxed) { s => a }) => a }
           =>

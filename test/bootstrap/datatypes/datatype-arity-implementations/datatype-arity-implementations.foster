@@ -30,13 +30,13 @@ t1 = {
 // Make sure that patterns with the wrong arity are detected.
 t2 = {
   expect_i1 True;
-  print_i1 (__COMPILES__ { x => case x of $T1C2 _ _ -> 0 of _ -> 1 end });
+  print_i1 (prim __COMPILES__ { x => case x of $T1C2 _ _ -> 0 of _ -> 1 end });
 
   expect_i1 False;
-  print_i1 (__COMPILES__ { x => case x of $T1C2 _ _ _ -> 0 of _ -> 1 end });
+  print_i1 (prim __COMPILES__ { x => case x of $T1C2 _ _ _ -> 0 of _ -> 1 end });
 
   expect_i1 False;
-  print_i1 (__COMPILES__ { x => case x of $T1C2 _     -> 0 of _ -> 1 end });
+  print_i1 (prim __COMPILES__ { x => case x of $T1C2 _     -> 0 of _ -> 1 end });
 };
 
 type case T1

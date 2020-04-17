@@ -68,10 +68,10 @@ main = {
          print_i32 6666666;
 
          // Yielding the wrong type results in a type error.
-         //print_i1 (__COMPILES__ do_CoroYield:[Int32,{Int32}] { 7777 } );
-         //print_i1 (__COMPILES__ do_CoroYield { 7777 } );
+         //print_i1 (prim __COMPILES__ (do_CoroYield:[Int32,{Int32}] { 7777 }));
+         //print_i1 (prim __COMPILES__ (do_CoroYield { 7777 }));
 
-         //print_i1 (__COMPILES__ do_CoroYield 7777 );
+         //print_i1 (prim __COMPILES__ (do_CoroYield 7777));
 
          //coro_invoke cog (43, ());
 

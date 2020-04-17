@@ -44,7 +44,7 @@ main = {
   call-tests (C 1) (C 2) (C 3);
 
   expect_i1 False;
-  print_i1 (__COMPILES__ {
+  print_i1 (prim __COMPILES__ {
         baz = { t : TP TU => k =>
           expect_i32 k;
           case t

@@ -20,7 +20,6 @@ tokens {
   AND='and'; OR='or'; EQ='='; MINUS='-';
   FOREIGN='foreign'; IMPORT='import';
   TYPE='type'; EFFECT='effect'; HANDLE='handle';
-  COMPILES='__COMPILES__';
   HASH_MARK='#';
 
   OPEN_PAREN='('; CLOSE_PAREN=')';
@@ -156,7 +155,6 @@ atom    :       // syntactically "closed" terms
   | ifexpr
   | 'case' e (OF pmatch)+ 'end'         -> ^(CASE e pmatch+) // pattern matching
   | '(' ')'                             -> ^(TUPLE)
-  | '(' COMPILES stmts ')'              -> ^(COMPILES stmts)
   | tuple_or_record
   | handler
   | val_abs

@@ -76,13 +76,13 @@ threedotthree-part-one = {
   Oddly, both 7.0.4 and 7.4.1 reject the application g k2 (!)
 */
 threedotthree-part-two = {
-  expect_i1 True ; print_i1 (__COMPILES__ {
+  expect_i1 True ; print_i1 (prim __COMPILES__ {
     g  : { { (forall (b:Boxed) { (b, b) => (b, b) }) => B } => B }  =>
     k2 :   {                   { (B, B) => (B, B) }  => B }         =>
       g k2;
   });
 
-  expect_i1 False ; print_i1 (__COMPILES__ {
+  expect_i1 False ; print_i1 (prim __COMPILES__ {
     g  : { { (forall (b:Boxed) { (b, b) => (b, b) }) => B } => B }  =>
     k1 :   { (forall (a:Boxed) {    a   =>    a   }) => B }         =>
       g k1;

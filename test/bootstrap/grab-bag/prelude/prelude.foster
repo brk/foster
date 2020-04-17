@@ -5,6 +5,6 @@ main = {
   print_i1 (can_compile_lists !);
 };
 
-can_compile_lists = { (__COMPILES__ Cons Nil:[Boxxy] Nil) };
+can_compile_lists = { (prim __COMPILES__ (Cons Nil:[Boxxy] Nil)) };
 
 type case Boxxy of $BoxxyC;

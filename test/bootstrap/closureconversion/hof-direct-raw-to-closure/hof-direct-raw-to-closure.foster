@@ -9,7 +9,7 @@ foreign import opaquely_i64 :: { Int64 => Int64 };
 
 main = {
   // Compile-time error due to proc/func mismatch.
-  expect_i1 False; print_i1 (__COMPILES__ run-it-eta opaquely_i32 48);
+  expect_i1 False; print_i1 (prim __COMPILES__ (run-it-eta opaquely_i32 48));
 
   expect_i32 48 ; print_i32 (run-it-eta { x => opaquely_i32 x } 48); // Foster fn, anon
 

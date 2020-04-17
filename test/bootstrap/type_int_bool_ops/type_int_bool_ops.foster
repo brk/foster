@@ -25,24 +25,24 @@ main = {
   // Int constraint violated; context-imposed exact size (in bits) was 8
   //                               but the literal intrinsically needs 9
   expect_i1 False;
-  print_i1 (__COMPILES__  expect_i8 -128 );
+  print_i1 (prim __COMPILES__ ( expect_i8 -128 ));
 
   expect_i1 False; // no operator overloading, yet
-  print_i1 (__COMPILES__ (1, 2) + (3, 4));
+  print_i1 (prim __COMPILES__ ( (1, 2) + (3, 4) ));
 
   //expect_i1 False;
-  //print_i1(__COMPILES__ -True);
+  //print_i1(prim __COMPILES__ -True);
 
   expect_i1 True;
   print_i1 (not False);
 
   expect_i1 False; // 2 is not of type i1
-  print_i1 (__COMPILES__ if 2 then 222 else 111 end);
+  print_i1 (prim __COMPILES__ if 2 then 222 else 111 end);
 
   expect_i1 False; // tuple should typecheck elements
-  print_i1 (__COMPILES__ (if 2 then 2 else 1 end, 2));
+  print_i1 (prim __COMPILES__ (if 2 then 2 else 1 end, 2));
 
   expect_i1 False; // branches should have compatible types
-  print_i1 (__COMPILES__ if True then 3 else "3" end);
+  print_i1 (prim __COMPILES__ if True then 3 else "3" end);
 };
 

@@ -2,7 +2,7 @@ snafuinclude Text "text";
 
 main = {
   expect_i1 False;
-  print_i1 (__COMPILES__ { x => (x as (forall (a:Type) { a => a }))} );
+  print_i1 (prim __COMPILES__ { x => (x as (forall (a:Type) { a => a }))} );
   // The above line gets type checked roughly as follows:
   // * x gets a meta type variable T
   // * x is checked against (forall a. a -> a)

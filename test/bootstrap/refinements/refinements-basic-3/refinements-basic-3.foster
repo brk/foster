@@ -3,16 +3,16 @@ snafuinclude Text "text";
 
 main = {
   expect_i1 True;
-  print_i1 (__COMPILES__ expgt2 4);
+  print_i1 (prim __COMPILES__ (expgt2 4));
 
   expect_i1 False;
-  print_i1 (__COMPILES__ expgt2 0);
+  print_i1 (prim __COMPILES__ (expgt2 0));
 
   expect_i1 False;
-  print_i1 (__COMPILES__ prim assert-invariants (0 >UInt32 0));
+  print_i1 (prim __COMPILES__ (prim assert-invariants (0 >UInt32 0)));
 
   expect_i1 True;
-  print_i1 (__COMPILES__ prim assert-invariants (0 >=UInt32 0));
+  print_i1 (prim __COMPILES__ (prim assert-invariants (0 >=UInt32 0)));
 
   zgtz = 0 >UInt32 0;
   ifres = if zgtz
@@ -22,15 +22,15 @@ main = {
 
  fx = { x : Int32 => x };
  expect_i1 True;
- print_i1 (__COMPILES__ bar1g fx);
+ print_i1 (prim __COMPILES__ (bar1g fx));
 
  expect_i1 True;
- print_i1 (__COMPILES__ bar1g expgt2);
+ print_i1 (prim __COMPILES__ (bar1g expgt2));
 
  // DISABLED_TEST
  // Need to properly implement implication of refinements...
  //expect_i1 False;
- //print_i1 (__COMPILES__ bar1g expgt4);
+ //print_i1 (prim __COMPILES__ bar1g expgt4);
  //test-fn-implication !;
 
  test-bar1 !;
@@ -43,41 +43,41 @@ main = {
  test-local-nonrec !;
 
  expect_i1 True;
- print_i1 (__COMPILES__ { a : Array Int8 => prim assert-invariants (prim_arrayLength a >=SInt64 0) });
+ print_i1 (prim __COMPILES__ { a : Array Int8 => prim assert-invariants (prim_arrayLength a >=SInt64 0) });
 
  /*
  // DISABLED_TEST
  // Embedded refinements are currently ignored :(
  expect_i1 False;
- print_i1 (__COMPILES__ ( { (0, 0) } as
+ print_i1 (prim __COMPILES__ ( { (0, 0) } as
                           { (% ra : Int32 : ra >UInt32 2
                             ,       Int32) }) );
 */
 
  expect_i1 False;
- print_i1 (__COMPILES__ ( { 0 } as
+ print_i1 (prim __COMPILES__ ( { 0 } as
                           { % ra : Int32 : ra >UInt32 2 }) );
 
  expect_i1 True;
- print_i1 (__COMPILES__ ( { 3 } as
+ print_i1 (prim __COMPILES__ ( { 3 } as
                           { % ra : Int32 : ra >UInt32 2 }) );
 
  expect_i1 True;
- print_i1 (__COMPILES__ ( { (3, 0) } as
+ print_i1 (prim __COMPILES__ ( { (3, 0) } as
                           { (% ra : Int32 : ra >UInt32 2
                             ,       Int32) }) );
 
  case pairi !
    of (a, b) ->
         expect_i1 True;
-        print_i1 (__COMPILES__ prim assert-invariants (a >UInt32 2));
+        print_i1 (prim __COMPILES__ (prim assert-invariants (a >UInt32 2)));
 
         expect_i1 False;
-        print_i1 (__COMPILES__ prim assert-invariants (b >UInt32 2));
+        print_i1 (prim __COMPILES__ (prim assert-invariants (b >UInt32 2)));
  end;
 
  expect_i1 True;
- print_i1 (__COMPILES__
+ print_i1 (prim __COMPILES__
                { x : Int32 =>
                 if prim ==Int32 x 0
                   then 0
@@ -86,7 +86,7 @@ main = {
               });
 
  expect_i1 False;
- print_i1 (__COMPILES__
+ print_i1 (prim __COMPILES__
                { x : Int32 =>
                   prim sdiv-unsafe-Int32 4 x
                });
@@ -147,13 +147,13 @@ bar1g = { fz =>
 
 test-bar1 = {
   expect_i1 True;
-  print_i1 (__COMPILES__
+  print_i1 (prim __COMPILES__
   { fz : { (% qq : Int32 : qq >=UInt32 3) => Int32 }  =>
     fz 3 // should succeed: (3 >= 3)
   });
 
   expect_i1 False;
-  print_i1 (__COMPILES__
+  print_i1 (prim __COMPILES__
   { fz : { % qq : Int32 : qq >=UInt32 2 => Int32 } =>
     fz 0 // should fail: (0 >/= 2)
   });
@@ -165,7 +165,7 @@ test-fn-implication = {
   };
 
   expect_i1 False;
-  print_i1 (__COMPILES__
+  print_i1 (prim __COMPILES__
    { haveprecond : { (% x : Int32 : x !=Int32 255) => Int32 }
           =>
      expects_noprecond haveprecond });

@@ -9,7 +9,7 @@ main = {
 
 test0 = {
   expect_i1 True;
-  print_i1 (__COMPILES__
+  print_i1 (prim __COMPILES__ {
 
           f = {
             f = { 0 };   f !
@@ -19,30 +19,27 @@ test0 = {
             // bindings, it will be...
           };
           ()
-
-  );
+  });
 
   expect_i1 True;
-  print_i1 (__COMPILES__
+  print_i1 (prim __COMPILES__ {
 
           f = {
             REC f = { f ! ; () };    f !
             //  Likewise...          ^
           };
           ()
-
-  );
+  });
 
   expect_i1 True;
-  print_i1 (__COMPILES__
+  print_i1 (prim __COMPILES__ {
 
           f = {
             case 0 of f -> f end
             // Likewise... ^
           };
           ()
-
-  );
+  });
 
   expect_i32 1;
   print_i32 ( {
@@ -65,7 +62,7 @@ test1 = {
   //    E_LetAST v b e ->  freeVars b ++ (freeVars e  `butnot` [evarName v])
   //    E_LetAST v b e -> (freeVars b ++  freeVars e) `butnot` [evarName v]
   expect_i1 False;
-  print_i1 (__COMPILES__
+  print_i1 (prim __COMPILES__ {
       REC f = { 0 };
 
       f = {
@@ -74,17 +71,17 @@ test1 = {
           //  ^ free reference to rec f binding through let, illegally
       };
       ()
-  );
+  });
 
   // Similar distinguisher for handling free variable calcualtions for letrec.
   expect_i1 True;
-  print_i1 (__COMPILES__
+  print_i1 (prim __COMPILES__ {
       REC f = { 0 };
       f = {
           REC f = { f ! ; () }; ()
       };
       ()
-  );
+  });
 };
 
 

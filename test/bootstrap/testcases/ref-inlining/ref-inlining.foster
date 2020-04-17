@@ -11,8 +11,8 @@ main = {
 
   hof-until !;
 */
-  //expect_i1 False; print_i1 (__COMPILES__ 0 >^ 0);
-  //expect_i1 False; print_i1 (__COMPILES__ let r = (prim ref 0); in r >^ r end);
+  //expect_i1 False; print_i1 (prim __COMPILES__ { 0 >^ 0 });
+  //expect_i1 False; print_i1 (prim __COMPILES__ { let r = (prim ref 0); in r >^ r end });
 
   _ignored = noinline_test_foo !;
 

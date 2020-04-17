@@ -17,7 +17,7 @@ main = {
   j = 12.34e1;
   k = +2;
   expect_i1 False;
-  print_i1 (__COMPILES__ 0FEEDFACE);
+  print_i1 (prim __COMPILES__ { 0FEEDFACE });
 
   l = 0xFEEDFACE;
   m = 0xFEED`FACE;
@@ -56,6 +56,6 @@ main = {
   0x0.0000000000001P-1022 |> f64-as-i64 |> print_i64x;
 
   expect_i1 False;
-  print_i1 (__COMPILES__ 0x1.0p1e);
+  print_i1 (prim __COMPILES__ 0x1.0p1e);
   ()
 };

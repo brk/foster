@@ -58,14 +58,14 @@ part4 = {
 */
 
   expect_i1 False;
-  print_i1 (__COMPILES__
+  print_i1 (prim __COMPILES__
              case (1, 8)
                 of (3, _) or (1, x) -> x
                 of _ -> 999
               end );
 
   expect_i1 False;
-  print_i1 (__COMPILES__
+  print_i1 (prim __COMPILES__
              case (1, 8)
                 of (3, 4) or (1, x) -> x
                 of _ -> 999

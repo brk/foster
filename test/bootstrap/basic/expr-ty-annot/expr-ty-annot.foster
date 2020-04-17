@@ -3,10 +3,10 @@ snafuinclude Text "text";
 
 main = {
   expect_i1 True;
-  print_i1 (__COMPILES__ print_i32 (1 as Int32));
+  print_i1 (prim __COMPILES__ (print_i32 (1 as Int32)));
 
   expect_i1 False;
-  print_i1 (__COMPILES__ print_i32 (1 as Int8));
+  print_i1 (prim __COMPILES__ (print_i32 (1 as Int8)));
 
   // TODO checking against type variables and polymorphic types...
 };

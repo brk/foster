@@ -1,9 +1,9 @@
 main = {
   // inferSigma ought to quanitfy over the escaping meta type variables (fn res ty)
-  //expect_i1 False ; print_i1 (__COMPILES__ { x:() => rec x = { n:Int32 => x n }; in x end });
+  //expect_i1 False ; print_i1 (prim __COMPILES__ { x:() => rec x = { n:Int32 => x n }; in x end });
 
   // found un-unified variable....
-  //expect_i1 False ; print_i1 (__COMPILES__ rec x = { x ! }; in x end);
+  //expect_i1 False ; print_i1 (prim __COMPILES__ rec x = { x ! }; in x end);
 
   ()
 };

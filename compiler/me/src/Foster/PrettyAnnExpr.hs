@@ -248,7 +248,7 @@ instance Pretty (AnnExpr TypeTC) where
 
             E_Case annot scrut arms  -> withAnnot annot $ prettyCase scrut arms
             E_CompilesAST annot Nothing  -> withAnnot annot $ text $ "E_CompilesAST NOTHING"
-            E_CompilesAST annot (Just e) -> withAnnot annot $ parens $ text "__COMPILES__" <+> pretty e
+            E_CompilesAST annot (Just e) -> withAnnot annot $ parens $ text "prim __COMPILES__" <+> pretty e
             E_ArrayRead   annot ai   -> withAnnot annot $ pretty ai
             E_ArrayPoke   annot ai e -> withAnnot annot $ pretty e <+> text ">^" <+> pretty ai
             E_TupleAST    annot es   -> withAnnot annot $ parens (hsep $ punctuate comma (map pretty es))

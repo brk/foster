@@ -2,10 +2,10 @@ snafuinclude Text "text";
 
 main = {
   expect_i1 (True);
-  print_i1 (__COMPILES__ defined-later !);
+  print_i1 (prim __COMPILES__ (defined-later !));
 
   expect_i1(False);
-  print_i1 (__COMPILES__ not-defined-later !);
+  print_i1 (prim __COMPILES__ (not-defined-later !));
 };
 
 defined-later = { 0 };

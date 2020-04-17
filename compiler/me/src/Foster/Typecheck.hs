@@ -71,7 +71,7 @@ data TCWanted = TCSigma | TCRho deriving Show
 --   * To force an expression to be typechecked in pure (rho) inference mode,
 --     try the following construct: case INFER of _ -> ... end.
 --
---   * For inferSigma, use (__COMPILES__ INFER) or { x = INFER; ... }
+--   * For inferSigma, use (prim __COMPILES__ INFER) or { x = INFER; ... }
 --
 --   * To force an expression to be checked against a meta type variable,
 --     the easiest approach is to use a reference store operation: METATY >^ r.

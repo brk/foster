@@ -2,10 +2,10 @@ snafuinclude Text "text";
 
 main = {
   expect_i1 True;
-  print_i1 (__COMPILES__ checkIO fnPure);
+  print_i1 (prim __COMPILES__ (checkIO fnPure));
 
   expect_i1 False;
-  print_i1 (__COMPILES__ checkPure fnIO);
+  print_i1 (prim __COMPILES__ (checkPure fnIO));
 
   //checkIOorNet fnIO; // OK
   //checkIOorNet fnIOandNet; // OK
@@ -22,21 +22,21 @@ type case Console of $Console;
 
 test-first-order-closed = {
   expect_i1 False;
-  print_i1 (__COMPILES__ {
+  print_i1 (prim __COMPILES__ {
 	  chk : { { () @(Console)     } => () } =>
 	  f1  :   { () @(Net,Console) }         =>
 	  chk f1;
 	});
 
   expect_i1 True;
-  print_i1 (__COMPILES__ {
+  print_i1 (prim __COMPILES__ {
 	  chk : { { () @(Console,Net) } => () } =>
 	  f2 :    { () @(Net,Console) }         =>
 	  chk f2;
 	});
 
   expect_i1 True;
-  print_i1 (__COMPILES__ {
+  print_i1 (prim __COMPILES__ {
 	  chk : { { () @(Console,Net) } => () } =>
 	  f3 :    { () @(Console)     }         =>
 	  chk f3;
@@ -53,28 +53,28 @@ test-first-order-open = {
   expect_text "11111";
 
   expect_i1 True;
-  print_i1 (__COMPILES__ {
+  print_i1 (prim __COMPILES__ {
 	  chk : forall (b:Effect) { { () @(Console | b)     } => () } =>
 	  f1  :   forall (a:Effect) { () @(Net,Console | a) }         =>
 	  chk f1;
 	});
 
   expect_i1 False;
-  print_i1 (__COMPILES__ {
+  print_i1 (prim __COMPILES__ {
 	  chk : { forall (b:Effect) { () @(Console | b)     } => () } =>
 	  f1  :   forall (a:Effect) { () @(Net,Console | a) }         =>
 	  chk f1;
 	});
 
   expect_i1 True;
-  print_i1 (__COMPILES__ {
+  print_i1 (prim __COMPILES__ {
 	  chk : forall (b:Effect) { { () @(Console,Net | b) } => () } =>
 	  f2 :  forall (a:Effect)   { () @(Net,Console | a) }         =>
 	  chk f2;
 	});
 
   expect_i1 True;
-  print_i1 (__COMPILES__ {
+  print_i1 (prim __COMPILES__ {
 	  chk : forall (b:Effect) { { () @(Console,Net | b) } => () } =>
 	  f3 :  forall (a:Effect)   { () @(Console | a)     }         =>
 	  chk f3;
@@ -83,21 +83,21 @@ test-first-order-open = {
 
 test-higher-order = {
   expect_i1 True;
-  print_i1 (__COMPILES__ {
+  print_i1 (prim __COMPILES__ {
       chk : { { { () @(Console)     } => () } => () } =>
       f4 :    { { () @(Net,Console) } => () }         =>
       chk f4;
     });
 
   expect_i1 True;
-  print_i1 (__COMPILES__ {
+  print_i1 (prim __COMPILES__ {
       chk : { { { () @(Console,Net) } => () } => () } =>
       f5 :    { { () @(Net,Console) } => () }         =>
       chk f5;
     });
 
   expect_i1 False;
-  print_i1 (__COMPILES__ {
+  print_i1 (prim __COMPILES__ {
       chk : { { { () @(Console,Net) } => () } => () } =>
       f6 :    { { () @(Console)     } => () }         =>
       chk f6;

@@ -1,6 +1,8 @@
-main = fn () {
-  expect_i1(false);
+main = {
   // ANTLR wants to delete the "extraneous" token 42, rather than
   // the correct but hard-to-generate insertion of '('.
-  print_i1(__COMPILES__ print_i32 42));
-}
+  if (prim __COMPILES__ (print_i32 42) ) )
+    then ()
+  end
+  ;
+};

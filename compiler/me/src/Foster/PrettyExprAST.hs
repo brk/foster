@@ -222,7 +222,7 @@ prettyStmt e = case e of
     E_Handler  annot e arms mbe -> withAnnot annot $ prettyHandler e arms mbe
     E_Case annot scrut arms  -> withAnnot annot $ prettyCase scrut arms
     E_CompilesAST annot Nothing  -> withAnnot annot $ text $ "E_CompilesAST NOTHING"
-    E_CompilesAST annot (Just e) -> withAnnot annot $ parens' $ text "__COMPILES__" <+> pretty e
+    E_CompilesAST annot (Just e) -> withAnnot annot $ parens' $ text "prim __COMPILES__" <+> prettyAtom e
     E_ArrayRead   annot ai   -> withAnnot annot $ pretty ai
     E_ArrayPoke   annot ai e -> withAnnot annot $ prettyAtom e <+> text ">^" <+> pretty ai
     E_RecordAST   annot labs exps -> withAnnot annot $ prettyRecord labs exps

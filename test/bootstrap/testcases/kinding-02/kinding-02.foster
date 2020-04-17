@@ -15,7 +15,7 @@ main = {
 
 sum1 :: { List Int32 => Bool };
 sum1 = { xs =>
-  (__COMPILES__ 
+  (prim __COMPILES__ 
   case (xs as List)
     of $Cons x zs -> x +Int32 (sum1 zs)
     of $Nil -> 0
@@ -24,7 +24,7 @@ sum1 = { xs =>
 
 // No annotation; does it matter?
 sum2 = { xs =>
-  (__COMPILES__ 
+  (prim __COMPILES__ 
   case (xs as List)
     of $Cons x zs -> x +Int32 (sum1 zs)
     of $Nil -> 0

@@ -91,19 +91,19 @@ arrays-indexing = { i8 : Int8 => i32 : Int32 => i64 : Int64 => iw : Word =>
   print_i32 a.[iw];
 
   expect_i1 True;
-  print_i1 (__COMPILES__ a.[0] );
+  print_i1 (prim __COMPILES__ a.[0] );
 
   expect_i1 True;
-  print_i1 (__COMPILES__ a.[255] );
+  print_i1 (prim __COMPILES__ a.[255] );
 
   expect_i1 True;
-  print_i1 (__COMPILES__ a.[ir32] );
+  print_i1 (prim __COMPILES__ a.[ir32] );
 
   expect_i1 False;
-  print_i1 (__COMPILES__ a.[runit] );
+  print_i1 (prim __COMPILES__ a.[runit] );
 
   expect_i1 False;
-  print_i1 (__COMPILES__ a.[()] );
+  print_i1 (prim __COMPILES__ a.[()] );
 };
 
 noinline_arrays_indir = {

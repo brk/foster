@@ -546,7 +546,7 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
             KNArrayLit   _t _arr _vals -> text "<...array literal...>"
             KNRecord     _ _ls vs _ -> text "Record/" <> parens (hsep $ punctuate comma (map pretty vs))
             KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map pretty vs))
-            KNCompiles _r _t e  -> parens (text "__COMPILES__" <+> pretty e)
+            KNCompiles _r _t e  -> parens (text "prim __COMPILES__" <+> parens (pretty e))
 
 prettyCaseArm (CaseArm pat expr guard _ _) =
   kwd "of"  <+> fill 20 (pretty pat)

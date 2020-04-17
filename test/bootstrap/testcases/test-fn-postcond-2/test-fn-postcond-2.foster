@@ -25,24 +25,24 @@ main = {
     prim assert-invariants (prim ==Int32 retval 10);
 
     expect_i1 False;
-    print_i1 (__COMPILES__ ltSixA retval);
+    print_i1 (prim __COMPILES__ (ltSixA retval));
 
     expect_i1 False;
-    print_i1 (__COMPILES__ ltSixB retval);
+    print_i1 (prim __COMPILES__ (ltSixB retval));
 
     expect_i1 False;
-    print_i1 (__COMPILES__ incrInt32 11);
+    print_i1 (prim __COMPILES__ (incrInt32 11));
 
     expect_i1 True;
-    print_i1 (__COMPILES__ ltSixA 3);
+    print_i1 (prim __COMPILES__ (ltSixA 3));
 
     expect_i1 False;
-    print_i1 (__COMPILES__ ltSixA nine);
+    print_i1 (prim __COMPILES__ (ltSixA nine));
 
     expect_i1 True;
-    print_i1 (__COMPILES__ ltSixB 3);
+    print_i1 (prim __COMPILES__ (ltSixB 3));
 
     expect_i1 False;
-    print_i1 (__COMPILES__ ltSixB nine);
+    print_i1 (prim __COMPILES__ (ltSixB nine));
     ()
 };

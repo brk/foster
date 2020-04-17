@@ -332,7 +332,7 @@ Pattern matching doesn't currently support arrays or string constants.
 Other Expressions
 +++++++++++++++++
 
-One interesting expression form is ``(__COMPILES__ e)``,
+One interesting expression form is ``(prim __COMPILES__ e)``,
 which evaluates (at compile time) to a boolean value reflecting whether
 the provided expression was well-typed.
 This can be useful to make sure that "improper" usage of an API
@@ -584,10 +584,10 @@ only arrays of length 3::
     la2 = prim mach-array-literal 1 (opaquely_i32 3);
 
     expect_i1 True;
-    print_i1 (__COMPILES__ arrayLenInp3 la);
+    print_i1 (prim __COMPILES__ (arrayLenInp3 la));
 
     expect_i1 False;
-    print_i1 (__COMPILES__ arrayLenInp3 la2);
+    print_i1 (prim __COMPILES__ (arrayLenInp3 la2));
 
 If ``T`` is a type, then ``% name : T : pred`` is a refined type
 where the property ``pred`` (which can mention ``name``) holds of all values
@@ -702,10 +702,12 @@ A few differences to note:
 * The Foster code is slightly longer and more verbose -- 31 lines of code versus 27.
 * In the C code, the code to detect and handle special cases is intertwined;
   Foster uses local helper functions to separate them.
-* The local helper functions will be boiled away by the compiler. In particlar, observe that
-  the ``adjust-`` functions have only one non-recursive usage; they can be eliminated via contification.
-  The ``times2tothe`` function only occurs in tail position; after the ``adjust-`` functions are
-  dealt with, the other helper will be eligible for elimination.
+* The local helper functions will be boiled away by the compiler. How do we know this will happen?
+  The ``adjust-`` functions have only one non-tail-recursive usage.
+  This means they can be eliminated via contification.
+  The ``times2tothe`` function only occurs in tail position, which means its continuation is static
+  and it can be contified. After the ``adjust-`` functions are dealt with,
+  this other helper will be eligible for elimination.
 * In the C code, mutation can alter the values used by the main operation;
   in the Foster code, mutation is replaced by explicit naming of functions and altered values.
 * The Foster code is less repetitious; it contains three fewer occurrences of ``1023``.
@@ -716,7 +718,7 @@ A few differences to note:
 C2Foster
 --------
 
-One bit of developing-but-cool infrastructure is a program called ``c2foster``
+One bit of cool (and still developing) infrastructure is a program called ``c2foster``
 to translate C code into Foster code.
 
 For example, given the following C code::
@@ -735,8 +737,9 @@ we automatically produce the following Foster code::
 
     main = { print_i32 (foo (bitshl-Int32 3 3)) };
 
-A script called ``csmith-minimal.sh`` directs `Csmith <https://embed.cs.utah.edu/csmith/>`_ to generate random C programs
-in a restricted subset of C, which can be fed into ``c2foster``.
+A script called ``csmith-minimal.sh`` directs `Csmith <https://embed.cs.utah.edu/csmith/>`_
+to generate random C programs in a restricted subset of C, which can be fed into ``c2foster``.
+This is useful to stress test certain parts of the compiler.
 
 Implementation
 --------------

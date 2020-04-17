@@ -339,7 +339,6 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
     TList [tok, _,_cbr, TList [quo, chrs]] | tok `tm` tok_STRING -> cb_parse_str quo chrs
     TList [tok, _,_cbr, TList [name]] | tok `tm` tok_TERMNAME -> cb_parse_termname name
     TList [tok, _,_cbr, TList (e : pmatches)] | tok `tm` tok_CASE -> E_Case annot (cb_parse_e e) (map cb_parse_pmatch pmatches)
-    TList [tok, _,_cbr, TList [stmts]] | tok `tm` tok_COMPILES -> E_CompilesAST annot (Just $ cb_parse_stmts stmts)
     TList [tok, _,_cbr, TList [mu_el_labels, mu_dup1st_exprs]] | tok `tm` tok_RECORD ->
         let labs = parseLabels (unMu mu_el_labels)
             exps = map cb_parse_e (tail $ unMu mu_dup1st_exprs)
@@ -713,6 +712,7 @@ parseCallPrim' primname tys args annot = do
         fixupSubscriptRanges _ = error $ "fixupSubscriptRanges needs an ArrayRead"
 
     case (T.unpack primname, args) of
+      ("__COMPILES__",      [arg]) -> E_CompilesAST annot (Just arg)
       ("assert-invariants", _) -> E_CallPrimAST annot "assert-invariants" [] [] args
       ("log-type",          _) -> E_CallPrimAST annot "log-type"          [] [] args
       ("mach-array-literal", _) -> case tys of

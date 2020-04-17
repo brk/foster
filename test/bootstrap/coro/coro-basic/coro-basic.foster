@@ -28,7 +28,7 @@ main = {
          print_i64 6666666;
 
          // Inconsistent use of coro_yield should be marked as a type error.
-         print_i1 (__COMPILES__ coro_yield ((), 7777 ));
+         print_i1 (prim __COMPILES__ (coro_yield ((), 7777 )));
   };
   noinline_foo = { y0 => noinline_bar y0 };
   // co :: Coro (Array Int8) Int64

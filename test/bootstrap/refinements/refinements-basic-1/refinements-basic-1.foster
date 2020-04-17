@@ -23,29 +23,29 @@ main = {
 
 test-assert-ifs = {
   expect_i1 True;
-  print_i1 (__COMPILES__ prim assert-invariants if True then True else False end);
+  print_i1 (prim __COMPILES__ (prim assert-invariants if True then True else False end));
 
   expect_i1 True;
-  print_i1 (__COMPILES__ prim assert-invariants if False then False else True end);
+  print_i1 (prim __COMPILES__ (prim assert-invariants if False then False else True end));
 
   expect_i1 False;
-  print_i1 (__COMPILES__ prim assert-invariants if False then True else False end);
+  print_i1 (prim __COMPILES__ (prim assert-invariants if False then True else False end));
 };
 
 test-assert-bool-lits = {
   expect_i1 True;
-  print_i1 (__COMPILES__ prim assert-invariants True);
+  print_i1 (prim __COMPILES__ (prim assert-invariants True));
 
   expect_i1 False;
-  print_i1 (__COMPILES__ prim assert-invariants False);
+  print_i1 (prim __COMPILES__ (prim assert-invariants False));
 };
 
 test-assert-bool-unrefined = { tru : Bool => fls : Bool =>
   expect_i1 False;
-  print_i1 (__COMPILES__ prim assert-invariants tru);
+  print_i1 (prim __COMPILES__ (prim assert-invariants tru));
 
   expect_i1 False;
-  print_i1 (__COMPILES__ prim assert-invariants fls);
+  print_i1 (prim __COMPILES__ (prim assert-invariants fls));
 };
 
 /*
@@ -56,10 +56,10 @@ test-assert-bool-refined :: { % t : Bool : prim ==Bool t True
                           =>  % f : Bool : prim ==Bool f False => () };
 test-assert-bool-refined = { tru => fls =>
   expect_i1 True;
-  print_i1 (__COMPILES__ prim assert-invariants tru);
+  print_i1 (prim __COMPILES__ (prim assert-invariants tru));
 
   expect_i1 False;
-  print_i1 (__COMPILES__ prim assert-invariants fls);
+  print_i1 (prim __COMPILES__ (prim assert-invariants fls));
 };
 */
 
@@ -74,68 +74,68 @@ test-assert-bool-refined-alt = {
   fls = ret-false !;
 
   expect_i1 True;
-  print_i1 (__COMPILES__ prim assert-invariants tru);
+  print_i1 (prim __COMPILES__ (prim assert-invariants tru));
 
   expect_i1 False;
-  print_i1 (__COMPILES__ prim assert-invariants fls);
+  print_i1 (prim __COMPILES__ (prim assert-invariants fls));
 };
 
 test-refined-array-literals = {
   // Unconstrained type; should it be Int32 or Int64 or ... ?
   /*
   expect_i1 False;
-  print_i1 (__COMPILES__ prim mach-array-literal 1 2 3);
+  print_i1 (prim __COMPILES__ (prim mach-array-literal 1 2 3);
   */
 
   expect_i1 True;
-  print_i1 (__COMPILES__ prim mach-array-literal :[Int32] 1 2 3);
+  print_i1 (prim __COMPILES__ (prim mach-array-literal :[Int32] 1 2 3));
 
   expect_i1 True;
-  print_i1 (__COMPILES__ prim mach-array-literal :[(% v : Int32 : v <=SInt32 3)] 1 2 3);
+  print_i1 (prim __COMPILES__ (prim mach-array-literal :[(% v : Int32 : v <=SInt32 3)] 1 2 3));
 
   expect_i1 False;
-  print_i1 (__COMPILES__ prim mach-array-literal :[(% v : Int32 : v <=SInt32 4)] 1 2 5);
+  print_i1 (prim __COMPILES__ (prim mach-array-literal :[(% v : Int32 : v <=SInt32 4)] 1 2 5));
 
   zzz = 4;
   expect_i1 False;
-  print_i1 (__COMPILES__ prim mach-array-literal
+  print_i1 (prim __COMPILES__ (prim mach-array-literal
                                  :[(% v : Int32 : v <=SInt32 3)]
-                                 1 2 zzz);
+                                 1 2 zzz));
 
   yyy = 2;
   expect_i1 True;
-  print_i1 (__COMPILES__ prim mach-array-literal
+  print_i1 (prim __COMPILES__ (prim mach-array-literal
                                  :[(% v : Int32 : v <=SInt32 3)]
-                                 1 2 yyy);
+                                 1 2 yyy));
 
   expect_i1 True;
-  print_i1 (__COMPILES__ prim mach-array-literal :[(% v : Bool : v)] True True);
+  print_i1 (prim __COMPILES__ (prim mach-array-literal :[(% v : Bool : v)] True True));
 
   expect_i1 False;
-  print_i1 (__COMPILES__ prim mach-array-literal :[(% v : Bool : v)] True False);
+  print_i1 (prim __COMPILES__ (prim mach-array-literal :[(% v : Bool : v)] True False));
 
   expect_i1 False;
-  print_i1 (__COMPILES__ { x : % b : Bool : b => () } False);
+  print_i1 (prim __COMPILES__ ({ x : % b : Bool : b => () } False));
 
   expect_i1 True;
-  print_i1 (__COMPILES__ { x : % b : Bool : b => () } True);
+  print_i1 (prim __COMPILES__ ({ x : % b : Bool : b => () } True));
 
   la = prim mach-array-literal 1 2 (opaquely_i32 3);
   la2 = prim mach-array-literal 1 (opaquely_i32 3);
   expect_i1 True;
-  print_i1 (__COMPILES__ prim assert-invariants (prim_arrayLength la ==Int64 3));
+  print_i1 (prim __COMPILES__ (prim assert-invariants (prim_arrayLength la ==Int64 3)));
 
   expect_i1 True;
-  print_i1 (__COMPILES__ arrayLenInp3 la);
+  print_i1 (prim __COMPILES__ (arrayLenInp3 la));
 
   expect_i1 False;
-  print_i1 (__COMPILES__ arrayLenInp3 la2);
+  print_i1 (prim __COMPILES__ (arrayLenInp3 la2));
 
   //expect_i1 True;
-  //print_i1 (__COMPILES__ arrayLenInp3Nested ((), la));
+  //print_i1 (prim __COMPILES__ (arrayLenInp3Nested ((), la));
   //
   //expect_i1 False;
-  //print_i1 (__COMPILES__ arrayLenInp3Nested ((), la2));
+  //print_i1 (prim __COMPILES__ (arrayLenInp3Nested ((), la2));
 
   expect_i32 0;
   print_i32 (arrayLenInp3 la);
@@ -145,32 +145,32 @@ test-refined-array-nonlits = {
   da = allocDArray:[Int32] 16;
 
   expect_i1 True;
-  print_i1 (__COMPILES__ prim assert-invariants (prim_arrayLength da ==Int64 16));
+  print_i1 (prim __COMPILES__ (prim assert-invariants (prim_arrayLength da ==Int64 16)));
 
   expect_i32 0;
   print_i32 (arrayLenInp16 da);
 
   dai = arrayLenRet 0 16;
   expect_i1 True;
-  print_i1 (__COMPILES__ prim assert-invariants (prim_arrayLength dai ==Int64 16));
+  print_i1 (prim __COMPILES__ (prim assert-invariants (prim_arrayLength dai ==Int64 16)));
 
   //let ((), dain) = arrayLenRetNested 0 16;
   //expect_i1 True;
-  //print_i1 (__COMPILES__ prim assert-invariants (prim_arrayLength dain ==Int64 16));
+  //print_i1 (prim __COMPILES__ (prim assert-invariants (prim_arrayLength dain ==Int64 16));
 };
 
 test-more-bools = {
   expect_i1 True;
-  print_i1 (__COMPILES__ foo True);
+  print_i1 (prim __COMPILES__ (foo True));
 
   expect_i1 False;
-  print_i1 (__COMPILES__ foo False);
+  print_i1 (prim __COMPILES__ (foo False));
 
   expect_i1 True;
-  print_i1 (__COMPILES__ bar True);
+  print_i1 (prim __COMPILES__ (bar True));
 
   expect_i1 False;
-  print_i1 (__COMPILES__ bar False);
+  print_i1 (prim __COMPILES__ (bar False));
 };
 
 foo :: { % b : Bool : b => () };

@@ -744,16 +744,16 @@ sanityCheckIntLiteralNotOversized rng typeSize int =
 --       b = prim mach-array-literal True False;
 --
 --       expect_i1 True;
---       print_i1 b[a[0]];
--- Typechecking will record that a[0] has an int-ish type, but the specific
+--       print_i1 b.[a.[0]];
+-- Typechecking will record that a.[0] has an int-ish type, but the specific
 -- type will remain unconstrained. When converting to AIExpr we'll check that
 -- there are no remaining unconstrained types, so we must fix the type between
 -- typechecking and creating AIExpr. Thus, this function.
 --
 -- This has return type Tc (AnnExpr TypeTC) instead of Tc ()
 -- because we want to signal failure when we see indexing with a bogus type.
--- In order for __COMPILES__ to work correct, that means we can't get away with
--- a simple traversal routine.
+-- In order for __COMPILES__ to work correctly, we need a more sophisticated
+-- traversal routine.
 handleCoercionsAndConstraints :: AnnExpr TypeTC -> Tc (AnnExpr TypeTC)
 handleCoercionsAndConstraints ae = do
     let q = handleCoercionsAndConstraints
