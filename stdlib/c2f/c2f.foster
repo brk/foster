@@ -347,6 +347,10 @@ ptrToArr = { ptr =>
   end
 };
 
+c2f_i1_to_i8 = { b => if b then 0 else 1 end };
+
+c2f_i1_to_i32 = { b => if b then 0 else 1 end };
+
 s8-to-f32 :: { Int8 => Float32 };
 s8-to-f32 = { s8 => s8 |> sext_i8_to_i32 |> s32-to-f32-unsafe };
 
