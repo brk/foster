@@ -467,6 +467,22 @@ add_dependencies(fosterc_passes fosterc_parse)
 
 ############
 
+add_executable(fingerprint-antlr tools/fingerprint-antlr/fingerprint-antlr.cpp)
+
+target_link_libraries(fingerprint-antlr
+  fosterc_parse fosterc_base
+  antlr3c ${LLVM_LDFLAGS})
+
+############
+
+add_executable(tokendump-antlr tools/tokendump-antlr/tokendump-antlr.cpp)
+
+target_link_libraries(tokendump-antlr
+  fosterc_parse fosterc_base
+  antlr3c ${LLVM_LDFLAGS})
+
+############
+
 add_executable(fosterparse compiler/fosterparse.cpp)
 
 target_link_libraries(fosterparse
@@ -552,6 +568,7 @@ target_link_libraries(c2f
 # or uses llvm::cl, and thus must be compiled without RTTI.
 set_target_properties(fosterc_llvm fosterc_base
                       fosterlower fosteroptc fosterparse
+                      fingerprint-antlr
                       c2f
   PROPERTIES
   COMPILE_FLAGS ${LLVM_EXTRA_CFLAGS}

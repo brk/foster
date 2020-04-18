@@ -23,6 +23,8 @@ InputWholeProgram* parseWholeProgram(const InputFile& file,
                                    const std::vector<std::string> searchPaths,
                                    unsigned* outNumANTLRErrors);
 
+void dumpModuleTokens(const InputFile& file);
+
 } // namespace foster
 
 #endif // header guard

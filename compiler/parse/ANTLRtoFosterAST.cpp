@@ -436,6 +436,53 @@ namespace foster {
 
   void deleteANTLRContext(ANTLRContext* ctx) { delete ctx; }
 
+  void dumpModuleTokens(const InputFile& infile) {
+    foster::ParsingContext::pushNewContext();
+
+    foster::ANTLRContext* ctx = new foster::ANTLRContext();
+    foster::createParser(*ctx, infile);
+
+    foster::installTreeTokenBoundaryTracker(ctx->psr->adaptor);
+
+    // TODO for some malformed input (with stray ; nodes) this produces
+    // wrong results -- no parse && no errors, only warnings reported.
+    foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
+
+    auto buf = infile.getBuffer()->getMemoryBuffer();
+    auto filepath = infile.getPath();
+    auto input = antlr3StringStreamNew(
+                                (pANTLR3_UINT8) buf->getBufferStart(),
+                                                ANTLR3_ENC_8BIT,
+                                (ANTLR3_UINT32) buf->getBufferSize(),
+                                (pANTLR3_UINT8) const_cast<char*>(filepath.c_str()));
+    auto lxr = fosterLexerNew(input);
+    auto tsr = TOKENSOURCE(lxr);
+
+    int ntokens = 0;
+
+    pANTLR3_COMMON_TOKEN tok = NULL;
+    do {
+        tok = tsr->nextToken(tsr);
+
+        //auto astr = tok->getText(tok);
+        //int chan = tok->getChannel(tok);
+        printf("{ type: %3d , line: %4d , col: %4d , len: %d }%c\n",
+          tok->type,
+
+          tok->line,
+          tok->charPosition,
+
+          (int)(tok->stop - tok->start) + 1,
+          ((tok == &tsr->eofToken) ? ' ' : ',')
+        );
+        ++ntokens;
+    } while (tok != &tsr->eofToken);
+
+    lxr->free  (lxr);  lxr = NULL;
+
+    printf("%d tokens\n", ntokens);
+  }
+
   // Note: Modules are parsed iteratively, not nestedly.
   // Parsing contexts can be stacked, but we no longer use that functionality.
   void parseModule(InputWholeProgram* pgm,
