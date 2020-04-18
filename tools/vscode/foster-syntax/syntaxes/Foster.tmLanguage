@@ -77,9 +77,9 @@
 		</dict>
 		<dict>
 			<key>comment</key>
-			<string>Floats are always decimal</string>
+			<string>Floats can be decimal or hex</string>
 			<key>match</key>
-			<string>\b([+-]?[0-9]+\.[0-9]+([eE][+-]?[0-9]+)?|[0-9]+[eE][+-]?[0-9]+)\b</string>
+			<string>\b([+-]?[0-9]+\.[0-9]+([eE][+-]?[0-9]+)?|[0-9]+[eE][+-]?[0-9]+|[+-]?0x[0-9]+\.[0-9a-fA-F]+p[+-]?[0-9]+)\b</string>
 			<key>name</key>
 			<string>constant.numeric.float.foster</string>
 		</dict>
