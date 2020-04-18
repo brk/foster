@@ -156,6 +156,7 @@ atom    :       // syntactically "closed" terms
   | 'case' e (OF pmatch)+ 'end'         -> ^(CASE e pmatch+) // pattern matching
   | '(' ')'                             -> ^(TUPLE)
   | tuple_or_record
+  // | array
   | handler
   | val_abs
   ;
@@ -185,6 +186,14 @@ tuple_or_record :
         | ':' e (',' x ':' e)* ')'         -> ^(RECORD ^(MU $first x*) ^(MU e*))
         )
       ;
+
+/*
+array 	:	'['
+		(
+		 ']'
+		 | e (',' e)* ','? ']'
+		 );
+*/
 
 hashq : '#'?;
 
@@ -329,6 +338,8 @@ fragment SYMBOL_COMMON :
 fragment IDENT_SYMBOL_CONTINUE   : '_' | SYMBOL_MULTI_START;
 // Note: AFTER_PIPE is SYMBOL_CONTINUE_NDIG, minus WORD_CHAR
 fragment AFTER_PIPE : IDENT_SYMBOL_CONTINUE | '/' | '^';
+
+//LABEL	:	 (IDENT_START_SMALL | IDENT_START_UPPER | '_') IDENT_CONTINUE*  ':';
 
 TICK  : '\'';
 TRTK  : '\'\'\''; // triple-tick
