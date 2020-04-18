@@ -272,6 +272,8 @@ bytesFoldlFragmentsFromLen = { bytes => f => offset => len => acc =>
 
 bytesFlattenRaw :: { Bytes => Array Int8 };
 bytesFlattenRaw = { bytes =>
+  // TODO no need to allocate for   BytesFragment a x   if x == arrayLength a
+  // and both arrays are guaranteed to be immutable.
   rv = allocDArray (bytesLength32 bytes);
   bytesFoldlFragments bytes { arr => fst => fin => acc =>
       memcpy_i8_to_at_from_at_len rv  acc
