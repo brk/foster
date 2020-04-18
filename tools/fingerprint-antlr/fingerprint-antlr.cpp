@@ -83,22 +83,6 @@ int main(int argc, char** argv) {
   uint64_t numbytes = 0;
 
   if (optShallow) {
-    uint8_t buf[50000];
-    std::string str; str.reserve(40000000);
-    while (true) {
-        size_t nread = fread(buf, 1, 50000, stdin);
-        str.append((const char*) &buf[0], nread);
-        if (feof(stdin)) break;
-        if (ferror(stdin)) {
-            llvm::errs() << "stdin err: " << ferror(stdin) << "\n";
-            break;
-        }
-    }
-    
-    process(str, "-");
-    numbytes += str.size();
-    //numlines += infile->getBuffer()->getLineCount();
-      /*
     llvm::StringRef b;
     const foster::InputFile* infile;
     {
@@ -110,7 +94,8 @@ int main(int argc, char** argv) {
     numbytes += b.size();
     numlines += infile->getBuffer()->getLineCount();
     delete infile;
-    */
+
+    llvm::outs() << numlines << " lines " << numbytes << " bytes" << "\n";
   } else {
     foster::validateInputFile(optInputPath);
     const foster::InputFile infile(optInputPath);
@@ -136,9 +121,9 @@ int main(int argc, char** argv) {
       numbytes += b.size();
       numlines += m->getBuffer()->getLineCount();
     }
-  }
 
-  llvm::outs() << numlines << " lines " << numbytes << " bytes" << "\n";
+    llvm::outs() << pgmAST->getModuleCount() << " files " << numlines << " lines " << numbytes << " bytes" << "\n";
+  }
 
   if (optPrintTimings) {
     //setTimingDescriptions();
