@@ -5,8 +5,7 @@ snafuinclude PreludeMemcpy  "prelude/memcpy";
 // Immutable wrapper around Array Int8 with enhanced asymptotics
 // for common operations like concatenation of bytes and taking slices/views
 // of byte arrays.
-// Standard sequence types like VList are currently limited to boxed types.
-// TODO would a specialization of VList perform better?
+// TODO would a specialization of finger trees perform better?
 
 type case Bytes
   of $BytesEmpty

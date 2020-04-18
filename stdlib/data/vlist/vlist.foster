@@ -3,11 +3,12 @@ snafuinclude Maybe "maybe";
 snafuinclude Prelude "prelude";
 
 // Implementation of Phil Bagwell's VList data structure:
-//   http://en.wikipedia.org/wiki/VList
+//   https://rosettacode.org/wiki/VList
 // paper:
 //   http://infoscience.epfl.ch/record/64410/files/techlists.pdf
 
-// For now, the underlying storage is a List rather than any form of array.
+// For now, the underlying storage is a simple List rather than
+// any form of array or random-access list.
 
 // VList supports indexing in O(1) average, O(log n) worst-case,
 // prepending an element   in O(1) average,
