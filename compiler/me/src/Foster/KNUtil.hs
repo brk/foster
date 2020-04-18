@@ -480,7 +480,7 @@ desc (t0, tb, tn) = text "t_opnd=" <> pretty t0 <> text "; t_before="<>pretty tb
 instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
   pretty e =
         case e of
-            KNRelocDoms ids e        -> text "<reloc-doms<" <> pretty ids <> text ">>" <$> pretty e
+            KNRelocDoms ids e        -> yellow (text "<reloc-doms<" <> pretty ids <> text ">>") <$> pretty e
             KNVar (TypedId _ (GlobalSymbol name _alt))
                                 -> (text $ "G:" ++ T.unpack name)
                        --showTyped (text $ "G:" ++ T.unpack name) t
