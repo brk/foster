@@ -1,0 +1,220 @@
+snafuinclude SparseArray "data/sparse-array";
+snafuinclude Bitwise "math/bitwise";
+snafuinclude Maybe "maybe";
+
+snafuinclude Text "text";
+snafuinclude List "data/list";
+
+// Quad-bit Popcount Patricia Tries based on the design by Tony Finch:
+//      https://dotat.at/prog/qp/
+//
+// See also
+//      https://9vx.org/post/qp-tries/
+
+// QPTrie could have any bitstring-like key,
+// but we didn't have any way of expressing such constraints when this
+// was originally written. I think the right solution now is to use Int.
+//
+type case QPTrie32
+    of $QPTrie32Branch  (SparseArray QPTrie32) Int8
+    of $QPTrie32Leaf    Int32
+    ;
+
+// Invariant: only the top-most sparse array can be empty.
+
+
+qpTrie32Empty = { QPTrie32Branch (sparseArrayEmpty !) 0 };
+
+qpTrie32Contains :: { QPTrie32 => Int32 => Bool };
+qpTrie32Contains = { qp => key =>
+  case qp
+    of $QPTrie32Leaf k2 -> key ==Int32 k2
+    of $QPTrie32Branch sa nibble-bitoff ->
+      idx = bitfield-len-Int32 key (zext_i8_to_i32 nibble-bitoff) 4;
+      case sparseArrayLookup sa idx
+        of $None -> False
+        of $Some qpx -> qpTrie32Contains qpx key
+      end
+  end
+};
+
+qpTrie32ToList :: { QPTrie32 => List Int32 };
+qpTrie32ToList = { qp =>
+  REC go = { qp => acc =>
+    case qp
+        of $QPTrie32Leaf k2     -> Cons k2 acc
+        of $QPTrie32Branch sa _ -> sparseArrayFoldl sa go acc
+    end
+  };
+
+  go qp Nil
+};
+
+/*
+
+[ 0 | 0 | empty ]
+
+[ value | "foo" ]
+
+
+[ 0044 | 1 | twigs ] -> [    value | "bar" ]
+                        [    value | "foo" ]
+
+[ 0044 | 1 | twigs ] -> [ 0404 | 5 | twigs ] -> [ value | "bar" ]
+                        [    value | "foo" ]    [ value | "baz" ]
+
+[ 0244 | 1 | twigs ] -> [ 0404 | 5 | twigs ] -> [ value | "bar" ]
+                        [    value | "foo" ]    [ value | "baz" ]
+                        [    value | "qux" ]
+
+[ 0244 | 1 | twigs ] -> [ 0704 | 5 | twigs ] -> [ value | "bar" ]
+                        [    value | "foo" ]    [ value | "bay" ]
+                        [    value | "qux" ]    [ value | "baz" ]
+*/
+
+qpTrie32Show = { qp => sho =>
+  case qp
+    of $QPTrie32Leaf key ->
+        mkTextConcat "(QPTrie32Leaf "
+            (mkTextConcat (sho key) ")")
+    of $QPTrie32Branch sa nib-off ->
+        mkTextConcat "(QPTrie32Branch nib-off="
+         (mkTextConcat
+            (mkTextConcat (tmp_Text_of_Int8 nib-off) " ")
+            (mkTextConcat (sparseArrayShow sa
+                { qp => qpTrie32Show qp sho }) ")") )
+  end
+};
+
+nibble-at = { k : Int32 => o : Int8 =>
+  bitfield-len-Int32 k (zext_i8_to_i32 o) 4
+};
+
+// Precondition:
+//      q2 is a leaf with key k2.
+qpTrie32Pair = { k1 : Int32 => k2 => q2 =>
+    diffbits = bitxor-Int32 k1 k2;
+    REC first-differing-nibble = { nib : Int8 =>
+        if nibble-at diffbits nib ==Int32 0
+            then first-differing-nibble (nib +Int8 4)
+            else nib
+        end
+    };
+
+    n = first-differing-nibble 0;
+    sa = sparseArrayPair (QPTrie32Leaf k1) (nibble-at k1 n)
+                         q2                (nibble-at k2 n);
+    QPTrie32Branch sa n;
+};
+
+// This version does not maintain a strict ordering invariant on
+// the sequence of nibble offsets encountered when traversing the trie.
+// I'm not sure if this version actually constructs correct tries
+// or if it's broken!
+qpTrie32InsertQuestionable = { qp => key : Int32 =>
+  //print_text (qpTrie32Show qp tmp_Text_16_of_UInt32);
+
+  case qp
+    of $QPTrie32Leaf k2 ->
+      if k2 ==Int32 key
+        then qp
+        else qpTrie32Pair key k2 qp
+      end
+    of $QPTrie32Branch sa nibble-bitoff ->
+      if sparseArrayIsEmpty sa
+        then QPTrie32Leaf key
+        else
+             // We have a branch; look up the appropriate trie...
+             idx = nibble-at key nibble-bitoff;
+
+             case sparseArrayLookup sa idx
+               of $Some saqp ->
+                    // ... insert recursively...
+                    saqx = qpTrie32InsertQuestionable saqp key;
+                    // ... and rebuild.
+                    sax = sparseArrayInsert sa saqx idx;
+                    QPTrie32Branch sax nibble-bitoff
+               of $None ->
+                    sax = sparseArrayInsert sa (QPTrie32Leaf key) idx;
+                    QPTrie32Branch sax nibble-bitoff
+            end
+      end
+  end
+};
+
+qpTrie32AnyKey :: { QPTrie32 => Maybe Int32 };
+qpTrie32AnyKey = { qp =>
+  case qp
+    of $QPTrie32Leaf   key  -> Some key
+    of $QPTrie32Branch sa _ ->
+      case sparseArrayElem sa
+        of $None     -> None
+        of $Some qpp -> qpTrie32AnyKey qpp
+      end
+  end
+};
+
+qpTrie32InsertCanonical :: { QPTrie32 => Int32 => QPTrie32 };
+qpTrie32InsertCanonical = { qp => key : Int32 =>
+  // A helper function to "push" the key through
+  // the given trie.
+  REC push = { qp => key => bitoff =>
+
+      case qp
+        of $QPTrie32Leaf k2 ->
+            if k2 ==Int32 key
+                then qp
+                else qpTrie32Pair key k2 qp
+            end
+
+        of $QPTrie32Branch sa nibble-bitoff ->
+            if sparseArrayIsEmpty sa
+            then QPTrie32Leaf key
+            else
+            if bitoff ==Int8 nibble-bitoff
+                then // Query the sparse array bitmap
+                    // to determine whether we wrap or push.
+                    idx = nibble-at key nibble-bitoff;
+                    case sparseArrayLookup sa idx
+                        of $None ->
+                          QPTrie32Branch (sparseArrayInsert sa (QPTrie32Leaf key) idx) nibble-bitoff
+                        of $Some saqp ->
+                          subqp = push saqp key (bitoff +Int8 4);
+                          QPTrie32Branch (sparseArrayInsert sa subqp idx) nibble-bitoff
+                    end
+                else
+                    // The trie has some shared prefix that
+                    // we may or may not share.
+                    // Extract a key to determine which case holds.
+                    k2 = unMaybe (qpTrie32AnyKey qp);
+                    
+
+                    // Either there will be a mismatch at some bit offset
+                    // between bitoff and nibble-bitoff,
+                    //   in which case we wrap at that level,
+                    // or the prefixes agree,
+                    //   in which case we continue pushing.
+
+                    // Invariant: the prefixes match up to but not including bo.
+                    REC go = { bo =>
+                        if bo ==Int8 nibble-bitoff
+                        then push qp key bo
+                        else
+                            if nibble-at k2 bo ==Int32 nibble-at key bo
+                            then go (bo +Int8 4)
+                            else QPTrie32Branch (sparseArrayPair
+                                                    (QPTrie32Leaf key) (nibble-at key bo)
+                                                    qp                 (nibble-at k2  bo))
+                                                bo
+                            end
+                        end
+                    };
+
+                    go bitoff
+                end
+            end
+        end
+  };
+
+  push qp key 0
+};
