@@ -27,11 +27,18 @@ type case IORead
 
 read_stdin_bytes_list :: { Bytes };
 read_stdin_bytes_list = {
+  // Allowing buffers to grow without bounds can negatively impact performance.
+  read_stdin_bytes_lim_list 1024 1`000`000;
+};
+
+read_stdin_bytes_lim_list :: { Int32 => Int32 => Bytes };
+read_stdin_bytes_lim_list = { startSize => maxSize =>
   // Note: this implementation produces a linear chain of exponentially-growing
   // fragments, such that access to the first byte from stdin requires
   // traversing the whole "list" of chunks. For now, we don't call bytesFlatten
   // ourselves, but callers may wish to do so...
-  REC go = { prefix => size =>
+  REC go = { prefix => size0 =>
+    size = if size0 >SInt32 maxSize then maxSize else size0 end;
     case read_stdin_bytes_chunk size // roughly sqrt 2^30...
       of $IOReadDone  bytes -> bytesConcat prefix bytes
       of $IOReadMore  bytes -> go (bytesConcat prefix bytes) (size *Int32 2)
@@ -39,7 +46,7 @@ read_stdin_bytes_list = {
       of $IOReadError _ -> prim kill-entire-process "read_stdin_bytes_list failed";
     end
   };
-  go BytesEmpty 1024
+  go BytesEmpty startSize
 };
 
 read_stdin_bytes_chunk :: { Int32 => IORead };
