@@ -1,0 +1,64 @@
+heapsort-inplace-unstable :: forall (a:Type) { Array a => { a => a => Ord } => () };
+heapsort-inplace-unstable = { arr => cmp =>
+  parent     = { w : Word => (w -Word 1) `bitlshr-Word` 2 };
+  leftChild  = { w : Word => (w *Word 2) +Word 1 };
+  rightChild = { w : Word => (w *Word 2) +Word 2 };
+
+  pick = { root => leftChild => fin =>
+    rightChild = leftChild +Word 1;
+    case ()
+      of _ if       cmp arr.[swap] arr.[leftChild] |> isLT
+           -> leftChild
+      of _ if both (cmp rightChild fin |> isLE)
+                   (cmp arr.[swap] arr.[rightChild] |> isLT)
+           -> rightChild
+      of _ -> root
+    end
+  };
+
+  // TODO: use refinement types to eliminate bounds checks.
+
+  do-swap = { a => b =>
+    tmp = arr.[a];
+    arr.[b] >^ arr.[a];
+    tmp     >^ arr.[b];
+  };
+
+  siftDown = { start => fin =>
+    REC loop = { root =>
+        child = leftChild root;
+        if child <=SWord fin then
+            swap = pick root child fin;
+            if swap ==Word root then () else
+                do-swap root swap;
+                loop swap
+            end
+        else () end
+    };
+    loop start
+  };
+
+  heapify = { lastIndex =>
+    REC goFrom = { start =>
+        if start >=SWord 0 then
+            siftDown start lastIndex;
+            goFrom (start -Word 1)
+        end
+    };
+    goFrom (lastIndex |> parent)
+  };
+
+  REC loop = { fin =>
+      if fin >=SWord 0 then
+        do-swap fin 0;
+        nfin = fin -Word 1;
+        siftDown 0 nfin;
+        loop nfin
+      end;
+  };
+  
+
+  lastIndex = arrayLengthWord arr -Word 1;
+  heapify lastIndex;
+  loop    lastIndex
+};

@@ -1,6 +1,7 @@
 snafuinclude Prelude "prelude";
 snafuinclude Bitwise "math/bitwise";
 snafuinclude Bytes   "bytes";
+snafuinclude Heapsort "prelude/heapsort";
 
 type case BInt of $B Int32;
 
@@ -86,6 +87,8 @@ main = {
   test-div-mod !;
   test-bits !;
   test-logf !;
+
+  test-heapsort !;
 };
 
 test-misc-1 = {
@@ -389,3 +392,11 @@ test-logf = {
   expect_float_p9f64 4.605170186;
 };
 
+test-heapsort = {
+  arr = prim mach-array-literal 3 2 8 9 1 4 6 5 7;
+  heapsort-inplace-unstable arr cmpSInt32;
+  enumRange32 0 8 { i =>
+    expect_i32 (i +Int32 1);
+    print_i32 arr.[i];
+  };
+};
