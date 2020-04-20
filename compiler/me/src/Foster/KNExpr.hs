@@ -985,6 +985,7 @@ letsForArrayValues vals normalize mkArray = do
 
 -- Give constants distinct-looking binders from non-constants;
 -- this is mostly to aid debugging of failing SMT scripts.
+tmpForExpr (KNLiteral _ (LitInt x)) = ".const_" ++ show (litIntValue x)
 tmpForExpr (KNLiteral {}) = ".const"
 tmpForExpr (KNTyApp   {}) = ".tyapp"
 tmpForExpr _              = ".x"
