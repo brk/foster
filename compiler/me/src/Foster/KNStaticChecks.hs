@@ -56,6 +56,7 @@ mergeSMTExprAsPathFact (SMTExpr e s m) (Facts preconds identfacts pathfacts decl
   Facts preconds (m ++ identfacts) (e:pathfacts) (Set.union s decls)
 
 liftSMTExpr (SMTExpr e s m) f = SMTExpr (f e) s m
+idfactsOf   (SMTExpr _ _ m)   = m
 
 data Facts = Facts { fnPreconds :: Map Ident [[MoVar] -> SC SMTExpr]
                    , identFacts :: [(Ident, SMT.Expr)]
@@ -126,7 +127,7 @@ insertIdentFact id expr idfacts =
   -- trace (show (text "insertIdentFact" <+> indent 4 (vsep [pretty (id,expr), pretty idfacts]))) $
   (id, expr):idfacts
 
-addIdentFact facts id (SMTExpr expr decls _) ty =
+addIdentFact facts id (SMTExpr expr decls _idfacts) ty =
   addSymbolicDecls
    (addSymbolicVars (addIdentFact''' facts id expr) [TypedId ty id]) decls
 
@@ -337,13 +338,6 @@ checkModuleExprs expr facts =
     KNCall {} ->
       return ()
     _ -> error $ "Unexpected expression in checkModuleExprs: " ++ show expr
-
-    {-
-dbgStr x = liftIO $ putStrLn x
-dbgDoc x = liftIO $ putDocLn x
--}
-dbgStr _x = return ()
-dbgDoc _x = return ()
 
 checkFn :: (Fn RecStatus KNMono MonoType) -> Facts -> Compiled (Maybe (Ident -> SC SMTExpr))
 checkFn fn facts = do
@@ -620,6 +614,7 @@ checkBody expr facts =
             return $ (smtArraySizeOf (smtId x) === litOfSize (fromIntegral $ length entries) I64)
 
     KNCallPrim _ _ (NamedPrim tid) vs | primName tid `elem` ["assert-invariants"] -> do
+        dbgStr $ "assert-invariants: facts is " ++ show (pretty facts)
         scRunZ3 expr $ scriptImplyingBy' (smtAll (map smtVar vs)) facts
         return $ Nothing
 
@@ -750,17 +745,41 @@ checkBody expr facts =
             _ -> return Nothing
 
     KNLetVal      id   e1 e2 _  -> do
-        --dbgStr $ "letval checking bound expr for " ++ show id
-        --dbgDoc $ indent 8 (pretty e1)
+        dbgStr $ "letval checking bound expr for " ++ show id
+        dbgDoc $ indent 8 (pretty e1)
         mb_f   <- checkBody e1 facts
         facts' <- whenRefinedElse (typeKN e1) (compileRefinementBoundTo id facts) facts
+        dbgStr $ "facts' = " ++ show (pretty facts')
         case mb_f of
           Nothing -> do dbgStr $ "  no fact for id binding " ++ show id
                         dbgStr $ "       with type " ++ show (pretty (typeKN e1))
                         checkBody e2 (addSymbolicVars facts' [TypedId (typeKN e1) id])
           Just f  -> do dbgStr $ "have fact for id binding " ++ show id
                         newfact <- f id
-                        checkBody e2 (addIdentFact facts' id newfact (typeKN e1))
+                        dbgStr $ "newfact = " ++ show (pretty newfact)
+                        -- If we have something like assert-invariants (if _ then v = 0; isZero v else True)
+                        -- it will be translated into
+                              -- letfuns
+                              --   assert-invariants-thunk!1424 = {
+                              --       let .x!1644  = if _
+                              --                     then let v!1422 = (0 :: Int64) in
+                              --                           prim != rv!1419 v!1422
+                              --                     else (True :: Bool)
+                              --                     end in
+                              --       prim assert-invariants!1 .x!1644
+                              --   }
+
+                        -- then when we are processing the KNLetVal for .x!1644,
+                        -- newfact will be an SMTExpr reflecting the or-of-ands that KNIf gets translated to,
+                        -- and that SMTExpr's idfacts will contain a binding constraining v to be zero.
+                        -- addIdentFact by itself ignores that binding/constraint and instead adds symbolic decls.
+                        -- Thus, we need to explicitly inject any constraints added by the RHS
+                        -- that were not present in our base environment.
+                        let facts'' = addIdentFact facts' id newfact (typeKN e1)
+                        let newidfacts = newFactsAddedTo (idfactsOf newfact) (identFacts facts)
+                        let facts'3 = facts'' { identFacts = newidfacts ++ identFacts facts'' }
+                        dbgStr $ "result of inserting newfact in to facts' is = " ++ show (pretty facts'3)
+                        checkBody e2 facts'3
 
     KNLetRec      _ids _es _b   ->
       error $ "KNStaticChecks.hs: checkBody can't yet support recursive non-function bindings."
@@ -875,6 +894,7 @@ smtExprOr e1 e2 = smtExprMergeWith SMT.or e1 e2
 smtExprMergeWith combine (SMTExpr e1 d1 f1) (SMTExpr e2 d2 f2) =
              SMTExpr (combine e1 e2) (Set.union d1 d2) (f1 ++ f2)
 
+smtExprAnd' :: Maybe SMTExpr -> SMT.Expr -> SMTExpr
 smtExprAnd' Nothing e' = bareSMTExpr e'
 smtExprAnd' (Just (SMTExpr e decls idfacts)) e' = SMTExpr (SMT.and e e') decls idfacts
 
@@ -893,6 +913,13 @@ getMbFnPreconditions facts id = Map.lookup id (fnPreconds facts)
 
 primName tid = T.unpack (identPrefix (tidIdent tid))
 
+newFactsAddedTo :: [(Ident, SMT.Expr)] -> [(Ident, SMT.Expr)] -> [(Ident, SMT.Expr)]
+newFactsAddedTo fsnew fsbase = go fsnew fsbase []
+  where go fs            []              acc = fs ++ acc
+        go []            _               acc = acc
+        go ((i1, e1):fs) base@((i2,_):_) acc =
+            if i1 == i2 then acc
+                        else go fs base ((i1, e1):acc)
 
 -- {{{ SMT canonicalization
 canonicalizeScript :: CommentedScript -> CommentedScript
@@ -1011,4 +1038,12 @@ dbgIf c d = if c then liftIO $ putDocLn d else return ()
 
 dbgCheckFn      = False
 dbgRefinedCalls = False
+
+
+-- dbgStr x = liftIO $ putStrLn x
+-- dbgDoc x = liftIO $ putDocLn x
+
+dbgStr _x = return ()
+dbgDoc _x = return ()
+
 -- }}}
