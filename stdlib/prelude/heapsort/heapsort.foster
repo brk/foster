@@ -5,14 +5,17 @@ heapsort-inplace-unstable = { arr => cmp =>
   rightChild = { w : Word => (w *Word 2) +Word 2 };
 
   pick = { root => leftChild => fin =>
+    swap = if cmp arr.[root] arr.[leftChild] |> isLT
+           then leftChild
+           else root
+           end;
+
     rightChild = leftChild +Word 1;
-    case ()
-      of _ if       cmp arr.[swap] arr.[leftChild] |> isLT
-           -> leftChild
-      of _ if both (cmp rightChild fin |> isLE)
-                   (cmp arr.[swap] arr.[rightChild] |> isLT)
-           -> rightChild
-      of _ -> root
+    
+    if both (rightChild <=UWord fin)
+            (cmp arr.[swap] arr.[rightChild] |> isLT)
+    then rightChild
+    else swap
     end
   };
 
