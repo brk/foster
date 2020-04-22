@@ -34,6 +34,7 @@ import Foster.Config
 import Foster.CFG
 import Foster.ProtobufFE(cb_parseWholeProgram)
 import Foster.CapnpIL(dumpILProgramToCapnp)
+import Foster.HashCache
 import Foster.TypeTC
 import Foster.ExprAST
 import Foster.PrettyExprAST(IsQuietPlaceholder(..))
@@ -586,6 +587,8 @@ runCompiler ci_time wholeprog flagVals outfile = do
    smtStatsRef <- newIORef (0, [])
    cfgSizesRef <- newIORef []
    plaref      <- newIORef []
+   hc <- getHashCache "fosterc-z3-cache.cbor"
+
 
    let tcenv = TcEnv {       tcEnvUniqs = uniqref,
                       tcUnificationVars = varlist,
@@ -605,6 +608,7 @@ runCompiler ci_time wholeprog flagVals outfile = do
                          , ccFlagVals = flagVals
                          , ccDumpFns  = getDumpFns flagVals
                          , ccUniqRef  = uniqref
+                         , ccHashCache = hc
                          , ccSMTStats = smtStatsRef
                          , ccCFGSizes = cfgSizesRef
                     }
@@ -779,6 +783,8 @@ lowerModule outfile (tc_time, kmod) = do
          putDocLn $ (outLn "^^^ ===================================")
 
      (sc_time, _) <- ioTime $ runStaticChecks monomod0
+     hc <- gets ccHashCache
+     liftIO $ hashCachePersist hc
 
      maybeInterpretKNormalModule kmod
 

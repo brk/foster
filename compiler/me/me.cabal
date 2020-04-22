@@ -36,6 +36,7 @@ executable me
                  criterion-measurement -any,
                  cityhash -any,
                  cborg -any,
+                 directory -any,
                  double-conversion >=2.0.2.0,
                  data-dword >= 0.3.1,
                  text >= 1.2.0.0,
@@ -73,6 +74,7 @@ executable me
       Foster.ILExpr
       Foster.Infer
       Foster.FromHaskell
+      Foster.HashCache
       Foster.KNExpr
       Foster.KNStaticChecks
       Foster.KNUtil

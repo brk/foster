@@ -9,6 +9,7 @@ module Foster.Config where
 
 import Foster.Base(Uniq, Ident(..), modIORef')
 import Foster.MainOpts
+import Foster.HashCache
 
 import Data.IORef(IORef, readIORef, newIORef, writeIORef)
 import Control.Monad.Trans.Class(lift)
@@ -28,6 +29,7 @@ data CompilerContext = CompilerContext {
       , ccUniqRef   :: IORef Uniq
       , ccFlagVals  :: ([Flag], [String])
       , ccDumpFns   :: [String]
+      , ccHashCache :: HashCache
       , ccSMTStats  :: IORef (Int, [(Double, Double)])
       , ccCFGSizes  :: IORef [(String, (Int, Int), (Int, Int) )]
 }

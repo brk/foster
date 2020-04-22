@@ -21,6 +21,7 @@ import Foster.MonoType
 import Foster.Base
 import Foster.KNUtil
 import Foster.Config
+import Foster.HashCache
 import Foster.Output(putDocLn)
 import Foster.SourceRange(SourceRange(..), rangeOf, prettyWithLineNumbers)
 
@@ -244,22 +245,16 @@ scGetFact id = do
 scRunZ3 :: KNMonoLike monolike => monolike -> CommentedScript -> SC ()
 scRunZ3 expr script = do
  smtStatsRef <- gets scSMTStats
- let hash = cityHash64 $ BSC.pack $ show $ prettyCommentedScript (canonicalizeScript script)
- let knownCanonHashes = [
-        807324308929015824,
-        6634015232262316238,
-        980697889711928269,
-        9928868970853278210,
-        10096721311113477168,
-        14187241249078338769,
-        17281924150558556845,
-        12399786756963341161]
- if hash `elem` knownCanonHashes
-    then return ()
-    else lift $ scRunZ3' expr script smtStatsRef
+ let hash64 = cityHash64 $ BSC.pack $ show $ prettyCommentedScript (canonicalizeScript script)
+     hash   = fromIntegral hash64
+ hc <- lift $ gets ccHashCache
+ knownGood <- liftIO $ hashCacheQuery hc hash
+ if knownGood
+   then return ()
+   else do lift $ scRunZ3' expr script smtStatsRef hc hash
 
 -- Run a script (in non-canonical form). The canonical version wasn't cached.
-scRunZ3' expr script@(CommentedScript items _) smtStatsRef = do
+scRunZ3' expr script@(CommentedScript items _) smtStatsRef hc hash = do
   let doc = prettyCommentedScript script
   --liftIO $ putDocLn $ text "smthash: " <> text (show hash)
 
@@ -279,6 +274,8 @@ scRunZ3' expr script@(CommentedScript items _) smtStatsRef = do
       case res' of
         Left x -> compiledThrowE [text x, knMonoLikePretty expr, string (show doc)]
         Right ["sat"] -> do liftIO $ modifyIORef smtStatsRef (\(c, ts) -> (c + 1, (time, time'):ts))
+                            liftIO $ putStrLn $ "Added hash " ++ show hash  ++ " to hash cache."
+                            liftIO $ hashCacheInsert hc hash
                             return ()
         Right ["unsat"] -> do
          dbgStr $ "WARNING: scRunZ3 returning OK due to inconsistent context..."
