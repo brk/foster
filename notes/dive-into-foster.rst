@@ -646,6 +646,24 @@ A less-silly example is in the Foster implementation of ``siphash``,
 which uses the ``subscript-static`` primitive to perform array indexing
 safely without runtime bounds checking.
 
+Notes
+-----
+
+SMT checking can be slow, depending on what operations are used.
+For example, reasoning about multiplication is much more intensive than other bitvector operations.
+
+The Foster compiler caches checksums of queries that succeed.
+Thus, in the common case, queries that have already been proven true do not need to be fed
+to an SMT solver to be re-verified.
+This eliminates the most expensive part of refinement type checking from the edit-compile cycle.
+
+When an invariant or assertion cannot be proven, the compiler simply prints out the complete script
+that could not be proven.
+The programmer is basically on their own to reverse-engineer what missing constraint or invariant
+is needed for the proof to go through.
+I'm not aware of a robust method for determining missing invariants, but if you know of any, please
+do let me know!
+
 Examples
 --------
 

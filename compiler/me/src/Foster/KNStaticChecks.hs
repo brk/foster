@@ -619,6 +619,9 @@ checkBody expr facts =
         return $ withDecls facts $ \x -> return $ smtAll [smtId x === smtArraySizeOf (smtVar v)
                                                          ,smtId x `bvsge` bv 0 64]
 
+    KNCallPrim _ _ (PrimOp "bitnot" (PrimInt _)) [v] -> do
+        return $ withDecls facts $ \x -> return $ smtId x === bvnot (smtVar v)
+
     KNCallPrim _ _ (PrimOp opname (PrimInt _)) vs | Just op <- Map.lookup opname fnMap -> do
         return $ withDecls facts $ \x -> return $ smtId x === lift2 op (smtVars vs)
 
