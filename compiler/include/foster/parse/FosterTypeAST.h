@@ -209,54 +209,6 @@ public:
   void setBody(const std::vector<TypeAST*>& argTypes);
 };
 
-class VoidTypeAST : public TypeAST {
-  explicit VoidTypeAST()
-    : TypeAST("VoidType", NULL, SourceRange::getEmptyRange()) {}
-
-public:
-  virtual void show(PrettyPrintTypePass* pass);
-  virtual llvm::Type* getLLVMType() const;
-  static VoidTypeAST* get();
-};
-
-class TupleTypeAST : public IndexableTypeAST {
-  StructTypeAST* structType;
-
-  explicit TupleTypeAST(const std::vector<TypeAST*>& parts,
-                        const SourceRange& sourceRange)
-    : IndexableTypeAST("TupleType", NULL, sourceRange) {
-    structType = new StructTypeAST(parts, sourceRange);
-  }
-
-public:
-  virtual void show(PrettyPrintTypePass* pass);
-  virtual llvm::Type* getLLVMType() const;
-
-  virtual int getNumContainedTypes() const { return structType->getNumContainedTypes(); }
-  virtual TypeAST*& getContainedType(int i) { return structType->getContainedType(i); }
-
-  static TupleTypeAST* get(const std::vector<TypeAST*>& parts);
-};
-
-class TypeTypeAppAST : public IndexableTypeAST {
-  std::vector<TypeAST*> parts;
-
-  explicit TypeTypeAppAST(const std::vector<TypeAST*>& parts,
-                          const SourceRange& sourceRange)
-    : IndexableTypeAST("TypeTypeApp", NULL, sourceRange),
-      parts(parts) {}
-
-public:
-  virtual void show(PrettyPrintTypePass* pass);
-  virtual llvm::Type* getLLVMType() const;
-
-  virtual int getNumContainedTypes() const { return parts.size(); }
-  virtual TypeAST*& getContainedType(int i);
-
-  static TypeTypeAppAST* get(const std::vector<TypeAST*>& parts);
-};
-
-
 class CoroTypeAST : public TypeAST {
   TypeAST* a;
   TypeAST* b;
@@ -274,26 +226,6 @@ public:
 
   static CoroTypeAST* get(TypeAST* targ, TypeAST* tret);
 };
-
-class CArrayTypeAST : public TypeAST {
-  TypeAST* cell;
-  uint64_t size;
-
-  explicit CArrayTypeAST(TypeAST* tcell, int64_t size, const SourceRange& sr)
-    : TypeAST("CArrayType", NULL, sr),
-      cell(tcell), size(size) {}
-
-public:
-  virtual void show(PrettyPrintTypePass* pass);
-  virtual llvm::Type* getLLVMType() const;
-
-  uint64_t getSize() { return size; }
-  virtual int getNumContainedTypes() const { return 1; }
-  virtual TypeAST*& getContainedType(int i);
-
-  static CArrayTypeAST* get(TypeAST* tcell, uint64_t size);
-};
-
 
 class ArrayTypeAST : public TypeAST {
   TypeAST* cell;
@@ -314,40 +246,6 @@ public:
   static  llvm::Type* getSizedArrayTypeRef(llvm::Type* t, int64_t n);
 
   static ArrayTypeAST* get(TypeAST* tcell);
-};
-
-class ForallTypeAST : public TypeAST {
-  std::vector<TypeFormal> tyformals;
-  TypeAST* quant;
-
-public:
-  explicit ForallTypeAST(std::vector<TypeFormal> tyformals,
-                         TypeAST* quant, const SourceRange& sr)
-    : TypeAST("ForallType", NULL, sr),
-      tyformals(tyformals), quant(quant) {}
-
-  virtual void show(PrettyPrintTypePass* pass);
-  virtual llvm::Type* getLLVMType() const;
-  TypeAST* getQuantifiedType() const { return quant; }
-};
-
-class RefinedTypeAST : public TypeAST {
-  std::string   name;
-  TypeAST* underlyingType;
-  ExprAST* refinement;
-
-public:
-  explicit RefinedTypeAST(std::string name,
-                          TypeAST* underlyingType,
-                          ExprAST* refinement,
-                          const SourceRange& sourceRange)
-    : TypeAST("RefType", NULL, sourceRange),
-      name(name), underlyingType(underlyingType), refinement(refinement) {}
-
-  virtual void show(PrettyPrintTypePass* pass);
-  virtual llvm::Type* getLLVMType() const;
-
-  TypeAST*& getElementType() { return underlyingType; }
 };
 
 #endif // header guard

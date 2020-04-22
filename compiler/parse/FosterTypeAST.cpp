@@ -172,31 +172,6 @@ llvm::CallingConv::ID FnTypeAST::getCallingConventionID() const {
 
 /////////////////////////////////////////////////////////////////////
 
-llvm::Type* VoidTypeAST::getLLVMType() const {
-  return llvm::Type::getVoidTy(fosterLLVMContext);
-}
-
-VoidTypeAST* VoidTypeAST::get() {
-  return new VoidTypeAST();
-}
-
-/////////////////////////////////////////////////////////////////////
-
-llvm::Type* TupleTypeAST::getLLVMType() const {
-  ASSERT(false) << "TupleTypeAST should not be used by the backend!";
-  return NULL;
-}
-
-TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
-  if (!argTypes.empty()) {
-    ASSERT(argTypes.back()) << "Tuple type must not contain NULL members.";
-  }
-  return new TupleTypeAST(argTypes, SourceRange::getEmptyRange());
-}
-
-/////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////
-
 StructTypeAST::StructTypeAST(std::string name, const SourceRange& sourceRange)
   : IndexableTypeAST("StructType", NULL, sourceRange) {
   repr = llvm::StructType::create(fosterLLVMContext, name);
@@ -240,47 +215,6 @@ StructTypeAST* StructTypeAST::getRecursive(std::string name) {
 
 /////////////////////////////////////////////////////////////////////
 
-llvm::Type* TypeTypeAppAST::getLLVMType() const {
-  ASSERT(false) << "TypeTypeAppAST::getLLVMType()";
-  return NULL;
-}
-
-TypeAST*& TypeTypeAppAST::getContainedType(int i) {
-  return parts.at(i);
-}
-
-TypeTypeAppAST* TypeTypeAppAST::get(const vector<TypeAST*>& argTypes) {
-  ASSERT(argTypes.size() >= 2) << "TypeTypeAppAST must contain at least two types.";
-  return new TypeTypeAppAST(argTypes, SourceRange::getEmptyRange());
-}
-
-/////////////////////////////////////////////////////////////////////
-
-
-llvm::Type* CArrayTypeAST::getLLVMType() const {
-  if (!repr) {
-    ASSERT(false);
-  }
-  return repr;
-}
-
-TypeAST*& CArrayTypeAST::getContainedType(int i) {
-  ASSERT(i >= 0 && i < getNumContainedTypes());
-  return cell;
-}
-
-CArrayTypeAST* CArrayTypeAST::get(TypeAST* tcell, uint64_t size) {
-  ASSERT(tcell);
-  ASSERT(int64_t(size) >= 0LL)
-    << "either you tried creating a buffer of "
-    << "more than 16 million terabytes, or the size "
-    << "that reached CArrayTypeAST::get() was negative.";
-  return new CArrayTypeAST(tcell, size, SourceRange::getEmptyRange());
-}
-
-
-/////////////////////////////////////////////////////////////////////
-
 // Returns {i64, [t, n]}*
 llvm::Type* ArrayTypeAST::getSizedArrayTypeRef(llvm::Type* t, int64_t n) {
   return getHeapPtrTo(
@@ -309,18 +243,4 @@ TypeAST*& ArrayTypeAST::getContainedType(int i) {
 ArrayTypeAST* ArrayTypeAST::get(TypeAST* tcell) {
   ASSERT(tcell);
   return new ArrayTypeAST(tcell, SourceRange::getEmptyRange());
-}
-
-/////////////////////////////////////////////////////////////////////
-
-llvm::Type* ForallTypeAST::getLLVMType() const {
-  ASSERT(false) << "No getLLVMType() for ForallTypeAST!";
-  return NULL;
-}
-
-/////////////////////////////////////////////////////////////////////
-
-llvm::Type* RefinedTypeAST::getLLVMType() const {
-  ASSERT(false) << "No getLLVMType() for RefinedTypeAST!";
-  return NULL;
 }

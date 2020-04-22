@@ -43,9 +43,6 @@ using foster::ParsingContext;
 
 #define DEBUG_TYPE "foster"
 
-KindAST* getDefaultKind() { return new BaseKindAST(BaseKindAST::KindType); }
-KindAST* getBoxedKind() { return new BaseKindAST(BaseKindAST::KindBoxed); }
-
 std::string str(pANTLR3_STRING pstr) {
   return string((const char*)pstr->chars);
 }

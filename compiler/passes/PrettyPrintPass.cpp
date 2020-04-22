@@ -97,34 +97,10 @@ void RefTypeAST::show(PrettyPrintTypePass* pass){
   pass->scan(PPToken(")"));
 }
 
-void CArrayTypeAST::show(PrettyPrintTypePass* pass){
-  std::stringstream ss; ss << this->getSize();
-  pass->scan(PPToken("CArray["));
-  pass->emit(this->getContainedType(0));
-  pass->scan(PPToken("]("));
-  pass->scan(PPToken(ss.str()));
-  pass->scan(PPToken(")"));
-}
-
 void ArrayTypeAST::show(PrettyPrintTypePass* pass){
   pass->scan(PPToken("(Array "));
   pass->emit(this->getContainedType(0));
   pass->scan(PPToken(")"));
-}
-
-void VoidTypeAST::show(PrettyPrintTypePass* pass) {
-  pass->scan(PPToken("void"));
-}
-
-void TupleTypeAST::show(PrettyPrintTypePass* pass){
-  pass->scan(PPToken(" {{ "));
-  for (int i = 0; i < this->getNumContainedTypes(); ++i) {
-    if (i > 0) {
-      pass->scan(PPToken(", "));
-    }
-    pass->emit(this->getContainedType(i));
-  }
-  pass->scan(PPToken(" }} "));
 }
 
 void StructTypeAST::show(PrettyPrintTypePass* pass){
@@ -136,32 +112,6 @@ void StructTypeAST::show(PrettyPrintTypePass* pass){
     pass->emit(this->getContainedType(i));
   }
   pass->scan(PPToken(" #} "));
-}
-
-void TypeTypeAppAST::show(PrettyPrintTypePass* pass){
-  pass->scan(PPToken(" ( "));
-  for (int i = 0; i < this->getNumContainedTypes(); ++i) {
-    if (i > 0) {
-      pass->scan(PPToken(" "));
-    }
-    pass->emit(this->getContainedType(i));
-  }
-  pass->scan(PPToken(" ) "));
-}
-
-void ForallTypeAST::show(PrettyPrintTypePass* pass){
-  pass->scan(PPToken("(forall ... "));
-  pass->emit(this->quant);
-  pass->scan(PPToken(")"));
-}
-
-void RefinedTypeAST::show(PrettyPrintTypePass* pass){
-  pass->scan(PPToken("% "));
-  pass->scan(PPToken(this->name));
-  pass->scan(PPToken(" : "));
-  pass->emit(this->underlyingType);
-  pass->scan(PPToken(" : "));
-  pass->scan(PPToken("...(refinement)..."));
 }
 
 namespace foster {

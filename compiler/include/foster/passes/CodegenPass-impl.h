@@ -18,8 +18,6 @@
 
 using llvm::Value;
 
-class TupleTypeAST;
-
 // Declarations for Codegen-typemaps.cpp
 enum ArrayOrNot {
   YesArray, NotArray
@@ -46,8 +44,6 @@ Value* getUnitValue();
 Value* getPointerToIndex(Value* compositeValue,
                          Value* idxValue,
                          const std::string& name);
-void markGCRoot(llvm::AllocaInst* root, CodegenPass* pass);
-llvm::AllocaInst* getAllocaForRoot(llvm::Instruction* root);
 llvm::AllocaInst* CreateEntryAlloca(llvm::Type* ty,
                                     const std::string& name);
 llvm::AllocaInst* stackSlotWithValue(llvm::Value* val,

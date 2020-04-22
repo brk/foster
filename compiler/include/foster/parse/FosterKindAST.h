@@ -13,12 +13,6 @@ struct KindAST {
   virtual ~KindAST() {}
 };
 
-struct BaseKindAST : public KindAST {
-  enum eKind { KindType, KindBoxed };
-  explicit BaseKindAST(eKind k) : kind(k) {}
-  eKind kind;
-};
-
 struct TypeFormal {
   std::string name; // pattern???
   KindAST* kind;
