@@ -3162,7 +3162,7 @@ showOccsOfBinder bv = do
 
 dbgDoc :: MonadIO m => Doc -> m ()
 dbgDoc d =
-  if True
+  if False
     then liftIO $ putDocLn d
     else return ()
 
@@ -3172,5 +3172,5 @@ dbgIf cond d =
     then liftIO $ putDocLn d
     else return ()
 
-dbgCont = True
+dbgCont = False
 dbgFinal = False
