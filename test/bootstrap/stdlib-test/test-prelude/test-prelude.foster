@@ -53,16 +53,16 @@ main = {
   print_i32 (wordNumBits32 !);
 
   expect_i32 2;
-  print_i32 (bitlength-Word 3);
+  print_i32 (bitlength-Word-32 3);
 
   expect_i32 3;
-  print_i32 (bitlength-Word 4);
+  print_i32 (bitlength-Word-32 4);
 
   expect_i32 3;
-  print_i32 (bitlength-Word 7);
+  print_i32 (bitlength-Word-32 7);
 
   expect_i32 4;
-  print_i32 (bitlength-Word 8);
+  print_i32 (bitlength-Word-32 8);
 
   test-octet-to-ints !;
 

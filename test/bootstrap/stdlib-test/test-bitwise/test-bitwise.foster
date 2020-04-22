@@ -1,5 +1,6 @@
 snafuinclude Bitwise "math/bitwise";
 snafuinclude PreludePrintExpect "prelude/print-expect";
+snafuinclude Prelude "prelude"; // for print_i32x and print_i1.
 
 main = {
 
@@ -15,4 +16,46 @@ main = {
   expect_i32 -1;
   print_i32 (oneBeforeNextPowerOfTwo 0x8000`0000);
 
+  expect_i32 0x0000ab00;
+  print_i32 (make-byte-Int32 0xab 1);
+
+  expect_i1 False;
+  print_i1 (prim __COMPILES__ (make-byte-Int32 0xab 4));
+
+  expect_i32 0b1110`0001;
+  print_i32 (bitmerge-Int32 0b1100`1100
+                            0b1110`0010
+                            0b1010`0101);
+
+
+  expect_i32x 0xde;
+  print_i32x (bitfield-Int32 0xabcdef 4 12);
+
+  expect_i32x 0xde;
+  print_i32x (bitfield-len-Int32 0xabcdef 4 8);
+
+
+  expect_i1 False;
+  print_i1 (prim __COMPILES__ (bitfield-Int32 0xabcdef 4 42));
+
+  noinline_llvm_part2 !;
+
+  expect_i8b 0b1011`0010;
+  print_i8b (bit-reverse-Int8 0b0100`1101);
+
+  
+  expect_i32 (bitlength-Word-32 -1);
+  print_i32 (wordNumBits32 !);
+
+  print_i32 (wordNumBits32 !);
+  expect_i32 (ctlz-Word 0 |> trunc_Word_to_i32);
+};
+
+noinline_llvm_part2 = {
+  expect_i32 7;
+  print_i32 (noinline_llvm_bitcount-Int32 (opaquely_i32 0b0000`1111`0001`0000`1010`0000));
+};
+
+noinline_llvm_bitcount-Int32 = { n : Int32 =>
+  bitcount-Int32 n
 };

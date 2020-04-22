@@ -9,6 +9,8 @@ ror = { x => n => bitor-Int32 (x `bitlshr-Int32` n) (x `bitshl-Int32` (32 -Int32
 
 // Lifting these reduces runtime by ~30%
 s2 = { x => x `bitlshr-Int32` 2 };
+
+sv :: { Int32 => % rv : Int32 : rv <UInt32 4 };
 sv = { x => 3 -Int32 (x `bitand-Int32` 3) };
 
 abyte = { val : Int8 => a : Array Int32 => q : Ref Int32 => w => h =>

@@ -952,7 +952,7 @@ natCountBits_AL = { a => aprefixlen =>
   r0 = fin *Int32 (digitNumBits !);
 
   // Add the number of bits needed for the last digit.
-  r0  +Int32 (bitlength-Word a.[fin]);
+  r0  +Int32 (bitlength-Word-32 a.[fin]);
 };
 
 
@@ -965,7 +965,7 @@ natCountBits_A = { a =>
   r0 = fin *Int32 (digitNumBits !);
 
   // Add the number of bits needed for the last digit.
-  r0  +Int32 (bitlength-Word a.[fin]);
+  r0  +Int32 (bitlength-Word-32 a.[fin]);
 };
 
 natBitAnd_A :: { Array Word => Array Word => Array Word };

@@ -651,6 +651,8 @@ Notes
 
 SMT checking can be slow, depending on what operations are used.
 For example, reasoning about multiplication is much more intensive than other bitvector operations.
+In some sense, we require explicit annotations from the programmer to help guide the SMT solver
+through a vast and treacherous search space.
 
 The Foster compiler caches checksums of queries that succeed.
 Thus, in the common case, queries that have already been proven true do not need to be fed
@@ -666,6 +668,41 @@ do let me know!
 
 Examples
 --------
+
+SHA/extract-byte
+~~~~~~~~~~~~~~~~
+
+Sometimes adding a refinement necessitates cascading changes to propagate sufficient static information
+to make the proof work. Other times, a single refinement is enough to "bridge the gap".
+This example shows such a case.
+
+When finalizing a SHA-256 hash, we must translate from an internal array of 32-bit words to an external
+array of 8-bit words. The following line of code does so, using helper functions ``sv`` and ``s2`` to
+map each output word to a byte within an internal word::
+
+    newDArray0 32 { n => extract-byte-Int32 h.[s2 n] (sv n) };
+
+    sv = { x => 3 -Int32 (x `bitand-Int32` 3) };
+
+The ``extract-byte-Int32`` function requires that its second input---here, ``sv n``---be a valid byte identifier.
+For a 32-bit number, there are only four valid byte identifiers: 0, 1, 2, and 3.
+Rather than check this property dynamically, the ``extract-byte-Int32`` function requires that the caller discharge
+a static proof of validity for any argument it passes.
+
+The definition of ``sv`` does clearly satisfy this property: ``bitand x 3`` can only be a number from zero to 3,
+and three minus such a number likewise falls within the same range.
+
+Without a type annotation on ``sv``, the Foster compiler will not be able to satisfy the precondition of ``extract-byte``;
+to do so would require inter-procedural reasoning.
+However, things work if the programmer adds a type annotation with a constraint on the return value of ``sv``::
+
+    sv :: { Int32 => % rv : Int32 : rv <UInt32 4 };
+
+This annotation provides a clean division of labor for the compiler's static checking machinery:
+the annotation can be checked against the function definition once, and then assumed at all other uses of ``sv``.
+Conceptually, given a function of "size" N with M call sites,
+  we would otherwise have to potentially do N * M work finding the right property at each call site.
+With an explicit annotation, we are faced instead with N + M work.
 
 ldexp/scalbn
 ~~~~~~~~~~~~

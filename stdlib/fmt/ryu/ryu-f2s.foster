@@ -1,6 +1,8 @@
 snafuinclude Prelude "prelude";
 snafuinclude RyuCommon "fmt/ryu/ryu-common";
 
+snafuinclude FloatConstants "math/float-constants";
+
 /*
 Semi-mechanically translated from C to Foster,
 based on the reference C implementation at

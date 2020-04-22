@@ -30,7 +30,8 @@ qpTrie32Contains = { qp => key =>
   case qp
     of $QPTrie32Leaf k2 -> key ==Int32 k2
     of $QPTrie32Branch sa nibble-bitoff ->
-      idx = bitfield-len-Int32 key (zext_i8_to_i32 nibble-bitoff) 4;
+      // TODO fix datatype refinement TC environment to allow static checking here
+      idx =  nibble-at! key nibble-bitoff;
       case sparseArrayLookup sa idx
         of $None -> False
         of $Some qpx -> qpTrie32Contains qpx key
@@ -86,25 +87,40 @@ qpTrie32Show = { qp => sho =>
   end
 };
 
-nibble-at = { k : Int32 => o : Int8 =>
+nibble-at :: { Int32 => % o : Int8 : o <=UInt8 28 =>
+                        % rv : Int32 : rv <=UInt32 16 };
+nibble-at = { k => o =>
   bitfield-len-Int32 k (zext_i8_to_i32 o) 4
+};
+
+nibble-at! :: { Int32 => Int8 =>
+                        % rv : Int32 : rv <=UInt32 16 };
+nibble-at! = { k => o =>
+  if o <=UInt8 28
+  then bitfield-len-Int32 k (zext_i8_to_i32 o) 4
+  else prim kill-entire-process "nibble-at invariant violated!"
+  end
+};
+
+first-differing-nibble :: { % nibv : Int8 : nibv <=UInt8 28 =>
+                                     Int32 =>
+                            % rv   : Int8 : rv   <=UInt8 28
+};
+first-differing-nibble = { nib => diffbits =>
+    if nibble-at diffbits nib ==Int32 0
+        then first-differing-nibble (nib +Int8 4) diffbits
+        else nib
+    end
 };
 
 // Precondition:
 //      q2 is a leaf with key k2.
 qpTrie32Pair = { k1 : Int32 => k2 => q2 =>
     diffbits = bitxor-Int32 k1 k2;
-    REC first-differing-nibble = { nib : Int8 =>
-        if nibble-at diffbits nib ==Int32 0
-            then first-differing-nibble (nib +Int8 4)
-            else nib
-        end
-    };
-
-    n = first-differing-nibble 0;
+    n = first-differing-nibble 0 diffbits; // Note: 
     sa = sparseArrayPair (QPTrie32Leaf k1) (nibble-at k1 n)
                          q2                (nibble-at k2 n);
-    QPTrie32Branch sa n;
+    QPTrie32Branch sa n
 };
 
 // This version does not maintain a strict ordering invariant on
@@ -125,7 +141,7 @@ qpTrie32InsertQuestionable = { qp => key : Int32 =>
         then QPTrie32Leaf key
         else
              // We have a branch; look up the appropriate trie...
-             idx = nibble-at key nibble-bitoff;
+             idx = nibble-at! key nibble-bitoff;
 
              case sparseArrayLookup sa idx
                of $Some saqp ->
@@ -174,7 +190,7 @@ qpTrie32InsertCanonical = { qp => key : Int32 =>
             if bitoff ==Int8 nibble-bitoff
                 then // Query the sparse array bitmap
                     // to determine whether we wrap or push.
-                    idx = nibble-at key nibble-bitoff;
+                    idx = nibble-at! key nibble-bitoff;
                     case sparseArrayLookup sa idx
                         of $None ->
                           QPTrie32Branch (sparseArrayInsert sa (QPTrie32Leaf key) idx) nibble-bitoff
@@ -200,11 +216,11 @@ qpTrie32InsertCanonical = { qp => key : Int32 =>
                         if bo ==Int8 nibble-bitoff
                         then push qp key bo
                         else
-                            if nibble-at k2 bo ==Int32 nibble-at key bo
+                            if nibble-at! k2 bo ==Int32 nibble-at! key bo
                             then go (bo +Int8 4)
                             else QPTrie32Branch (sparseArrayPair
-                                                    (QPTrie32Leaf key) (nibble-at key bo)
-                                                    qp                 (nibble-at k2  bo))
+                                                    (QPTrie32Leaf key) (nibble-at! key bo)
+                                                    qp                 (nibble-at! k2  bo))
                                                 bo
                             end
                         end

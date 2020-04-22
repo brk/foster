@@ -1,6 +1,8 @@
 snafuinclude RyuCommon "fmt/ryu/ryu-common";
 snafuinclude RyuTables "fmt/ryu/ryu-tables";
 
+snafuinclude FloatConstants "math/float-constants";
+
 snafuinclude RAB "resizable-array-builder";
 snafuinclude Prelude "prelude";
 

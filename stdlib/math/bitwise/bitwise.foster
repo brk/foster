@@ -95,7 +95,7 @@ extract-byte-Int64-alt = { v : Int64 => n : Int64 =>
 // Preconditions:
 //      fin - start <= 32
 //            start <= 32
-bitfield-Int32 :: { Int32 => % start : Int32 : start <=UInt32 32 =>
+bitfield-Int32 :: { Int32 => % start : Int32 : start <UInt32 32 =>
                              % fin   : Int32 : if fin <=UInt32 32
                                                 then (fin -Int32 start) <=UInt32 32
                                                 else False end
@@ -109,11 +109,11 @@ bitfield-Int32 = { n => start => fin =>
 //            start <= 32
 // Example: bitfield-len-Int32 0b`1110111001100 3 8 == 10111001_2
 //                                --********---
-bitfield-len-Int32 :: { Int32 => % start : Int32 : start <=UInt32 32 =>
+bitfield-len-Int32 :: { Int32 => % start : Int32 : start <UInt32 32 =>
                                  % len   : Int32 : if len <=UInt32 32
                                                     then (len +Int32 start) <=UInt32 32
                                                     else False end
-                              => Int32 };
+                              => % rv : Int32 : if len <UInt32 32 then rv <UInt32 (bitshl-Int32 1 len) else True end };
 bitfield-len-Int32 = { n => start => len =>
   bitand-Int32 (bitnot-Int32 (bitshl-Int32 -1 len))
                (bitlshr-Int32 n start);
@@ -177,6 +177,8 @@ bitlength-alt-Int32 = { n : Int32 =>
 bitlength-Word = { n : Word =>
   (ctlz-Word 0) -Word (ctlz-Word n)
 };
+
+bitlength-Word-32 = { n : Word => n |> bitlength-Word |> trunc_Word_to_i32 };
 
 bitlength-Int64 = { n : Int64 =>
   64 -Int64 (ctlz-Int64 n)

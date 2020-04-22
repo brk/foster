@@ -110,7 +110,7 @@ seraDataBlockSize = { sbi : Word =>
 seraLocateDataBlockAndElem :: { Word => (Word, Word) };
 seraLocateDataBlockAndElem = { i : Word =>
   r = i +Word 1;
-  k = zext_i32_to_Word (bitlength-Word r -Int32 1);
+  k = zext_i32_to_Word (bitlength-Word-32 r -Int32 1);
 
   // TODO benchmark whether code redundancy here helps performance or not.
   if bitand-Word k 1 ==Word 1
