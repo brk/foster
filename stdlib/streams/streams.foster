@@ -1,4 +1,4 @@
-snafuinclude Lazy "lazy";
+snafuinclude Lazy "control/lazy";
 
 // "Even"-style streams, as presented by Wadler, Taha, and MacQueen in the paper
 // "How to add laziness to an strict language without even being odd".

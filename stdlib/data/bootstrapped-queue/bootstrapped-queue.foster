@@ -1,5 +1,5 @@
 snafuinclude List "data/list";
-snafuinclude Lazy "lazy";
+snafuinclude Lazy "control/lazy";
 snafuinclude Ord  "ord";
 snafuinclude Maybe "maybe";
 
