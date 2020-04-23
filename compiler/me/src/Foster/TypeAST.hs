@@ -217,7 +217,6 @@ primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
 
     ,(,) "foster__logf64"          $ mkProcType [f64] [f64]
 
-    ,(,) "foster_prim_Word_isSmall"     $ mkProcType [iwd] [i1]
     ,(,) "foster_prim_Int_to_smallWord" $ mkProcType [int] [iwd]
     ,(,) "foster_prim_smallWord_to_Int" $ mkProcType [iwd] [int]
     ,(,) "foster_prim_Int_to_BigInt"    $ mkProcType [int] [big]
@@ -447,7 +446,6 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "f32-to-u32-unsafe"    $ (,) (mkFnType [f32] [i32] ) $ PrimOp "fptoui_f32_i32" i32
   ,(,) "f32-to-f64"           $ (,) (mkFnType [f32] [f64] ) $ PrimOp "fpext_f64" f32
   ,(,) "f64-to-f32"           $ (,) (mkFnType [f64] [f32] ) $ PrimOp "fptrunc_f32" f64
-  ,(,) "Int-isSmallWord"      $ (,) (mkFnType [iwd] [i1 ] ) $ PrimOp "Int-isSmallWord" i1
   ,(,) "Int-isSmall"          $ (,) (mkFnType [int] [i1 ] ) $ PrimOp "Int-isSmall" i1
   ,(,) "Int-toSmall"          $ (,) (mkFnType [int] [iwd] ) $ PrimOp "Int-toSmall" i1 -- TODO: Precondition: Int-isSmall
   ,(,) "Int-ofSmall"          $ (,) (mkFnType [iwd] [int] ) $ PrimOp "Int-ofSmall" i1 -- TODO: Precondition: Int-isSmallWord

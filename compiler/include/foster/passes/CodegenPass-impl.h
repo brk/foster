@@ -36,6 +36,8 @@ llvm::Constant* slotSizeOf(llvm::Type* ty);
 
 // From CodegenUtils.cpp
 Value* signExtend(Value* v, llvm::Type* dst);
+llvm::Value* createIntOfSmall(llvm::IRBuilder<>& b, llvm::Value* vd);
+
 void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr);
 void emitFosterArrayBoundsCheck(llvm::Module* mod, llvm::Value* idx64,
                                                    llvm::Value* len64,

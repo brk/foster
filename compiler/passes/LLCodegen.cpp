@@ -1252,16 +1252,17 @@ llvm::Value* LLInt::codegen(CodegenPass* pass) {
 
   if (arb.isSignedIntN(targetWidth - 1)) {
     // Small integer constants can be constructed cheaply by tagging a machine word.
-    Value* smallWordToIntFn = pass->mod->getFunction("foster_prim_smallWord_to_Int");
-    ASSERT(smallWordToIntFn != NULL);
     auto small = ConstantInt::getSigned(targetTy, arb.getSExtValue());
-    return builder.CreateCall(smallWordToIntFn, { small });
+    return createIntOfSmall(builder, small);
   } else {
     // Large integer constants must be initialized from binary data.
     std::string bytes = APInt_toBase256_lsb0(arb);
     Value* base256 = emitByteArray(pass, bytes, ".intlit_");
     Value* Int_ofBase256 = pass->mod->getFunction("Int-ofBase256");
-    ASSERT (Int_ofBase256) << "Arbitrary-precision integers need a constructor in scope!";
+    ASSERT (Int_ofBase256) << "Arbitrary-precision integers need a constructor in scope!" << "\n"
+                           << "\n"
+                           << "Try importing \"prelude/int\"."
+                           << "\n";
     auto call = builder.CreateCall(Int_ofBase256, { base256, builder.getInt1(this->negated) });
     call->setCallingConv(parseCallingConv("fastcc"));
     return call;

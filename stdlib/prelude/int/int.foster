@@ -1,0 +1,121 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+snafuinclude Bignum "math/bignum";
+snafuinclude Text "text";
+
+// See libfoster.cpp for details of Int representation.
+Int-isSmallWord :: { Word => Bool };
+Int-isSmallWord = { x =>
+  hightwobits = x `bitlshr-Word` ((wordNumBits !) -Word 2);
+  case hightwobits of 0 or 3 -> True
+                   of _ -> False end
+};
+
+// If w is a small word, Int-ofSmall is more efficient.
+Int-ofWord :: { Word => Int };
+Int-ofWord = { w =>
+  if Int-isSmallWord w
+    then prim Int-ofSmall w
+    else prim Int-ofBig (intFromWord w)
+  end
+};
+
+Int-ofBase256 :: { Array Int8 => Bool => Int };
+Int-ofBase256 = { b => negate =>
+  REC loop = { i => idx =>
+    next = (intMulInt32 i 256) `intAdd`
+           (intFromInt32 (b.[idx] |> zext_i8_to_i32));
+    if idx ==Int32 0
+      then next
+      else loop next (idx -Int32 1)
+    end
+  };
+  
+  u = loop (intZero !) (arrayLength32 b -Int32 1);
+  b = if negate then intNegate u else u end;
+  Int-ofBig b
+};
+
+(+Int) :: { Int => Int => Int };
+(+Int) = { x => y =>
+  case (prim Int-isSmall x, prim Int-isSmall y)
+    of (True, True) -> xw = prim Int-toSmall x;
+                       yw = prim Int-toSmall y;
+                       xw +Word yw |> Int-ofWord
+
+    of (True, False) -> xw = prim Int-toSmall x;
+                        yb = prim Int-toBig y;
+                        i = intFromWord xw `intAdd` yb;
+                        prim Int-ofBig i
+
+    of (False, True) -> yw = prim Int-toSmall y;
+                        xb = prim Int-toBig x;
+                        i = intFromWord yw `intAdd` xb;
+                        prim Int-ofBig i
+
+    of (False, False) -> xb = prim Int-toBig x;
+                         yb = prim Int-toBig y;
+                         i = intAdd xb yb;
+                         prim Int-ofBig i
+  end
+};
+
+(-Int) :: { Int => Int => Int };
+(-Int) = { x => y =>
+  case (prim Int-isSmall x, prim Int-isSmall y)
+    of (True, True) -> xw = prim Int-toSmall x;
+                       yw = prim Int-toSmall y;
+                       xw -Word yw |> Int-ofWord
+
+    of (True, False) -> xw = prim Int-toSmall x;
+                        yb = prim Int-toBig y;
+                        i = intFromWord xw `intSub` yb;
+                        prim Int-ofBig i
+
+    of (False, True) -> yw = prim Int-toSmall y;
+                        xb = prim Int-toBig x;
+                        i = xb `intSub` intFromWord yw;
+                        prim Int-ofBig i
+
+    of (False, False) -> xb = prim Int-toBig x;
+                         yb = prim Int-toBig y;
+                         i = intSub xb yb;
+                         prim Int-ofBig i
+  end
+};
+
+(<=Int) :: { Int => Int => Bool };
+(<=Int) = { x => y =>
+  case (prim Int-isSmall x, prim Int-isSmall y)
+    of (True, True) -> xw = prim Int-toSmall x;
+                       yw = prim Int-toSmall y;
+                       xw <=SWord yw
+
+    of (True, False) -> xw = prim Int-toSmall x;
+                        yb = prim Int-toBig y;
+                        intCmp (intFromWord xw) yb |> isLE
+
+    of (False, True) -> yw = prim Int-toSmall y;
+                        xb = prim Int-toBig x;
+                        intCmp xb (intFromWord yw) |> isLE
+
+    of (False, False) -> xb = prim Int-toBig x;
+                         yb = prim Int-toBig y;
+                         intCmp xb yb |> isLE
+  end
+};
+
+print_int :: { Int => () };
+print_int = { i =>
+  sm = prim Int-isSmall i;
+  if sm
+    then
+      w = prim Int-toSmall i;
+      print_i64 (zext_Word_to_i64 w);
+    else
+      ii = prim Int-toBig i;
+      printIntInf ii
+  end;
+};
+
+// Used by +Int
+intFromWord = { w => intFromInt64 (sext_Word_to_i64 w) };

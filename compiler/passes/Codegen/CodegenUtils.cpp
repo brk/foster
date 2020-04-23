@@ -379,13 +379,6 @@ createFtan(IRBuilder<>& b, llvm::Value* vd) {
 }
 
 llvm::Value*
-createIntIsSmallWord(IRBuilder<>& b, llvm::Value* vd) {
-  auto func = getFunction(b, "foster_prim_Int_isSmallWord");
-  // Open-coded autowrapper.
-  return b.CreateCall(func, { b.CreateBitCast(vd, func->getFunctionType()->getParamType(0)) });
-}
-
-llvm::Value*
 createIntIsSmall(IRBuilder<>& b, llvm::Value* vd) {
   auto func = getFunction(b, "foster_prim_Int_isSmall");
   // Open-coded autowrapper.
@@ -402,8 +395,11 @@ createIntToSmall(IRBuilder<>& b, llvm::Value* vd) {
 llvm::Value*
 createIntOfSmall(IRBuilder<>& b, llvm::Value* vd) {
   auto func = getFunction(b, "foster_prim_smallWord_to_Int");
-  auto intType = getFunction(b, "foster_prim_Int_to_smallWord")->getFunctionType()->getParamType(0);
   auto call = b.CreateCall(func, { vd }); // Open-coded autowrapper.
+
+  std::vector<DataCtor*> ctors;
+  auto dt = DataTypeAST("Int", ctors, SourceRange::getEmptyRange());
+  auto intType = dt.getLLVMType();
   return b.CreateBitCast(call, intType);
 }
 
@@ -446,7 +442,6 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "uitofp_f32")     { return b.CreateUIToFP(VL, b.getFloatTy(),  "uitofp_f32tmp"); }
   else if (op == "bitcast")        { return b.CreateBitCast(VL, assoc->getLLVMType(), "bitcast_tmp"); }
   else if (op == "ftan")           { return createFtan(b, VL); }
-  else if (op == "Int-isSmallWord"){ return createIntIsSmallWord(b, VL); }
   else if (op == "Int-isSmall")    { return createIntIsSmall(b, VL); }
   else if (op == "Int-toSmall")    { return createIntToSmall(b, VL); }
   else if (op == "Int-ofSmall")    { return createIntOfSmall(b, VL); }

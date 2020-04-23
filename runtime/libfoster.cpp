@@ -321,19 +321,13 @@ typedef void* Int;
 // GC to recognize when a potential-reference cell is actually a
 // short int.
 
-bool foster_prim_Int_isSmallWord(intptr_t x) {
-  uintptr_t u = x;
-  int hightwobits = u >> ((sizeof(u) * 8) - 2);
-  return (hightwobits == 0 || hightwobits == 3);
-}
-
-// Precondition: foster_prim_Word_isSmall(x)
+// Precondition: Int-isSmallWord(x)
 Int foster_prim_smallWord_to_Int(intptr_t x) { return (Int)uintptr_t((x << 1) | 1); }
-
-bool foster_prim_Int_isSmall(Int x) { return (uintptr_t(x) & 1) == 1; }
 
 // Precondition: foster_prim_Int_isSmall(x)
 intptr_t foster_prim_Int_to_smallWord(Int x) { return intptr_t(x) >> 1; }
+
+bool foster_prim_Int_isSmall(Int x) { return (uintptr_t(x) & 1) == 1; }
 
 //////////////////////////////////////////////////////////////////
 
@@ -475,6 +469,7 @@ void expect_f64_bare(double f) { return fprint_f64_bare(stderr, f); }
 
 void print_float_f32(float f) { return fprint_f32(stdout, f); }
 void expect_float_f32(float f) { return fprint_f32(stderr, f); }
+void print_float_f32x(float f) { return fprint_f32x(stdout, f); }
 
 void print_float_f64(double f) { return fprint_f64(stdout, f); }
 void expect_float_f64(double f) { return fprint_f64(stderr, f); }
