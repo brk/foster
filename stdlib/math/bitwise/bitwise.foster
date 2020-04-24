@@ -248,6 +248,19 @@ bit-reverse-Int8 = { n =>
 
 /////////////////////////////////////////////////////////////////////////
 
+rotl-Int32 :: { Int32 => Int32 => Int32 };
+rotl-Int32 = { x => r =>
+  bitor-Int32 (x `bitshl-Int32` r)
+              (x `bitlshr-Int32` (32 -Int32 r));
+};
+
+rotl-Int64 :: { Int64 => Int64 => Int64 };
+rotl-Int64 = { x => r =>
+  bitor-Int64 (x `bitshl-Int64` r)
+              (x `bitlshr-Int64` (64 -Int64 r));
+};
+
+/////////////////////////////////////////////////////////////////////////
 
 // Precondition: n < 32 && n >= 0
 getBit32 = { n => 1 `bitshl-Int32` n };

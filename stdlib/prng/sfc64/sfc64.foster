@@ -1,8 +1,13 @@
-rotl-Int64 :: { Int64 => Int64 => Int64 };
-rotl-Int64 = { x => r =>
-  bitor-Int64 (x `bitshl-Int64` r)
-              (x `bitlshr-Int64` (64 -Int64 r));
-};
+// Port of Chris Doty-Humphrey's sfc64 PRNG
+// from https://gist.github.com/imneme/f1f7821f07cf76504a97f6537c818083
+// which is MIT-licensed.
+
+// Properties:
+//    64-bit output from 256-bit state
+//    Period: minimum 2^64, expected 2^255.
+//    No equidistribution guarantees.
+
+snafuinclude Bitwise "math/bitwise"; // for rotl-Int64
 
 type case Sfc64State
       of $Sfc64State Int64 Int64 Int64 Int64

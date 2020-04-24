@@ -1,0 +1,60 @@
+// Port of andanteyk's shioi PRNG
+// from https://github.com/andanteyk/prng-shioi
+// which is CC0-licensed.
+
+// Properties:
+//    64-bit output from 128-bit state
+//    Period: 2^128 - 1
+//    1-dimensionally equidistributed.
+
+snafuinclude Bitwise "math/bitwise"; // for rotl-Int64
+snafuinclude Permuta "math/fixnum-cyclic-permutations"; // for splitmix64
+
+type case Shioi64State
+      of $Shioi64State Int64 Int64
+         ;
+
+shioi64MakeState :: { Int64 => Shioi64State };
+shioi64MakeState = { x =>
+  s0 = Shioi64State x 1;
+  REC loop = { s => k => if k ==Int32 0 then s else
+                            let (_, n) = shioi64gen s;
+                            loop n (k -Int32 1) 
+                         end };
+  loop s0 12;
+};
+
+shioi64gen :: { Shioi64State => (Int64, Shioi64State) };
+shioi64gen = { s =>
+  case s of $Shioi64State a b ->
+    m = a *Int64 0xD2B74407B1CE6E93;
+    result = (rotl-Int64 m 29) +Int64 b;
+    s1 = (a `bitshl-Int64` 2)
+            `bitxor-Int64`
+         (a `bitashr-Int64` 19)
+            `bitxor-Int64`
+          b;
+    (result, Shioi64State b s1)
+  end
+};
+
+shioi64split :: { Shioi64State => (Shioi64State, Shioi64State) };
+shioi64split = { s0 =>
+  case shioi64gen s0 of (x, s1) ->
+  case shioi64gen s1 of (y, s2) ->
+    (Shioi64State (splitmix64 y) (splitmix64 x), s2)
+  end
+  end
+};
+
+shioi64HOF :: { Int64 => { Int64 } };
+shioi64HOF = { seedx =>
+  r = (prim ref (shioi64MakeState seedx));
+  {
+    s = r^;
+    case shioi64gen s of (x, t) ->
+      t >^ r;
+      x
+    end
+  }
+};
