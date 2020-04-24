@@ -2,7 +2,7 @@ snafuinclude Text "text";
 snafuinclude Maybe "maybe";
 snafuinclude Prelude "prelude";
 
-snafuinclude SFC64 "prng/sfc64";
+snafuinclude SFC64 "prng/sfc";
 
 /*
 Without optimizations:

@@ -1,5 +1,5 @@
 snafuinclude Prelude "prelude";
-snafuinclude SFC64 "prng/sfc64";
+snafuinclude SFC64 "prng/sfc";
 snafuinclude Bitwise "math/bitwise";
 snafuinclude RandomGen "random/gen";
 snafuinclude QC "random/quickcheck";
