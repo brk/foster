@@ -8,7 +8,6 @@ test-ints = {
     print_int i;
   };
 
-/*
   // Literals that fit in 63 bits:
   expect_text "102030405060708090";
   print_int 102030405060708090;
@@ -27,7 +26,6 @@ test-ints = {
 
   expect_text "120034";
   print_int   (120000 +Int 34);
-*/
 
   // Larger literals:
 
