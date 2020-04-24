@@ -947,7 +947,7 @@ Standard Library
 A few random bits and pieces:
 
 * Bignum library, ported from libtommath (partial)
-* sha256, siphash, xorshift ported from reference C implementations
+* sha256, siphash, and few non-cryptographic PRNGs ported from reference C implementations
 * Finger trees, maps, sets, and sequences, ported from Haskell
 * Various purely functional data structures, ported from Okasaki
 * Lazy values

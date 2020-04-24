@@ -1,0 +1,20 @@
+snafuinclude Prelude  "prelude";
+snafuinclude SFC64 "prng/sfc";
+
+main = {
+  test-sfc64 !;
+};
+
+test-sfc64 = {
+  gen = sfc64HOF 0;
+
+  expect_i64 0x3acfa029e3cc6041;
+  print_i64 (gen !);
+
+  expect_i64 0xf5b6515bf2ee419c;
+  print_i64 (gen !);
+
+  expect_i64 0x1259635894a29b61;
+  print_i64 (gen !);
+};
+
