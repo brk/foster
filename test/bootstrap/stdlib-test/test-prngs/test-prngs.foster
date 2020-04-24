@@ -1,8 +1,10 @@
 snafuinclude Prelude  "prelude";
 snafuinclude SFC64 "prng/sfc";
+snafuinclude Shioi "prng/shioi";
 
 main = {
   test-sfc64 !;
+  test-shioi64 !;
 };
 
 test-sfc64 = {
@@ -15,6 +17,19 @@ test-sfc64 = {
   print_i64 (gen !);
 
   expect_i64 0x1259635894a29b61;
+  print_i64 (gen !);
+};
+
+test-shioi64 = {
+  gen = shioi64HOF 0;
+
+  expect_i64 0x3007a032713f7d8c;
+  print_i64 (gen !);
+
+  expect_i64 0xb6d251c1f34b35e1;
+  print_i64 (gen !);
+
+  expect_i64 0xf6b3d0f86e4dc038;
   print_i64 (gen !);
 };
 
