@@ -2,7 +2,7 @@ snafuinclude Text "text";
 snafuinclude Maybe "maybe";
 snafuinclude Prelude "prelude";
 
-snafuinclude KnuthLCG "prng/knuthLCG";
+snafuinclude SFC64 "prng/sfc64";
 
 /*
 Without optimizations:
@@ -101,7 +101,7 @@ main = {
     maxN = if n >=SInt32 6 then n else 6 end;
     stretchN = maxN +Int32 1;
 
-    kgen = kLCG1x64HOF 0xCAFEBABE;
+    kgen = sfc64HOF 0xCAFEBABE;
     arr = allocDArray:[Tree] (1 `bitshl-Int32` (randomizeDepth !));
 
     subheap = foster_subheap_create !;

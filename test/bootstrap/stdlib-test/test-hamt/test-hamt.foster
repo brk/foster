@@ -2,7 +2,7 @@ snafuinclude QpTrie "data/qp-trie";
 
 snafuinclude Prelude "prelude";
 
-snafuinclude KnuthLCG "prng/knuthLCG";
+snafuinclude SFC64 "prng/sfc64";
 snafuinclude RandomGen "random/gen";
 snafuinclude QC "random/quickcheck";
 
@@ -261,7 +261,7 @@ quickcheck-QPTrie = {
   expect_text "quickchecking...";
   print_text  "quickchecking...";
 
-  prng64 = kLCG1x64HOF 33223;
+  prng64 = sfc64HOF 33223;
   prng32 = { prng64 ! |> high32BitsOf64 };
 
   arbListOfInt  = arb_List prng32 (arb_Int32 prng32);

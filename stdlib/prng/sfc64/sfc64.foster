@@ -1,0 +1,55 @@
+rotl-Int64 :: { Int64 => Int64 => Int64 };
+rotl-Int64 = { x => r =>
+  bitor-Int64 (x `bitshl-Int64` r)
+              (x `bitlshr-Int64` (64 -Int64 r));
+};
+
+type case Sfc64State
+      of $Sfc64State Int64 Int64 Int64 Int64
+         ;
+
+sfc64MakeState :: { Int64 => Sfc64State };
+sfc64MakeState = { x =>
+  s0 = Sfc64State x x x 1;
+  REC loop = { s => k => if k ==Int32 0 then s else
+                            let (_, n) = sfc64gen s;
+                            loop n (k -Int32 1) 
+                         end };
+  loop s0 12;
+};
+
+sfc64gen :: { Sfc64State => (Int64, Sfc64State) };
+sfc64gen = { s =>
+  case s of $Sfc64State a b c d ->
+    tmp = a +Int64 b +Int64 d;
+    p = 24;
+    q = 11;
+    r =  3;
+    a_ = b `bitxor-Int64` (b `bitlshr-Int64` q);
+    b_ = c  +Int64        (c `bitshl-Int64` r);
+    c_ = rotl-Int64 c p +Int64 tmp;
+    d_ = d +Int64 1;
+    (tmp, Sfc64State a_ b_ c_ d_)
+  end
+};
+
+sfc64split :: { Sfc64State => (Sfc64State, Sfc64State) };
+sfc64split = { s0 =>
+  case sfc64gen s0 of (x, s1) ->
+  case sfc64gen s1 of (y, s2) ->
+    (Sfc64State 1 y x 1, s2)
+  end
+  end
+};
+
+sfc64HOF :: { Int64 => { Int64 } };
+sfc64HOF = { seedx =>
+  r = (prim ref (sfc64MakeState seedx));
+  {
+    s = r^;
+    case sfc64gen s of (x, t) ->
+      t >^ r;
+      x
+    end
+  }
+};
