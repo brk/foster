@@ -1,0 +1,124 @@
+/*
+Cyclic permutations can be useful for generating sequences of
+numbers, in a non-linear order, guaranteed to not have repeats.
+
+High-quality pseudo-random number generators themselves are not suitable
+for the task; they need to be able to produce repeats in order to not fail
+tests of randomness based on the birthday paradox.
+
+Many of the permutations here map zero to zero; the ones that do use refinement
+types to prohibit zero-valued input. Z3 is smart enough to prove for several
+implementations that non-zero input implies non-zero output. I believe that with
+a little help, Z3 will be able to reason about barrel shifters as well.
+
+To avoid the fixpoint at zero it would be trivial to generate a wrapper which
+"inserts" a zero value somewhere into the permutation's cycle.
+*/
+
+// {{{
+
+// https://stackoverflow.com/questions/17035441/looking-for-decent-quality-prng-with-only-32-bits-of-state
+// https://gist.github.com/tommyettinger/46a874533244883189143505d203312c
+// Note: this function has a period of 2^32; it *does not* map zero to zero.
+mulberry32 :: { Int32 => Int32 };
+mulberry32 = { x0 =>
+  z0 = x0 +Int32 0x6D2B79F5;
+	z1 = (z0 `bitxor-Int32` (z0 `bitlshr-Int32` 15)) *Int32 (z0 `bitor-Int32`  1);
+	z2 = (z1 `bitxor-Int32` (z1 +Int32
+                            (z1 `bitxor-Int32` (z1 `bitlshr-Int32`  7))
+                                                     *Int32 (z1 `bitor-Int32` 61)));
+	z3 =  z2 `bitxor-Int32` (z2 `bitlshr-Int32` 14);
+  z3
+};
+
+// http://prng.di.unimi.it/splitmix64.c
+// Note: this function has a period of 2^64. It *does not* map zero to zero.
+splitmix64 :: { Int64 => Int64 };
+splitmix64 = { x0 =>
+  z0 = x0 +Int64 0x9e3779b97f4a7c15;
+	z1 = (z0 `bitxor-Int64` (z0 `bitlshr-Int64` 30)) *Int64 0xbf58476d1ce4e5b9;
+	z2 = (z1 `bitxor-Int64` (z1 `bitlshr-Int64` 27)) *Int64 0x94d049bb133111eb;
+	z3 =  z2 `bitxor-Int64` (z2 `bitlshr-Int64` 31);
+  z3
+};
+
+// }}}
+
+// Note: this function has a period of 2^64 - 1; it maps zero to zero.
+xorshift64 :: { (% vs : Int64 : vs !=Int64 0)
+                     => 
+                (% rv : Int64 : rv !=Int64 0) };
+xorshift64 = { x0 =>
+  prim assert-invariants (x0 !=Int64 0);
+
+  x1 = x0 `bitxor-Int64` (x0 `bitshl-Int64` 13);
+  x2 = x1 `bitxor-Int64` (x1 `bitlshr-Int64` 7);
+  x3 = x2 `bitxor-Int64` (x2 `bitshl-Int64` 17);
+  x3
+};
+
+// Note: this function has a period of 2^32 - 1; it maps zero to zero.
+xorshift32 :: { (% vs : Int32 : vs !=Int32 0)
+                     =>
+                (% rv : Int32 : rv !=Int32 0)
+                 };
+xorshift32 = { x0 =>
+  prim assert-invariants (x0 !=Int32 0);
+
+  x1 = x0 `bitxor-Int32` (x0 `bitshl-Int32` 13);
+  x2 = x1 `bitxor-Int32` (x1 `bitlshr-Int32` 17);
+  x3 = x2 `bitxor-Int32` (x2 `bitshl-Int32` 5);
+  x3
+};
+
+// https://mostlymangling.blogspot.com/2019/12/stronger-better-morer-moremur-better.html
+// Note: this function maps zero to zero.
+moremur64 :: { (% vs : Int64 : vs !=Int64 0)
+                    =>
+               //(% rv : Int64 : rv !=Int64 0)
+               Int64
+            };
+moremur64 = { x0 =>
+  prim assert-invariants (x0 !=Int64 0);
+
+  x1 = x0 `bitxor-Int64` (x0 `bitlshr-Int64` 27);
+  x2 = x1 *Int64 0x3C79AC492BA7B653;
+  x3 = x2 `bitxor-Int64` (x2 `bitlshr-Int64` 33);
+  x4 = x3 *Int64 0x1C69B3F74AC4AE35;
+  x5 = x4 `bitxor-Int64` (x4 `bitlshr-Int64` 27);
+  
+  // This query takes more than 5 seconds for Z3 to verify!
+  //prim assert-invariants (x5 !=Int64 0);
+  x5
+};
+
+ror-Int64 :: { Int64 => (% rr : Int64 : rr <=UInt64 64) => Int64 };
+ror-Int64 = { x => r =>
+  rv = bitor-Int64 (x `bitlshr-Int64` r)
+              (x `bitshl-Int64` (64 -Int64 r))
+              ;
+
+    prim assert-invariants (if x !=Int64 0 then rv !=Int64 0 else True end);
+  rv
+};
+
+// https://mostlymangling.blogspot.com/2018/07/on-mixing-functions-in-fast-splittable.html
+// Note: this function has a period of 2^64 - 1; it maps zero to zero.
+rrmxmx :: { (% vs : Int64 : vs !=Int64 0)
+                =>
+            //(% rv : Int64 : rv !=Int64 0)
+             Int64
+          };
+rrmxmx = { v0 =>
+  prim assert-invariants (v0 !=Int64 0);
+
+  v1 = v0 `bitxor-Int64` ((ror-Int64 v0 49) `bitxor-Int64` (ror-Int64 v0 24));
+
+  // TODO: need to reflect ror-Int64 for z3 to reason about it.
+  //prim assert-invariants (v1 !=Int64 0);
+
+  v2 = v1 *Int64 0x9fb21c651e98df25;
+  v3 = v2 `bitxor-Int64` (v2 `bitlshr-Int64` 28);
+  v4 = v3 *Int64 0x9fb21c651e98df25;
+  v4 `bitxor-Int64` (v4 `bitlshr-Int64` 28)
+};
