@@ -1,0 +1,99 @@
+// Mixers define permutations that are not cyclic; that is,
+// when iterated, their period does not fully cover their domain.
+
+// Some of these functions are deranged (well, okay, technically
+// "derangements") meaning every input number is mapped to a
+// different number. Others have fixed points at zero.
+
+snafuinclude Bitwise "math/bitwise"; // for rotr-Int64
+
+// http://mostlymangling.blogspot.com/2020/01/nasam-not-another-strange-acronym-mixer.html
+// Maps zero to zero.
+nasam64 :: { Int64 => Int64 };
+nasam64 = { v0 =>
+  prim assert-invariants (v0 !=Int64 0);
+
+  v1 = v0 `bitxor-Int64` ((rotr-Int64 v0 25) `bitxor-Int64` (rotr-Int64 v0 47));
+
+  // TODO: need to reflect rotr-Int64 for z3 to reason about it.
+  //prim assert-invariants (v1 !=Int64 0);
+
+  v2 = v1 *Int64 0x9E6C63D0676A9A99;
+  v3 = v2 `bitxor-Int64` ((v2 `bitlshr-Int64` 23) `bitxor-Int64`
+                          (v2 `bitlshr-Int64` 51));
+  v4 = v3 *Int64 0x9E6D62D06F6A9A9B;
+  v4 `bitxor-Int64` ((v4 `bitlshr-Int64` 23) `bitxor-Int64`
+                     (v4 `bitlshr-Int64` 51));
+};
+
+xnasam64 :: { Int64 => Int64 => Int64 };
+xnasam64 = { v => c =>
+  v0 = v `bitxor-Int64` c; 
+  v1 = v0 `bitxor-Int64` ((rotr-Int64 v0 25) `bitxor-Int64` (rotr-Int64 v0 47));
+
+  v2 = v1 *Int64 0x9E6C63D0676A9A99;
+  v3 = v2 `bitxor-Int64` ((v2 `bitlshr-Int64` 23) `bitxor-Int64`
+                          (v2 `bitlshr-Int64` 51));
+  v4 = v3 *Int64 0x9E6D62D06F6A9A9B;
+  v4 `bitxor-Int64` ((v4 `bitlshr-Int64` 23) `bitxor-Int64`
+                     (v4 `bitlshr-Int64` 51));
+};
+
+bitxor4-Int64 = { a => b => c => d =>
+    bitxor-Int64 (bitxor-Int64 a b) (bitxor-Int64 c d)
+};
+
+bitxor4-Int32 = { a => b => c => d =>
+    bitxor-Int32 (bitxor-Int32 a b) (bitxor-Int32 c d)
+};
+
+// https://github.com/tommyettinger/sarong/blob/master/src/main/java/sarong/PelicanRNG.java
+pelican64 :: { Int64 => Int64 };
+pelican64 = { z0 =>
+  z1 = (bitxor4-Int64
+            z0
+            (rotl-Int64 z0 41)
+            (rotl-Int64 z0 17)
+            0xD1B54A32D192ED03)
+        *Int64 0xAEF17502108EF2D9;
+
+    z2 = (bitxor4-Int64 
+            z1
+            (bitlshr-Int64 z1 43)
+            (bitlshr-Int64 z1 31)
+            (bitlshr-Int64 z1 23))
+        *Int64 0xDB4F0B9175AE2165;
+    
+    bitxor-Int64 z2 (bitlshr-Int64 z2 28)
+};
+
+// Mixers found by Christopher Wellons:
+// https://nullprogram.com/blog/2018/07/31/
+
+// Not a derangement; has multiple fixed points.
+wellonsDuo32 :: { Int32 => Int32 };
+wellonsDuo32 = { x0 =>
+  x1 = x0 `bitxor-Int32` (x0 `bitlshr-Int32` 16);
+  x2 = x1 *Int32 0x7feb352d;
+  x3 = x2 `bitxor-Int32` (x2 `bitlshr-Int32` 15);
+  x4 = x3 *Int32 0x846ca68b;
+  x5 = x4 `bitxor-Int32` (x4 `bitlshr-Int32` 16);
+  x5
+};
+
+wellonsTri32 :: { Int32 => Int32 };
+wellonsTri32 = { x0 =>
+  x1 = x0 `bitxor-Int32` (x0 `bitlshr-Int32` 17);
+  x2 = x1 *Int32 0xed5ad4bb;
+  x3 = x2 `bitxor-Int32` (x2 `bitlshr-Int32` 11);
+  x4 = x3 *Int32 0xac4c1b51;
+  x5 = x4 `bitxor-Int32` (x4 `bitlshr-Int32` 15);
+  x6 = x5 *Int32 0x31848bab;
+  x7 = x6 `bitxor-Int32` (x4 `bitlshr-Int32` 14);
+
+    prim assert-invariants (if x0 !=Int32 0 then
+    x7 !=Int32 x0
+  else True end);
+
+  x7
+};

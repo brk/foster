@@ -260,6 +260,16 @@ rotl-Int64 = { x => r =>
               (x `bitlshr-Int64` (64 -Int64 r));
 };
 
+
+rotr-Int64 :: { Int64 => (% rr : Int64 : rr <=UInt64 64) => Int64 };
+rotr-Int64 = { x => r =>
+  rv = bitor-Int64 (x `bitlshr-Int64` r)
+              (x `bitshl-Int64` (64 -Int64 r));
+  prim assert-invariants (if x !=Int64 0 then rv !=Int64 0 else True end);
+  rv
+};
+
+
 /////////////////////////////////////////////////////////////////////////
 
 // Precondition: n < 32 && n >= 0

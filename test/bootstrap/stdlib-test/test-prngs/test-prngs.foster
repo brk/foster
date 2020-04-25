@@ -2,10 +2,27 @@ snafuinclude Prelude  "prelude";
 snafuinclude SFC64 "prng/sfc";
 snafuinclude Shioi "prng/shioi";
 
+snafuinclude Deranged "math/fixnum-cyclic-permutations";
+snafuinclude Mixers "math/fixnum-mixers";
+
 main = {
   test-sfc64 !;
   test-shioi64 !;
+
+  expect_i32 0x688990c0;
+  print_i32 (wellonsDuo32 1);
+
+  expect_i64 0x23085d6f7a569905;
+  print_i64 (rrmxmx 1);
+
+  expect_i64 0xd7a0e0ca79863983;
+  print_i64 (noinline_llvm_pelican64 (opaquely_i64 0));
+
+  expect_i64 0xf55a241eef7be41e;
+  print_i64 (noinline_llvm_pelican64 (opaquely_i64 1));
 };
+
+noinline_llvm_pelican64 = { x => pelican64 x };
 
 test-sfc64 = {
   gen = sfc64HOF 0;
