@@ -23,18 +23,7 @@ snafuinclude Bitwise "math/bitwise"; // for rotr-Int64
 // {{{
 
 // https://stackoverflow.com/questions/17035441/looking-for-decent-quality-prng-with-only-32-bits-of-state
-// https://gist.github.com/tommyettinger/46a874533244883189143505d203312c
-// Note: this function has a period of 2^32; it *does not* map zero to zero.
-mulberry32 :: { Int32 => Int32 };
-mulberry32 = { x0 =>
-  z0 = x0 +Int32 0x6D2B79F5;
-	z1 = (z0 `bitxor-Int32` (z0 `bitlshr-Int32` 15)) *Int32 (z0 `bitor-Int32`  1);
-	z2 = (z1 `bitxor-Int32` (z1 +Int32
-                            (z1 `bitxor-Int32` (z1 `bitlshr-Int32`  7))
-                                                     *Int32 (z1 `bitor-Int32` 61)));
-	z3 =  z2 `bitxor-Int32` (z2 `bitlshr-Int32` 14);
-  z3
-};
+
 
 // http://prng.di.unimi.it/splitmix64.c
 // Note: this function has a period of 2^64. It *does not* map zero to zero.
