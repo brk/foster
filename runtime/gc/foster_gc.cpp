@@ -569,7 +569,7 @@ inline void do_unmark_granule(void* obj) {
 }
 
 void clear_object_mark_and_validity_bits_for_used_group(used_linegroup& g) {
-  fprintf(gclog, "Clearing object mark and validity bits for used group @ %p (size %d lines)\n", g.base, g.count); fflush(gclog);
+  //fprintf(gclog, "Clearing object mark and validity bits for used group @ %p (size %d lines)\n", g.base, g.count); fflush(gclog);
   memset(&gcglobals.lazy_mapped_granule_marks   [global_granule_for(g.base)], 0, g.count * IMMIX_GRANULES_PER_LINE);
   memset(&gcglobals.lazy_mapped_granule_validity[global_granule_for(g.base)], 0, g.count * IMMIX_GRANULES_PER_LINE);
 }
@@ -1002,7 +1002,7 @@ public:
       if (small) {
         if (!singles.empty()) {
           auto g = singles.back(); singles.pop_back();
-          fprintf(gclog, "marking single allocated line (size %zd) at %p\n", distance(g, g->bound), g);
+          if (GCLOG_DETAIL > 2) { fprintf(gclog, "marking single allocated line (size %zd) at %p\n", distance(g, g->bound), g); }
           // Invariant(FREEMETACLEAR): metadata for free linegroups has already been cleared.
           //    (cleared pre-collection, and by definition left unmodified)
           if (linegroup_size_in_lines(g) != 1) {
@@ -1665,13 +1665,14 @@ void immix_common::common_gc() {
     if (TRACK_NUM_OBJECTS_MARKED) {
       gcglobals.max_bytes_live_at_whole_heap_gc =
         std::max(gcglobals.max_bytes_live_at_whole_heap_gc, bytes_marked);
-  }
+    }
 
-  if (ENABLE_GC_TIMING && GCLOG_MUTATOR_UTILIZATION) {
-    auto ems = gcstart.elapsed_ms();
-    auto now = gcglobals.init_start.elapsed_s();
-    fprintf(gclog, "MUTUTIL %f %f\n", // pause duration in ms, pause start time in s
-                    ems, now - (ems / 1000.0));
+    if (ENABLE_GC_TIMING && GCLOG_MUTATOR_UTILIZATION) {
+      auto ems = gcstart.elapsed_ms();
+      auto now = gcglobals.init_start.elapsed_s();
+      fprintf(gclog, "MUTUTIL %f %f\n", // pause duration in ms, pause start time in s
+                      ems, now - (ems / 1000.0));
+    }
   }
 
 #if ((GCLOG_DETAIL > 1) || ENABLE_GCLOG_ENDGC)
@@ -1717,8 +1718,8 @@ void immix_common::common_gc() {
     gcglobals.gc_time_us += delta_us;
   }
 
-    global_space_allocator.reset_scan(num_lines_reclaimed);
-  }
+  global_space_allocator.reset_scan(num_lines_reclaimed);
+
 }
 // }}}
 
@@ -2190,7 +2191,7 @@ void immix_worklist_t::drain() {
     // ASSUMPTION: no language-level interior pointers
     heap_cell* obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(body));
 
-    if (1) {
+    if (GCLOG_DETAIL > 2) {
       fprintf(gclog, "gc %d: root %p contains object %p (body %p) (line %d of frame %u) with header %zx\n",
           gcglobals.num_gcs_triggered,
           root, obj, body,
