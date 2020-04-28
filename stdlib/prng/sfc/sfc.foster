@@ -58,3 +58,54 @@ sfc64HOF = { seedx =>
     end
   }
 };
+
+///////////////////////////////////////////////////////////////////////////////
+
+type case Sfc32State
+      of $Sfc32State Int32 Int32 Int32 Int32
+         ;
+
+sfc32MakeState :: { Int32 => Sfc32State };
+sfc32MakeState = { x =>
+  s0 = Sfc32State x x x 1;
+  REC loop = { s => k => if k ==Int32 0 then s else
+                            let (_, n) = sfc32gen s;
+                            loop n (k -Int32 1) 
+                         end };
+  loop s0 12;
+};
+
+sfc32gen :: { Sfc32State => (Int32, Sfc32State) };
+sfc32gen = { s =>
+  case s of $Sfc32State a b c d ->
+    tmp = a +Int32 b +Int32 d;
+    p = 21;
+    q =  9;
+    r =  3;
+    a_ = b `bitxor-Int32` (b `bitlshr-Int32` q);
+    b_ = c  +Int32        (c `bitshl-Int32` r);
+    c_ = rotl-Int32 c p +Int32 tmp;
+    d_ = d +Int32 1;
+    (tmp, Sfc32State a_ b_ c_ d_)
+  end
+};
+
+sfc32split :: { Sfc32State => (Sfc32State, Sfc32State) };
+sfc32split = { s0 =>
+  let (x, s1) = sfc32gen s0;
+  let (y, s2) = sfc32gen s1;
+  let (z, s3) = sfc32gen s2;
+  let (w, s4) = sfc32gen s3;
+  (Sfc32State x z w y, s4)
+};
+
+sfc32HOF :: { Int32 => { Int32 } };
+sfc32HOF = { seedx =>
+  r = (prim ref (sfc32MakeState seedx));
+  {
+    s = r^;
+    let (x, t) = sfc32gen s;
+    t >^ r;
+    x
+  }
+};

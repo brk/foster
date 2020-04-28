@@ -21,8 +21,8 @@ mulberry32 = { x0 =>
 };
 
 // http://mostlymangling.blogspot.com/2020/01/nasam-not-another-strange-acronym-mixer.html
-// Maps zero to zero.
-nasam64 :: { Int64 => Int64 };
+// Not a derangement; maps zero to zero.
+nasam64 :: { % v : Int64 : v !=Int64 0 => Int64 };
 nasam64 = { v0 =>
   prim assert-invariants (v0 !=Int64 0);
 
@@ -94,6 +94,8 @@ wellonsDuo32 = { x0 =>
   x5
 };
 
+// Not a derangement; has a single fixed point at zero.
+// Bias: 0.0209
 wellonsTri32 :: { Int32 => Int32 };
 wellonsTri32 = { x0 =>
   x1 = x0 `bitxor-Int32` (x0 `bitlshr-Int32` 17);

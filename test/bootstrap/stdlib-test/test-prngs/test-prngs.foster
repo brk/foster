@@ -9,6 +9,9 @@ main = {
   test-sfc64 !;
   test-shioi64 !;
 
+  expect_i32 0;
+  print_i32 (wellonsTri32 0);
+
   expect_i32 0x688990c0;
   print_i32 (wellonsDuo32 1);
 
