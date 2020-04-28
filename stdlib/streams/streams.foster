@@ -6,34 +6,40 @@ snafuinclude Lazy "control/lazy";
 
 
 // It's tempting to think of streams as lazy lists of lazy values:
-// type Stream a = Lazy (List (Lazy a))
+//     type Stream a = Lazy (List (Lazy a))
 // but this isn't quite right. The stream cons operations should take
 // a lazy value and a stream, but that stream is itself a lazy value,
 // rather than a list, so we can't use the list cons operation directly.
-
-/*
-stream-cons-bad :: forall (a:Type) { Lazy a  =>  Lazy (List (Lazy a)) =>
-                                                 Lazy (List (Lazy a)) };
-stream-cons-bad = { forall a:Type, x:Lazy a => s:Lazy (List (Lazy a)) =>
-                     delay { Cons x ??s?? }
-};
-*/
-
-stream-nil-list :: forall (b:Type) { Lazy (List (Lazy b)) };
-stream-nil-list  = { delay { Nil } };
+//
+//    stream-cons-bad :: forall (a:Type) { Lazy a  =>  Lazy (List (Lazy a)) =>
+//                                                    Lazy (List (Lazy a)) };
+//    stream-cons-bad = { forall a:Type, x:Lazy a => s:Lazy (List (Lazy a)) =>
+//                        delay { Cons x ??s?? }
+//    };
 
 type case Stream (a:Type)
   of $StreamNilV
   of $StreamCons (Lazy a) (Lazy (Stream a))
 ;
+// StreamCons :: forall (a:Type) { Lazy a => Lazy (Stream a) => Stream a };
+
+stream-nil-list :: forall (b:Type) { Lazy (List (Lazy b)) };
+stream-nil-list  = { delay { Nil } };
 
 stream-cons-mediocre :: forall (a:Type)  { Lazy a  =>  Lazy (Stream a) =>
                                                        Lazy (Stream a) };
-stream-cons-mediocre = { x => s => delay { StreamCons x s }
-};
+stream-cons-mediocre = { x => s => delay { StreamCons x s } };
 
 stream-nil-mediocre ::   forall (b:Type) { Lazy (Stream b) };
 stream-nil-mediocre  = { delay { StreamNilV } };
+
+stream-nil ::   forall (b:Type) { Lazy (Stream b) };
+stream-nil  = { eager (StreamNilV) };
+
+stream-cons :: forall (a:Type)  { Lazy a  =>  Lazy (Stream a) =>
+                                                       Lazy (Stream a) };
+stream-cons = { x => s => eager (StreamCons x s) };
+
 
 stream-is-nil ::   forall (b:Type) { Lazy (Stream b) => Bool };
 stream-is-nil  = { s:Lazy (Stream b) =>
@@ -42,10 +48,17 @@ stream-is-nil  = { s:Lazy (Stream b) =>
   end
 };
 
-stream-uncons ::   forall (b:Type) { Lazy (Stream b) => Maybe (Lazy b) };
-stream-uncons  = { s =>
+stream-head :: forall (b:Type) { Lazy (Stream b) => Maybe (Lazy b) };
+stream-head  = { s =>
   case force s of $StreamNilV     -> None
                of $StreamCons v _ -> Some v
+  end
+};
+
+stream-uncons :: forall (b:Type) { Lazy (Stream b) => Maybe (Lazy b, Lazy (Stream b)) };
+stream-uncons  = { s =>
+  case force s of $StreamNilV     -> None
+               of $StreamCons v x -> Some (v, x)
   end
 };
 
@@ -65,15 +78,11 @@ stream-map-mediocre = { forall b:Type c:Type,
 };
 */
 
-// This is a great testcase for error reporting!
-// Poke at it and see how it breaks...
-// (suggestions: delay-force:[d] instead of [e], etc,
-//  remove ! or delay { ... }
 stream-map-mediocre = { forall d:Type e:Type,
                      f : { d => e } => s : Lazy (Stream d) =>
   lazily {
     case force s
-      of $StreamNilV       -> delay { StreamNilV:[e] } // note: not s!
+      of $StreamNilV       -> eager StreamNilV:[e] // note: not s!
       of $StreamCons la ls ->
         le = delay { f (force la) };
         es = stream-map-mediocre f ls;
@@ -87,8 +96,8 @@ stream-countup :: forall (a:Type)
                  { Int32 => { Int32 => a } => Lazy (Stream a) };
 stream-countup = { n     => f =>
   lazily {
-    stream-cons-mediocre (delay { f n })
-                         (stream-countup (n +Int32 1) f)
+    stream-cons (eager (f n))
+                (stream-countup (n +Int32 1) f)
   };
 };
 
@@ -148,10 +157,36 @@ stream-append = { s1 : Lazy (Stream v) => s2 : Lazy (Stream v) =>
 
 stream-cutoff :: forall (v:Type) { Int32 => Lazy (Stream v) => List v };
 stream-cutoff = { n => s =>
-  if n ==Int32 0 then Nil else
-    case force s
-      of $StreamNilV       -> Nil
-      of $StreamCons la ls -> Cons (force la) (stream-cutoff (n -Int32 1) ls)
+  REC loop = { n => s => acc =>
+    if n ==Int32 0 then listReverse acc else
+      case force s
+        of $StreamNilV       -> listReverse acc
+        of $StreamCons la ls -> loop (n -Int32 1) ls (Cons (force la) acc)
+      end
     end
-  end
+  };
+  loop n s Nil
+};
+
+stream-prefix :: forall (v:Type) { Int32 => Lazy (Stream v) => Lazy (Stream v) };
+stream-prefix = { n => s =>
+  delay {
+    if n ==Int32 0 then StreamNilV else
+      case force s
+        of $StreamNilV       -> StreamNilV
+        of $StreamCons la ls -> StreamCons la (stream-prefix (n -Int32 1) ls)
+      end
+    end
+  }
+};
+
+stream-consume :: forall (v:Type) (a:Type) { { v => a => a } => a => Lazy (Stream v) => a };
+stream-consume = { f => acc => s =>
+  REC loop = { strm => acc =>
+    case force strm
+      of $StreamNilV         -> acc
+      of $StreamCons lazyv x -> loop x (f (force lazyv) acc)
+    end
+  };
+  loop s acc
 };
