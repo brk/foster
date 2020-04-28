@@ -1,3 +1,5 @@
+snafuinclude PreludeFixnums "prelude-fixnums"; // mergeInt32
+snafuinclude List "data/list";
 
 type case Gen (a:Type) of $Gen { Int32 => a };
 
@@ -82,19 +84,50 @@ arb_Int32 = { prng =>
 arb_Float64_unit_53 = { prng =>
   v64 = mergeInt32 (prng !) (prng !);
   (bitfield-len-Int64 v64 0 53 |> u64-to-f64-unsafe)
-        *f64 (powi-f64 2.0 -53);
+                *f64 0x1.0p-53;
 };
 
 // Generates a **nonuniform** sample of the reals between
 // zero and one, which over-represents larger numbers,
 // and does not include exponents below -64.
 //
-arb_Float64_unit = { prng =>
+arb_Float64_unit_64 = { prng =>
   v64 = mergeInt32 (prng !) (prng !);
-  (v64 |> u64-to-f64-unsafe) *f64 (powi-f64 2.0 -64);
+  (v64 |> u64-to-f64-unsafe) *f64 0x1.0p-64;
 };
 
-// TODO port the random_real function from above link.
+// Generates a uniform random representable real
+// in the range [0, 1].
+//
+arb_Float64_unit = { prng =>
+
+  pow2i-Float64 = { x : Int64 => n : Int32 =>
+    pow2-Float64 (u64-to-f64-unsafe x) n;
+  };
+
+  part2 = { e : Int64 => s : Int64 =>
+    shift = ctlz-Int64 s;
+    if shift >SInt64 0
+    then
+         r = mergeInt32 (prng !) (prng !);
+         newsig0 = bitshl-Int64 s shift;
+         newsig  = bitor-Int64 newsig0 (bitlshr-Int64 r (64 -Int64 shift));
+         pow2i-Float64 (bitor-Int64 newsig 1) (trunc_i64_to_i32 (e -Int64 shift))
+    else pow2i-Float64 (bitor-Int64 s      1) (trunc_i64_to_i32 e)
+    end;
+  };
+
+  REC generate-expt = { e : Int64 =>
+    s = mergeInt32 (prng !) (prng !);
+    case s ==Int64 0
+      of True if e <SInt64 -1010 -> 0
+      of True -> generate-expt (e -Int64 64)
+      of False -> part2 e s
+    end
+  };
+
+  generate-expt -64;
+};
 
 
 // Produces normally-distributed floating point numbers
