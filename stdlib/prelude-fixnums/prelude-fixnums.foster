@@ -1,4 +1,5 @@
 snafuinclude Ord "ord";
+snafuinclude FloatConstants "math/float-constants";
 
 minReprSInt32 :: { Int32 };
 minReprSInt32 = { -2`147`483`648 };
@@ -464,6 +465,34 @@ isEven-Int8  = { x : Int8  => bitand-Int8  x 1 ==Int8  0 };
 isEven-Int32 = { x : Int32 => bitand-Int32 x 1 ==Int32 0 };
 isEven-Int64 = { x : Int64 => bitand-Int64 x 1 ==Int64 0 };
 isEven-Word  = { x : Word  => bitand-Word  x 1 ==Word  0 };
+
+////
+
+// Arbitrary mantissa values are accepted here but only the lower 52 bits are used.
+// This function is the dynamic analogue of hex float literals.
+// A literal like 0x1.2345p0 corresponds to
+//    Float64-normal-ofBits 0x0002`3450`0000`0000 0.
+// The restriction on the exponent makes it impossible to construct
+// subnormals, zero, NaNs, or Infinity.
+Float64-normal-ofBits :: {
+                    Int64 =>
+                    % e : Int32 : if e <=SInt32 1023 then e >=SInt32 -1022 else False end =>
+                        Float64 };
+Float64-normal-ofBits = { mant => expt =>
+  pow2 = (kDOUBLE_EXPONENT_BIAS +Int64 zext_i32_to_i64 expt) `bitshl-Int64` kDOUBLE_MANTISSA_BITS;
+  bitand-Int64 kDOUBLE_MANTISSA_MASK mant
+        |> bitor-Int64 pow2
+        |> i64-as-f64;
+};
+
+// "Raw" means that no bias is applied to the exponent.
+// Arbitrary exponent bit patterns are allowed, but only the lower 11 bits are used.
+Float64-ofRawBits :: { Int64 => Int64 => Float64 };
+Float64-ofRawBits = { mant => expt =>
+  (expt `bitand-Int64` kDOUBLE_EXPONENT_MASK) `bitshl-Int64` kDOUBLE_MANTISSA_BITS
+        |> bitor-Int64 (mant `bitand-Int64` kDOUBLE_MANTISSA_MASK)
+        |> i64-as-f64;
+};
 
 ////
 
