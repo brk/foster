@@ -304,6 +304,9 @@ test-float-classification = {
 
 test-d2s = {
 
+  expect_text "0.125";
+  print_text (ryuFloat64 0.125);
+
   expect_text "345.0";
   print_text (ryuFloat64 345.0);
 

@@ -1,5 +1,6 @@
 snafuinclude Prelude "prelude";
 snafuinclude RyuCommon "fmt/ryu/ryu-common";
+snafuinclude RyuTables "fmt/ryu/ryu-tables";
 
 snafuinclude FloatConstants "math/float-constants";
 
@@ -217,6 +218,7 @@ ryuFloat64-d2d = { ieeeMantissa => ieeeExponent =>
             loop !;
         end
     };
+    loop !;
 
     if vmIsTrailingZeros^ then
       while { mod10_d vm^ ==Int64 0 } {

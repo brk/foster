@@ -17,8 +17,6 @@ which is dual-licensed under Apache 2 and Boost.
 
 //kPOW10_ADDITIONAL_BITS = 120;
 
-
-div5 = { x : Int64 => udiv-unsafe-Int64 x (sext_i32_to_i64 5) };
 /*
 div10 = { x : Int64 => udiv-unsafe-Int64 x (sext_i32_to_i64 10) };
 div100 = { x : Int64 => udiv-unsafe-Int64 x (sext_i32_to_i64 100) };

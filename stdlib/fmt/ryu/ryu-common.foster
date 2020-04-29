@@ -87,6 +87,8 @@ log10Pow5 = { e : Int32 =>
     bitlshr-Int32 (e *Int32 732923) 20
 };
 
+div5 = { x : Int64 => udiv-unsafe-Int64 x (sext_i32_to_i64 5) };
+
 pow5Factor :: { Int64 => Int32 };
 pow5Factor = { value : Int64 =>
   REC loop = { count => value =>
