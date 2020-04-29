@@ -75,8 +75,9 @@ arb_Int32 = { prng =>
 };
 
 // Generate a **nonuniform** sample of the (representable)
-// reals between zero and one (exclusive), which excludes
-// values in (0, 2^-53).
+// reals between zero and one (exclusive). Can only produce
+// 2^53 possible values out of the nearly 2^62 valid candidates.
+// Does not produce values in (0, 2^-53).
 //
 // From http://mumble.net/~campbell/2014/04/28/random_real.c
 // See: http://mumble.net/~campbell/2014/04/28/uniform-random-float
@@ -88,7 +89,8 @@ arb_Float64_unit_53 = { prng =>
 };
 
 // Generates a **nonuniform** sample of the reals between
-// zero and one, which over-represents larger numbers,
+// zero and one, which (slightly) over-represents larger numbers,
+// gives restricted precision to some exponents,
 // and does not include exponents below -64.
 //
 arb_Float64_unit_64 = { prng =>
