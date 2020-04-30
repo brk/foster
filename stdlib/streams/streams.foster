@@ -2,7 +2,12 @@ snafuinclude Lazy "control/lazy";
 
 // "Even"-style streams, as presented by Wadler, Taha, and MacQueen in the paper
 // "How to add laziness to an strict language without even being odd".
-// See also http://srfi.schemers.org/srfi-40/srfi-40.html
+// See also https://srfi.schemers.org/srfi-40/srfi-40.html
+
+// Note that while streams are conceptually clear and simple, using them in
+// practice can involve some subtlety in avoiding space leaks.
+// Exercise caution and read the "Pitfalls" section of
+//    https://srfi.schemers.org/srfi-41/srfi-41.html
 
 
 // It's tempting to think of streams as lazy lists of lazy values:
