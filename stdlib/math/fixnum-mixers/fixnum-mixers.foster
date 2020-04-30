@@ -5,10 +5,14 @@
 // "derangements") meaning every input number is mapped to a
 // different number. Others have fixed points, usually at zero.
 
+// Bias numbers come from Christopher Wellons' hash-prospector tool:
+//      https://github.com/skeeto/hash-prospector
+
 snafuinclude Bitwise "math/bitwise"; // for rotr-Int64
 
 // https://gist.github.com/tommyettinger/46a874533244883189143505d203312c
 // Derangement but not a cyclic permutation.
+// Bias: 0.0593
 mulberry32 :: { Int32 => Int32 };
 mulberry32 = { x0 =>
   z0 = x0 +Int32 0x6D2B79F5;
@@ -83,7 +87,8 @@ pelican64 = { z0 =>
 // Mixers found by Christopher Wellons:
 // https://nullprogram.com/blog/2018/07/31/
 
-// Not a derangement; has multiple fixed points.
+// Not a derangement; has fixed points at 0, 0x4b3f3488, 0x909f5306, and 0xd06bfa52.
+// Bias: 0.1735
 wellonsDuo32 :: { Int32 => Int32 };
 wellonsDuo32 = { x0 =>
   x1 = x0 `bitxor-Int32` (x0 `bitlshr-Int32` 16);
@@ -105,10 +110,20 @@ wellonsTri32 = { x0 =>
   x5 = x4 `bitxor-Int32` (x4 `bitlshr-Int32` 15);
   x6 = x5 *Int32 0x31848bab;
   x7 = x6 `bitxor-Int32` (x4 `bitlshr-Int32` 14);
-
-    prim assert-invariants (if x0 !=Int32 0 then
-    x7 !=Int32 x0
-  else True end);
-
   x7
+};
+
+// A seeding mixer derived from NASAM, by @NWDD.
+// From https://rhet.dev/wheel/rng-battle-royale-47-prngs-9-consoles/
+nwdd64 :: { % s : Int64 : s !=Int64 0 => (Int64, Int64) };
+nwdd64 = { y1 =>
+  x0 = 0x9E6C63D0676A9A99;
+  y2 = y1 *Int64 x0;
+  y3 = y2 `bitxor-Int64` (bitxor-Int64 (y2 `bitlshr-Int64` 23)
+                                       (y2 `bitlshr-Int64` 51));
+  y4 = y3 *Int64 x0;
+  x1 = x0 *Int64 (rotl-Int64 y4 27);
+  y5 = y4 `bitxor-Int64` (bitxor-Int64 (y4 `bitlshr-Int64` 23)
+                                       (y4 `bitlshr-Int64` 51));
+  (x1, y5)
 };
