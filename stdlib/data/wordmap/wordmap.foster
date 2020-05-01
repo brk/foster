@@ -1,5 +1,6 @@
 snafuinclude Prelude "prelude";
 snafuinclude List    "data/list";
+snafuinclude Bitwise "math/bitwise"; // for highestBitMask-Word
 
 /*
   Based on the (BSD-licensed) implementation of Data.IntMap in
