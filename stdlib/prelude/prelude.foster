@@ -117,40 +117,6 @@ wordNumBits = {
 
 /////
 
-// Computes the following function::
-//     x: f(x)
-//     0: 0
-//     1: 1
-//     2: 2
-//     3: 2
-//     4: 4
-//     ...
-//     7: 4
-//     8: 8
-//     9: 8
-//     ...
-//     127: 64
-//     128: 128
-//     129: 128
-highestBitMask-Word :: { Word => Word };
-highestBitMask-Word = { x0 =>
-  x1 = x0 `bitor-Word` (x0 `bitlshr-Word` 1);
-  x2 = x1 `bitor-Word` (x1 `bitlshr-Word` 2);
-  x3 = x2 `bitor-Word` (x2 `bitlshr-Word` 4);
-  x4 = x3 `bitor-Word` (x3 `bitlshr-Word` 8);
-  x5 = x4 `bitor-Word` (x4 `bitlshr-Word` 16);
-  // In LLVM, shifting a 32-bit value 32 bits
-  // produces undefined, not zero.
-  x6 = if 0 ==Word bitxor-Word (-1) 0xFFFF`FFFF
-          then x5 // 32 bits in a word
-          else    // 64 bits in a word
-               x5 `bitor-Word` (x5 `bitlshr-Word` 32);
-       end;
-  x6 `bitxor-Word` (x6 `bitlshr-Word` 1);
-};
-
-/////
-
 // Precondition: m >= n
 copyOfArrayTo :: forall (t:Type)
                  { Array t => // of length m

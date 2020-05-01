@@ -295,3 +295,24 @@ oneBeforeNextPowerOfTwo     = { n =>
 oneBeforeNextPowerOfTwo_alt = { n =>
   n `bitor-Int32` bitmask-Int32 (bitlength-Int32 n)
 };
+
+/////
+
+// Computes the following function::
+//     x: f(x)
+//     0: 0
+//     1: 1
+//     2: 2
+//     3: 2
+//     4: 4
+//     ...
+//     7: 4
+//     8: 8
+//     9: 8
+//     ...
+highestBitMask-Word :: { Word => Word };
+highestBitMask-Word = { x0 =>
+  hb = if -1 ==Word 0xFFFF`FFFF then 31 else 63 end; // highest zero-based bit index
+  bp = hb -Word ctlz-Word x0;
+  1 `bitshl-Word` bp
+};
