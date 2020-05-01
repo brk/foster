@@ -276,6 +276,16 @@ isFinite-f64 = { f =>
   end
 };
 
+isFiniteNonZero-f64 :: { Float64 => Bool };
+isFiniteNonZero-f64 = { f =>
+  case classify-f64 f
+    of $FP_Zero     -> False
+    of $FP_NaN      -> False
+    of $FP_Infinite -> False
+    of _ -> True
+  end
+};
+
 positiveInfinity-f32 :: { Float32 };
 positiveInfinity-f32 = { 0x7f80`0000 |> i32-as-f32 };
 
@@ -496,6 +506,23 @@ Float64-ofRawBits = { mant => expt =>
 
 ////
 
+// Extracts the exponent of the given floating point value.
+// The return value will be a number between -1022 and 1023.
+ilogb-Float64 :: { Float64 => Maybe Int64 };
+ilogb-Float64 = { x =>
+  if isFiniteNonZero-f64 x then ilogb-Float64!! x |> Some else None end
+};
+
+// TODO: fix KNStaticChecks to handle this!
+//ilogb-Float64! :: { % v : Float64 : isFiniteNonZero-f64 v => Int64 };
+
+
+ilogb-Float64!! = { x =>
+  bits = f64-as-i64 x;
+  ieeeExponent = (bits `bitlshr-Int64` kDOUBLE_MANTISSA_BITS) `bitand-Int64` kDOUBLE_EXPONENT_MASK;
+  ieeeExponent -Int64 kDOUBLE_EXPONENT_BIAS;
+};
+
 // Computes x * (2^i).
 // Corresponds to the C math function `ldexp` (and, on most systems, `scalbn`).
 pow2-Float64 :: { Float64 => Int32 => Float64 };
@@ -503,8 +530,6 @@ pow2-Float64 = { x => i =>
   // This implementation ported from musl: https://git.musl-libc.org/cgit/musl/tree/src/math/scalbn.c
 
   times2tothe = { x : Float64 => n : Int32 =>
-    kDOUBLE_EXPONENT_BIAS = 1023;
-    kDOUBLE_MANTISSA_BITS = 52;
     pow2 = (kDOUBLE_EXPONENT_BIAS +Int64 zext_i32_to_i64 n) `bitshl-Int64` kDOUBLE_MANTISSA_BITS
             |> i64-as-f64;
     pow2 *f64 x
@@ -561,11 +586,6 @@ modf-Float64 = { value =>
   // This implementation ported from musl: https://git.musl-libc.org/cgit/musl/tree/src/math/modf.c
   bits = f64-as-i64 value;
 
-  kDOUBLE_EXPONENT_BIAS = 1023;
-  kDOUBLE_MANTISSA_BITS = 52;
-  kDOUBLE_EXPONENT_MASK = 0x7FF;
-  kDOUBLE_MANTISSA_MASK = 0x000f`ffff`ffff`ffff; // (1 << DOUBLE_MANTISSA_BITS) - 1;
-  
   ieeeExponent = (bits `bitlshr-Int64` kDOUBLE_MANTISSA_BITS) `bitand-Int64` kDOUBLE_EXPONENT_MASK;
   expo = ieeeExponent -Int64 kDOUBLE_EXPONENT_BIAS;
   signedZero = { bits `bitand-Int64` (1 `bitshl-Int64` 63) |> i64-as-f64 };

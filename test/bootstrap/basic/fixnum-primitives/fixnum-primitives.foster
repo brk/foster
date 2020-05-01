@@ -304,6 +304,12 @@ test-float-classification = {
   expect_float_f64x 0x1.2345p0;
   print_float_f64x (Float64-normal-ofBits
                       (0x2345`0000`0000`0000 `bitlshr-Int64` (64 -Int64 52)) 0);
+
+  expect_i64 1; print_i64 (ilogb-Float64 3.9 |> unMaybe);
+  expect_i64 0; print_i64 (ilogb-Float64 1.9 |> unMaybe);
+  expect_i64 -1; print_i64 (ilogb-Float64 0.6 |> unMaybe);
+  expect_i64 -2; print_i64 (ilogb-Float64 0.3 |> unMaybe);
+  expect_i64 -1022; print_i64 (ilogb-Float64 kDBL_MIN |> unMaybe);
 };
 
 test-d2s = {
