@@ -1,4 +1,5 @@
 snafuinclude PreludeFixnums "prelude-fixnums"; // mergeInt32
+snafuinclude FloatConstants "math/float-constants"; // pi-f64
 snafuinclude List "data/list";
 
 type case Gen (a:Type) of $Gen { Int32 => a };
@@ -108,17 +109,22 @@ arb_Float64_unit_64 = { prng =>
 // numbers are represented, uniformity means having
 // hugely different odds of producing 0.0 versus 1.0.
 //
-// "Uniform" here basically meas that any subrange of size x
-// should have probability x of containing the generated result
-// value. So there should be equal chance of getting a value in
-// the range [0, 0.25] as there is of getting one in the range
+// "Uniform" here basically means that any subrange of size x
+// should have probability x of containing the generated value.
+// So there should be equal chance of getting a value in the
+// range [0, 0.25] as there is of getting one in the range
 // [0.75, 1.0], even though the former contains far more
-// representable floating-point values. This leads to a somewhat
+// representable floating-point values. This leads to our somewhat
 // surprising corollary. The gap to the next smallest number from
 // 1.0 is 2^-53. But above zero are all the denormal numbers,
 // which can have exponents down to 2^-1022. If you take the many
 // numbers that round up to 1.0, and flip them to the opposite end,
 // they will produce subnormals rather than rounding to zero.
+//
+// Another angle on this paradox is that floating point values don't
+// represent individual real numbers; they represent ranges of reals.
+// Given the way IEEE 754 works, zero represents a much smaller range
+// than does 1.0, and is correspondingly far less likely to appear.
 //
 arb_Float64_unit = { prng =>
 
@@ -150,6 +156,11 @@ arb_Float64_unit = { prng =>
   generate-expt -64;
 };
 
+// Formula from https://ericlippert.com/2012/02/21/generating-random-non-uniform-data/
+arb_Float64_cauchy = { prng =>
+  v = arb_Float64_unit prng;
+  tan-f64 (pi-f64 *f64 (v -f64 0.5))
+};
 
 // Produces normally-distributed floating point numbers
 // with mean zero and the given standard deviation
