@@ -118,11 +118,18 @@ typecheckRat annot originalText expTy = do
                              ,highlightFirstLineDoc (rangeOf annot)
                              ,text "Error was:"
                              ,indent 8 (text err) ]
-         Right (part1,part2,denom,part3) -> do
-           let pos = (fromInteger part1 +
-                      (fromInteger part2 / denom)) * (encodeFloat 2 (part3 - 1))
-               val = if negated then -1.0 * pos else pos
-           return (AnnLiteral annot ty (LitFloat $ LiteralFloat val originalText))
+         Right (part1,part2,mantissaText,denom,part3) -> do
+           if denom > (16.0 ** 14)
+             then
+               tcFails [text "Oversized mantissa in hex float literal; had"
+                        <+> pretty (T.length mantissaText) <+> text "hex digits"
+                        <+> text "but a 64-bit mantissa can only fit 14 hex digits (52 bits)."
+                        ,highlightFirstLineDoc (rangeOf annot)]
+             else do
+               let pos = (fromInteger part1 +
+                           (fromInteger part2 / denom)) * (encodeFloat 2 (part3 - 1))
+                   val = if negated then -1.0 * pos else pos
+               return (AnnLiteral annot ty (LitFloat $ LiteralFloat val originalText))
     10 ->
       if exptTooLargeForType expt ty then
          tcFails [text "Exponent too large", highlightFirstLineDoc (rangeOf annot)]
@@ -143,13 +150,13 @@ typecheckRat annot originalText expTy = do
             return (AnnLiteral annot ty (LitFloat $ LiteralFloat val originalText))
     _ -> error $ "Unexpected rational literal base " ++ show base
 
-hexDoubleParser :: Atto.Parser (Integer, Integer, Double, Int)
+hexDoubleParser :: Atto.Parser (Integer, Integer, T.Text, Double, Int)
 hexDoubleParser = do
   part1 <- Atto.hexadecimal
   (t, part2) <- Atto.option (T.pack "", 0)
                   (Atto.char '.' *> Atto.match Atto.hexadecimal)
   part3 <- (Atto.asciiCI (T.pack "p") *> Atto.signed Atto.decimal)
-  return (part1, part2, 16.0 ** (fromIntegral $ T.length t), part3)
+  return (part1, part2, t, 16.0 ** (fromIntegral $ T.length t), part3)
 
 tcMaybeWarnMisleadingRat range cleanText val = do
   -- It's possible that the literal given is "misleading",
