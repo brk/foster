@@ -298,6 +298,15 @@ oneBeforeNextPowerOfTwo_alt = { n =>
 
 /////
 
+floorLog2-Word :: { Word => Word };
+floorLog2-Word = { x =>
+  highestBit = if -1 ==Word 0xFFFF`FFFF then 31 else 63 end;
+  highestBit -Word ctlz-Word x;
+};
+
+floorLog2-Int64 :: { Int64 => Int64 };
+floorLog2-Int64 = { x => 63 -Int64 ctlz-Int64 x };
+
 // Computes the following function::
 //     x: f(x)
 //     0: 0
@@ -310,9 +319,14 @@ oneBeforeNextPowerOfTwo_alt = { n =>
 //     8: 8
 //     9: 8
 //     ...
+highestBitMask!-Word :: { % x : Word : x !=Word 0 => Word };
+highestBitMask!-Word = { x => 1 `bitshl-Word` (floorLog2-Word x) };
+
+highestBitMask!-Int64 :: { % x : Int64 : x !=Int64 0 => Int64 };
+highestBitMask!-Int64 = { x => 1 `bitshl-Int64` (floorLog2-Int64 x) };
+
 highestBitMask-Word :: { Word => Word };
-highestBitMask-Word = { x0 =>
-  hb = if -1 ==Word 0xFFFF`FFFF then 31 else 63 end; // highest zero-based bit index
-  bp = hb -Word ctlz-Word x0;
-  1 `bitshl-Word` bp
-};
+highestBitMask-Word = { x => if x ==Word 0 then 0 else highestBitMask!-Word x end };
+
+highestBitMask-Int64 :: { Int64 => Int64 };
+highestBitMask-Int64 = { x => if x ==Int64 0 then 0 else highestBitMask!-Int64 x end };
