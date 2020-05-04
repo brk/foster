@@ -524,6 +524,15 @@ ilogb-Float64!! = { x =>
   ieeeExponent -Int64 kDOUBLE_EXPONENT_BIAS;
 };
 
+// Returns a normalized fraction (with exponent zero, thus with value between 1 and 2)
+// and the original value's exponent.
+// Invariant: forall x:Float64, frexp-Float64 x = (n, e) ==> x == pow2-Float64 n e.
+frexp-Float64 :: { Float64 => (Float64, Int32) };
+frexp-Float64 = { x =>
+  expt = if isFiniteNonZero-f64 x then ilogb-Float64!! x else 0 end;
+  (pow2-Float64 x (0 -Int64 expt |> trunc_i64_to_i32), trunc_i64_to_i32 expt)
+};
+
 // Computes x * (2^i).
 // Corresponds to the C math function `ldexp` (and, on most systems, `scalbn`).
 pow2-Float64 :: { Float64 => Int32 => Float64 };
