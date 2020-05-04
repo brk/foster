@@ -507,7 +507,8 @@ Float64-ofRawBits = { mant => expt =>
 ////
 
 // Extracts the exponent of the given floating point value.
-// The return value will be a number between -1022 and 1023.
+// The return value will be a number between -1022 and 1023 for normal values.
+// Subnormal values will return -1023.
 ilogb-Float64 :: { Float64 => Maybe Int64 };
 ilogb-Float64 = { x =>
   if isFiniteNonZero-f64 x then ilogb-Float64!! x |> Some else None end

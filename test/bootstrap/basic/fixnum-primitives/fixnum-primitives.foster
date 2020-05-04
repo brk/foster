@@ -309,7 +309,9 @@ test-float-classification = {
   expect_i64 0; print_i64 (ilogb-Float64 1.9 |> unMaybe);
   expect_i64 -1; print_i64 (ilogb-Float64 0.6 |> unMaybe);
   expect_i64 -2; print_i64 (ilogb-Float64 0.3 |> unMaybe);
-  expect_i64 -1022; print_i64 (ilogb-Float64 kDBL_MIN |> unMaybe);
+  expect_i64 -1022; print_i64 (ilogb-Float64 kDBL_MIN_NORMAL |> unMaybe);
+  expect_i64 -1023; print_i64 (ilogb-Float64 kDBL_MIN_VALUE |> unMaybe);
+  expect_i1 False; print_i1 (ilogb-Float64 0.0 |> isSome);
 };
 
 test-d2s = {
