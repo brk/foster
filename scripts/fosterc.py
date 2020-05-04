@@ -100,6 +100,16 @@ def insert_before_each(val, vals):
 def get_ghc_rts_args():
   ghc_rts_args = ["-smeGCstats.txt", "-M2G", "-K64M"]
 
+  # Restrict parallel GC to run in old generation only.
+  # Informal testing indicates that with default behavior
+  # (serial program, parallel GC for young & old)
+  # we get a little bit of slowdown due to parallel GC overhead,
+  # and significant parallel interference when running the regression
+  # suite, especially if RAM is slightly underprovisioned. Using old-
+  # gen-only parallel GC increases user time but decreases wall time
+  # when running a single test.
+  ghc_rts_args.append('-qg')
+
   if options and options.stacktraces:
     ghc_rts_args.append('-xc') # Produce stack traces
 
