@@ -64,20 +64,21 @@ def worker_run_test(info):
 def run_all_tests_fast(tests, bootstrap_dir, tmpdir):
   # Pool's default logic to compute available CPUs doesn't handle isolated CPUs.
   ncpus = cpu_utils.get_available_cpu_count()
-  pool = multiprocessing.Pool(processes=ncpus)
-  try:
-    for result in pool.imap_unordered(worker_run_test,
-                zip(tests,
-                  itertools.repeat(tmpdir))):
-       testpath, result = result
-       if result == []:
-         handle_StopAfterMiddle_test_result(testpath)
-       elif result is not None:
-         handle_successful_test_result(result, testpath)
-       else:
-         run_test.tests_failed.add(testpath)
-  except KeyboardInterrupt:
-    return
+  with multiprocessing.Pool(processes=ncpus) as pool:
+    try:
+      for result in pool.imap_unordered(worker_run_test,
+                  zip(tests,
+                    itertools.repeat(tmpdir)),
+                  chunksize=1):
+        testpath, result = result
+        if result == []:
+          handle_StopAfterMiddle_test_result(testpath)
+        elif result is not None:
+          handle_successful_test_result(result, testpath)
+        else:
+          run_test.tests_failed.add(testpath)
+    except KeyboardInterrupt:
+      return
 
 def main(opts, bootstrap_dir, tmpdir):
   walkstart = run_test.walltime()
