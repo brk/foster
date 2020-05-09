@@ -140,62 +140,44 @@ any-common-bits-Int32 = { j : Int32 => k : Int32 =>
   (bitand-Int32 j k) !=Int32 0
 };
 
-bitcount-Int32 = { n : Int32 =>
-  ctpop-Int32 n
-};
+bitcount-Int32 = { n : Int32 => ctpop-Int32 n };
 
-bitlength-alt2-Int32 = { n : Int32 =>
-  REC go = { n => total =>
-             // This lookup table is not consistent with SRFI 60,
-             // but they define both 0 and -1 as being of bit length zero,
-             // which seems totally bogus.
-             case n
-               of 0 -> total
-               of 1 -> total +Int32 1
-               of 2 -> total +Int32 2
-               of 3 -> total +Int32 2
-               of 4 -> total +Int32 3
-               of 5 -> total +Int32 3
-               of 6 -> total +Int32 3
-               of 7 -> total +Int32 3
-               of _ -> go (bitlshr-Int32 n 4) (total +Int32 4);
-             end
-           };
-  go n 0;
-};
-
-bitlength-alt-Int32 = { n : Int32 =>
-  REC go = { n => total =>
-             if n ==Int32 0
-               then total
-               else go (bitlshr-Int32 n 1) (total +Int32 1)
-             end
-           };
-  go n 0
-};
-
-bitlength-Word = { n : Word =>
-  (ctlz-Word 0) -Word (ctlz-Word n)
-};
-
+bitlength-Word = { n : Word => (ctlz-Word 0) -Word (ctlz-Word n) };
 bitlength-Word-32 = { n : Word => n |> bitlength-Word |> trunc_Word_to_i32 };
+bitlength-Int64 = { n : Int64 => 64 -Int64 (ctlz-Int64 n) };
 
-bitlength-Int64 = { n : Int64 =>
-  64 -Int64 (ctlz-Int64 n)
-};
-
-bitlength-Int32 = { n : Int32 =>
-  32 -Int32 (ctlz-Int32 n)
-};
-
-bitlength-Int8 = { n : Int8 =>
-  8 -Int8 (ctlz-Int8 n)
-};
-
-// Given 0, returns -1.
+// Given 0, returns 0.
 // Given 7, returns 3.
 // Given 8, returns 4.
-highest-set-bit-Int32 = { n : Int32 => n |> bitlength-Int32 |> (+Int32) -1 };
+bitlength-Int32 = { n : Int32 => 32 -Int32 (ctlz-Int32 n) };
+bitlength-Int8 = { n : Int8 => 8 -Int8 (ctlz-Int8 n) };
+
+// Given 0, returns -1.
+// Given 7, returns 2.
+// Given 8, returns 3.
+highest-set-bit-position-Int32 = { n : Int32 => n |> bitlength-Int32 |> (+Int32) -1 };
+highest-set-bit-position-Int64 = { n : Int64 => n |> bitlength-Int64 |> (+Int64) -1 };
+highest-set-bit-position-Word = { n : Word => n |> bitlength-Word |> (+Word) -1 };
+
+// Computes the following function::
+//     x: f(x)
+//     0: 0
+//     1: 1
+//     2: 2
+//     3: 2
+//     4: 4
+//     ...
+//     7: 4
+//     8: 8
+//     9: 8
+//     ...
+highest-set-bit!-Int32 = { n : Int32 => 1 `bitshl-Int32` (highest-set-bit-position-Int32 n) };
+highest-set-bit!-Int64 = { n : Int64 => 1 `bitshl-Int64` (highest-set-bit-position-Int64 n) };
+highest-set-bit!-Word = { n : Word => 1 `bitshl-Word` (highest-set-bit-position-Word n) };
+
+highest-set-bit-Int32 = { n : Int32 => if n ==Int32 0 then 0 else highest-set-bit!-Int32 n end };
+highest-set-bit-Int64 = { n : Int64 => if n ==Int64 0 then 0 else highest-set-bit!-Int64 n end };
+highest-set-bit-Word  = { n : Word  => if n ==Word  0 then 0 else highest-set-bit!-Word  n end };
 
 // Given 0, returns -1.
 // Given 7, returns 0.
@@ -248,6 +230,21 @@ bit-reverse-Int8 = { n =>
 
 /////////////////////////////////////////////////////////////////////////
 
+// Preconditions:
+//      fin - start <= 32
+//            start <= 32
+// Example: bitfield-mask-Int32 3 8 == 0b`1111`1111`000
+bitfield-mask-Int32 :: { % start : Int32 : start <UInt32 32 =>
+                         % fin   : Int32 : if fin <=UInt32 32
+                                            then (fin -Int32 start) <=UInt32 32
+                                            else False end
+                    => Int32 };
+bitfield-mask-Int32 = { start => fin =>
+  (1 `bitshl-Int32` fin) -Int32 (1 `bitshl-Int32` start)
+};
+
+/////////////////////////////////////////////////////////////////////////
+
 rotl-Int32 :: { Int32 => Int32 => Int32 };
 rotl-Int32 = { x => r =>
   bitor-Int32 (x `bitshl-Int32` r)
@@ -268,7 +265,6 @@ rotr-Int64 = { x => r =>
   prim assert-invariants (if x !=Int64 0 then rv !=Int64 0 else True end);
   rv
 };
-
 
 /////////////////////////////////////////////////////////////////////////
 
@@ -307,26 +303,5 @@ floorLog2-Word = { x =>
 floorLog2-Int64 :: { Int64 => Int64 };
 floorLog2-Int64 = { x => 63 -Int64 ctlz-Int64 x };
 
-// Computes the following function::
-//     x: f(x)
-//     0: 0
-//     1: 1
-//     2: 2
-//     3: 2
-//     4: 4
-//     ...
-//     7: 4
-//     8: 8
-//     9: 8
-//     ...
-highestBitMask!-Word :: { % x : Word : x !=Word 0 => Word };
-highestBitMask!-Word = { x => 1 `bitshl-Word` (floorLog2-Word x) };
-
-highestBitMask!-Int64 :: { % x : Int64 : x !=Int64 0 => Int64 };
-highestBitMask!-Int64 = { x => 1 `bitshl-Int64` (floorLog2-Int64 x) };
-
-highestBitMask-Word :: { Word => Word };
-highestBitMask-Word = { x => if x ==Word 0 then 0 else highestBitMask!-Word x end };
-
-highestBitMask-Int64 :: { Int64 => Int64 };
-highestBitMask-Int64 = { x => if x ==Int64 0 then 0 else highestBitMask!-Int64 x end };
+floorLog2-Int32 :: { Int32 => Int32 };
+floorLog2-Int32 = { x => 31 -Int32 ctlz-Int32 x };

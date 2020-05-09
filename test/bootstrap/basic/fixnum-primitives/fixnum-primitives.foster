@@ -91,14 +91,8 @@ bitwise-ops = {
   expect_i32                10;
   print_i32 (bitlength-Int32 0b`11`0110`1010);
 
-  expect_i32                10;
-  print_i32 (bitlength-alt-Int32 0b`11`0110`1010);
-
   expect_i32                 32;
   print_i32 (bitlength-Int32 -1);
-
-  expect_i32                     32;
-  print_i32 (bitlength-alt-Int32 -1234567);
 
   lowest-bit-set-Int32-test 0 1;
   lowest-bit-set-Int32-test 1 2;

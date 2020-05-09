@@ -43,6 +43,16 @@ main = {
   expect_i8b 0b1011`0010;
   print_i8b (bit-reverse-Int8 0b0100`1101);
 
+  expect_i32b 0b`11111`000;
+  print_i32b (bitfield-mask-Int32 3 8);
+
+  expect_i32 0; print_i32 (bitlength-Int32 0);
+  expect_i32 3; print_i32 (bitlength-Int32 7);
+  expect_i32 4; print_i32 (bitlength-Int32 8);
+
+  expect_i32 -1; print_i32 (highest-set-bit-position-Int32 0);
+  expect_i32 2; print_i32 (highest-set-bit-position-Int32 7);
+  expect_i32 3; print_i32 (highest-set-bit-position-Int32 8);
   
   expect_i32 (bitlength-Word-32 -1);
   print_i32 (wordNumBits32 !);
@@ -54,13 +64,13 @@ main = {
   print_i64 (floorLog2-Int64 0);
 
   expect_i64 0;
-  print_i64 (highestBitMask-Int64 0);
+  print_i64 (highest-set-bit-Int64 0);
 
   expect_i64 1;
-  print_i64 (highestBitMask!-Int64 1);
+  print_i64 (highest-set-bit!-Int64 1);
 
   expect_i64 4;
-  print_i64 (highestBitMask!-Int64 7);
+  print_i64 (highest-set-bit!-Int64 7);
 };
 
 noinline_llvm_part2 = {

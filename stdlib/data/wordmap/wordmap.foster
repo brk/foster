@@ -1,6 +1,6 @@
 snafuinclude Prelude "prelude";
 snafuinclude List    "data/list";
-snafuinclude Bitwise "math/bitwise"; // for highestBitMask-Word
+snafuinclude Bitwise "math/bitwise"; // for highest-set-bit-Word
 
 /*
   Based on the (BSD-licensed) implementation of Data.IntMap in
@@ -625,7 +625,7 @@ wordMapDeleteFindMax! = { s =>
 ////////////
 
 wordMapBranchMask = { p1 => p2 =>
-  highestBitMask-Word (p1 `bitxor-Word` p2)
+  (p1 `bitxor-Word` p2) |> highest-set-bit-Word
 };
 
 wordMapMask = { k => m => bitand-Word k (bitnot-Word (m -Word 1) `bitxor-Word` m) };
