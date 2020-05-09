@@ -40,6 +40,7 @@ import qualified SMTLib2 as SMT
 import           SMTLib2(app, Script(..), Command(..), Option(..), Type(..))
 import qualified SMTLib2.Core as SMT
 import           SMTLib2.Core(tBool, (===), (=/=))
+import qualified SMTLib2.Int as SMT
 import SMTLib2.BitVector
 
 import Foster.RunZ3 (runZ3)
@@ -116,6 +117,10 @@ smtTruncToSize i v = extract (fromIntegral i - 1) 0 v
 -- but doesn't equate the literals for the two types!
 litOfSize num I1 = if num == 0 then SMT.false else SMT.true
 litOfSize num sz = bv num (fromIntegral $ intSizeOf sz)
+
+smtIntOrBitvector (TyApp (TyCon "Int") []) li = SMT.num (litIntValue li) 
+smtIntOrBitvector ty li = litOfSize (fromInteger $ litIntValue li)
+                                    (intSizeBitsOf ty)
 
 -- inRangeCO x (a, b) = bvsge x a `SMT.and` bvslt x b
 inRangeCC x (a, b) = bvsge x a `SMT.and` bvsle x b
@@ -506,7 +511,7 @@ checkBody expr facts =
   --    * Otherwise, ``e2`` is checked with a declaration for ``x``.
   case expr of
     KNLiteral ty (LitInt i) -> do
-        return $ withDecls facts $ \x -> return $ smtId x === litOfSize (fromInteger $ litIntValue i) (intSizeBitsOf ty)
+        return $ withDecls facts $ \x -> return $ smtId x === smtIntOrBitvector ty i
     KNLiteral _ (LitBool b) ->
         return $ withDecls facts $ \x -> return $ smtId x === (if b then SMT.true else SMT.false)
     KNLiteral _ (LitByteArray bs) -> -- TODO: handle refinements?
@@ -585,8 +590,7 @@ checkBody expr facts =
               SMTExpr body decls idfacts <- (trueOr mb_f2) resid
 
               let smtRepr (Right v) = smtVar v
-                  smtRepr (Left (LitInt li)) =
-                            litOfSize (fromInteger $ litIntValue li) (intSizeBitsOf (tidType v))
+                  smtRepr (Left (LitInt li)) = smtIntOrBitvector (tidType v) li
                   smtRepr (Left lit) = error $ "KNStaticChecks: smtRepr can't yet handle " ++ show lit
 
               let idfacts' = extendIdFacts resid body [] idfacts
