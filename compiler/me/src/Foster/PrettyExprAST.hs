@@ -13,7 +13,9 @@ import Foster.Kind(kindAsHash)
 import Foster.ExprAST
 import Foster.ParsedType
 
-import Text.PrettyPrint.ANSI.Leijen
+import Data.Text.Prettyprint.Doc
+import Data.Text.Prettyprint.Doc.Render.Terminal
+
 import qualified Data.Text as T
 import Data.Char(isAlpha, isPrint, ord, chr, isAscii)
 import Data.List(isPrefixOf)
@@ -21,23 +23,20 @@ import Numeric(showHex)
 import Data.Word(Word8)
 import qualified Data.ByteString as BS(unpack)
 
--- "The ribbon width is the maximal amount of
---  non-indentation characters on a line."
-
-showTyped :: Pretty t => Doc -> t -> Doc
-showTyped d t = parens (d <+> text "::" <+> pretty t)
+showTyped :: PrettyT t => Doc AnsiStyle -> t -> Doc AnsiStyle
+showTyped d t = parens (d <+> text "::" <+> prettyT t)
 
 showUnTyped d _ = d
 
 comment d = text "/*" <+> d <+> text "*/"
 
-instance (Pretty ty, IsQuietPlaceholder ty) => Pretty (ArrayIndex (ExprSkel ExprAnnot ty)) where
-  pretty (ArrayIndex b i _rng SG_Dynamic) =
-    prettyAtom b <> brackets (pretty i)
-  pretty (ArrayIndex b i _rng SG_Static) =
-    text "prim array-subscript" <+> pretty b <+> pretty i
-  pretty (ArrayIndex b i _rng SG_Unsafe) =
-    text "prim array-subscript-unsafe" <+> pretty b <+> pretty i
+instance (PrettyT ty, IsQuietPlaceholder ty) => PrettyT (ArrayIndex (ExprSkel ExprAnnot ty)) where
+  prettyT (ArrayIndex b i _rng SG_Dynamic) =
+    prettyAtom b <> brackets (prettyT i)
+  prettyT (ArrayIndex b i _rng SG_Static) =
+    text "prim array-subscript" <+> prettyT b <+> prettyT i
+  prettyT (ArrayIndex b i _rng SG_Unsafe) =
+    text "prim array-subscript-unsafe" <+> prettyT b <+> prettyT i
 
 -- (<//>) ?vs? align (x <$> y)
 
@@ -45,23 +44,23 @@ kwd  s = dullblue  (text s)
 lkwd s = dullwhite (text s)
 end    = lkwd "end"
 
-prettyFx Nothing = empty
-prettyFx (Just fx) = pretty fx <> text " "
+prettyFx Nothing = emptyDoc
+prettyFx (Just fx) = prettyT fx <> text " "
 
-instance Pretty TypeP where
-  pretty t = case t of
+instance PrettyT TypeP where
+  prettyT t = case t of
           TyConP nam          -> text nam
-          TyAppP con []       ->          pretty con
-          TyAppP con ts       -> parens $ pretty con <+> sep (map pretty ts)
-          RecordTypeP labels ts          -> tupled (map pretty ts) <> text (show labels)
-          TupleTypeP  k   ts             -> tupled (map pretty ts) <> text (kindAsHash k)
+          TyAppP con []       ->          prettyT con
+          TyAppP con ts       -> parens $ prettyT con <+> sep (map prettyT ts)
+          RecordTypeP labels ts          -> tupled (map prettyT ts) <> text (show labels)
+          TupleTypeP  k   ts             -> tupled (map prettyT ts) <> text (kindAsHash k)
           FnTypeP    ts r fx _cc _pf _sr ->
-                                         text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
-                                                  <+> pretty r <+> prettyFx fx <> text "}"
-          ForAllP        _tyfs rho    -> text "forall ..." <+> pretty rho
+                                         text "{" <+> hsep [prettyT t <+> text "=>" | t <- ts]
+                                                  <+> prettyT r <+> prettyFx fx <> text "}"
+          ForAllP        _tyfs rho    -> text "forall ..." <+> prettyT rho
           TyVarP         tv           -> pretty tv
-          MetaPlaceholder str         -> string ("?? " ++ str)
-          RefinedTypeP nm ty e -> text "%" <+> text nm <+> text ":" <+> pretty ty <+> text ":" <+> pretty e
+          MetaPlaceholder str         -> pretty ("?? " ++ str)
+          RefinedTypeP nm ty e -> text "%" <+> text nm <+> text ":" <+> prettyT ty <+> text ":" <+> prettyT e
 
 class IsQuietPlaceholder ty where
   isQuietPlaceholder :: ty -> Bool
@@ -85,15 +84,15 @@ emptyOrLine = group linebreak
 
 prettyTopLevelFn fn =
  withAnnot (fnAstAnnot fn) $
-  text (T.unpack $ fnAstName fn) <+> text "=" <+> pretty fn <> text ";"
+  text (T.unpack $ fnAstName fn) <+> text "=" <+> prettyT fn <> text ";"
 
-instance (Pretty ty, IsQuietPlaceholder ty) => Pretty (FnAST ty) where
-  pretty fn =
+instance (PrettyT ty, IsQuietPlaceholder ty) => PrettyT (FnAST ty) where
+  prettyT fn =
       group (lbrace <> prettyTyFormals (fnTyFormals fn) <> args (fnFormals fn)
-                    <> nest 4 (group $ line <> pretty (fnAstBody fn))
+                    <> nest 4 (group $ line <> prettyT (fnAstBody fn))
                     <$> rbrace)
-    where args []  = empty
-          args frm = hang 1 (empty <+> vsep (map (\v -> prettyFnFormalTy v <+> text "=>") frm))
+    where args []  = emptyDoc
+          args frm = hang 1 (emptyDoc <+> vsep (map (\v -> prettyFnFormalTy v <+> text "=>") frm))
           --args frm = group $ align $ vsep (map arg frm)
           --arg v = prettyFnFormalTy v <+> text "=>"
 
@@ -101,36 +100,36 @@ instance (Pretty ty, IsQuietPlaceholder ty) => Pretty (FnAST ty) where
           prettyFnFormalTy tid =
             if isQuietPlaceholder (tidType tid)
              then prettyFnFormal tid
-             else prettyFnFormal tid <+> text ":" <+> pretty (tidType tid)
+             else prettyFnFormal tid <+> text ":" <+> prettyT (tidType tid)
 
-prettyTyFormals [] = empty
-prettyTyFormals tyfs = empty <+> text "forall" <+> hsep (map prettyTyFormal tyfs) <+> text ","
+prettyTyFormals [] = emptyDoc
+prettyTyFormals tyfs = emptyDoc <+> text "forall" <+> hsep (map prettyTyFormal tyfs) <+> text ","
   where prettyTyFormal (TypeFormal name _sr kind) =
                                           text name <+> text ":" <+> pretty kind
 
-instance (Pretty ty, IsQuietPlaceholder ty) => Pretty (ModuleExpr ty) where
-  pretty m =
+instance (PrettyT ty, IsQuietPlaceholder ty) => PrettyT (ModuleExpr ty) where
+  prettyT m =
         vcat (map prettyImport $ moduleASTincludes m)
     <$> vcat (map prettyItem $ moduleASTitems m)
 
 prettyImport (ident, path) = text "snafuinclude" <+> text (T.unpack ident) <+> text (T.unpack path) <> text ";"
 
-prettyItem (ToplevelDecl (s, t, NotForeign)) = text s <+> text "::" <+> pretty t <> text ";"
+prettyItem (ToplevelDecl (s, t, NotForeign)) = text s <+> text "::" <+> prettyT t <> text ";"
 prettyItem (ToplevelDecl (s, t, IsForeign nm)) =
   if s == nm
-    then text "foreign import" <+> text s <+>                           text "::" <+> pretty t <> text ";"
-    else text "foreign import" <+> text s <+> text "as" <+> text nm <+> text "::" <+> pretty t <> text ";"
+    then text "foreign import" <+> text s <+>                           text "::" <+> prettyT t <> text ";"
+    else text "foreign import" <+> text s <+> text "as" <+> text nm <+> text "::" <+> prettyT t <> text ";"
 prettyItem (ToplevelDefn (_, E_FnAST _ fn)) = prettyTopLevelFn fn
-prettyItem (ToplevelDefn (s, e)) = text s <+> text "=" <+> pretty e <> text ";"
-prettyItem (ToplevelData dt) = pretty dt
-prettyItem (ToplevelEffect ed) = pretty ed
+prettyItem (ToplevelDefn (s, e)) = text s <+> text "=" <+> prettyT e <> text ";"
+prettyItem (ToplevelData dt) = prettyT dt
+prettyItem (ToplevelEffect ed) = prettyT ed
 
 prettyId (TypedId _ i) = text (T.unpack $ identPrefix i)
 
 prettyExpr e =
   case e of
-    E_SeqAST {} -> parens $ pretty e
-    _ -> pretty e
+    E_SeqAST {} -> parens $ prettyT e
+    _ -> prettyT e
 
 showHex2 c s =
   let rv = showHex c s in
@@ -175,15 +174,16 @@ parens' d = {-nest 1-} (parens d)
 prettyCallExprs [] = text "!"
 prettyCallExprs es = hang 4 $ sep (map (group.prettyAtom) es)
 
-prettyCallPrim nm []   tys exprs = text "prim" <+> text nm                 <+> prettyCallExprs exprs
-prettyCallPrim nm lits tys exprs = text "prim" <+> text nm <+> pretty lits <+> prettyCallExprs exprs
+prettyCallPrim nm []   tys exprs = text "prim" <+> text nm                  <+> prettyCallExprs exprs
+prettyCallPrim nm lits tys exprs = text "prim" <+> text nm <+> prettyT lits <+> prettyCallExprs exprs
 
+prettyStmt :: (PrettyT ty, IsQuietPlaceholder ty) => ExprAST ty -> Doc AnsiStyle
 prettyStmt e = case e of
-    E_MachArrayLit annot _mbt args -> withAnnot annot $ parens' $ text "prim mach-array-literal" <+> hsep (map pretty args)
-    E_VarAST annot evar     -> withAnnot annot $ pretty evar
-    E_TyApp  annot e argtys -> withAnnot annot $ pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]"
-    E_TyCheck annot e ty    -> withAnnot annot $ parens' (pretty e <+> text "as" <+> pretty ty)
-    E_KillProcess annot exp -> withAnnot annot $ parens' (text "prim kill-entire-process" <+> pretty exp)
+    E_MachArrayLit annot _mbt args -> withAnnot annot $ parens' $ text "prim mach-array-literal" <+> hsep (map prettyT args)
+    E_VarAST annot evar     -> withAnnot annot $ prettyT evar
+    E_TyApp  annot e argtys -> withAnnot annot $ prettyT e <> text ":[" <> hsep (punctuate comma (map prettyT argtys)) <> text "]"
+    E_TyCheck annot e ty    -> withAnnot annot $ parens' (prettyT e <+> text "as" <+> prettyT ty)
+    E_KillProcess annot exp -> withAnnot annot $ parens' (text "prim kill-entire-process" <+> prettyT exp)
     E_StringAST   annot (SS_Text  r t) -> withAnnot annot $             wasRaw r <> dquotes (text $ concatMap (formatTextChar False) $ T.unpack t)
     E_StringAST   annot (SS_Bytes r b) -> withAnnot annot $ text "b" <> wasRaw r <> dquotes (text $ concatMap (formatBytesWord8 False) $ BS.unpack b)
     E_BoolAST     annot b   -> withAnnot annot $ text $ show b
@@ -192,27 +192,27 @@ prettyStmt e = case e of
 
     E_CallAST annot e [e1,e2] _ | isOperator e
                             -> withAnnot annot $ hang 4 $ group $
-                                                 prettyAtom e1 <$> pretty e <+> group (prettyAtom e2)
+                                                 prettyAtom e1 <$> prettyT e <+> group (prettyAtom e2)
     E_CallAST annot e es _TODOcallAnnot
                             -> withAnnot annot $ prettyAtom e <+> prettyCallExprs es
     E_LetAST  annot (TermBinding evar bound) expr ->
                                withAnnot annot $
                               {- lkwd "let"
-                              <+> -} {- fill 8 -} (pretty evar)
+                              <+> -} {- fill 8 -} (prettyT evar)
                               <+> text "="
                               <+> prettyBound bound {- <+> lkwd "in" -}
                                                   <> text ";"
-                           <> hardline <> pretty expr
+                           <> hardline <> prettyT expr
     E_LetRec annot binds e -> withAnnot annot $
-                           (vcat [text "REC" <+> pretty evar <+> text "="
-                                             <+> pretty expr <> text ";"
+                           (vcat [text "REC" <+> prettyT evar <+> text "="
+                                             <+> prettyT expr <> text ";"
                                           | TermBinding evar expr <- binds
                                           ])
-                           <$> pretty e
+                           <$> prettyT e
     E_IfAST annot c b1 b2 -> withAnnot annot $
-                           nest 2 (kwd "if" <+> pretty c
-                                   <$> (kwd "then" <+> align (pretty b1))
-                                   <$> (kwd "else" <+> align (pretty b2)))
+                           nest 2 (kwd "if" <+> prettyT c
+                                   <$> (kwd "then" <+> align (prettyT b1))
+                                   <$> (kwd "else" <+> align (prettyT b2)))
                            <$> end
     E_IntAST   annot intstr  -> withAnnot annot $ red     $ text intstr
     E_RatAST   annot fltstr  -> withAnnot annot $ dullred $ text fltstr
@@ -223,20 +223,20 @@ prettyStmt e = case e of
     E_Case annot scrut arms  -> withAnnot annot $ prettyCase scrut arms
     E_CompilesAST annot Nothing  -> withAnnot annot $ text $ "E_CompilesAST NOTHING"
     E_CompilesAST annot (Just e) -> withAnnot annot $ parens' $ text "prim __COMPILES__" <+> prettyAtom e
-    E_ArrayRead   annot ai   -> withAnnot annot $ pretty ai
-    E_ArrayPoke   annot ai e -> withAnnot annot $ prettyAtom e <+> text ">^" <+> pretty ai
+    E_ArrayRead   annot ai   -> withAnnot annot $ prettyT ai
+    E_ArrayPoke   annot ai e -> withAnnot annot $ prettyAtom e <+> text ">^" <+> prettyT ai
     E_RecordAST   annot labs exps -> withAnnot annot $ prettyRecord labs exps
-    E_TupleAST    annot _ es -> withAnnot annot $ parens' (hsep $ punctuate comma (map pretty es))
+    E_TupleAST    annot _ es -> withAnnot annot $ parens' (hsep $ punctuate comma (map prettyT es))
     E_SeqAST (ExprAnnot pre _ post) l r ->
       if null pre && null post
         then prettyExpr l <> text ";" <$> prettyStmt r
         else prettyExpr l <> text ";" </> (vcat $ map pretty $ pre ++ post)
                                       <$$> prettyStmt r
-    E_FnAST annot fn     -> withAnnot annot $ pretty fn
+    E_FnAST annot fn     -> withAnnot annot $ prettyT fn
 
 prettyRecord labs exps =
     let
-      prettyField (lab, exp) = text (T.unpack lab) <> text ":" <+> pretty exp
+      prettyField (lab, exp) = text (T.unpack lab) <> text ":" <+> prettyT exp
       pairs = map prettyField (zip labs exps)
     in
     parens' (hsep $ punctuate comma pairs)
@@ -245,23 +245,23 @@ prettyRecord labs exps =
 -- but other let-bound things should.
 prettyBound b =
   case b of
-    E_FnAST {} -> pretty b
+    E_FnAST {} -> prettyT b
     _ -> align (prettySeq b)
 
-prettySeq :: (Pretty ty, IsQuietPlaceholder ty) => ExprSkel ExprAnnot ty -> Doc
+prettySeq :: (PrettyT ty, IsQuietPlaceholder ty) => ExprSkel ExprAnnot ty -> Doc AnsiStyle
 prettySeq e =
   case e of
-    E_SeqAST      {} -> parens' $ pretty e
-    E_LetAST      {} -> parens' $ pretty e
-    _ -> pretty e
+    E_SeqAST      {} -> parens' $ prettyT e
+    E_LetAST      {} -> parens' $ prettyT e
+    _ -> prettyT e
 
-prettyAtom :: (Pretty ty, IsQuietPlaceholder ty) => ExprSkel ExprAnnot ty -> Doc
+prettyAtom :: (PrettyT ty, IsQuietPlaceholder ty) => ExprSkel ExprAnnot ty -> Doc AnsiStyle
 prettyAtom e =
   case e of
-    E_SeqAST      {} -> parens' $ pretty e
-    E_LetAST      {} -> parens' $ pretty e
-    E_CallAST     {} -> parens' $ pretty e
-    _ -> pretty e
+    E_SeqAST      {} -> parens' $ prettyT e
+    E_LetAST      {} -> parens' $ prettyT e
+    E_CallAST     {} -> parens' $ prettyT e
+    _ -> prettyT e
 
 isOperator (E_VarAST _ evar) = not . isAlpha . T.head $ evarName evar
 isOperator _                 = False
@@ -269,7 +269,7 @@ isOperator _                 = False
 instance Pretty Formatting where
   pretty BlankLine   = {-text "~" <>-} linebreak
   pretty (Comment ('/':'/':s)) = text "//" <> text s <> hardline
-  pretty (Comment s) = string s -- comment markers already included
+  pretty (Comment s) = pretty s -- comment markers already included
 
 annotPre [BlankLine] = []
 annotPre pre = map pretty pre
@@ -280,13 +280,13 @@ withAnnot (ExprAnnot pre _ post) doc =
       <>
       hcat (map pretty post)
 
-wasRaw NotRaw = empty
+wasRaw NotRaw = emptyDoc
 wasRaw YesRaw = text "r"
 
-instance (Pretty ty, IsQuietPlaceholder ty) => Pretty (ArrayEntry (ExprAST ty)) where
-  pretty (AE_Int _annot str) = pretty str
-  pretty (AE_Expr ex) = prettyAtom ex
+instance (PrettyT ty, IsQuietPlaceholder ty) => PrettyT (ArrayEntry (ExprAST ty)) where
+  prettyT (AE_Int _annot str) = pretty str
+  prettyT (AE_Expr ex) = prettyAtom ex
 
-instance (Pretty ty, IsQuietPlaceholder ty) => Pretty (ExprAST ty) where
-  pretty e = prettyStmt e
+instance (PrettyT ty, IsQuietPlaceholder ty) => PrettyT (ExprAST ty) where
+  prettyT e = prettyStmt e
 

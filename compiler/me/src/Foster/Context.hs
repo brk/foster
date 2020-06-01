@@ -25,7 +25,8 @@ import Foster.TypeTC
 import Foster.Config(OrdRef(..))
 import Foster.SourceRange(SourceRange, rangeOf, highlightFirstLineDoc, prettySourceRangeInfo)
 
-import Text.PrettyPrint.ANSI.Leijen
+import Data.Text.Prettyprint.Doc
+import Data.Text.Prettyprint.Doc.Render.Terminal
 import Foster.Output
 
 type CtxBound ty = (TypedId ty, Maybe CtorId)
@@ -256,14 +257,14 @@ tcShouldQuantify = Tc $ \env ->
 tcLift :: IO a -> Tc a
 tcLift action = Tc $ \_env -> action >>= retOK
 
-tcWarn :: [Doc] -> Tc ()
+tcWarn :: [Doc AnsiStyle] -> Tc ()
 tcWarn docs =
   tcLift $ putDocLn $ blue (text "Warning") <> text ": " <> vcat docs
 
-tcFails :: [Doc] -> Tc a
+tcFails :: [Doc AnsiStyle] -> Tc a
 tcFails errs = Tc $ \_env -> return $ Errors errs
 
-tcFailsMore :: [Doc] -> Tc a
+tcFailsMore :: [Doc AnsiStyle] -> Tc a
 tcFailsMore errs = do
   parents <- tcGetCurrentHistory
   case reverse parents of -- parents returned in root-to-child order.
@@ -464,13 +465,13 @@ isOK _      = False
 
 -----------------------------------------------------------------------
 
-tcShowStructure :: (Structured a, Summarizable a) => a -> Tc Doc
+tcShowStructure :: (Structured a, Summarizable a) => a -> Tc (Doc AnsiStyle)
 tcShowStructure e = do
     header <- getStructureContextMessage
     return $ header <> showStructure e
 
 
-getStructureContextMessage :: Tc Doc
+getStructureContextMessage :: Tc (Doc AnsiStyle)
 getStructureContextMessage = do
     hist <- tcGetCurrentHistory
     let outputs = map (\e -> (text "\t\t") <> textOf e 40) hist

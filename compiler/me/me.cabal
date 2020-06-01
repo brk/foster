@@ -27,7 +27,6 @@ executable me
   other-extensions:    GADTs RankNTypes ScopedTypeVariables StandaloneDeriving
                        PatternGuards NoMonoLocalBinds RecursiveDo FlexibleContexts
   build-depends: array -any,
-                 ansi-wl-pprint -any,
                  attoparsec -any,
                  binary -any,
                  bytestring -any,
@@ -53,6 +52,8 @@ executable me
                  smtLib -any,
                  boxes -any,
                  process -any,
+                 prettyprinter >= 1.6.1,
+                 prettyprinter-ansi-terminal >= 1.1.1,
                  minuproto >= 0.1.0.4,
                  utf8-string -any,
                  base -any

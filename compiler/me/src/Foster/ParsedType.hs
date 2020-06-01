@@ -15,8 +15,6 @@ import Foster.SourceRange(SourceRange)
 import Data.Maybe (maybeToList)
 import qualified Data.Text as T
 
-import Text.PrettyPrint.ANSI.Leijen(text)
-
 data TypeP =
            TyConP         DataTypeName
          | TyAppP         TypeP [TypeP]

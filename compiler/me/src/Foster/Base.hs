@@ -22,9 +22,12 @@ import Data.Map as Map(Map, fromListWith)
 import Data.Set as Set(Set, unions)
 import qualified Data.Graph as Graph(SCC(..), stronglyConnComp)
 
-import Text.PrettyPrint.ANSI.Leijen
-import qualified Text.PrettyPrint.ANSI.Leijen as PP(empty)
+import qualified Data.Text.Prettyprint.Doc as PP(emptyDoc)
+import Data.Text.Prettyprint.Doc
+import Data.Text.Prettyprint.Doc.Render.Terminal
+
 import qualified Data.Text as T(Text, pack, unpack, append)
+import qualified Data.Text.Lazy as TL
 import qualified Data.ByteString as B(ByteString)
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -46,6 +49,9 @@ class IntSized t where
 
 class IntSizedBits t where
     intSizeBitsOf :: t -> IntSizeBits
+
+class PrettyT t where
+    prettyT :: t -> Doc AnsiStyle
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 data CompilesResult expr = CompilesResult (OutputOr expr)
@@ -95,12 +101,11 @@ prettySrc (SkolemTyVar name uniq _kind) = text "$" <> text name <> text ":" <> p
 prettyDecorated (BoundTyVar name _) = text "'" <> text name
 prettyDecorated (SkolemTyVar name uniq _kind) = text "$" <> text name <> text ":" <> pretty uniq
 
+instance PrettyT t => PrettyT (MetaTyVar t) where
+  prettyT m = parens $ text ((mtvDesc m) ++ "~" ++ show (mtvUniq m))
 
-instance Pretty t => Pretty (MetaTyVar t) where
-  pretty m = parens $ text ((mtvDesc m) ++ "~" ++ show (mtvUniq m))
-
-instance Pretty t => Show (MetaTyVar t) where
-  show m = show (pretty m)
+instance PrettyT t => Show (MetaTyVar t) where
+  show m = show (prettyT m)
 
 type Level = Int
 data TVar t = Unbound Level | BoundTo t
@@ -320,12 +325,12 @@ mkLiteralIntWithText integerValue originalText =
                         go _ [] = error "bitLengthOf invariant violated"
         signOf x = if x < 0 then 1 else 0
 
-instance Pretty Literal where
-  pretty (LitInt int) = red     $ text (litIntText int)
-  pretty (LitFloat f) = dullred $ text (litFloatText f)
-  pretty (LitText  t) =  dquotes (text $ T.unpack t)
-  pretty (LitBool  b) =           text (if b then "True" else "False")
-  pretty (LitByteArray b) = text "b" <> dquotes (text $ show b)
+instance PrettyT Literal where
+  prettyT (LitInt int) = red     $ text (litIntText int)
+  prettyT (LitFloat f) = dullred $ text (litFloatText f)
+  prettyT (LitText  t) =  dquotes (text $ T.unpack t)
+  prettyT (LitBool  b) =           text (if b then "True" else "False")
+  prettyT (LitByteArray b) = text "b" <> dquotes (text $ show b)
 
 data WholeProgramAST expr ty = WholeProgramAST {
           programASTmodules    :: [ModuleAST expr ty]
@@ -426,7 +431,7 @@ class Structured a where
     childrenOf :: a -> [a]
 
 class Summarizable a where
-    textOf     :: a -> Int -> Doc
+    textOf     :: a -> Int -> Doc AnsiStyle
 
 -- Builds trees like this:
 -- AnnSeq        :: i32
@@ -435,10 +440,10 @@ class Summarizable a where
 -- │ └─AnnTuple
 -- │   └─AnnInt       999999 :: i32
 
-showStructure :: (Summarizable a, Structured a) => a -> Doc
+showStructure :: (Summarizable a, Structured a) => a -> Doc AnsiStyle
 showStructure e = showStructureP e "" False
   where
-    showStructureP :: (Summarizable b, Structured b) => b -> String -> Bool -> Doc
+    showStructureP :: (Summarizable b, Structured b) => b -> String -> Bool -> Doc AnsiStyle
     showStructureP e prefix isLast =
         let children = childrenOf e in
         let thisIndent = prefix ++ (if isLast then "└─" else "├─") in
@@ -451,7 +456,7 @@ showStructure e = showStructureP e "" False
                                 showStructureP c nextIndent (n == l))
                              childpairs in
         text thisIndent <> textOf e padding <> line
-                                     <> (Prelude.foldl (<>) PP.empty childlines)
+                                     <> (Prelude.foldl (<>) PP.emptyDoc childlines)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||||| Utilities ||||||||||||||||||||||||||{{{
@@ -614,7 +619,7 @@ prettyIdent i@(GlobalSymbol _ _) = text "G:" <> text (show i)
 prettyIdent i = text (show i)
 
 prettyId (TypedId _ i) = prettyIdent i
-prettyTypedId (TypedId t i) = prettyIdent i <> text " :: " <> pretty t
+prettyTypedId (TypedId t i) = prettyIdent i <> text " :: " <> prettyT t
 
 -- Handler expressions pre-allocate the ids that will be bound for the `resume` functions
 -- during typechecking; they must be kept around to be used during handler compilation.
@@ -728,8 +733,9 @@ instance Pretty IntSizeBits    where pretty IWd = text "Word"
                                      pretty I1 = text "Bool"
                                      pretty i  = text ("Int" ++ show (intSizeOf i))
 instance Pretty Ident          where pretty id = prettyIdent id --text (show id)
-instance Pretty t => Pretty (TypedId t)
-                               where pretty tid = pretty (tidIdent tid)
+instance PrettyT Ident where prettyT = pretty
+instance PrettyT t => PrettyT (TypedId t)
+                               where prettyT tid = pretty (tidIdent tid)
 instance SourceRanged expr => Pretty (CompilesResult expr)
                                where pretty cr = text (show cr)
 
@@ -791,7 +797,7 @@ instance Ord TyVar where
   BoundTyVar s1 _    `compare` SkolemTyVar s2 _ _ = s1 `compare` s2
   SkolemTyVar s1 _ _ `compare` BoundTyVar s2 _    = s1 `compare` s2
 
-prettyOccurrence v occ = pretty v <> text "/" <> pretty (map fst occ)
+prettyOccurrence v occ = prettyT v <> text "/" <> pretty (map fst occ)
 
 instance Show TyVar where
     show (BoundTyVar x _) = "'" ++ x
@@ -827,29 +833,29 @@ instance Show (PatternRepr ty) where
   show (PR_Tuple    _ _ pats)       = "PR_Tuple    " ++ show pats
   show (PR_Or       _ _ pats)       = "PR_Or       " ++ show pats
 
-instance Pretty t => Pretty (Pattern t) where
-  pretty p =
+instance PrettyT t => PrettyT (Pattern t) where
+  prettyT p =
     case p of
-        P_Atom          atom              -> pretty atom
-        P_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <+> (hsep $ map pretty pats))
-        P_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
-        P_Or            _rng _ty pats     -> parens (hsep $ punctuate (text " or ") (map pretty pats))
+        P_Atom          atom              -> prettyT atom
+        P_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <+> (hsep $ map prettyT pats))
+        P_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map prettyT pats))
+        P_Or            _rng _ty pats     -> parens (hsep $ punctuate (text " or ") (map prettyT pats))
 
-instance Pretty t => Pretty (PatternAtom t) where
-  pretty p =
+instance PrettyT t => PrettyT (PatternAtom t) where
+  prettyT p =
     case p of
         P_Wildcard      _rng _ty          -> text "_"
         P_Variable      _rng tid          -> text (show . tidIdent $ tid)
         P_Bool          _rng _ty b        -> text $ if b then "True" else "False"
         P_Int           _rng _ty li       -> text (litIntText li)
 
-instance Pretty t => Pretty (PatternRepr t) where
-  pretty p =
+instance PrettyT t => PrettyT (PatternRepr t) where
+  prettyT p =
     case p of
-        PR_Atom          atom              -> pretty atom
-        PR_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorLLInfoId cid) <+> (hsep $ map pretty pats))
-        PR_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
-        PR_Or            _rng _ty pats     -> parens (hsep $ punctuate (text " or ") (map pretty pats))
+        PR_Atom          atom              -> prettyT atom
+        PR_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorLLInfoId cid) <+> (hsep $ map prettyT pats))
+        PR_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map prettyT pats))
+        PR_Or            _rng _ty pats     -> parens (hsep $ punctuate (text " or ") (map prettyT pats))
 
 instance Show ty => Show (EPattern ty) where
   show (EP_Wildcard _)            = "EP_Wildcard"
@@ -860,29 +866,29 @@ instance Show ty => Show (EPattern ty) where
   show (EP_Tuple    _ pats)       = "EP_Tuple    " ++ show pats
   show (EP_Or       _ pats)       = "EP_Or       " ++ show pats
 
-instance Pretty ty => Pretty (EPattern ty) where
-  pretty (EP_Wildcard _)            = text "_"
-  pretty (EP_Variable _ v)          = pretty v
-  pretty (EP_Ctor     _ pats ctor)  = text "$" <> text (T.unpack ctor) <+> hsep (map pretty pats)
-  pretty (EP_Bool     _ b)          = pretty b
-  pretty (EP_Int      _ str)        = text str
-  pretty (EP_Tuple    _ pats)       = tupled $ map pretty pats
-  pretty (EP_Or       _ pats)       = parens (hsep $ punctuate (text " or ") (map pretty pats))
+instance PrettyT ty => PrettyT (EPattern ty) where
+  prettyT (EP_Wildcard _)            = text "_"
+  prettyT (EP_Variable _ v)          = prettyT v
+  prettyT (EP_Ctor     _ pats ctor)  = text "$" <> text (T.unpack ctor) <+> hsep (map prettyT pats)
+  prettyT (EP_Bool     _ b)          = pretty b
+  prettyT (EP_Int      _ str)        = text str
+  prettyT (EP_Tuple    _ pats)       = tupled $ map prettyT pats
+  prettyT (EP_Or       _ pats)       = parens (hsep $ punctuate (text " or ") (map prettyT pats))
 
-instance Pretty ty => Pretty (E_VarAST ty) where
-  pretty (VarAST (Just ty) txt) = text (T.unpack txt) <+> text "::" <+> pretty ty
-  pretty (VarAST Nothing   txt) = text (T.unpack txt)
+instance PrettyT ty => PrettyT (E_VarAST ty) where
+  prettyT (VarAST (Just ty) txt) = text (T.unpack txt) <+> text "::" <+> prettyT ty
+  prettyT (VarAST Nothing   txt) = text (T.unpack txt)
 
-instance Pretty t => Pretty (FosterPrim t) where
-  pretty (NamedPrim (TypedId _ i)) = text (show i)
-  pretty (PrimOp nm _ty) = text nm
-  pretty (PrimOpInt op frm to) = text (op ++ "from " ++ show frm ++ " to " ++ show to)
-  pretty (CoroPrim c t1 t2) = pretty c <> text ":[" <> pretty t1
-                                       <> text "," <+> pretty t2
+instance PrettyT t => PrettyT (FosterPrim t) where
+  prettyT (NamedPrim (TypedId _ i)) = text (show i)
+  prettyT (PrimOp nm _ty) = text nm
+  prettyT (PrimOpInt op frm to) = text (op ++ "from " ++ show frm ++ " to " ++ show to)
+  prettyT (CoroPrim c t1 t2) = pretty c <> text ":[" <> prettyT t1
+                                       <> text "," <+> prettyT t2
                                        <> text "]"
-  pretty (FieldLookup fieldName _) = text $ "." ++ T.unpack fieldName
-  pretty (PrimInlineAsm _ cnt _cns _haseffects) = text "inline-asm" <+> text (show cnt)
-  pretty (LookupEffectHandler tag) = text "lookup_handler_for_effect{" <> pretty tag <> text "}"
+  prettyT (FieldLookup fieldName _) = text $ "." ++ T.unpack fieldName
+  prettyT (PrimInlineAsm _ cnt _cns _haseffects) = text "inline-asm" <+> text (show cnt)
+  prettyT (LookupEffectHandler tag) = text "lookup_handler_for_effect{" <> pretty tag <> text "}"
 
 instance Pretty CoroPrim where
   pretty CoroCreate = text "CoroCreate"
@@ -916,11 +922,11 @@ instance Pretty TypeFormal where
   pretty (TypeFormal name _sr kind) =
     text name <+> text ":" <+> pretty kind
 
-instance Pretty IsForeignDecl where
-  pretty ifd = text (show ifd)
+instance PrettyT IsForeignDecl where
+  prettyT ifd = text (show ifd)
 
-instance Pretty t => Pretty (DataType t) where
-  pretty dt =
+instance PrettyT t => PrettyT (DataType t) where
+  prettyT dt =
     text "type case" <+> pretty (dataTypeName dt) <+>
          hsep (map (parens . pretty) (dataTypeTyFormals dt))
      <$> indent 2 (vsep (map prettyDataTypeCtor (dataTypeCtors dt)))
@@ -929,10 +935,10 @@ instance Pretty t => Pretty (DataType t) where
 
 prettyDataTypeCtor dc =
   text "of" <+> text "$" <> text (T.unpack $ dataCtorName dc)
-                        <+> (group (hang 2 $ vsep (PP.empty : map pretty (dataCtorTypes dc))))
+                        <+> (group (hang 2 $ vsep (PP.emptyDoc : map prettyT (dataCtorTypes dc))))
 
-instance Pretty t => Pretty (EffectDecl t) where
-  pretty ed =
+instance PrettyT t => PrettyT (EffectDecl t) where
+  prettyT ed =
     text "effect" <+> pretty (effectDeclName ed) <+>
          hsep (map (parens . pretty) (effectDeclTyFormals ed))
      <$> indent 2 (vsep (map prettyEffectCtor (effectDeclCtors ed)))
@@ -940,41 +946,79 @@ instance Pretty t => Pretty (EffectDecl t) where
      <$> text ""
 
 prettyEffectCtor ec = prettyDataTypeCtor (effectCtorAsData ec)
-                        <+> text "=>" <+> pretty (effectCtorOutput ec)
+                        <+> text "=>" <+> prettyT (effectCtorOutput ec)
 
-prettyHandler :: (Pretty expr, Pretty (pat ty)) => expr -> [CaseArm pat expr ty] -> Maybe expr -> Doc
+prettyHandler :: (PrettyT expr, PrettyT (pat ty)) => expr -> [CaseArm pat expr ty] -> Maybe expr -> Doc AnsiStyle
 prettyHandler action arms mb_xform =
-            kwd "handle" <+> pretty action
+            kwd "handle" <+> prettyT action
             <$> indent 2 (vsep [ kwd "of" <+>
-                                        (hsep $ [{- fill 20 -} (pretty epat)]
+                                        (hsep $ [{- fill 20 -} (prettyT epat)]
                                             ++  prettyGuard guard
-                                            ++ [text "->" <+> pretty body])
+                                            ++ [text "->" <+> prettyT body])
                               | (CaseArm epat body guard _ _) <- arms
                               ])
             <> (case mb_xform of
                  Nothing -> text ""
-                 Just x  -> text "" <$> lkwd "as" <> pretty x)
+                 Just x  -> text "" <$> lkwd "as" <> prettyT x)
             <$> end
   where
     prettyGuard Nothing  = []
-    prettyGuard (Just e) = [text "if" <+> pretty e]
+    prettyGuard (Just e) = [text "if" <+> prettyT e]
     kwd  s = dullblue  (text s)
     lkwd s = dullwhite (text s)
     end    = lkwd "end"
 
-prettyCase :: (Pretty expr, Pretty (pat ty)) => expr -> [CaseArm pat expr ty] -> Doc
+(<$>) :: Doc a -> Doc a -> Doc a
+(<$>) a b = a <> line <> b
+
+(</>) a b = a <> softline <> b
+(<$$>) a b = a <> linebreak <> b
+
+linebreak = flatAlt line emptyDoc
+softbreak = group linebreak
+
+dullblue, dullgreen, dullwhite, dullyellow,
+  dullred, red, blue, green, yellow :: Doc AnsiStyle -> Doc AnsiStyle
+dullred d = annotate (colorDull Red) d
+dullblue d = annotate (colorDull Blue) d
+dullwhite d = annotate (colorDull White) d
+dullgreen d = annotate (colorDull Green) d
+dullyellow d = annotate (colorDull Yellow) d
+red d = annotate (color Red) d
+blue d = annotate (color Blue) d
+green d = annotate (color Green) d
+yellow d = annotate (color Yellow) d
+
+string :: String -> Doc ann
+string s = pretty s
+
+-- For (temporary) compatibility with ansi-wl-pprint
+text :: String -> Doc a
+text s = pretty s
+
+instance (PrettyT t) => PrettyT (Maybe t) where
+    prettyT Nothing = pretty "Nothing"
+    prettyT (Just t) = pretty "Just" <+> prettyT t
+
+instance PrettyT Char where prettyT c = pretty c
+instance (PrettyT a, PrettyT b) => PrettyT (a, b) where
+    prettyT (x, y) = tupled [prettyT x, prettyT y]
+instance (PrettyT a, PrettyT b, PrettyT c) => PrettyT (a, b, c) where
+    prettyT (x, y, z) = tupled [prettyT x, prettyT y, prettyT z]
+
+prettyCase :: (PrettyT expr, PrettyT (pat ty)) => expr -> [CaseArm pat expr ty] -> Doc AnsiStyle
 prettyCase scrutinee arms =
-            kwd "case" <+> pretty scrutinee
+            kwd "case" <+> prettyT scrutinee
             <$> indent 2 (vsep [ kwd "of" <+>
-                                        (hsep $ [{- fill 20 -} (pretty epat)]
+                                        (hsep $ [{- fill 20 -} (prettyT epat)]
                                             ++  prettyGuard guard
-                                            ++ [text "->" <+> pretty body])
+                                            ++ [text "->" <+> prettyT body])
                               | (CaseArm epat body guard _ _) <- arms
                               ])
             <$> end
   where
     prettyGuard Nothing  = []
-    prettyGuard (Just e) = [text "if" <+> pretty e]
+    prettyGuard (Just e) = [text "if" <+> prettyT e]
     kwd  s = dullblue  (text s)
     lkwd s = dullwhite (text s)
     end    = lkwd "end"
@@ -1008,7 +1052,13 @@ compareLLCtorInfo (LLCtorInfo c1 r1 _ o1) (LLCtorInfo c2 r2 _ o2) =
 instance Eq  (LLCtorInfo ty) where
   c1 == c2 = compare c1 c2 == EQ
 
-instance Eq Doc where d1 == d2 = pretty d1 == pretty d2
+instance (PrettyT t) => PrettyT [t] where
+    prettyT xs = list (map prettyT xs)
+
+eqTextL :: TL.Text -> TL.Text -> Bool
+eqTextL = (==)
+
+instance Eq (Doc AnsiStyle) where d1 == d2 = renderLazy (layoutCompact d1) `eqTextL` renderLazy (layoutCompact d2)
 
 deriving instance (Eq ty) => Eq (PatternAtom ty)
 deriving instance (Eq ty) => Eq (CompilesResult ty)

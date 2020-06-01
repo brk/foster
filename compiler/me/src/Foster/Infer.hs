@@ -8,8 +8,10 @@ import Prelude hiding ((<$>))
 
 import qualified Data.List as List(length, nub, sortBy, sortOn)
 import qualified Data.Set as Set
-import Text.PrettyPrint.ANSI.Leijen
 import Data.UnionFind.IO(descriptor, setDescriptor, equivalent, union)
+
+import Data.Text.Prettyprint.Doc
+import Data.Text.Prettyprint.Doc.Render.Terminal
 
 import Control.Monad(liftM, liftM, liftM2, when)
 import Data.IORef(writeIORef)
@@ -18,6 +20,7 @@ import Foster.Base
 import Foster.TypeTC
 import Foster.Context
 import Foster.Config (OrdRef(ordRef))
+import Foster.Output (putDocP)
 
 data TypeConstraint = TypeConstrEq TypeTC TypeTC
 
@@ -64,7 +67,7 @@ tcUnifyFT uft1 uft2 = tcUnifyThings uft1 uft2
 -- which will be papered over with a proc wrapper.
 tcUnifyCC ucc1 ucc2 = tcUnifyThings ucc1 ucc2
      (\_ _ -> tcWhenVerbose $
-        tcLift $ putDoc $ text "WARNING: unable to unify disparate calling conventions" <> line)
+        tcLift $ putDocP $ text "WARNING: unable to unify disparate calling conventions" <> line)
 
 tcUnifyKinds uk1 uk2 = tcUnifyThings uk1 uk2
      (\k1 k2 -> tcFails [text "Unable to unify kinds " <> pretty k1 <+> text "and" <+> pretty k2])
@@ -89,7 +92,7 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
  if illegal t1 || illegal t2
   then tcFailsMore
         [text "Bound type variables and/or polymorphic types cannot be unified! Unable to unify"
-        ,text "\t" <> pretty t1 <> string "\nand\n\t" <> pretty t2
+        ,text "\t" <> prettyT t1 <> pretty "\nand\n\t" <> prettyT t2
         ,text "t1::", showStructure t1, text "t2::", showStructure t2]
   else do
     {-
@@ -116,12 +119,12 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
 
     (t1@(TyAppTC (TyConTC _nm1) _tys1), t2@(MetaTyVarTC {}))
           | isEffectEmpty t1 -> do
-      tcWarn [text "permitting effect subsumption of empty effect and type metavariable " <> pretty t2]
+      tcWarn [text "permitting effect subsumption of empty effect and type metavariable " <> prettyT t2]
       tcUnifyLoop constraints
 
     (t1@(TyAppTC (TyConTC _nm1) _tys1), t2@(TyAppTC (TyConTC nm2) _tys2))
           | isEffectEmpty t1 && isEffectExtend nm2 -> do
-      tcWarn [text "permitting effect subsumption of empty effect and " <> pretty t2]
+      tcWarn [text "permitting effect subsumption of empty effect and " <> prettyT t2]
       tcUnifyLoop constraints
 
     ((TyAppTC (TyConTC nm1) _tys1), (TyAppTC (TyConTC nm2) _tys2))
@@ -176,11 +179,11 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
       (_, lnew2) <- tcReadLevels levels2
       case () of
         _ | List.length as1 /= List.length as2 ->
-          tcFailsMore [string "Unable to unify functions of different arity!\n"
-                           <> pretty as1 <> string "\nvs\n" <> pretty as2]
+          tcFailsMore [pretty "Unable to unify functions of different arity!\n"
+                           <> prettyT as1 <> pretty "\nvs\n" <> prettyT as2]
 
         _ | lnew1 == markedLevel || lnew2 == markedLevel ->
-          tcFailsMore [string "Occurs check failed when unifying function types"]
+          tcFailsMore [pretty "Occurs check failed when unifying function types"]
 
         _ -> do let nu = min lnew1 lnew2
                 withTemporaryMarkedLevels levels1 levels2 nu $ do 
@@ -194,7 +197,7 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
                 tcUnifyLoop constraints
 
     (ForAllTC {}, ForAllTC {}) ->
-         tcFailsMore [string "Unifying foralls?!?", pretty t1, string "vs", pretty t2]
+         tcFailsMore [pretty "Unifying foralls?!?", prettyT t1, pretty "vs", prettyT t2]
 
     ((RefinedTypeTC (TypedId t1 _n1) _e1 _), (RefinedTypeTC (TypedId t2 _n2) _e2 _)) ->
       -- TODO make sure that n/e match...
@@ -218,7 +221,7 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
     _otherwise -> do
       msg <- getStructureContextMessage
       tcFailsMore
-        [string "Unable to unify\n\t" <> pretty t1 <> string "\nand\n\t" <> pretty t2
+        [pretty "Unable to unify\n\t" <> prettyT t1 <> pretty "\nand\n\t" <> prettyT t2
         ,text "t1::", showStructure t1, text "t2::", showStructure t2
         ,msg]
 
@@ -257,10 +260,10 @@ tcUnifyVar m ty constraints = do
                        tcUnifyLoop (                     constraints)
       BoundTo _ -> do tcFails [text "tcUnifyVar INVARIANT VIOLATED: m was not Unbound"]
 
-instance Pretty ty => Pretty (TVar ty) where
-  pretty tvar = case tvar of
+instance PrettyT ty => PrettyT (TVar ty) where
+  prettyT tvar = case tvar of
                   Unbound _ -> text "Unbound"
-                  BoundTo ty -> text "(BoundTo " <> pretty ty <> text " )"
+                  BoundTo ty -> text "(BoundTo " <> prettyT ty <> text " )"
 
 effectExtendTc eff row = TyAppTC (TyConTC "effect.Extend") [eff, row]
 
@@ -487,7 +490,7 @@ zonkType x = do
 -- is printed along with the unification failure error message.
 -- If unification succeeds, each unification variable in the two
 -- types is updated according to the unification solution.
-unify :: TypeTC -> TypeTC -> [Doc] -> Tc ()
+unify :: TypeTC -> TypeTC -> [Doc AnsiStyle] -> Tc ()
 unify t1 t2 msgs = do tcOnError msgs (tcUnifyTypes t1 t2) return
                             {-
   where

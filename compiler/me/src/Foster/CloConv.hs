@@ -18,7 +18,8 @@ import qualified Data.Map as Map(insert, lookup, empty, fromList, elems)
 
 import Control.Monad.State
 
-import Text.PrettyPrint.ANSI.Leijen
+import Data.Text.Prettyprint.Doc
+import Data.Text.Prettyprint.Doc.Render.Terminal
 
 import Compiler.Hoopl(UniqueMonad(..), C, O, NonLocal(..), Graph,
                       Block, Label, Graph', freshLabel, intToUnique,
@@ -80,7 +81,7 @@ data Insn' e x where
         CCLetVal     :: Ident   -> Letable TypeLL          -> Insn' O O
         CCLetFuns    :: [Ident] -> [Closure]               -> Insn' O O
         CCTupleStore :: [LLVar] -> LLVar -> AllocMemRegion -> Insn' O O
-        CCRebindId   :: Doc     -> LLVar -> LLVar          -> Insn' O O
+        CCRebindId   :: Doc AnsiStyle -> LLVar -> LLVar    -> Insn' O O
         CCLast       :: BlockId ->          CCLast -> Insn' O C -- first arg is block entry label id
 
 type RootVar = LLVar
@@ -566,8 +567,8 @@ ilmAddEffectTag eff tag = do
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
-renderCC m put = if put then putDoc (pretty m) >>= (return . Left)
-                        else return . Right $ show (pretty m)
+renderCC m put = if put then putDoc (prettyT m) >>= (return . Left)
+                        else return . Right $ show (prettyT m)
 
 instance Summarizable (String, Label) where
     textOf (str, lab) _width = text $ str ++ "." ++ show lab
@@ -578,8 +579,8 @@ instance Structured (String, Label) where
 instance UniqueMonad (State ILMState) where
   freshUnique = ilmNewUniq >>= (return . intToUnique)
 
-prettyInsn' :: Insn' e x -> Doc -> Doc
-prettyInsn' i d = d <$> pretty i
+prettyInsn' :: Insn' e x -> Doc AnsiStyle -> Doc AnsiStyle
+prettyInsn' i d = d <$> prettyT i
 
 prettyBlockId (b,l) = text (T.unpack b) <> text "." <> text (show l)
 
@@ -587,20 +588,20 @@ instance Pretty Enabled where
   pretty (Enabled _) = text "Enabled"
   pretty Disabled    = text "Disabled"
 
-instance Pretty (Set LLRootVar) where
-  pretty s = list (map pretty $ Set.toList s)
+instance PrettyT (Set LLRootVar) where
+  prettyT s = list (map prettyT $ Set.toList s)
 
-instance Pretty (Insn' e x) where
-  pretty (CCLabel   bentry     ) = line <> prettyBlockId (fst bentry) <+> list (map pretty (snd bentry))
-  pretty (CCLetVal id letable  ) = indent 4 (text "let" <+> text (show id) <+> text "="
-                                                       <+> pretty letable)
-  pretty (CCLetFuns ids fns    ) = let recfun = if length ids == 1 then "fun" else "rec" in
+instance PrettyT (Insn' e x) where
+  prettyT (CCLabel   bentry     ) = line <> prettyBlockId (fst bentry) <+> list (map prettyT (snd bentry))
+  prettyT (CCLetVal id letable  ) = indent 4 (text "let" <+> text (show id) <+> text "="
+                                                       <+> prettyT letable)
+  prettyT (CCLetFuns ids fns    ) = let recfun = if length ids == 1 then "fun" else "rec" in
                                   indent 4 (align $
-                                   vcat [red (text recfun) <+> text (show id) <+> text "=" <+> pretty fn
+                                   vcat [red (text recfun) <+> text (show id) <+> text "=" <+> prettyT fn
                                         | (id,fn) <- zip ids fns])
-  pretty (CCTupleStore vs tid _memregion) = indent 4 $ text "stores " <+> pretty vs <+> text "to" <+> pretty tid
-  pretty (CCRebindId d v1 v2) = indent 4 $ text "REPLACE " <+> pretty v1 <+> text "WITH" <+> pretty v2 <+> parens d
-  pretty (CCLast _  cclast     ) = pretty cclast
+  prettyT (CCTupleStore vs tid _memregion) = indent 4 $ text "stores " <+> prettyT vs <+> text "to" <+> prettyT tid
+  prettyT (CCRebindId d v1 v2) = indent 4 $ text "REPLACE " <+> prettyT v1 <+> text "WITH" <+> prettyT v2 <+> parens d
+  prettyT (CCLast _  cclast     ) = prettyT cclast
 
 prettyR roots = (if Set.size roots > 15 then text "..." else pretty roots) <> parens (pretty (Set.size roots))
 
@@ -611,55 +612,55 @@ isFunc ft = case ft of FnType _ _ _ FT_Func     -> True
                        PtrType (StructType (t:_)) -> isProc t
                        _                          -> False
 
-instance Pretty CCLast where
-  pretty (CCCont bid vs) = text "cont" <+> prettyBlockId bid <+>              list (map pretty vs)
-  pretty (CCCase v arms def) = align $
-    text "case" <+> pretty v <$> indent 2
+instance PrettyT CCLast where
+  prettyT (CCCont bid vs) = text "cont" <+> prettyBlockId bid <+>              list (map prettyT vs)
+  prettyT (CCCase v arms def) = align $
+    text "case" <+> prettyT v <$> indent 2
        ((vcat [ arm (text "of" <+> pretty ctor) bid
               | (ctor, bid) <- arms
-              ]) <> (case def of Nothing -> empty
+              ]) <> (case def of Nothing -> emptyDoc
                                  Just bid -> line <> arm (text "default:") bid))
 
    where arm lhs bid = fill 20 lhs <+> text "->" <+> prettyBlockId bid
 
-prettyTypedVar v = pretty (tidIdent v) <+> text "::" <+> pretty (tidType v)
+prettyTypedVar v = pretty (tidIdent v) <+> text "::" <+> prettyT (tidType v)
 
-instance Pretty Closure where
-  pretty clo = text "(Closure" <+> text "env =(" <> pretty (tidIdent $ closureEnvVar clo)
-                         <>  text ")" <$> text " proc =(" <+> pretty (closureProcVar clo)
+instance PrettyT Closure where
+  prettyT clo = text "(Closure" <+> text "env =(" <> pretty (tidIdent $ closureEnvVar clo)
+                         <>  text ")" <$> text " proc =(" <+> prettyT (closureProcVar clo)
                          <+> text ")" <$> text " captures" <+> text (show (map tidIdent (closureCaptures clo)))
                          <+> text ")"
 
-instance Pretty BasicBlockGraph' where
- pretty bbg =
+instance PrettyT BasicBlockGraph' where
+ prettyT bbg =
          (indent 4 (text "ret k =" <+> prettyBlockId (bbgpRetK bbg)
                 <$> text "entry =" <+> prettyBlockId (fst $ bbgpEntry bbg)
                 <$> text "------------------------------"))
-          <> pretty (bbgpBody bbg)
+          <> prettyT (bbgpBody bbg)
 
-instance Pretty (Block Insn' O C) where
- pretty b = pretty (blockGraph b)
+instance PrettyT (Block Insn' O C) where
+ prettyT b = prettyT (blockGraph b)
 
-instance Pretty (Graph Insn' o c) where
-  pretty bb = foldGraphNodes prettyInsn' bb empty
+instance PrettyT (Graph Insn' o c) where
+  prettyT bb = foldGraphNodes prettyInsn' bb emptyDoc
 
-instance Pretty (ToplevelBinding ty) where
-  pretty (TopBindAppCtor id _ty (_cid, _repr) ids) =
+instance PrettyT (ToplevelBinding ty) where
+  prettyT (TopBindAppCtor id _ty (_cid, _repr) ids) =
     text "TopBindAppCtor" <+> pretty id <+> pretty ids
-  pretty _tb = text "toplevel binding..."
+  prettyT _tb = text "toplevel binding..."
 
-instance Pretty CCBody where
- pretty (CCBody procs vals) =
-       vcat (map (\p -> line <> pretty p) vals)
-   <$> vcat (map (\p -> line <> pretty p) procs)
+instance PrettyT CCBody where
+ prettyT (CCBody procs vals) =
+       vcat (map (\p -> line <> prettyT p) vals)
+   <$> vcat (map (\p -> line <> prettyT p) procs)
 
 
-instance Pretty TypeLL where pretty t = text (show t) -- TODO fix
+instance PrettyT TypeLL where prettyT t = text (show t) -- TODO fix
 
-instance Pretty CCProc where
- pretty proc = pretty (procIdent proc) <+> list (map prettyTypedVar (procVars proc))
+instance PrettyT CCProc where
+ prettyT proc = pretty (procIdent proc) <+> list (map prettyTypedVar (procVars proc))
                <$> text "{"
-               <$> indent 4 (pretty (procBlocks proc))
+               <$> indent 4 (prettyT (procBlocks proc))
                <$> text "}"
 
 instance Show (Insn e x) where

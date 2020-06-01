@@ -16,12 +16,12 @@ import Foster.Config
 import Foster.MonoType
 import Foster.ConvertExprAST()
 import Foster.Context
-import Foster.Output
+import Foster.Output (putDocP, putDocLn)
 import Foster.SourceRange(SourceRange(..), rangeOf, prettyWithLineNumbers)
 
 import qualified Data.Text as T
 
-import Text.PrettyPrint.ANSI.Leijen
+import Data.Text.Prettyprint.Doc
 
 import Data.Map(Map)
 import Data.Map as Map(lookup, alter, fromList, union, empty, insert)
@@ -141,9 +141,9 @@ monoKN subst inTypeExpr e =
 
     liftIO $ putDocLn $ text ""
     liftIO $ putDocLn $ text "KNHandler for " <$> prettyWithLineNumbers (rangeOf annot)
-    liftIO $ putDocLn $ text "      had inferred effect " <> pretty fx
-    liftIO $ putDocLn $ text "      had value    type   " <> pretty t <> text " monomorphized to " <> pretty t'
-    liftIO $ putDocLn $ text "      had action   type   " <> pretty (typeKN e)
+    liftIO $ putDocLn $ text "      had inferred effect " <> prettyT fx
+    liftIO $ putDocLn $ text "      had value    type   " <> prettyT t <> text " monomorphized to " <> prettyT t'
+    liftIO $ putDocLn $ text "      had action   type   " <> prettyT (typeKN e)
     liftIO $ putDocLn $ text ""
 
     unitid <- lift $ ccFreshId $ T.pack "unit"
@@ -259,7 +259,7 @@ monoKN subst inTypeExpr e =
 
     when False $ liftIO $ do
       putStrLn $ "monos/polys for " ++ show ids ++ ": " ++ show (fst $ unzip monos, fst $ unzip polys)
-      putDoc $ vcat $ [showStructure (tidType (fnVar f)) | f <- snd $ unzip monos]
+      putDocP $ vcat $ [showStructure (tidType (fnVar f)) | f <- snd $ unzip monos]
       putStrLn $ "   polyids: " ++ show polyids
       putStrLn $ "   monoids: " ++ show monoids
       putStrLn $ "   ids':    " ++ show ids'
@@ -317,10 +317,10 @@ monoKN subst inTypeExpr e =
           monobinder <- monoInstantiate polydef polybinder monotys extsubst t''
 
           whenMonoWanted monobinder $ liftIO $ do
-            putDoc $ text "for polybinder " <+> pretty polybinder
+            putDocP $ text "for polybinder " <+> pretty polybinder
                     <+> text " turning into " <+> pretty monobinder
-                    <$> text "     with argtys " <+> pretty monotys 
-                    <+> text " simplified from " <+> pretty argtys
+                    <$> text "     with argtys " <+> prettyT monotys 
+                    <+> text " simplified from " <+> prettyT argtys
                     <$> (indent 10 (text "rho is" <+> (align (showStructure _rho))
                     <$>             text "t   is" <+> (align (showStructure t))
                     <$>             text "t'  is" <+> (align (showStructure t'))

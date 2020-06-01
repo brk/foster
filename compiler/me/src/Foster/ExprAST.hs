@@ -23,7 +23,7 @@ import Foster.Kind
 import Foster.SourceRange(SourceRanged, rangeOf)
 
 import Data.Maybe(maybeToList)
-import Text.PrettyPrint.ANSI.Leijen
+import Data.Text.Prettyprint.Doc
 import qualified Data.Text as T
 import qualified Data.ByteString as B
 
@@ -98,6 +98,10 @@ termBindingName :: TermBinding t -> T.Text
 termBindingName (TermBinding v _) = evarName v
 
 -- ||||||||||||||||||||||||| Instances ||||||||||||||||||||||||||{{{
+
+-- For (temporary) compatibility with ansi-wl-pprint
+text :: String -> Doc a
+text s = pretty s
 
 showSome (SS_Text  _raw txt) = take 40 $ show txt
 showSome (SS_Bytes _raw bs)  = take 40 $ show bs

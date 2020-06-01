@@ -6,7 +6,7 @@
 module Foster.TypecheckInt(typecheckInt, typecheckRat,
       tryParseInt, sanityCheck) where
 
-import Text.PrettyPrint.ANSI.Leijen
+import Data.Text.Prettyprint.Doc
 import qualified Data.Text as T
 import Data.Char(toLower)
 import Data.Maybe(fromJust)
@@ -106,7 +106,7 @@ typecheckRat annot originalText expTy = do
                                          return t
             Just t -> tcFails [text "Unable to give rational number",
                                highlightFirstLineDoc (rangeOf annot),
-                               text "the type" <+> pretty t]
+                               text "the type" <+> prettyT t]
   case base of
     2  -> error $ "binary float literals not yet implemented"
     16 ->

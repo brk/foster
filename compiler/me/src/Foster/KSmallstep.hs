@@ -28,8 +28,10 @@ import Data.Array
 import Numeric(showHex)
 import qualified Data.ByteString as BS
 import Data.Double.Conversion.Text(toFixed)
-import Text.PrettyPrint.ANSI.Leijen
 import Criterion.Measurement(getTime, secs)
+
+import Data.Text.Prettyprint.Doc
+import Data.Text.Prettyprint.Doc.Render.Terminal
 
 import Control.Exception(assert)
 import System.Timeout(timeout)
@@ -485,7 +487,7 @@ stepExpr gs expr = do
     ICase  a {-_dt-} [] rejectedPatterns ->
         error $ "Smallstep.hs: Pattern match failure when evaluating case expr!"
              ++ "\n\tFailing value: " ++ (show $ getval gs a)
-             ++ "\n\tRejected patterns: " ++ (show (list $ map pretty rejectedPatterns))
+             ++ "\n\tRejected patterns: " ++ (show (list $ map prettyT rejectedPatterns))
     ICase  a {- dt-} ((CaseArm p e g _ _):bs) rejectedPatterns ->
        -- First, interpret the pattern list directly
        -- (using recursive calls to discard unmatched branches).

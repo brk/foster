@@ -39,7 +39,7 @@ import Foster.Typecheck(tcTypeWellFormed, tcReplaceQuantifiedVars)
 import Foster.SourceRange(SourceRange(..), rangeOf, prettyWithLineNumbers,
           highlightFirstLine, highlightFirstLineDoc, prettySourceRangeInfo)
 
-import Text.PrettyPrint.ANSI.Leijen
+import Data.Text.Prettyprint.Doc
 
 import qualified Data.Graph.Inductive.Graph            as Graph
 import qualified Data.Graph.Inductive.Query.DFS        as Graph
@@ -131,7 +131,7 @@ kNormalizeModule m ctx = do
                 tcFails [text "The output type for effects must be representable as a pointer."
                         ,text "The effect constructor `"
                                 <> text (T.unpack $ dataCtorName (effectCtorAsData ec))
-                                <> text "` has an output type, " <> pretty (effectCtorOutput ec)
+                                <> text "` has an output type, " <> prettyT (effectCtorOutput ec)
                                 <> text ", which appears non-pointer-sized."
                         ,prettyWithLineNumbers (effectDeclRange effdecl)]
               _ -> return ()
@@ -279,7 +279,7 @@ kNormalize st expr =
                                   mb_xform' <- liftMaybe go mb_xform
                                   if kindOf t' == KindAnySizeType
                                     then tcFails [text "The type of effect-invoking code must (currently) be representable as a pointer."
-                                                 ,text "This appears to have the wrong kind: " <> pretty t'
+                                                 ,text "This appears to have the wrong kind: " <> prettyT t'
                                                  ,highlightFirstLineDoc (rangeOf annot)]
                                     else return $ KNHandler annot t' fx' e' arms' mb_xform' resumeids
 
@@ -315,7 +315,7 @@ kNormalize st expr =
           Errors _ -> do return $ KNLiteral boolTypeIL (LitBool False)
 
       AnnPrimitive annot _ p -> tcFails [text "Primitives must be called directly!"
-                                        ,text "\tFound non-call use of " <> pretty p
+                                        ,text "\tFound non-call use of " <> prettyT p
                                         ,prettySourceRangeInfo (rangeOf annot)
                                         ,highlightFirstLineDoc (rangeOf annot)]
 
@@ -684,7 +684,7 @@ checkArrayIndexer b = do
             PrimIntTC IWd    -> return $ AIR_Trunc
             RefinedTypeTC v _ _ -> check (tidType v)
             _ -> tcFails [text "Array subscript had type"
-                         ,pretty t
+                         ,prettyT t
                          ,text "which was insufficiently integer-y."
                          ,prettyWithLineNumbers (rangeOf b)
                          ]
@@ -727,7 +727,7 @@ ailInt qt rng int ty = do
       return $ KNLiteral ti (LitFloat $ LiteralFloat (fromIntegral $ litIntValue int)
                                                      (litIntText int))
 
-    _ -> do tcFails [text "Unable to assign integer literal the type" <+> pretty ty
+    _ -> do tcFails [text "Unable to assign integer literal the type" <+> prettyT ty
                     ,prettyWithLineNumbers rng]
 
 sanityCheckIntLiteralNotOversized rng typeSize int =
@@ -839,7 +839,7 @@ kindCheckSubsumption rng ((tv, tvkind), ty, tykind) = do
     else do ty' <- zonkType ty
             tcFails [text "Kind mismatch:", highlightFirstLineDoc rng
               , text "Cannot instantiate type variable " <> pretty tv <> text " of kind " <> pretty tvkind
-              , indent 8 (text "with type " <> pretty ty' <> text " of kind " <> pretty tykind)]
+              , indent 8 (text "with type " <> prettyT ty' <> text " of kind " <> pretty tykind)]
 
 
 collectIntConstraints :: AnnExpr TypeTC -> Tc ()
@@ -1258,12 +1258,12 @@ rebuildWith rebuilder e = q e
 mkLetFuns []       e _sr = e
 mkLetFuns bindings e  sr = KNLetFuns ids fns e sr where (ids, fns) = unzip bindings
 
-knSinkBlocks :: (Pretty t, Show t) => ModuleIL (KNExpr' RecStatus t) t -> Compiled (ModuleIL (KNExpr' RecStatus t) t)
+knSinkBlocks :: (PrettyT t, Show t) => ModuleIL (KNExpr' RecStatus t) t -> Compiled (ModuleIL (KNExpr' RecStatus t) t)
 knSinkBlocks m = do
   let rebuilder idsfns = [(id, localBlockSinking fn) | (id, fn) <- idsfns]
   return $ m { moduleILbody = rebuildWith rebuilder (moduleILbody m) }
 
-localBlockSinking :: (Pretty t, Show t) => Fn RecStatus (KNExpr' RecStatus t) t -> Fn RecStatus (KNExpr' RecStatus t) t
+localBlockSinking :: (PrettyT t, Show t) => Fn RecStatus (KNExpr' RecStatus t) t -> Fn RecStatus (KNExpr' RecStatus t) t
 localBlockSinking knf =
     let newfn = rebuildFn knf in
     newfn

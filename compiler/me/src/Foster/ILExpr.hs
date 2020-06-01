@@ -12,7 +12,8 @@ import Prelude hiding ((<$>), (<*>))
 
 import Compiler.Hoopl
 
-import Text.PrettyPrint.ANSI.Leijen
+import Data.Text.Prettyprint.Doc
+import Data.Text.Prettyprint.Doc.Render.Terminal
 
 import Foster.Base
 import Foster.Kind
@@ -584,9 +585,9 @@ runPreAllocationOptimizations b0 = do
   return b2
 
 -- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
-showILProgramStructure :: ILProgram -> Doc
+showILProgramStructure :: ILProgram -> Doc AnsiStyle
 showILProgramStructure (ILProgram procdefs vals _decls _dtypes _lines) =
-        vcat (map pretty vals)
+        vcat (map prettyT vals)
     <$> vcat (map showProcStructure procdefs)
   where
     showProcStructure (ILProcDef proc _) =

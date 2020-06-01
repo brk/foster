@@ -12,8 +12,9 @@ import Prelude hiding ((<$>))
 import Foster.Base
 import Foster.KNUtil
 import Foster.Config (Compiled, CompilerContext(ccUniqRef), ccWhen, ccVerbose)
+import Foster.Output (putDocP)
 
-import Text.PrettyPrint.ANSI.Leijen
+import Data.Text.Prettyprint.Doc
 
 import Data.Map(Map)
 import qualified Data.Map as Map(insert, lookup, empty)
@@ -44,7 +45,7 @@ instance Eq KNMono where e1 == e2 = show e1 == show e2
 instance IntSizedBits MonoType where
         intSizeBitsOf (PrimInt isb) = isb
         intSizeBitsOf (RefinedType v _ _) = intSizeBitsOf (tidType v)
-        intSizeBitsOf t = error $ "Unable to compute IntSizedBits for non-PrimInt type: " <> show (pretty t)
+        intSizeBitsOf t = error $ "Unable to compute IntSizedBits for non-PrimInt type: " <> show (prettyT t)
 
 extractFnType (FnType _ _ cc pf) = (cc, pf)
 extractFnType (PtrType (StructType [FnType _ _ cc FT_Proc, _])) = (cc, FT_Func)
@@ -64,30 +65,30 @@ instance Pretty CallConv where pretty CCC    = text "ccc"
 instance Pretty ProcOrFunc where pretty FT_Proc = text "proc"
                                  pretty FT_Func = text "func"
 
-instance Pretty MonoType where
-  pretty t = case t of
+instance PrettyT MonoType where
+  prettyT t = case t of
           PrimInt        isb          -> pretty isb
           TyCon          nm           -> text nm
-          TyApp       con []          -> pretty con
-          TyApp       con ts          -> text "(" <> pretty con <+> tupled (map pretty ts) <> text "]"
-          TupleType      ts           -> tupled (map pretty ts)
-          StructType     ts           -> text "#" <> tupled (map pretty ts)
-          FnType         ts r _cc _pf -> text "{" <+> group (align (hsep [pretty t <+> text "=>" <> softbreak | t <- ts]))
-                                                  <+> pretty r <+> text "}" <> text "@" <> pretty (_cc,_pf)
+          TyApp       con []          -> prettyT con
+          TyApp       con ts          -> text "(" <> prettyT con <+> tupled (map prettyT ts) <> text "]"
+          TupleType      ts           -> tupled (map prettyT ts)
+          StructType     ts           -> text "#" <> tupled (map prettyT ts)
+          FnType         ts r _cc _pf -> text "{" <+> group (align (hsep [prettyT t <+> text "=>" <> softbreak | t <- ts]))
+                                                  <+> prettyT r <+> text "}" <> text "@" <> pretty (_cc,_pf)
           CoroType      _s _r         -> text "Coro..."
-          ArrayType      t            -> text "Array" <+> pretty t
-          PtrType        t            -> text "Ref" <+> pretty t
+          ArrayType      t            -> text "Array" <+> prettyT t
+          PtrType        t            -> text "Ref" <+> prettyT t
           PtrTypeUnknown              -> text "?"
-          RefinedType v e args        -> parens (text "%" <+> pretty v <+> text ":" <+> pretty e <+> text "/" <+> pretty args)
+          RefinedType v e args        -> parens (text "%" <+> prettyT v <+> text ":" <+> prettyT e <+> text "/" <+> pretty args)
 
 type FnMono   = Fn RecStatus KNMono MonoType
 type KNMono     = KNExpr' RecStatus MonoType
 
 renderKNM :: (ModuleIL (KNMono) MonoType) -> String
-renderKNM m = show (pretty m)
+renderKNM m = show (prettyT m)
 
 renderKNFM :: FnMono -> String
-renderKNFM m = show (pretty m)
+renderKNFM m = show (prettyT m)
 
 instance Summarizable MonoType where
     textOf e _width =
@@ -122,8 +123,8 @@ instance Structured MonoType where
 
 --
 showFnStructure (Fn fnvar args body _ _srcrange) =
-  pretty fnvar <+> text "=" <+>
-                     text "{" <+> hsep (map pretty args)
+  prettyT fnvar <+> text "=" <+>
+                     text "{" <+> hsep (map prettyT args)
                  <$> indent 2 (showStructure body)
                  <$> text "}" <> line
 
@@ -137,8 +138,8 @@ alphaRenameMonoWithState fn map = do
   renamed <- evalStateT (renameFn fn) (MonoRenameState map)
 
   ccWhen ccVerbose $ do
-      liftIO $ putDoc $ text "mono-fn: " <$> showFnStructure fn
-      liftIO $ putDoc $ text "renamed: " <$> showFnStructure renamed
+      liftIO $ putDocP $ text "mono-fn: " <$> showFnStructure fn
+      liftIO $ putDocP $ text "renamed: " <$> showFnStructure renamed
 
   return renamed
    where

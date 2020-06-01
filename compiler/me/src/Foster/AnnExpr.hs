@@ -12,7 +12,7 @@ import Foster.Kind
 import Foster.TypeAST()
 import Foster.SourceRange(SourceRanged, rangeOf)
 
-import Text.PrettyPrint.ANSI.Leijen
+import Data.Text.Prettyprint.Doc
 import Foster.Output(OutputOr(..))
 
 import qualified Data.Set as Set(union, unions, fromList)
@@ -94,20 +94,20 @@ instance TypedWith (AnnExpr ty) ty where
      AnnPrimitive _rng t _ -> t
      E_AnnTyApp _rng substitutedTy _tm _tyArgs -> substitutedTy
 
-instance Pretty ty => Summarizable (AnnExpr ty) where
+instance PrettyT ty => Summarizable (AnnExpr ty) where
   textOf e _width =
     case e of
       AnnLiteral _ _  (LitText _)  -> text "AnnText      "
       AnnLiteral _ _  (LitBool b)  -> text "AnnBool      " <> pretty b
-      AnnLiteral _ ty (LitInt int) -> text "AnnInt       " <> text (litIntText int) <> text " :: " <> pretty ty
-      AnnLiteral _ ty (LitFloat f) -> text "AnnFloat     " <> text (litFloatText f) <> text " :: " <> pretty ty
-      AnnLiteral _ ty (LitByteArray _) -> text "AnnBytes     " <> text " :: " <> pretty ty
+      AnnLiteral _ ty (LitInt int) -> text "AnnInt       " <> text (litIntText int) <> text " :: " <> prettyT ty
+      AnnLiteral _ ty (LitFloat f) -> text "AnnFloat     " <> text (litFloatText f) <> text " :: " <> prettyT ty
+      AnnLiteral _ ty (LitByteArray _) -> text "AnnBytes     " <> text " :: " <> prettyT ty
 
-      AnnCall     _rng t _b _ _  -> text "AnnCall      :: " <> pretty t
-      AnnAppCtor  _rng t _ _     -> text "AnnAppCtor   :: " <> pretty t
+      AnnCall     _rng t _b _ _  -> text "AnnCall      :: " <> prettyT t
+      AnnAppCtor  _rng t _ _     -> text "AnnAppCtor   :: " <> prettyT t
       AnnCompiles _rng _ cr      -> text "AnnCompiles  " <> pretty cr
-      AnnKillProcess _rng t msg  -> text "AnnKillProcess " <> string (show msg) <> text  " :: " <> pretty t
-      AnnIf       _rng t _ _ _   -> text "AnnIf         :: " <> pretty t
+      AnnKillProcess _rng t msg  -> text "AnnKillProcess " <> pretty (show msg) <> text  " :: " <> prettyT t
+      AnnIf       _rng t _ _ _   -> text "AnnIf         :: " <> prettyT t
       AnnLetVar   _rng id _a _b  -> text "AnnLetVar    " <> pretty id
       AnnLetRec   _rng ids _ _   -> text "AnnLetRec    " <> list (map pretty ids)
       AnnLetFuns  _rng ids _ _   -> text "AnnLetFuns   " <> list (map pretty ids)
@@ -115,20 +115,20 @@ instance Pretty ty => Summarizable (AnnExpr ty) where
       AnnDeref  {}               -> text "AnnDeref     "
       AnnStore  {}               -> text "AnnStore     "
       AnnArrayLit   _rng _ _     -> text "AnnArrayLit  "
-      AnnAllocArray _rng _ _ aty _ _ -> text "AnnAllocArray:: " <> pretty aty
-      AnnArrayRead  _rng t _     -> text "AnnArrayRead :: " <> pretty t
-      AnnArrayPoke  _rng t _ _   -> text "AnnArrayPoke :: " <> pretty t
+      AnnAllocArray _rng _ _ aty _ _ -> text "AnnAllocArray:: " <> prettyT aty
+      AnnArrayRead  _rng t _     -> text "AnnArrayRead :: " <> prettyT t
+      AnnArrayPoke  _rng t _ _   -> text "AnnArrayPoke :: " <> prettyT t
       AnnRecord {}               -> text "AnnRecord    "
       AnnTuple  {}               -> text "AnnTuple     "
       AnnHandler {}              -> text "AnnHandler   "
       AnnCase   {}               -> text "AnnCase      "
-      AnnPrimitive _r _ p        -> text "AnnPrimitive " <> pretty p
-      E_AnnVar _r (tid, _)       -> text "AnnVar       " <> pretty tid <> text " :: " <> pretty (tidType tid)
-      E_AnnTyApp _rng t _e argty -> text "AnnTyApp     ["  <> pretty argty <> text  "] :: " <> pretty t
+      AnnPrimitive _r _ p        -> text "AnnPrimitive " <> prettyT p
+      E_AnnVar _r (tid, _)       -> text "AnnVar       " <> prettyT tid <> text " :: " <> prettyT (tidType tid)
+      E_AnnTyApp _rng t _e argty -> text "AnnTyApp     ["  <> prettyT argty <> text  "] :: " <> prettyT t
       E_AnnFn annFn              -> text $ "AnnFn " ++ T.unpack (identPrefix $ fnIdent annFn) ++ " // "
-        ++ (show $ fnBoundNames annFn) ++ " :: " ++ show (pretty (fnType annFn)) where
-                   fnBoundNames :: (Pretty t) => Fn r e t -> [String]
-                   fnBoundNames fn = map (show . pretty) (fnVars fn)
+        ++ (show $ fnBoundNames annFn) ++ " :: " ++ show (prettyT (fnType annFn)) where
+                   fnBoundNames :: (PrettyT t) => Fn r e t -> [String]
+                   fnBoundNames fn = map (show . prettyT) (fnVars fn)
 
 instance Structured (AnnExpr ty) where
   childrenOf e =
@@ -168,7 +168,7 @@ rights (x:xs) = case x of Left _  -> rights xs
 
 -----------------------------------------------------------------------
 
-instance (Structured ty, Pretty ty) => AExpr (AnnExpr ty) where
+instance (Structured ty, PrettyT ty) => AExpr (AnnExpr ty) where
     freeIdents e = case e of
         AnnPrimitive {}     -> Set.fromList []
         AnnLetVar _rng  id  b   e -> freeIdents b `Set.union` (freeIdents e `sans` [id])

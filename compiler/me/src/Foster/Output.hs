@@ -6,19 +6,22 @@
 
 module Foster.Output where
 
-import Text.PrettyPrint.ANSI.Leijen
-import System.IO(stdout)
+import Data.Text.Prettyprint.Doc
+import Data.Text.Prettyprint.Doc.Render.Terminal (renderIO, AnsiStyle)
+
+import System.IO (stdout)
 
 -- Either, with better names for the cases...
 data OutputOr expr
     = OK      expr
-    | Errors [Doc]
+    | Errors [Doc AnsiStyle]
 
+putDocLn :: Doc AnsiStyle -> IO ()
 putDocLn d = do putDocP d ; putDocP line
 
--- Re-implement putDoc because the defaults behind it aren't what
--- we want (it doesn't help that the documentation about it lies...).
-putDocP doc = displayIO stdout (renderPretty 0.8 80 doc)
+putDocP :: Doc AnsiStyle -> IO ()
+putDocP doc = renderIO stdout (layoutPretty defaultLayoutOptions doc)
 
-outLn s = text s <> line
+outLn :: String -> Doc AnsiStyle
+outLn s = pretty s <> line
 

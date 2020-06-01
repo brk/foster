@@ -12,26 +12,28 @@ import Foster.Base
 import Foster.AnnExpr
 import Foster.TypeTC
 
-import Text.PrettyPrint.ANSI.Leijen
+import Data.Text.Prettyprint.Doc
+import Data.Text.Prettyprint.Doc.Render.Terminal
+
 import qualified Data.Text as T
 import Data.Char(isAlpha)
 
 -- "The ribbon width is the maximal amount of
 --  non-indentation characters on a line."
 
-showTyped :: Pretty t => Doc -> t -> Doc
-showTyped d t = parens (d <+> text "::" <+> pretty t)
+showTyped :: PrettyT t => Doc AnsiStyle -> t -> Doc AnsiStyle
+showTyped d t = parens (d <+> text "::" <+> prettyT t)
 
 showUnTyped d _ = d
 
 comment d = text "/*" <+> d <+> text "*/"
 
-instance Pretty e => Pretty (ArrayIndex e) where
-  pretty (ArrayIndex b i _rng SG_Static) = pretty b <> brackets (pretty i)
-  pretty (ArrayIndex b i _rng SG_Dynamic) =
-    text "prim array-subscript" <+> pretty b <+> pretty i
-  pretty (ArrayIndex b i _rng SG_Unsafe) =
-    text "prim array-subscript-unsafe" <+> pretty b <+> pretty i
+instance PrettyT e => PrettyT (ArrayIndex e) where
+  prettyT (ArrayIndex b i _rng SG_Static) = prettyT b <> brackets (prettyT i)
+  prettyT (ArrayIndex b i _rng SG_Dynamic) =
+    text "prim array-subscript" <+> prettyT b <+> prettyT i
+  prettyT (ArrayIndex b i _rng SG_Unsafe) =
+    text "prim array-subscript-unsafe" <+> prettyT b <+> prettyT i
 
 -- (<//>) ?vs? align (x <$> y)
 
@@ -41,7 +43,7 @@ end    = lkwd "end"
 
 prettyRecord labs exps =
     let
-      prettyField (lab, exp) = text (T.unpack lab) <> text ":" <+> pretty exp
+      prettyField (lab, exp) = text (T.unpack lab) <> text ":" <+> prettyT exp
       pairs = map prettyField (zip labs exps)
     in
     parens (hsep $ punctuate comma pairs)
@@ -72,19 +74,19 @@ emptyOrLine = group linebreak
 -- x <//> y     =       x <> lineOrEmpty <> y -- line break
 -- x <$$> y     =       x <> emptyOrLine <> y -- soft break
 
-instance (Pretty ty, Pretty expr) => Pretty (Fn rec expr ty) where
-  pretty fn =
+instance (PrettyT ty, PrettyT expr) => PrettyT (Fn rec expr ty) where
+  prettyT fn =
       group (lbrace <> args (fnVars fn)
                     </> nest 4 (group $
-                                  linebreak <> pretty (fnBody fn))
+                                  linebreak <> prettyT (fnBody fn))
                     <$> rbrace)
-    where args []  = empty
-          args frm = empty <+> hsep (map (\v -> prettyFnFormal v <+> text "=>") frm)
+    where args []  = emptyDoc
+          args frm = emptyDoc <+> hsep (map (\v -> prettyFnFormal v <+> text "=>") frm)
 
           prettyFnFormal (TypedId _t v) = text (show v)
 
-prettyTyFormals [] = empty
-prettyTyFormals tyfs = empty <+> text "forall" <+> hsep (map prettyTyFormal tyfs) <+> text ","
+prettyTyFormals [] = emptyDoc
+prettyTyFormals tyfs = emptyDoc <+> text "forall" <+> hsep (map prettyTyFormal tyfs) <+> text ","
   where prettyTyFormal (TypeFormal name _sr kind) =
                                           text name <+> text ":" <+> pretty kind
 
@@ -112,31 +114,31 @@ instance Pretty (ModuleAST (ExprSkel ExprAnnot) TypeP) where
 
 prettyAtom e =
   case e of
-    AnnCall       {} -> pretty e
-    E_AnnFn f        -> pretty f
-    AnnArrayRead  {} -> pretty e
+    AnnCall       {} -> prettyT e
+    E_AnnFn f        -> prettyT f
+    AnnArrayRead  {} -> prettyT e
 
-    E_AnnVar      {} -> pretty e
-    AnnPrimitive  {} -> pretty e
-    AnnLiteral    {} -> pretty e
-    AnnRecord     {} -> pretty e
-    AnnTuple      {} -> pretty e
-    AnnHandler    {} -> pretty e
-    AnnCase       {} -> pretty e
-    AnnIf         {} -> pretty e
-    AnnLetVar     {} -> pretty e
-    AnnLetFuns    {} -> pretty e
-    AnnLetRec     {} -> pretty e
-    AnnAppCtor    {} -> pretty e
-    AnnAlloc      {} -> pretty e
-    AnnDeref      {} -> pretty e
-    AnnStore      {} -> pretty e
-    AnnAllocArray {} -> pretty e
-    AnnArrayPoke  {} -> pretty e
-    AnnArrayLit   {} -> pretty e
-    E_AnnTyApp    {} -> pretty e
-    AnnCompiles   {} -> pretty e
-    AnnKillProcess {} -> pretty e
+    E_AnnVar      {} -> prettyT e
+    AnnPrimitive  {} -> prettyT e
+    AnnLiteral    {} -> prettyT e
+    AnnRecord     {} -> prettyT e
+    AnnTuple      {} -> prettyT e
+    AnnHandler    {} -> prettyT e
+    AnnCase       {} -> prettyT e
+    AnnIf         {} -> prettyT e
+    AnnLetVar     {} -> prettyT e
+    AnnLetFuns    {} -> prettyT e
+    AnnLetRec     {} -> prettyT e
+    AnnAppCtor    {} -> prettyT e
+    AnnAlloc      {} -> prettyT e
+    AnnDeref      {} -> prettyT e
+    AnnStore      {} -> prettyT e
+    AnnAllocArray {} -> prettyT e
+    AnnArrayPoke  {} -> prettyT e
+    AnnArrayLit   {} -> prettyT e
+    E_AnnTyApp    {} -> prettyT e
+    AnnCompiles   {} -> prettyT e
+    AnnKillProcess {} -> prettyT e
 
 isOperator (E_AnnVar _ (tid, _)) = not . isAlpha . T.head . identPrefix $ tidIdent tid
 isOperator _                     = False
@@ -145,7 +147,7 @@ instance Pretty Formatting where
   pretty BlankLine   = text "/*nl*/"
   -- Egads, is there no way of *forcing* a linebreak with wl-pprint?
   pretty (Comment ('/':'/':s)) = text "/*" <> text s <+> text "*/"
-  pretty (Comment s) = string s
+  pretty (Comment s) = pretty s
 
 withAnnot (ExprAnnot pre _ post) doc =
   hsep $ map pretty pre ++ [doc <> hsep (map pretty post)]
@@ -156,58 +158,58 @@ instance Pretty (ArrayEntry (ExprAST TypeP)) where
   pretty (AE_Expr ex) = pretty ex
 -}
 
-prettyBinding :: Pretty bound => Ident -> bound -> (Doc -> Doc) -> Doc
+prettyBinding :: PrettyT bound => Ident -> bound -> (Doc AnsiStyle -> Doc AnsiStyle) -> Doc AnsiStyle
 prettyBinding id bound prefix =
-    prefix (pretty id) <+> text "=" <+> pretty bound <> lkwd ";"
+    prefix (pretty id) <+> text "=" <+> prettyT bound <> lkwd ";"
 
-prettySeq :: Pretty bound => [Ident] -> [bound] -> (Doc -> Doc) -> Doc
+prettySeq :: PrettyT bound => [Ident] -> [bound] -> (Doc AnsiStyle -> Doc AnsiStyle) -> Doc AnsiStyle
 prettySeq ids bounds prefix =
     indent 2 $ vcat [prettyBinding id bnd prefix | (id, bnd) <- zip ids bounds]
 
-instance Pretty (AnnExpr TypeTC) where
-  pretty e =
+instance PrettyT (AnnExpr TypeTC) where
+  prettyT e =
         case e of
-            AnnLiteral annot _ lit  -> withAnnot annot $ pretty lit
+            AnnLiteral annot _ lit  -> withAnnot annot $ prettyT lit
             AnnRecord  annot _ labs es -> withAnnot annot $ prettyRecord labs es
-            AnnTuple   annot _ _ es -> withAnnot annot $ parens (hsep $ punctuate comma (map pretty es))
-            E_AnnFn    fn           ->                   pretty fn
+            AnnTuple   annot _ _ es -> withAnnot annot $ parens (hsep $ punctuate comma (map prettyT es))
+            E_AnnFn    fn           ->                   prettyT fn
             AnnIf      annot _ c b1 b2 -> withAnnot annot $
-                                               kwd "if" <+> pretty c
-                                           <$> nest 2 (kwd "then" <+> pretty b1)
-                                           <$> nest 2 (kwd "else" <+> pretty b2)
+                                               kwd "if" <+> prettyT c
+                                           <$> nest 2 (kwd "then" <+> prettyT b1)
+                                           <$> nest 2 (kwd "else" <+> prettyT b2)
                                            <$> end
             AnnHandler annot _ _fx action arms mb_xform _ -> withAnnot annot $ prettyHandler action arms mb_xform
             AnnCase annot _ scrut arms  -> withAnnot annot $ prettyCase scrut arms
             AnnLetVar annot i bound expr -> withAnnot annot $
                                        prettyBinding i bound id
-                                   <$> pretty expr
+                                   <$> prettyT expr
             AnnLetFuns annot [id] [fn] expr -> withAnnot annot $
                                        prettySeq [id] [fn] (\d -> d)
-                                   <$> pretty expr
+                                   <$> prettyT expr
             AnnLetFuns annot ids fns expr -> withAnnot annot $
                                        prettySeq ids fns (\d -> lkwd "REC" <+> d)
-                                   <$> pretty expr
+                                   <$> prettyT expr
             AnnLetRec  annot ids exprs expr -> withAnnot annot $
                                        prettySeq ids exprs (\d -> lkwd "REC" <+> d)
-                                   <$> pretty expr
-            E_AnnVar   annot (tid, _) -> withAnnot annot $ pretty tid
-            AnnPrimitive annot _ prim -> withAnnot annot $ pretty prim
-            AnnCall   annot _ e [] _  -> withAnnot annot $ pretty e <+> text "!"
+                                   <$> prettyT expr
+            E_AnnVar   annot (tid, _) -> withAnnot annot $ prettyT tid
+            AnnPrimitive annot _ prim -> withAnnot annot $ prettyT prim
+            AnnCall   annot _ e [] _  -> withAnnot annot $ prettyT e <+> text "!"
             AnnCall   annot _ e [e1,e2] _ | isOperator e
-                                      -> withAnnot annot $ pretty e1 <+> pretty e <+> pretty e2
-            AnnCall    annot _ e es _ -> withAnnot annot $ pretty e <+> hsep (map prettyAtom es)
-            AnnAppCtor annot _ e es   -> withAnnot annot $ pretty e <+> hsep (map prettyAtom es)
+                                      -> withAnnot annot $ prettyT e1 <+> prettyT e <+> prettyT e2
+            AnnCall    annot _ e es _ -> withAnnot annot $ prettyT e <+> hsep (map prettyAtom es)
+            AnnAppCtor annot _ e es   -> withAnnot annot $ pretty  e <+> hsep (map prettyAtom es)
 
-            AnnAlloc annot _ e _rgn  -> withAnnot annot $ parens $ text "ref" <+> pretty e
-            AnnDeref annot _ e       -> withAnnot annot $ pretty e <> text "^"
-            AnnStore annot _ e1 e2   -> withAnnot annot $ pretty e1 <+> text ">^" <+> pretty e2
+            AnnAlloc annot _ e _rgn  -> withAnnot annot $ parens $ text "ref" <+> prettyT e
+            AnnDeref annot _ e       -> withAnnot annot $ prettyT e <> text "^"
+            AnnStore annot _ e1 e2   -> withAnnot annot $ prettyT e1 <+> text ">^" <+> prettyT e2
             AnnAllocArray annot _ _e _ty _ _ -> withAnnot annot $ text "AnnAllocArray"
             AnnArrayLit   annot _ _entries -> withAnnot annot $ text "AnnArrayLit"
-            AnnArrayRead  annot _ ai      -> withAnnot annot $ pretty ai
-            AnnArrayPoke  annot _ ai e    -> withAnnot annot $ pretty e <+> text ">^" <+> pretty ai
+            AnnArrayRead  annot _ ai      -> withAnnot annot $ prettyT ai
+            AnnArrayPoke  annot _ ai e    -> withAnnot annot $ prettyT e <+> text ">^" <+> prettyT ai
             AnnKillProcess {} -> text "<<<AnnKillProcess>>>"
             AnnCompiles    {} -> text "<<<AnnCompiles>>>"
-            E_AnnTyApp annot t e ts -> withAnnot annot $ showTyped (pretty e <> text ":" <> pretty ts) t
+            E_AnnTyApp annot t e ts -> withAnnot annot $ showTyped (prettyT e <> text ":" <> prettyT ts) t
 {-
             E_ArrayPoke   annot ai e -> withAnnot annot $ pretty e <+> text ">^" <+> pretty ai
             E_MachArrayLit annot args -> withAnnot annot $ text "prim mach-array-literal" <+> hsep (map pretty args)

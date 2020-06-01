@@ -20,7 +20,7 @@ import qualified Data.Map  as Map(lookup, size)
 import Foster.Base
 import Foster.SourceRange(SourceRange)
 
-import Text.PrettyPrint.ANSI.Leijen hiding (column)
+import Data.Text.Prettyprint.Doc hiding (column)
 
 {-
 Straightforward implementation of pattern match compilation

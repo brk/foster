@@ -25,7 +25,9 @@ import Foster.HashCache
 import Foster.Output(putDocLn)
 import Foster.SourceRange(SourceRange(..), rangeOf, prettyWithLineNumbers)
 
-import Text.PrettyPrint.ANSI.Leijen
+import Data.Text.Prettyprint.Doc
+import Data.Text.Prettyprint.Doc.Render.Terminal
+
 import qualified Data.Text as T
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
@@ -104,7 +106,7 @@ smtType (TyApp (TyCon "Float64") []) = TApp (smtI_ "$Float64") []
 smtType (TyApp (TyCon "Float32") []) = TApp (smtI_ "$Float32") []
 smtType (TyApp (TyCon nm) tys) = TApp (smtI nm) (map smtType tys)
 smtType (PtrType t) = TApp (smtI_ "$Ptr") [smtType t]
-smtType (FnType ds rt _cc _pf) = TApp (smtI $ "$Fn_" ++ show (pretty rt)) (map smtType ds)
+smtType (FnType ds rt _cc _pf) = TApp (smtI $ "$Fn_" ++ show (prettyT rt)) (map smtType ds)
 smtType (PtrTypeUnknown) = TApp (smtI_ "$Ptr_") []
 smtType (CoroType a b) = TApp (smtI_ "$Coro") [smtType a, smtType b]
 smtType other = error $ "smtType unable to handle " ++ show other
@@ -270,14 +272,14 @@ scRunZ3' expr script@(CommentedScript items _) smtStatsRef hc hash = do
                 putDocLn $ doc
              else return ()
   case res of
-    Left x -> do compiledThrowE [text x, knMonoLikePretty expr, lineNumberedDoc doc]
+    Left x -> do compiledThrowE [text x, knMonoLikePrettyT expr, lineNumberedDoc doc]
     Right ["unsat"] -> do
       -- Run the script again, but without the target asserted.
       -- If the result remains unsat, then the context was inconsistent.
       -- If the result becomes sat, then the context was not inconsistent.
       (time', res') <- liftIO $ ioTime $ runZ3 (show $ vcat (map pretty items)) Nothing
       case res' of
-        Left x -> compiledThrowE [text x, knMonoLikePretty expr, string (show doc)]
+        Left x -> compiledThrowE [text x, knMonoLikePrettyT expr, pretty (show doc)]
         Right ["sat"] -> do liftIO $ modifyIORef smtStatsRef (\(c, ts) -> (c + 1, (time, time'):ts))
                             liftIO $ putStrLn $ "Added hash " ++ show hash  ++ " to hash cache."
                             liftIO $ hashCacheInsert hc hash
@@ -291,7 +293,7 @@ scRunZ3' expr script@(CommentedScript items _) smtStatsRef hc hash = do
     Right strs -> compiledThrowE ([text "Unable to verify precondition or postcondition associated with expression",
                                case maybeSourceRangeOf expr of
                                    Just sr -> prettyWithLineNumbers sr
-                                   Nothing -> knMonoLikePretty expr,
+                                   Nothing -> knMonoLikePrettyT expr,
                                lineNumberedDoc doc] ++ lineNumberedDocs strs)
   return ()
 
@@ -308,14 +310,14 @@ padded n k = (text $ replicate (k - (intLog10 n)) ' ' ) <> pretty n
 
 class KNMonoLike e where
   maybeSourceRangeOf :: e -> Maybe SourceRange
-  knMonoLikePretty :: e -> Doc
+  knMonoLikePrettyT :: e -> Doc AnsiStyle
 
 instance KNMonoLike (Fn RecStatus KNMono MonoType) where
-  knMonoLikePretty e = pretty e
+  knMonoLikePrettyT e = prettyT e
   maybeSourceRangeOf fn = Just (rangeOf $ fnAnnot fn)
 
 instance KNMonoLike KNMono where
-  knMonoLikePretty e = pretty e
+  knMonoLikePrettyT e = prettyT e
 
   maybeSourceRangeOf (KNCallPrim sr _ _ _) = Just sr
   maybeSourceRangeOf (KNTuple _ _ sr) = Just sr
@@ -350,7 +352,7 @@ checkFn' fn facts0 = do
   facts'   <- withBindings (fnVar fn) (fnVars fn) facts0
   facts''  <- foldlM recordIfHasFnPrecondition facts' (fnVars fn)
 
-  dbgIf dbgCheckFn $ text "checking body " <$> indent 2 (pretty (fnBody fn))
+  dbgIf dbgCheckFn $ text "checking body " <$> indent 2 (prettyT (fnBody fn))
   f <- checkBody (fnBody fn) facts''
   dbgIf dbgCheckFn $ text "... checked body"
 
@@ -661,12 +663,25 @@ checkBody expr facts =
         return Nothing
 
     KNCase       _ty v arms     -> do
-        -- TODO: better path conditions for individual arms
+      {-
+        let checkArmInSequence facts' arm = do
+                case caseArmGuard arm of
+                   Nothing -> do facts'' <- withBindings v (caseArmBindings arm) facts
+                                 _mbf <- checkBody (caseArmBody arm) facts''
+                                 return facts'
+                   Just _g -> do facts'' <- withBindings v (caseArmBindings arm) facts
+                                 _mbf <- checkBody (caseArmBody arm) (facts'' `withPathFact` )
+                                 return facts'
+        _ <- foldlM checkArmInSequence arms
+        -}
         _ <- forM arms $ \arm -> do
             case caseArmGuard arm of
                 Nothing -> do facts' <- withBindings v (caseArmBindings arm) facts
                               checkBody (caseArmBody arm) facts'
-                Just _g -> error $ "can't yet support case arms with guards in KNStaticChecks"
+                Just _g -> do --putStrLn $ "ERROR ================= can't yet support case arms with guards in KNStaticChecks"
+                              error $ "can't yet support case arms with guards in KNStaticChecks"
+
+        -- Don't bother trying to find anything in common between the return values of the arms.
         return Nothing
 
     KNIf        _ty v e1 e2    -> do
@@ -705,7 +720,7 @@ checkBody expr facts =
                 _ -> return ()
           _ -> return ()
 
-        dbgStr $ "KNCall " ++ show (pretty expr) ++ " :: " ++ show (pretty ty)
+        dbgStr $ "KNCall " ++ show (prettyT expr) ++ " :: " ++ show (prettyT ty)
         -- Does the called function have a precondition?
         -- See also mkPrecondGen / compilePreconditionFn
         case fromMaybe [] $ getMbFnPreconditions facts (tidIdent v) of
@@ -731,14 +746,14 @@ checkBody expr facts =
                         --mbe <- (maybeM mbrte) x
               -> do
                     resid <- lift $ ccFreshId $ T.pack (".fnres_" ++ show (tidIdent rtv))
-                    dbgIf dbgRefinedCalls $ text "call of fn" <+> pretty v <+> text "with refined type..."
-                    dbgIf dbgRefinedCalls $ indent 4 (text "rtv = " <> pretty rtv)
-                    dbgIf dbgRefinedCalls $ indent 4 (text "rte = " <> pretty _rte)
+                    dbgIf dbgRefinedCalls $ text "call of fn" <+> prettyT v <+> text "with refined type..."
+                    dbgIf dbgRefinedCalls $ indent 4 (text "rtv = " <> prettyT rtv)
+                    dbgIf dbgRefinedCalls $ indent 4 (text "rte = " <> prettyT _rte)
                     facts' <- compileRefinementBoundTo resid facts rtv _rte
                     let facts'' = addSymbolicVars facts' [TypedId (tidType rtv) resid]
                     dbgIf dbgRefinedCalls $ indent 4 (text "facts' = " <> pretty facts'')
                     return $ withDecls facts'' $ \x -> do
-                        dbgIf dbgRefinedCalls $ text "result of call to fn" <+> pretty v <+> text "being bound to" <+> pretty x
+                        dbgIf dbgRefinedCalls $ text "result of call to fn" <+> prettyT v <+> text "being bound to" <+> pretty x
                         return $ (smtId x === smtId resid)
                         --return $ (smtId resid === smtVar rtv)
                         --return $ SMT.true
@@ -746,17 +761,26 @@ checkBody expr facts =
                         --dbgIf dbgRefinedCalls $ text "result of call to fn" <+> pretty v <$> pretty mbe
                         --return $ SMT.and (smtId resid) (smtId x === smtVar rtv)
 
-            _ -> return Nothing
+            _ -> do
+              -- Example:
+              --     nonzero :: { Int64 => Bool };
+              --     checked :: { % rz : Int64 : nonzero rz => Int64 };
+              -- and we are checking the call    ^^^^^^^^^^.
+              -- All we can do is treat this as an opaque function call.
+              return Nothing
+
+              -- return $ withDecls facts $ \x -> return $
+              --   smtId x === SMT.app (ident $ tidIdent v) (smtVars vs)
 
     KNLetVal      id   e1 e2 _  -> do
         dbgStr $ "letval checking bound expr for " ++ show id
-        dbgDoc $ indent 8 (pretty e1)
+        dbgDoc $ indent 8 (prettyT e1)
         mb_f   <- checkBody e1 facts
         facts' <- whenRefinedElse (typeKN e1) (compileRefinementBoundTo id facts) facts
         dbgStr $ "facts' = " ++ show (pretty facts')
         case mb_f of
           Nothing -> do dbgStr $ "  no fact for id binding " ++ show id
-                        dbgStr $ "       with type " ++ show (pretty (typeKN e1))
+                        dbgStr $ "       with type " ++ show (prettyT (typeKN e1))
                         checkBody e2 (addSymbolicVars facts' [TypedId (typeKN e1) id])
           Just f  -> do dbgStr $ "have fact for id binding " ++ show id
                         newfact <- f id
@@ -845,7 +869,7 @@ recordIfHasFnPrecondition facts v@(TypedId ty id) =
   case ty of
     FnType {} -> do
       dbgDoc $ text $ "computeRefinements for " ++ show v ++ " was "
-      dbgDoc $ indent 4 $ pretty (computeRefinements v)
+      dbgDoc $ indent 4 $ prettyT (computeRefinements v)
       case computeRefinements v of
         [] -> return $ facts
         preconds -> return $ facts { fnPreconds = Map.insert id (map (mkPrecondGen facts) preconds) (fnPreconds facts) }
@@ -864,11 +888,15 @@ compilePreconditionFn :: Fn RecStatus KNMono MonoType -> Facts
                       -> [TypedId MonoType] -> SC SMTExpr
 compilePreconditionFn fn facts argVars = do
   dbgStr $ "compilePreconditionFn<" ++ show (length argVars) ++ " vs " ++ show (length (fnVars fn)) ++ " # " ++ show argVars ++ "> ;; " ++ show fn
+  dbgDoc $ indent 8 (text "argVars: " <> vcat (map pretty argVars))
+  dbgDoc $ indent 8 (text "fnVars: " <> vcat (map pretty (fnVars fn)))
   resid <- lift $ ccFreshId $ identPrefix $ fmapIdent (T.append (T.pack "res$")) $ tidIdent (fnVar fn)
   let facts' = addSymbolicVars facts ((TypedId (PrimInt I1) resid):(argVars ++ fnVars fn))
   facts'' <- foldlM recordIfHasFnPrecondition facts' (fnVars fn)
   bodyf <- checkBody (fnBody fn) facts''
-  (SMTExpr body decls idfacts) <- (trueOr bodyf) resid
+  smt@(SMTExpr body decls idfacts) <- (trueOr bodyf) resid
+  dbgDoc $ text "facts''" <$> pretty facts''
+  dbgDoc $ text "(trueOr bodyf) " <> pretty resid <> text " :: " <$> indent 8 (pretty smt)
   let idfacts' = extendIdFacts resid body (zip (map tidIdent argVars)
                                                (map tidIdent $ fnVars fn)) idfacts
   return $ SMTExpr (smtId resid) decls idfacts'
@@ -1003,25 +1031,25 @@ type CanonState = (Map SMT.Name SMT.Name, Uniq)
 instance Ord SymDecl where compare (SymDecl n1 _ _) (SymDecl n2 _ _) = compare n1 n2
 instance Eq  SymDecl where (==)    (SymDecl n1 _ _) (SymDecl n2 _ _) = (==)    n1 n2
 
-instance Pretty SMT.Expr where pretty e = string (show $ SMT.pp e)
+instance Pretty SMT.Expr where pretty e = pretty (show $ SMT.pp e)
 instance Pretty SMTExpr where
     pretty (SMTExpr e decls idfacts) =
           parens (text "SMTExpr" <+> pretty e <$>
                     indent 2 (vsep
                          [hang 4 $ text "decls =" <$> pretty (Set.toList decls)
                          ,hang 4 $ text "idfacts =" <$> pretty idfacts]))
-instance Pretty SMT.Name where pretty x = string (show x)
-instance Pretty SMT.Type where pretty x = string (show x)
+instance Pretty SMT.Name where pretty x = pretty (show x)
+instance Pretty SMT.Type where pretty x = pretty (show x)
 instance Pretty SymDecl where
     pretty (SymDecl nm tys ty) =
           parens (text "SymDecl" <+> pretty nm <+> pretty tys <+> pretty ty)
 
 instance Pretty CommentOrCommand where
-  pretty (Cmds cmds) = string (show $ SMT.pp $ Script cmds)
+  pretty (Cmds cmds) = pretty (show $ SMT.pp $ Script cmds)
   pretty (Cmnt str) = vcat [text ";" <+> text line | line <- lines str]
 
 instance Pretty (Either Literal (TypedId MonoType))
-  where pretty (Left lit) = pretty lit
+  where pretty (Left lit) = unAnnotate (prettyT lit)
         pretty (Right v) = pretty v
 
 instance Pretty Facts where
@@ -1032,7 +1060,10 @@ instance Pretty Facts where
               <$> text "pathFacts:" <+> pretty (pathFacts facts)
               <$> text "symbolicDecls:" <+> pretty (Set.toList $ symbolicDecls facts))
 
-prettyCommentedScript :: CommentedScript -> Doc
+instance Pretty (TypedId MonoType)
+   where pretty (TypedId _t id) = pretty id
+
+prettyCommentedScript :: CommentedScript -> Doc anyannot
 prettyCommentedScript (CommentedScript items target) =
   vsep (map pretty items) <$> pretty (Cmds [CmdAssert target])
 -- }}}

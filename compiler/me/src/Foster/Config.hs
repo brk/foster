@@ -20,7 +20,9 @@ import qualified Data.Text as T(Text)
 
 import Data.Time.Clock.POSIX (getPOSIXTime)
 
-import Text.PrettyPrint.ANSI.Leijen(Doc)
+import Data.Text.Prettyprint.Doc(Doc)
+import Data.Text.Prettyprint.Doc.Render.Terminal
+
 import System.Console.GetOpt
 
 type Compiled = StateT CompilerContext (ExceptT CompilerFailures IO)
@@ -34,7 +36,7 @@ data CompilerContext = CompilerContext {
       , ccCFGSizes  :: IORef [(String, (Int, Int), (Int, Int) )]
 }
 
-type CompilerFailures = [Doc]
+type CompilerFailures = [Doc AnsiStyle]
 
 compiledThrowE :: CompilerFailures -> Compiled a
 compiledThrowE docs = lift $ throwE docs

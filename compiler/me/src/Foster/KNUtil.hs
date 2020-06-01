@@ -15,7 +15,8 @@ import Foster.PrettyAnnExpr
 import Foster.Config(Compiled, CompilerContext(ccUniqRef))
 import Foster.SourceRange(SourceRange)
 
-import Text.PrettyPrint.ANSI.Leijen
+import Data.Text.Prettyprint.Doc
+import Data.Text.Prettyprint.Doc.Render.Terminal
 
 import Data.Maybe(maybeToList)
 import Data.List(foldl')
@@ -69,7 +70,8 @@ data KNExpr' r ty =
 
 -- {{{ Inlining-related definitions
 data FoldStatus = FoldTooBig Int -- size (stopped before inlining)
-                | FoldEffort Doc | FoldSize SizeCounter -- (stopped while inlining)
+                | FoldEffort (Doc AnsiStyle)
+                | FoldSize SizeCounter -- (stopped while inlining)
                 | FoldOuterPending | FoldInnerPending | FoldRecursive
                 | FoldCallSiteOptOut | FoldNoBinding deriving Show
 
@@ -436,14 +438,14 @@ knSizeHead expr = case expr of
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||| Pretty-printing ||||||||||||||||||||{{{
-renderKN m put = if put then putDoc (pretty m) >>= (return . Left)
-                        else return . Right $ show (pretty m)
+renderKN m put = if put then putDoc (prettyT m) >>= (return . Left)
+                        else return . Right $ show (prettyT m)
 
 renderKNF :: FnExprIL -> String
-renderKNF m = show (pretty m)
+renderKNF m = show ((prettyT m) :: Doc AnsiStyle)
 
-instance Pretty TypeIL where
-  pretty t = text (show t)
+instance PrettyT TypeIL where
+  prettyT t = text (show t)
 
 instance Pretty AllocMemRegion where
   pretty rgn = text (show rgn)
@@ -454,20 +456,20 @@ showDecl (s, t, isForeign) =
     IsForeign nm ->
       if s == nm
         then text "foreign import" <+> showTyped (text s) t
-        else text "foreign import" <+> text s <+> text "as" <+> text nm <+> text "::" <+> pretty t
+        else text "foreign import" <+> text s <+> text "as" <+> text nm <+> text "::" <+> prettyT t
            
-instance (Pretty body, Pretty t) => Pretty (ModuleIL body t) where
-  pretty m = text "// begin decls"
+instance (PrettyT body, PrettyT t) => PrettyT (ModuleIL body t) where
+  prettyT m = text "// begin decls"
             <$> vcat (map showDecl (moduleILdecls m))
             <$> text "// end decls"
             <$> text "// begin datatypes"
-            <$> vsep (map pretty $ moduleILdataTypes m)
+            <$> vsep (map prettyT $ moduleILdataTypes m)
             <$> text "// end datatypes"
             <$> text "// begin prim types"
-            <$> empty
+            <$> emptyDoc
             <$> text "// end prim types"
             <$> text "// begin functions"
-            <$> pretty (moduleILbody m)
+            <$> prettyT (moduleILbody m)
             <$> text "// end functions"
 
 pr YesTail = "(tail)"
@@ -475,28 +477,28 @@ pr NotTail = "(non-tail)"
 
 instance Pretty RecStatus where pretty rs = text $ show rs
 
-desc (t0, tb, tn) = text "t_opnd=" <> pretty t0 <> text "; t_before="<>pretty tb<>text "; t_after="<>pretty tn<>text "; t_elapsed="<>pretty (tn - tb)
+--desc (t0, tb, tn) = text "t_opnd=" <> pretty t0 <> text "; t_before="<>pretty tb<>text "; t_after="<>pretty tn<>text "; t_elapsed="<>pretty (tn - tb)
 
-instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
-  pretty e =
+instance (PrettyT ty, Pretty rs) => PrettyT (KNExpr' rs ty) where
+  prettyT e =
         case e of
-            KNRelocDoms ids e        -> yellow (text "<reloc-doms<" <> pretty ids <> text ">>") <$> pretty e
+            KNRelocDoms ids e        -> yellow (text "<reloc-doms<" <> pretty ids <> text ">>") <$> prettyT e
             KNVar (TypedId _ (GlobalSymbol name _alt))
                                 -> (text $ "G:" ++ T.unpack name)
                        --showTyped (text $ "G:" ++ T.unpack name) t
             KNVar (TypedId t i) -> prettyId (TypedId t i)
-            KNTyApp t e argtys  -> showTyped (pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]") t
-            KNKillProcess t m   -> text ("KNKillProcess " ++ show m ++ " :: ") <> pretty t
-            KNLiteral t lit     -> showTyped (pretty lit) t
+            KNTyApp t e argtys  -> showTyped (prettyT e <> text ":[" <> hsep (punctuate comma (map prettyT argtys)) <> text "]") t
+            KNKillProcess t m   -> text ("KNKillProcess " ++ show m ++ " :: ") <> prettyT t
+            KNLiteral t lit     -> showTyped (prettyT lit) t
             KNCall     t v [] _ -> showTyped (prettyId v <+> text "!") t
-            KNCall     t v vs _ -> showTyped (prettyId v <+> hsep (map pretty vs)) t
-            KNCallPrim _ t p vs -> showUnTyped (text "prim" <+> pretty p <+> hsep (map prettyId vs)) t
+            KNCall     t v vs _ -> showTyped (prettyId v <+> hsep (map prettyT vs)) t
+            KNCallPrim _ t p vs -> showUnTyped (text "prim" <+> prettyT p <+> hsep (map prettyId vs)) t
             KNAppCtor  t cid vs _sr -> showUnTyped (text "~" <> parens (text (show cid)) <> hsep (map prettyId vs)) t
             KNLetVal   x b  k _ -> lkwd "let"
                                       <+> fill 8 (text (show x))
                                       <+> text "="
-                                      <+> (indent 0 $ pretty b) <+> lkwd "in"
-                                   <$> pretty k
+                                      <+> (indent 0 $ prettyT b) <+> lkwd "in"
+                                   <$> prettyT k
 {-
             KNLetFuns ids fns k -> pretty k
                                    <$> indent 1 (lkwd "wherefuns")
@@ -508,62 +510,62 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
                                    -- <$> indent 2 end
             KNLetFuns ids fns k _sr -> text "letfuns"
                                    <$> indent 2 (vcat [text (show id) <+> text "="
-                                                                      <+> pretty fn
+                                                                      <+> prettyT fn
                                                       | (id, fn) <- zip ids fns
                                                       ])
                                    <$> lkwd "in"
-                                   <$> pretty k
+                                   <$> prettyT k
                                    <$> end
             KNLetRec  ids xps e -> text "rec"
                                    <$> indent 2 (vcat [text (show id) <+> text "="
-                                                                      <+> pretty xpr
+                                                                      <+> prettyT xpr
                                                       | (id, xpr) <- zip ids xps
                                                       ])
                                    <$> lkwd "in"
-                                   <$> pretty e
+                                   <$> prettyT e
                                    <$> end
             KNIf     _t v b1 b2 -> kwd "if" <+> prettyId v
-                                   <$> nest 2 (kwd "then" <+> (indent 0 $ pretty b1))
-                                   <$> nest 2 (kwd "else" <+> (indent 0 $ pretty b2))
+                                   <$> nest 2 (kwd "then" <+> (indent 0 $ prettyT b1))
+                                   <$> nest 2 (kwd "else" <+> (indent 0 $ prettyT b2))
                                    <$> end
             KNAlloc _ v rgn _sr -> text "(ref" <+> prettyId v <+> comment (pretty rgn) <> text ")"
             KNDeref _ v         -> prettyId v <> text "^"
             KNStore _ v1 v2     -> text "store" <+> prettyId v1 <+> text "to" <+> prettyId v2
             KNCase _t v bnds    -> align $
-                                       kwd "case" <+> pretty v <+> text "::" <+> pretty (tidType v)
+                                       kwd "case" <+> prettyT v <+> text "::" <+> prettyT (tidType v)
                                        <$> indent 2 (vcat (map prettyCaseArm bnds))
                                        <$> end
             KNHandler _annot _ty _eff action arms mb_xform _resumeid ->
               align $
-                text "handler" <+> pretty action
+                text "handler" <+> prettyT action
                 <$> indent 2 (vcat (map prettyCaseArm arms))
-                <$> (case mb_xform of Nothing -> empty
-                                      Just xf -> kwd "as" <+> pretty xf)
+                <$> (case mb_xform of Nothing -> emptyDoc
+                                      Just xf -> kwd "as" <+> prettyT xf)
                 <$> end
             KNAllocArray {}     -> text $ "KNAllocArray "
-            KNArrayRead  t ai   -> pretty ai <+> pretty t
-            KNArrayPoke  t ai v -> prettyId v <+> text ">^" <+> pretty ai <+> pretty t
+            KNArrayRead  t ai   -> prettyT ai <+> prettyT t
+            KNArrayPoke  t ai v -> prettyId v <+> text ">^" <+> prettyT ai <+> prettyT t
             KNArrayLit   _t _arr _vals -> text "<...array literal...>"
-            KNRecord     _ _ls vs _ -> text "Record/" <> parens (hsep $ punctuate comma (map pretty vs))
-            KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map pretty vs))
-            KNCompiles _r _t e  -> parens (text "prim __COMPILES__" <+> parens (pretty e))
+            KNRecord     _ _ls vs _ -> text "Record/" <> parens (hsep $ punctuate comma (map prettyT vs))
+            KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map prettyT vs))
+            KNCompiles _r _t e  -> parens (text "prim __COMPILES__" <+> parens (prettyT e))
 
 prettyCaseArm (CaseArm pat expr guard _ _) =
-  kwd "of"  <+> fill 20 (pretty pat)
+  kwd "of"  <+> fill 20 (prettyT pat)
             <+> (case guard of
-                  Nothing -> empty
-                  Just g  -> text "if" <+> pretty g)
-            <+> text "->" <+> pretty expr
+                  Nothing -> emptyDoc
+                  Just g  -> text "if" <+> prettyT g)
+            <+> text "->" <+> prettyT expr
 
-instance Pretty FoldStatus where
-    pretty (FoldTooBig      size) = text "too big, size=" <> pretty size
-    pretty (FoldSize sizecounter) = text "size    limit hit" <+> pretty sizecounter
-    pretty (FoldEffort       doc) = text "effort  limit hit" <+> doc
-    pretty FoldOuterPending       = text "outer pending hit"
-    pretty FoldInnerPending       = text "inner pending hit"
-    pretty FoldRecursive          = text "recursiveness    "
-    pretty FoldCallSiteOptOut     = text "call site opt-out"
-    pretty FoldNoBinding          = text "no def for callee"
+instance PrettyT FoldStatus where
+    prettyT (FoldTooBig      size) = text "too big, size=" <> pretty size
+    prettyT (FoldSize sizecounter) = text "size    limit hit" <+> pretty sizecounter
+    prettyT (FoldEffort       doc) = text "effort  limit hit" <+> doc
+    prettyT FoldOuterPending       = text "outer pending hit"
+    prettyT FoldInnerPending       = text "inner pending hit"
+    prettyT FoldRecursive          = text "recursiveness    "
+    prettyT FoldCallSiteOptOut     = text "call site opt-out"
+    prettyT FoldNoBinding          = text "no def for callee"
 
 instance Pretty SizeCounter where
   pretty sc = text $ show sc

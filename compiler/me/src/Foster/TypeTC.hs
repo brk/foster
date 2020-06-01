@@ -16,7 +16,7 @@ import Foster.Config(OrdRef)
 
 import qualified Data.Text as T
 
-import Text.PrettyPrint.ANSI.Leijen
+import Data.Text.Prettyprint.Doc
 
 import Data.UnionFind.IO(Point)
 
@@ -80,8 +80,8 @@ markedLevel = -1 :: Level
 
 
 
-hpre [] = empty
-hpre ds = empty <+> hsep ds
+hpre [] = emptyDoc
+hpre ds = emptyDoc <+> hsep ds
 
 prettyTVs tvs = map (\(tv,k) -> parens (pretty tv <+> text "::" <+> pretty k)) tvs
 
@@ -97,23 +97,23 @@ prettyFuncProcComment cs =
     UniConst FT_Func -> text ""
     _ -> text " /*" <> text (show cs) <> text "*/ "
 
-instance Pretty TypeTC where
-    pretty x = case x of
+instance PrettyT TypeTC where
+    prettyT x = case x of
         PrimIntTC          size         -> pretty size
         TyConTC nam                     -> text nam
-        TyAppTC con            []       -> pretty con
-        TyAppTC con types               -> parens $ pretty con <> hpre (map pretty types)
-        RecordTypeTC labels types      -> text "Record" <> tupled (map (text . T.unpack) labels) <> tupled (map pretty types)
-        TupleTypeTC _kind types         -> tupled $ map pretty types
-        FnTypeTC     s t fx  cc cs _    -> text "(" <> pretty s <> text " ="
-                                                    <> text (uni_briefCC cc) <> text ";fx=" <> pretty fx
-                                                    <> text "> " <> pretty t <> prettyFuncProcComment cs <> text ")"
-        ForAllTC   tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> pretty rho <> text ")"
+        TyAppTC con            []       -> prettyT con
+        TyAppTC con types               -> parens $ prettyT con <> hpre (map prettyT types)
+        RecordTypeTC labels types      -> text "Record" <> tupled (map (text . T.unpack) labels) <> tupled (map prettyT types)
+        TupleTypeTC _kind types         -> tupled $ map prettyT types
+        FnTypeTC     s t fx  cc cs _    -> text "(" <> prettyT s <> text " ="
+                                                    <> text (uni_briefCC cc) <> text ";fx=" <> prettyT fx
+                                                    <> text "> " <> prettyT t <> prettyFuncProcComment cs <> text ")"
+        ForAllTC   tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> prettyT rho <> text ")"
         TyVarTC    tv _mbk              -> text (show tv)
-        MetaTyVarTC m                   -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> string (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
-        RefTypeTC     ty                -> text "(Ref " <> pretty ty <> text ")"
-        ArrayTypeTC   ty                -> text "(Array " <> pretty ty <> text ")"
-        RefinedTypeTC v expr args       -> text "(Refined " <> parens (pretty v <+> text "::" <> pretty (tidType v)) <> text " / " <> pretty args <$> showStructure expr <> text ")"
+        MetaTyVarTC m                   -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> pretty (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
+        RefTypeTC     ty                -> text "(Ref " <> prettyT ty <> text ")"
+        ArrayTypeTC   ty                -> text "(Array " <> prettyT ty <> text ")"
+        RefinedTypeTC v expr args       -> text "(Refined " <> parens (prettyT v <+> text "::" <> prettyT (tidType v)) <> text " / " <> pretty args <$> showStructure expr <> text ")"
 
 instance Show TypeTC where
     show x = case x of
@@ -128,7 +128,7 @@ instance Show TypeTC where
         TyVarTC     tv _mbk    -> show tv
         ArrayTypeTC ty         -> "(Array " ++ show ty ++ ")"
         RefTypeTC   ty         -> "(Ptr " ++ show ty ++ ")"
-        MetaTyVarTC _          -> "(MetaTyVar" ++ show (pretty x) ++ ")"
+        MetaTyVarTC _          -> "(MetaTyVar" ++ show (prettyT x) ++ ")"
         RefinedTypeTC v _  _   -> "(RefinedTypeTC " ++ show v ++ ")"
 
 boolTypeTC = PrimIntTC I1

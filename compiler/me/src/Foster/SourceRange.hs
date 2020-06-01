@@ -12,8 +12,9 @@ import Data.List as List(replicate, intersperse)
 import Data.Sequence as Seq(Seq, length, index, (><))
 import qualified Data.Text as T
 
-import Text.PrettyPrint.ANSI.Leijen
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
+import Data.Text.Prettyprint.Doc
+import qualified Data.Text.Prettyprint.Doc as PP
+import Data.Text.Prettyprint.Doc.Render.Terminal (AnsiStyle)
 
 data SourceLines = SourceLines !(Seq T.Text)
 
@@ -52,7 +53,11 @@ rangeUnions defaultRange allRanges = rsp defaultRange [r | r@(SourceRange _ _ _ 
 
 appendSourceLines (SourceLines s1) (SourceLines s2) = SourceLines (s1 >< s2)
 
-sourceLineDoc :: SourceLines -> Int -> Doc
+-- For (temporary) compatibility with ansi-wl-pprint
+text :: String -> Doc AnsiStyle
+text s = pretty s
+
+sourceLineDoc :: SourceLines -> Int -> Doc AnsiStyle
 sourceLineDoc (SourceLines seq) n =
     if n < 0 || Seq.length seq <= n
         then text $ "<no line " ++ show n ++ " of "
@@ -66,13 +71,13 @@ sourceLine (SourceLines seq) n =
                          ++ (show $ Seq.length seq) ++ ">"
         else (T.unpack $ Seq.index seq n)
 
-sourceLineNumbered :: SourceLines -> Int -> Doc
+sourceLineNumbered :: SourceLines -> Int -> Doc AnsiStyle
 sourceLineNumbered (SourceLines seq) n =
     fill 8 (pretty (n + 1) <> text ":") <> text (T.unpack $ Seq.index seq n)
 
-lineNumberPadding = fill 8 PP.empty
+lineNumberPadding = fill 8 PP.emptyDoc
 
-prettyWithLineNumbers :: SourceRange -> Doc
+prettyWithLineNumbers :: SourceRange -> Doc AnsiStyle
 prettyWithLineNumbers (MissingSourceRange s) = text $ "<missing range: " ++ s ++ ">"
 prettyWithLineNumbers (SourceRange bline bcol eline ecol lines _filepath) =
         line <> showSourceLinesNumbered bline bcol eline ecol lines <> line
@@ -80,19 +85,19 @@ prettyWithLineNumbers (SourceRange bline bcol eline ecol lines _filepath) =
 showSourceRange :: SourceRange -> String
 showSourceRange sr = show (showSourceRangeDoc sr)
 
-showSourceRangeDoc :: SourceRange -> Doc
+showSourceRangeDoc :: SourceRange -> Doc AnsiStyle
 showSourceRangeDoc (MissingSourceRange s) = text "<missing range: " <> text s <> text ">"
 showSourceRangeDoc (SourceRange bline bcol eline ecol lines _filepath) =
          line <> showSourceLinesDoc bline bcol eline ecol lines <> line
 
-prettySourceRangeInfo :: SourceRange -> Doc
+prettySourceRangeInfo :: SourceRange -> Doc AnsiStyle
 prettySourceRangeInfo (MissingSourceRange s) = text $ "<missing range: " ++ s ++ ">"
 prettySourceRangeInfo (SourceRange bline bcol _eline _ecol _lines mb_filepath) =
   let path = case mb_filepath of Nothing -> "<missing source file path>"
                                  Just fp -> fp in
   text path <> text ":" <> pretty (bline + 1) <> text ":" <> pretty bcol
 
-highlightFirstLineDoc :: SourceRange -> Doc
+highlightFirstLineDoc :: SourceRange -> Doc AnsiStyle
 highlightFirstLineDoc (MissingSourceRange s) = text $ "<missing range: " ++ s ++ ">"
 highlightFirstLineDoc (SourceRange bline bcol eline ecol lines _filepath) =
     line <> highlightLineDoc bline bcol fcol lines <> line
@@ -136,11 +141,11 @@ highlightLineRange bcol ecol =
         then ""
         else (List.replicate bcol ' ') ++ (List.replicate len '~')
 
-highlightLineRangeDoc :: Int -> Int -> Doc
+highlightLineRangeDoc :: Int -> Int -> Doc AnsiStyle
 highlightLineRangeDoc bcol ecol =
     let len = ecol - bcol in
     if len <= 0
-        then empty
+        then PP.emptyDoc
         else text (List.replicate bcol ' ') <> text (List.replicate len '~')
 
 reprSourceRange (MissingSourceRange s) = text "(MissingSourceRange " <> text s <> text ")"

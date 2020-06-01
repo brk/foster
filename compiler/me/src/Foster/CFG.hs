@@ -41,7 +41,9 @@ import Compiler.Hoopl(UniqueMonad, CheckpointMonad, Checkpoint, HooplNode(..), L
                       postorder_dfs, blockSplit, emptyClosedGraph, foldGraphNodes, foldBlockNodesF,
                       blockGraph)
 import qualified Compiler.Hoopl as H((<*>))
-import Text.PrettyPrint.ANSI.Leijen
+
+import Data.Text.Prettyprint.Doc
+import Data.Text.Prettyprint.Doc.Render.Terminal
 
 import qualified Data.Text as T
 import qualified Data.Set as Set
@@ -92,90 +94,90 @@ type BlockId = (T.Text, Label)
 
 comment d = text "/*" <+> d <+> text "*/"
 
-prettyTypedVar (TypedId t i) = prettyIdent i <+> text "::" <+> pretty t
+prettyTypedVar (TypedId t i) = prettyIdent i <+> text "::" <+> prettyT t
 
-showTyped :: Doc -> MonoType -> Doc
-showTyped d t = parens (d <+> text "::" <+> pretty t)
+showTyped :: Doc AnsiStyle -> MonoType -> Doc AnsiStyle
+showTyped d t = parens (d <+> text "::" <+> prettyT t)
 
 fnFreeIds :: (Fn RecStatus BasicBlockGraph MonoType) -> [MoVar]
 fnFreeIds fn = freeTypedIds fn
 
-prettyCFFn :: Fn RecStatus BasicBlockGraph MonoType -> Doc
+prettyCFFn :: Fn RecStatus BasicBlockGraph MonoType -> Doc AnsiStyle
 prettyCFFn fn = group (lbrace <+>
-                         (align (vcat (map (\v -> showTyped (pretty v) (tidType v) <+> text "=>")
+                         (align (vcat (map (\v -> showTyped (prettyT v) (tidType v) <+> text "=>")
                                 (fnVars fn))))
-                    <$> indent 4 (pretty (fnBody fn))
+                    <$> indent 4 (prettyT (fnBody fn))
                     <$> rbrace)
                      <+> text "free-ids" <+> text (show (map prettyTypedVar (fnFreeIds fn)))
                      <$> text "::" <+> prettyTypedVar (fnVar fn)
 
-instance Pretty Label where pretty l = text (show l)
+instance PrettyT Label where prettyT l = text (show l)
 
-instance Pretty BasicBlock where
-  pretty bb = foldBlockNodesF prettyInsn bb empty
+instance PrettyT BasicBlock where
+  prettyT bb = foldBlockNodesF prettyInsn bb emptyDoc
 
-instance Pretty (Graph Insn C C) where
-  pretty bg = foldGraphNodes  prettyInsn bg empty
+instance PrettyT (Graph Insn C C) where
+  prettyT bg = foldGraphNodes  prettyInsn bg emptyDoc
 
-instance Pretty (Graph Insn O O) where
-  pretty bg = foldGraphNodes  prettyInsn bg empty
+instance PrettyT (Graph Insn O O) where
+  prettyT bg = foldGraphNodes  prettyInsn bg emptyDoc
 
-prettyInsn :: Insn e x -> Doc -> Doc
-prettyInsn i d = d <$> pretty i
+prettyInsn :: Insn e x -> Doc AnsiStyle -> Doc AnsiStyle
+prettyInsn i d = d <$> prettyT i
 
 prettyBlockId (b,l) = text (T.unpack b) <> text "." <> text (show l)
 
-instance Pretty (Insn e x) where
-  pretty (ILabel   bentry     ) = line <> prettyBlockId (fst bentry) <+> list (map pretty (snd bentry))
-  pretty (ILetVal  id  letable) = indent 4 (text "let" <+> text (show id) <+> text "="
-                                                       <+> pretty letable)
-  pretty (ILetFuns ids fns    ) = let recfun = if length ids == 1 then "fun" else "rec" in
+instance PrettyT (Insn e x) where
+  prettyT (ILabel   bentry     ) = line <> prettyBlockId (fst bentry) <+> list (map prettyT (snd bentry))
+  prettyT (ILetVal  id  letable) = indent 4 (text "let" <+> text (show id) <+> text "="
+                                                       <+> prettyT letable)
+  prettyT (ILetFuns ids fns    ) = let recfun = if length ids == 1 then "fun" else "rec" in
                                   indent 4 (align $
-                                   vcat [text recfun <+> text (show id) <+> text "=" <+> pretty fn
+                                   vcat [text recfun <+> text (show id) <+> text "=" <+> prettyT fn
                                         | (id,fn) <- zip ids fns])
-  pretty (ILast    cf         ) = pretty cf
+  prettyT (ILast    cf         ) = prettyT cf
 
-instance Pretty CFLast where
-  pretty (CFCont bid     vs) = text "cont" <+> prettyBlockId bid <+>              list (map pretty vs)
-  pretty (CFCase v arms)     = align $
-                               text "case" <+> pretty v <$> indent 2
-                                  (vcat [ text "of" <+> fill 20 (pretty pat)
+instance PrettyT CFLast where
+  prettyT (CFCont bid     vs) = text "cont" <+> prettyBlockId bid <+>              list (map prettyT vs)
+  prettyT (CFCase v arms)     = align $
+                               text "case" <+> prettyT v <$> indent 2
+                                  (vcat [ text "of" <+> fill 20 (prettyT pat)
                                                     <+> (case guard of
-                                                           Nothing -> empty
+                                                           Nothing -> emptyDoc
                                                            Just g  -> text "if" <+> prettyBlockId g)
                                                     <+> text "->" <+> prettyBlockId bid
                                         | (CaseArm pat bid guard _ _) <- arms
                                         ])
 
-instance Pretty t => Pretty (Letable t) where
-  pretty l =
+instance PrettyT t => PrettyT (Letable t) where
+  prettyT l =
     case l of
-      ILLiteral   _ lit     -> pretty lit
+      ILLiteral   _ lit     -> prettyT lit
       ILTuple _knd vs _asrc -> (if _knd == KindAnySizeType then text "#" else text "") <>
-                                 parens (hsep $ punctuate comma (map pretty vs))
-      ILKillProcess t m     -> text ("prim KillProcess " ++ show m ++ " :: ") <> pretty t
+                                 parens (hsep $ punctuate comma (map prettyT vs))
+      ILKillProcess t m     -> text ("prim KillProcess " ++ show m ++ " :: ") <> prettyT t
       ILOccurrence  _ v occ -> prettyOccurrence v occ
-      ILCallPrim  _ p vs    -> (text "prim" <+> pretty p <+> hsep (map prettyId vs))
-      ILCall      _ v vs    -> pretty v <+> hsep (map pretty vs)
+      ILCallPrim  _ p vs    -> (text "prim" <+> prettyT p <+> hsep (map prettyId vs))
+      ILCall      _ v vs    -> prettyT v <+> hsep (map prettyT vs)
       ILAppCtor   _ (c,r) vs _sr -> (parens (text (ctorCtorName c)
                                         <>  text "~" <> text (show r)
                                         <+> hsep (map prettyId vs)))
-      ILAlloc     v rgn _sr -> text "(ref" <+> pretty v <+> comment (pretty rgn) <> text ")"
-      ILDeref     _ v       -> pretty v <> text "^"
-      ILStore     v1 v2     -> text "store" <+> pretty v1 <+> text "to" <+> pretty v2
+      ILAlloc     v rgn _sr -> text "(ref" <+> prettyT v <+> comment (pretty rgn) <> text ")"
+      ILDeref     _ v       -> prettyT v <> text "^"
+      ILStore     v1 v2     -> text "store" <+> prettyT v1 <+> text "to" <+> prettyT v2
       ILAllocArray _ _v _ _ _sr -> text $ "ILAllocArray..."
       ILArrayRead  _t (ArrayIndex v1 v2 _rng _s)  -> text "ILArrayRead" <+> prettyId v1 <> text "[" <> prettyId v2 <> text "]"
       ILArrayPoke  (ArrayIndex _v1 _v2 _rng _s) _v3 -> text $ "ILArrayPoke..."
       ILArrayLit _ _v _vals -> text $ "ILArrayLit..."
-      ILBitcast   t v       -> text "bitcast " <+> prettyTypedVar v <+> text "to" <+> pretty t
+      ILBitcast   t v       -> text "bitcast " <+> prettyTypedVar v <+> text "to" <+> prettyT t
       ILAllocate _info _sr  -> text "allocate ..." -- <+> pretty (allocType info)
 
-instance Pretty BasicBlockGraph where
- pretty bbg =
+instance PrettyT BasicBlockGraph where
+ prettyT bbg =
          (indent 4 (text "ret k =" <+> prettyBlockId (bbgRetK bbg)
                 <$> text "entry =" <+> prettyBlockId (fst $ bbgEntry bbg)
                 <$> text "------------------------------"))
-          <> pretty (bbgBody bbg)
+          <> prettyT (bbgBody bbg)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

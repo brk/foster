@@ -38,7 +38,8 @@ import Compiler.Hoopl(UniqueMonad(..), C, O, freshLabel, intToUnique,
                       blockGraph, blockJoin, blockFromList, firstNode)
 
 import Prelude hiding ((<$>))
-import Text.PrettyPrint.ANSI.Leijen
+import Data.Text.Prettyprint.Doc
+import Data.Text.Prettyprint.Doc.Render.Terminal
 
 -- The "M" in MKNExpr stands for Mutable.
 -- This stage implements a mutable graphical program representation
@@ -59,8 +60,8 @@ data FreeOccPayload x = FOP {
 instance Show t => Show (MKBound t) where
     show (MKBound v _) = show v
 
-instance Pretty t => Pretty (MKBound t) where
-    pretty (MKBound v _) = pretty v
+instance PrettyT t => PrettyT (MKBound t) where
+    prettyT (MKBound v _) = prettyT v
 
 instance Eq (MKBound t) where
   (==)    (MKBound _ r1) (MKBound _ r2) = (==)    r1 r2
@@ -101,7 +102,7 @@ _boundUniq (MKBound _ r) = ordRefUniq r
              f2---f3---x2
 -}
 
-substVarForBound :: Pretty t => (FreeOcc t, MKBound t) -> Compiled ()
+substVarForBound :: PrettyT t => (FreeOcc t, MKBound t) -> Compiled ()
 substVarForBound (fox, MKBound _ r) = do
   mb_fo <- readOrdRef r
   case mb_fo of
@@ -212,7 +213,7 @@ dlcMerge d1 d2 = do
 
 -- Wrapper around dlcIsSingleton, which verifies that eliminating
 -- bitcasts still results in a singleton occurrence.
-freeOccIsSingleton :: Pretty t => FreeOcc t -> Compiled Bool
+freeOccIsSingleton :: PrettyT t => FreeOcc t -> Compiled Bool
 freeOccIsSingleton fo = do
   estimate <- dlcIsSingleton fo
   if estimate
@@ -318,7 +319,7 @@ type MKBoundVar t = MKBound t
 data ActiveLinkStatus ty = ActiveSubterm (Subterm ty)
                          | TermIsDead
 
-getActiveLinkFor :: Pretty ty => MKTerm ty -> Compiled (ActiveLinkStatus ty)
+getActiveLinkFor :: PrettyT ty => MKTerm ty -> Compiled (ActiveLinkStatus ty)
 getActiveLinkFor term = do
   let isLinkToOurTerm link = do
         mb_term' <- readOrdRef link
@@ -569,7 +570,7 @@ contApply (CC_Base (fn, _)) v' = fn v'
 
 mkOfKNMod kn mainBinder = do
   lift $ whenDumpIR "mono-structure" $ do
-    liftIO $ putDocLn $ pretty kn
+    liftIO $ putDocLn $ prettyT kn
     liftIO $ putDocLn $ showStructure kn
   mkOfKN_Base kn (CC_Tail mainBinder)
 
@@ -688,7 +689,7 @@ mkOfKN_Base expr k = do
                       return $ MKCall nu  ty v' vs' kv ca
 
                 CC_Base kf -> do
-                  liftIO $ putDocLn $ text "saw non-tail call of " <> pretty v
+                  liftIO $ putDocLn $ text "saw non-tail call of " <> prettyT v
                   genContinuation ".clco" ".clcx" ty kf nu $ \nu' jb -> do
                       kv <- lift $ mkFreeOccForBinder jb
                       return $ MKCall nu'  ty v' vs' kv ca
@@ -696,10 +697,10 @@ mkOfKN_Base expr k = do
         KNLetRec  xs es rest -> do 
             let vs = map (\(x,e) -> (TypedId (typeKN e) x)) (zip xs es)
             m1 <- get
-            do dbgDoc $ text "m1: " <> pretty (Map.toList m1)
+            do dbgDoc $ text "m1: " <> prettyT (Map.toList m1)
             xs' <- mapM mkBinder vs
             do m2 <- get
-               dbgDoc $ text "m2: " <> pretty (Map.toList m2)
+               dbgDoc $ text "m2: " <> prettyT (Map.toList m2)
             --put $ extend m (map tidIdent vs) xs'
             -- TODO reconsider k
             ts <- mapM (\e -> mkOfKN_Base e k) es
@@ -844,7 +845,7 @@ genContinuation contName contBindName ty_x (kf, resTy) nu restgen = do
     let rv = MKLetCont nu [known] rest'
     lift $ backpatchT rv [rest']
 
-prettyRootTerm :: MKTerm ty -> Doc
+prettyRootTerm :: MKTerm ty -> Doc AnsiStyle
 prettyRootTerm term =
   case term of
     MKLetVal      {} -> text "MKLetVal    "
@@ -963,7 +964,7 @@ knOfMKFn mb_retCont (MKFn v vs mb_cont expr isrec annot _unrollCount) = do
                   readLink "knOfMKFn" expr >>= knOfMK rc
       return $ Fn (qb v) (map qb vs) expr' isrec annot
 
-knOfMKExpr :: Pretty t =>
+knOfMKExpr :: PrettyT t =>
               MaybeCont t -> MKExpr t -> Compiled (KNExpr' RecStatus t)
 knOfMKExpr mb_retCont expr = do
   let q  subterm = readLink "knOfMK" subterm >>= knOfMK mb_retCont
@@ -999,7 +1000,7 @@ knOfMKExpr mb_retCont expr = do
     MKCompiles    _ res ty body -> q body >>= \body' -> return $ KNCompiles res ty body'
     MKTyApp       _ ty v arg_tys -> qv v >>= \v' -> return $ KNTyApp ty v' arg_tys
 
-knOfMK :: Pretty t =>
+knOfMK :: PrettyT t =>
           MaybeCont t -> MKTerm t -> Compiled (KNExpr' RecStatus t)
 knOfMK mb_retCont term0 = do
   let q  subterm = readLink "knOfMK" subterm >>= knOfMK mb_retCont
@@ -1094,7 +1095,7 @@ isTextPrim _ = False
 -- For example, to remove a dead function binding we must also
 -- collect and kill the free variable occurrences mentioned within the
 -- body, which may in turn trigger further dead-binding elimination.
-collectRedexes :: (Pretty t) =>
+collectRedexes :: (PrettyT t) =>
       MKNInlineState t -> Subterm t -> Compiled ()
 collectRedexes work sbtm = go sbtm
  where
@@ -1160,7 +1161,7 @@ collectRedexes work sbtm = go sbtm
                             dbgDoc $ text $ "markFunBind killing dead fn binding " ++ show (tidIdent $ boundVar x)
                             writeOrdRef fn Nothing
                           else do
-                            dbgDoc $ text "adding fn ordref # " <> pretty (ordRefUniq fn) <+> text " :: " <> pretty (boundVar (mkfnVar mkfn))
+                            dbgDoc $ text "adding fn ordref # " <> pretty (ordRefUniq fn) <+> text " :: " <> prettyT (boundVar (mkfnVar mkfn))
                             liftIO $ modIORef' funbindsref (\m -> Map.insert x fn m)
                             liftIO $ modIORef' fundefsref  (\m -> Map.insert x subterm m)
     
@@ -1194,7 +1195,7 @@ data RedexSituation t =
      | CallOfDonatableFunction (MKFn (Subterm t) t) [(Int, FreeOcc t)]
      | SomethingElse           (MKFn (Subterm t) t) (Link (MKFn (Subterm t) t))
 
-classifyRedex :: (Pretty t)
+classifyRedex :: (PrettyT t)
               => FreeOcc t -> [FreeOcc t]
               -> Map (MKBoundVar t) (Link (MKFn (Subterm t) t))
               -> Map (MKBoundVar t) (MKBoundVar t)
@@ -1248,7 +1249,7 @@ classifyRedex' fnbinder (Just fn) (Just fnlink) args knownFns = do
       if null donations || mkfnUnrollCount fn > 0
         then do ccWhen (return $ null donations) $ do
                   noccs <- dlcCount fnbinder
-                  dbgDoc $ yellow (pretty fnbinder) <> text "      not donatable because no donations; #occs "
+                  dbgDoc $ yellow (prettyT fnbinder) <> text "      not donatable because no donations; #occs "
                                 <> pretty noccs <> text "; rec? " <> pretty (mkfnIsRec fn)
                 ccWhen (return $ mkfnUnrollCount fn > 0) $ do
                   dbgDoc $ text "  not donatable because unroll count > 0"
@@ -1259,7 +1260,7 @@ classifyRedex' fnbinder (Just fn) (Just fnlink) args knownFns = do
 -- {{{
 type MKRenamed t = WithBinders t
 
-runCopyMKFn :: (Pretty t, Show t, AlphaRenamish t RecStatus)
+runCopyMKFn :: (PrettyT t, Show t, AlphaRenamish t RecStatus)
             => MKFn (Subterm t) t -> Map Ident (MKBoundVar t)
             -> [(Int, FreeOcc t)]
             -> Compiled (MKFn (Subterm t) t)
@@ -1300,7 +1301,7 @@ copyFreeOcc fv = do
     Nothing     -> lift $ mkFreeOccForBinder b
 
 -- TODO increment unroll count?
-copyMKFn :: (Pretty t, Show t, AlphaRenamish t RecStatus)
+copyMKFn :: (PrettyT t, Show t, AlphaRenamish t RecStatus)
          => MKFn (Subterm t) t
          -> [(Int, FreeOcc t)]
          -> MKRenamed t (MKFn (Subterm t) t)
@@ -1327,7 +1328,7 @@ copyMKFn fn donations = do
   return fn'
 
 -- Returns a Subexpr with an empty parent link.
-copyMKExpr :: (Pretty t, Show t, AlphaRenamish t RecStatus)
+copyMKExpr :: (PrettyT t, Show t, AlphaRenamish t RecStatus)
            => MKExpr t -> MKRenamed t (Subexpr t, MKExpr t)
 copyMKExpr expr = do
   let qv = copyFreeOcc
@@ -1370,7 +1371,7 @@ copyMKExpr expr = do
     MKTyApp       _ ty v arg_tys -> qv v >>= \v' ->
                                      withLinkE $ \u -> return $ MKTyApp u ty v' arg_tys
 
-copyMKTerm :: (Pretty t, Show t, AlphaRenamish t RecStatus)
+copyMKTerm :: (PrettyT t, Show t, AlphaRenamish t RecStatus)
            => MKTerm t -> MKRenamed t (Subterm t)
 copyMKTerm term = do
   let q subterm = do tm <- lift $ readLink "copyMKTerm" subterm
@@ -1473,16 +1474,16 @@ processDeadBindings work = do
       liftIO $ writeIORef bindingWorklistRef w'
       expBindMap <- liftIO $ readIORef (mknKnownExprs work)
       case Map.lookup bv expBindMap of
-        Nothing -> do dbgDoc $ text "processDeadBindings: unable to find expr for dead bound var " <> pretty bv
+        Nothing -> do dbgDoc $ text "processDeadBindings: unable to find expr for dead bound var " <> prettyT bv
                       return ()
         Just exprLink -> do
             e <- readLink "processDeadBindings" exprLink
             let freeOccs = freeVarsE e
             if canRemoveIfDead e && not (null freeOccs)
               then do dbgDoc $ yellow (text "killing " <> pretty (length freeOccs) <>
-                                        text " occurrences in dead expr bound to ") <> red (pretty bv)
+                                        text " occurrences in dead expr bound to ") <> red (prettyT bv)
                       kn <- knOfMKExpr NoCont e
-                      dbgDoc $ indent 8 (pretty kn)
+                      dbgDoc $ indent 8 (prettyT kn)
                       mapM_ (killOccurrence work) freeOccs
               else return ()
       processDeadBindings work
@@ -1589,7 +1590,7 @@ mknInline subterm mainCont mb_gas = do
                     return () -- The top-most function binding will be parentless; don't print about it though.
                   _ -> do
                     do redex <- knOfMK (YesCont mainCont) mredex
-                       dbgDoc $ red (text "skipping parentless redex: ") <+> pretty redex
+                       dbgDoc $ red (text "skipping parentless redex: ") <+> prettyT redex
                   
                 go gas
 
@@ -1626,7 +1627,7 @@ mknInline subterm mainCont mb_gas = do
                         CallOfSingletonFunction fn -> do
                           ccWhen ccVerbose $ do
                               redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
-                              dbgDoc $ text "CallOfSingletonFunction starting with: " <+> align (pretty redex)
+                              dbgDoc $ text "CallOfSingletonFunction starting with: " <+> align (prettyT redex)
 
                           ccWhen ccVerbose $ do
                               v <- freeBinder callee
@@ -1644,7 +1645,7 @@ mknInline subterm mainCont mb_gas = do
 
                         CallOfDonatableFunction fn donations -> do
                           do  redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
-                              dbgDoc $ text "CallOfDonatableFunction: " <+> pretty redex
+                              dbgDoc $ text "CallOfDonatableFunction: " <+> prettyT redex
                           flags <- gets ccFlagVals
                           if getInliningDonate flags
                             then do
@@ -1654,7 +1655,7 @@ mknInline subterm mainCont mb_gas = do
                                   dbgDoc $ blue (text "    v: ") <+> pretty (tidIdent $ boundVar v)
                                   dbgDoc $ green (text "copying and inlining DF ") <+> pretty (tidIdent $ boundVar v)
                                   --kn1 <- knOfMKFn (mbContOf $ mkfnCont fn) fn
-                                  --dbgDoc $ text $ "pre-copy fn is " ++ show (pretty kn1)
+                                  --dbgDoc $ text $ "pre-copy fn is " ++ show (prettyT kn1)
                                   return ()
 
                               -- TODO we should really replace the function later on, after we've codegenned the call.
@@ -1693,7 +1694,7 @@ mknInline subterm mainCont mb_gas = do
                                             knfn <- knOfMKFn (mbContOf $ mkfnCont fn) $ fn
 
                                             ccWhen ccVerbose $ do
-                                                dbgDoc $ text $ "post-copy fn is " ++ show (pretty knfn)
+                                                dbgDoc $ text "post-copy fn is " <> (prettyT knfn)
 
                                             let sr = MissingSourceRange "CallOfDonatableFunction"
                                             kn'0 <- knLoopHeaders' (KNLetFuns [tidIdent $ fnVar knfn] [knfn] (KNVar $ fnVar knfn) sr)
@@ -1704,11 +1705,11 @@ mknInline subterm mainCont mb_gas = do
                                                         ccFreshId (txt `T.append` T.pack "_ren_")
                                                      _ -> return id'0 -- already renamed!
                                             knfn' <- alphaRenameMonoWithState knfn'0 (Map.fromList [(id'0, id'1)])
-                                            dbgDoc $ dullgreen $ text "loop-headered+renamed fn " <> prettyIdent id'1 <> text (" is " ++ show (pretty knfn'))
+                                            dbgDoc $ dullgreen $ text "loop-headered+renamed fn " <> prettyIdent id'1 <> text (" is " ++ show (prettyT knfn'))
 
                                             let unrolled = mkfnUnrollCount fn + 1
                                                 knownState = [(tidIdent $ boundVar b, b) | (b,_) <- Map.toList knownFns]
-                                            dbgDoc $ text "   known state: " <> pretty [(id, b) | (id, b) <- knownState]
+                                            --dbgDoc $ text "   known state: " <> prettyT [(id, b) | (id, b) <- knownState]
                                             (_, fn'') <- evalStateT (do
                                                             --bv1 <- genBinder (T.unpack $ identPrefix id'1) (tidType $ fnVar knfn'0)
                                                             --m <- get
@@ -1761,13 +1762,13 @@ mknInline subterm mainCont mb_gas = do
 
                         SomethingElse _fn fnlink -> do
                           do  redex <- knOfMK (mbContOf $ mkfnCont _fn) mredex
-                              dbgDoc $ text "SomethingElse (inlineNorF): " <+> align (pretty redex)
+                              dbgDoc $ text "SomethingElse (inlineNorF): " <+> align (prettyT redex)
                           if shouldInlineRedex mredex _fn ca
                             then do
                                   do  v <- freeBinder callee
                                       dbgDoc $ green (text "copying and inlining SE ") <+> pretty (tidIdent $ boundVar v)
                                       --kn1 <- knOfMK (YesCont mainCont) term
-                                      --dbgDoc $ text $ "knOfMK, term is " ++ show (pretty kn1)
+                                      --dbgDoc $ text $ "knOfMK, term is " ++ show (prettyT kn1)
                                   fn' <- runCopyMKFn _fn Map.empty []
                                   newbody <- betaReduceOnlyCall fn' args kv   work
                                   replaceActiveSubtermWith newbody
@@ -1789,7 +1790,7 @@ mknInline subterm mainCont mb_gas = do
                               if T.pack ".fret" `T.isPrefixOf` (identPrefix $ tidIdent $ boundVar cb) 
                                 then return ()
                                 else do redex <- knOfMK (YesCont mainCont) mredex
-                                        dbgDoc $ red (text "CallOfUnknownCont: ") <+> pretty redex
+                                        dbgDoc $ red (text "CallOfUnknownCont: ") <+> prettyT redex
                           return ()
 
                         CallOfNonInlineableFunction _fn _fnlink -> do
@@ -1798,7 +1799,7 @@ mknInline subterm mainCont mb_gas = do
 
                         CallOfSingletonFunction fn -> do
                           do  redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
-                              dbgDoc $ text "CallOfSingletonCont: " <+> pretty redex
+                              dbgDoc $ text "CallOfSingletonCont: " <+> prettyT redex
                               dbgDoc $ text "      #args: " <> pretty (length args)
                           
                               mapM_ (\arg -> do b <- freeBinder arg
@@ -1839,7 +1840,7 @@ mknInline subterm mainCont mb_gas = do
 
                         CallOfDonatableFunction fn _donations -> do
                           do  redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
-                              dbgDoc $ text "CallOfDonatableCont: " <+> pretty redex
+                              dbgDoc $ text "CallOfDonatableCont: " <+> prettyT redex
                           return ()
                           {-
                           flags <- gets ccFlagVals
@@ -1855,7 +1856,7 @@ mknInline subterm mainCont mb_gas = do
                             -}
                         SomethingElse _fn _fnlink -> do
                           do  redex <- knOfMK (mbContOf $ mkfnCont _fn) mredex
-                              dbgIf dbgCont $ text "SomethingElseC: " <+> pretty redex
+                              dbgIf dbgCont $ text "SomethingElseC: " <+> prettyT redex
                           if shouldInlineRedex mredex _fn CA_None
                             then do
                                   dbgIf dbgCont $ text "skipping inlining continuation redex...?"
@@ -1885,7 +1886,7 @@ mknInline subterm mainCont mb_gas = do
                                                       return ()
                         HadMultipleContinuations (tailconts, nontailconts) -> do
                             dbgIf dbgCont $ red (text "       had too many continuations")
-                            dbgIf dbgCont $ red (text "       " <> pretty (tailconts, nontailconts))
+                            dbgIf dbgCont $ red (text "       " <> prettyT (tailconts, nontailconts))
                             return ()
                         NoSupportForMultiBindingsYet -> do  dbgIf dbgCont $ red (text "skipping considering " <> pretty (map (tidIdent.boundVar.fst) knowns) <> text " for contification")
                                                             return ()
@@ -1909,7 +1910,7 @@ mknInline subterm mainCont mb_gas = do
                       expBindsMap <- liftIO $ readIORef (mknKnownExprs work)
                       case Map.lookup x expBindsMap of
                          Nothing -> do
-                           dbgDoc $ text "skipping case expression because scrutinee is unknown for " <> pretty x
+                           dbgDoc $ text "skipping case expression because scrutinee is unknown for " <> prettyT x
                            go gas
                          Just _scrutLink -> do
                            findMatchingArm replaceActiveSubtermWith ty v arms (\v -> do
@@ -1927,7 +1928,7 @@ mknInline subterm mainCont mb_gas = do
                       ccWhen ccVerbose $ do
                           kn <- knOfMK (YesCont mainCont) mredex
                           dbgDoc $ text "skipping non-call/cont redex " <> prettyRootTerm mredex
-                                 <$> indent 4 (pretty kn)
+                                 <$> indent 4 (prettyT kn)
                       go gas
 
     go origGas
@@ -1940,9 +1941,9 @@ enqueueKnownOccurrences work fn args = do
     bv <- freeBinder arg
     if Map.member bv expBindMap
       then do occs <- collectOccurrences fnbv
-              dbgDoc $ text "Enqueueing substituted occs for " <> pretty fnbv
+              dbgDoc $ text "Enqueueing substituted occs for " <> prettyT fnbv
               liftIO $ modIORef' (mknPendingSubterms work) (\w -> worklistAddList w $ map freeLink occs)
-      else do dbgDoc $ text "Not enqueueing substituted occs for " <> pretty bv
+      else do dbgDoc $ text "Not enqueueing substituted occs for " <> prettyT bv
               return ()
 
 -- This is like enqueueSubstitutedOccurrences but it doesn't filter on expBindMap.
@@ -1969,7 +1970,7 @@ doContifyWith_part1 cont bv fn occs work = do
     mb_tm <- readOrdRef (freeLink occ)
     case mb_tm of
       Nothing -> do
-        liftIO $ putDocLn $ red (text "WARNING: not contifying call to " <> pretty (boundVar bv) <> text " due to missing occ term")
+        liftIO $ putDocLn $ red (text "WARNING: not contifying call to " <> prettyT (boundVar bv) <> text " due to missing occ term")
         return ()
 
       Just (MKRelocDoms {}) ->
@@ -2315,7 +2316,7 @@ analyzeContifiability knowns knownFns = do
             --      liftIO $ putDocLn $ text "      no term"
             --    Just tm -> do
             --      --do kn <- knOfMK NoCont tm
-            --      --   liftIO $ putDocLn $ text "      " <> pretty kn
+            --      --   liftIO $ putDocLn $ text "      " <> prettyT kn
             --      --parentFn <- findParentFn tm
             --      --liftIO $ putDocLn $ text "      parent: " <> pretty (boundVar $ mkfnVar parentFn)
             --  ) occs
@@ -2360,8 +2361,8 @@ analyzeContifiability knowns knownFns = do
             ) (zip3 occss bvs mb_fns)
 
           let (tailcontss, nontailcontss) = unzip splitContss
-          liftIO $ putDocLn $ text "  tails:    " <> pretty (removeDuplicates (concat tailcontss))
-          liftIO $ putDocLn $ text "  nontails: " <> pretty (removeDuplicates (concat nontailcontss))
+          liftIO $ putDocLn $ text "  tails:    " <> prettyT (removeDuplicates (concat tailcontss))
+          liftIO $ putDocLn $ text "  nontails: " <> prettyT (removeDuplicates (concat nontailcontss))
 
           liftIO $ putDocLn $ text "}}}"
 
@@ -2441,7 +2442,7 @@ contOfCall bv occ = do
   mb_tm <- readOrdRef (freeLink occ)
   case mb_tm of
     Nothing -> do
-        do dbgDoc $ red $ text "contOfCall: free link w/ no term for" <> pretty bv
+        do dbgDoc $ red $ text "contOfCall: free link w/ no term for" <> prettyT bv
         return NonCall
 
     Just tm@(MKCall _ _ty v _vs cont _ca) -> do
@@ -2455,7 +2456,7 @@ contOfCall bv occ = do
                 -- tail call our function, but as of yet we don't track that information.
             do ccWhen ccVerbose $ do
                   p <- prettyTermM tm
-                  dbgDoc $ text "contOfCall: call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 p
+                  dbgDoc $ text "contOfCall: call w/ unknown cont for" <> prettyT bv <> text ":" <> indent 10 p
                return $ HigherOrder
 
     Just (MKCont _ _ cont _vs) -> do
@@ -2473,7 +2474,7 @@ contOfCall bv occ = do
       when dbgCont $ do
         p <- prettyTermM tm
         dbgDoc $ text "contOfCall: non call w/ unknown cont " <> parens (prettyRootTerm tm)
-                         <> text " for " <> yellow (pretty bv) <> text ":" <> indent 10 p
+                         <> text " for " <> yellow (prettyT bv) <> text ":" <> indent 10 p
         --dbgDoc $ indent 10 (showStructure kn)
 
       return NonCall
@@ -2484,7 +2485,7 @@ calleeOfCont occ = do
   mb_tm <- readOrdRef (freeLink occ)
   case mb_tm of
     Nothing -> do
-        do dbgDoc $ red $ text "free link w/ no term for cont " <> pretty bv
+        do dbgDoc $ red $ text "free link w/ no term for cont " <> prettyT bv
         return Nothing
 
     Just (MKCall _ _ty v _vs _cont _ca) -> do
@@ -2494,7 +2495,7 @@ calleeOfCont occ = do
     Just tm -> do
       ccWhen ccVerbose $ do
           p <- prettyTermM tm
-          dbgDoc $ text "calleeOfCont: non call for" <> pretty bv <> text ":" <> indent 10 p
+          dbgDoc $ text "calleeOfCont: non call for" <> prettyT bv <> text ":" <> indent 10 p
       return Nothing
 
 specializeDonatedArgs work fn donations = do
@@ -2548,7 +2549,7 @@ shouldInlineRedex _mredex _fn ca =
     CA_NoInline -> False
     CA_None -> False
 
-replaceWith :: Pretty ty => MKNInlineState ty -> Subterm ty ->
+replaceWith :: PrettyT ty => MKNInlineState ty -> Subterm ty ->
                Subterm ty -> Subterm ty -> Compiled ()
 replaceWith work activeLink poss_indir_target newsubterm = do
   oldterm <- readLink "replaceWith" poss_indir_target
@@ -2556,7 +2557,7 @@ replaceWith work activeLink poss_indir_target newsubterm = do
   replaceTermWith work activeLink oldterm newterm
   writeOrdRef poss_indir_target     (Just newterm)
 
-replaceTermWith :: Pretty ty => MKNInlineState ty -> Subterm ty ->
+replaceTermWith :: PrettyT ty => MKNInlineState ty -> Subterm ty ->
                    MKTerm ty -> MKTerm ty -> Compiled ()
 replaceTermWith work activeLink oldterm newterm = do
   ccWhen ccVerbose $ do
@@ -2572,7 +2573,7 @@ replaceTermWith work activeLink oldterm newterm = do
   mapM_ (\fv -> setFreeLink fv newterm) newoccs
   readOrdRef (parentLinkT oldterm) >>= writeOrdRef (parentLinkT newterm)
 
-killOccurrence :: Pretty ty => MKNInlineState ty ->
+killOccurrence :: PrettyT ty => MKNInlineState ty ->
                   FreeVar ty -> Compiled ()
 killOccurrence work fo = do
     b@(MKBound _v r) <- freeBinder fo -- r :: OrdRef (Maybe (FreeOcc tyx))
@@ -2585,7 +2586,7 @@ killOccurrence work fo = do
        writeOrdRef r Nothing
        liftIO $ modIORef' (mknDeadBindings work) (\w -> worklistAdd w b)
      else do
-       dbgDoc $ text "killing occurrence of " <> pretty b
+       dbgDoc $ text "killing occurrence of " <> prettyT b
        nob <- dlcCount b
        dbgDoc $ text "num occs before: " <> pretty nob
        n <- dlcNext fo
@@ -2613,10 +2614,10 @@ killBinding fo knownFns aliases = do
                     Nothing -> origBinding
                     Just bv -> bv
     ccWhen ccVerbose $ do
-      dbgDoc $ red (text "killing binding for ") <> pretty (boundVar origBinding) <> text " ~~> " <> pretty v
+      dbgDoc $ red (text "killing binding for ") <> prettyT (boundVar origBinding) <> text " ~~> " <> prettyT v
     writeOrdRef r' Nothing
     case Map.lookup binding knownFns of
-        Nothing -> do dbgDoc $ red (text "no killable binding for ") <> pretty v
+        Nothing -> do dbgDoc $ red (text "no killable binding for ") <> prettyT v
                       return ()
         Just r  -> writeOrdRef r Nothing
 
@@ -2646,7 +2647,7 @@ matchArgs donations vs0 =
   in partitionEithers $ match donations (zip [0..] vs0) []
 
 -- Return the args that were not specialized.
-specializeArgs :: (Pretty t) =>
+specializeArgs :: (PrettyT t) =>
                   [(Int, FreeOcc t)]
                -> [MKBoundVar t]
                -> Compiled [MKBoundVar t]
@@ -2655,6 +2656,11 @@ specializeArgs donations vs0 = do
   mapM_ substVarForBound matches
   return vars
 
+betaReduceOnlyCall :: MKFn (Subterm MonoType) MonoType
+                      -> [FreeVar MonoType]
+                      ->  ContVar MonoType
+                      -> MKNInlineState MonoType
+                      -> Compiled (Link (MKTerm MonoType))
 betaReduceOnlyCall fn args kv    work = do
     mapM_ substVarForBound (zip args (mkfnVars fn))
     kvb1 <- freeBinder kv
@@ -2668,13 +2674,13 @@ betaReduceOnlyCall fn args kv    work = do
         substVarForBound (kv, oldret)
 
     kvb2 <- freeBinder kv
-    dbgDoc $ text $ "      betaReduceOnlyCall on " ++ show (pretty (mkfnVar fn))
+    dbgDoc $ text $ "      betaReduceOnlyCall on " ++ show (prettyT (mkfnVar fn))
     if kvb1 /= kvb2
       then do
-        dbgDoc $ text "       kv before: " <> pretty kvb1
-        dbgDoc $ text "       kv after: " <> pretty kvb2
+        dbgDoc $ text "       kv before: " <> prettyT kvb1
+        dbgDoc $ text "       kv after: " <> prettyT kvb2
       else return ()
-    dbgDoc $ text "      fn kv: " <> pretty (mkfnCont fn)
+    dbgDoc $ text "      fn kv: " <> prettyT (mkfnCont fn)
     return $ mkfnBody fn
 
 -- TODO: ok this seems to work, more or less.
@@ -2713,14 +2719,14 @@ pccOfTopTerm uref subterm = do
         case mb_fn of
           Nothing -> do
             lift $ ccWhen ccVerbose $ do
-              dbgDoc $ text "pccOfTopTerm saw nulled-out function link " <> pretty x
+              dbgDoc $ text "pccOfTopTerm saw nulled-out function link " <> prettyT x
             return ()
           Just fn -> do
             {-
             do
               knfn <- lift $ knOfMKFn NoCont fn
               dbgIf dbgFinal $ indent 10 (pretty x)
-              dbgIf dbgFinal $ indent 20 (pretty knfn)
+              dbgIf dbgFinal $ indent 20 (prettyT knfn)
               dbgIf dbgFinal $ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
               dbgIf dbgFinal $ yellow $ pretty (mkfnVar fn)
               -}
@@ -2810,12 +2816,12 @@ cffnOfMKCont :: MKBoundVar MonoType -> MKFn (Subterm MonoType) MonoType -> Block
 cffnOfMKCont cv (MKFn _v vs _ subterm _isrec _annot _unrollCount) = do
   headerBlockId <- blockIdOf cv
   let head = ILabel (headerBlockId, map boundVar vs)
-  dbgDoc $ text "cffnOfMKCont head = " <> pretty head
-  dbgDoc $ text "cffnOfMKCont cv == " <> pretty (boundVar cv)
-  dbgDoc $ text "                ~~ " <> pretty (tidType (boundVar cv))
-  dbgDoc $ text "cffnOfMKCont  v == " <> pretty (boundVar _v)
-  dbgDoc $ text "                ~~ " <> pretty (tidType (boundVar _v))
-  dbgDoc $ text "cffnOfMKCont vs = " <> align (vsep (map (pretty.boundVar) vs))
+  dbgDoc $ text "cffnOfMKCont head = " <> prettyT head
+  dbgDoc $ text "cffnOfMKCont cv == " <> prettyT (boundVar cv)
+  dbgDoc $ text "                ~~ " <> prettyT (tidType (boundVar cv))
+  dbgDoc $ text "cffnOfMKCont  v == " <> prettyT (boundVar _v)
+  dbgDoc $ text "                ~~ " <> prettyT (tidType (boundVar _v))
+  dbgDoc $ text "cffnOfMKCont vs = " <> align (vsep (map (prettyT.boundVar) vs))
 
   -- Walk the term;
   --    accumulate a block body of [Insn O O]
@@ -2933,7 +2939,7 @@ cffnOfMKFn uref (MKFn v vs (Just cont) term isrec annot unrollCount) bv = do
 
   noccsI <- dlcCount v
   noccsE <- dlcCount bv
-  dbgDoc $ blue $ text "converted function " <> pretty v <> text ", type is " <> pretty (tidType (boundVar v))
+  dbgDoc $ blue $ text "converted function " <> prettyT v <> text ", type is " <> prettyT (tidType (boundVar v))
     <+> text "    #occs = " <> pretty (noccsI, noccsE)
   showOccsOfBinder bv
 
@@ -3046,7 +3052,7 @@ matchSeq ty range boundsFor subterm (v, pat) = do
 -- If ``c`` definitely matches one of the patterns ``pj``,
 -- replace the given case subterm by ``ej`` with appropriate substitutions.
 -- 
-findMatchingArm :: Pretty ty =>
+findMatchingArm :: PrettyT ty =>
                    (Subterm ty -> Compiled ()) -> ty
                 ->  FreeVar ty -> [MKCaseArm (Subterm ty) ty]
                 -> (FreeVar ty -> Compiled (Maybe (MKExpr ty)))
@@ -3143,7 +3149,7 @@ prettyLinkM link = do
 
 prettyTermM tm = do
   kn <- knOfMK NoCont tm
-  return $ pretty kn
+  return $ prettyT kn
 
 showOccsOfBinder bv = do
   occs <- dlcToList bv
@@ -3160,13 +3166,13 @@ showOccsOfBinder bv = do
 --      even thought it can't become simply ``f(v2)`` because v1 might not be True.
 -}
 
-dbgDoc :: MonadIO m => Doc -> m ()
+dbgDoc :: MonadIO m => Doc AnsiStyle -> m ()
 dbgDoc d =
   if False
     then liftIO $ putDocLn d
     else return ()
 
-dbgIf :: MonadIO m => Bool -> Doc -> m ()
+dbgIf :: MonadIO m => Bool -> Doc AnsiStyle -> m ()
 dbgIf cond d =
   if cond
     then liftIO $ putDocLn d

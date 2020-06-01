@@ -9,9 +9,8 @@ import Language.Haskell.Exts.Simple(parseFile)
 import qualified Data.Text as T
 import Control.Monad.State(forM_)
 
-import Text.PrettyPrint.ANSI.Leijen((<+>), (<>), (<$>), pretty, text, line,
-                                     hsep, fill, parens, vcat, list, red,
-                                     plain)
+import Data.Text.Prettyprint.Doc((<+>), (<>), pretty, line,
+                                     hsep, fill, parens, vcat, list)
 
 import Foster.Base
 import Foster.ExprAST
@@ -248,7 +247,7 @@ convertHaskellToFoster hspath fosterpath = do
         case match of
           H.Match name pats rhs _mb_binds -> do
             let fn = fnOfLambda (prettyPrint name) pats (expOfRhs rhs) [] True
-            appendFile fosterpath (show $ plain $ prettyTopLevelFn fn)
+            appendFile fosterpath (show $ {-plain $-} prettyTopLevelFn fn)
             appendFile fosterpath "\n\n"
 
           H.InfixMatch {} ->
@@ -258,7 +257,7 @@ convertHaskellToFoster hspath fosterpath = do
         let (name, patss, rhss) = parseMatches matches
         let fn = fnOfMatches (prettyPrint name) patss (map expAndGuardsOfRhs rhss) True
 
-        appendFile fosterpath (show $ plain $ prettyTopLevelFn fn)
+        appendFile fosterpath (show $ {-plain $-} prettyTopLevelFn fn)
         appendFile fosterpath "\n\n"
 
       parseDeclHead dh = go dh []

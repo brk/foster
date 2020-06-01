@@ -68,9 +68,8 @@ import Codec.CBOR.Read (deserialiseFromBytes)
 
 import Text.Printf(printf) -- for toFixed
 import Foster.Output
-import Text.PrettyPrint.ANSI.Leijen((<+>), (<$>), pretty, text, line,
-                                     hsep, fill, parens, vcat, red,
-                                     dullyellow, Doc)
+import Data.Text.Prettyprint.Doc((<+>), pretty, line, hsep, fill, parens, vcat, Doc)
+
 import qualified Criterion.Measurement as Criterion(initializeTime, secs)
 
 {-
@@ -250,7 +249,7 @@ typecheckModule :: Bool -> Bool -> ([Flag], strings)
                 -> Compiled (OutputOr TCRESULT)
 typecheckModule verboseMode pauseOnErrors flagvals modast tcenv0 = do
     liftIO $ when verboseMode $ do
-        putDocLn $ text "module AST decls:" <$> pretty (moduleASTdecls modast)
+        putDocLn $ text "module AST decls:" <$> prettyT (moduleASTdecls modast)
     let dts = moduleASTprimTypes modast ++ moduleASTdataTypes modast
     --let fns = moduleASTfunctions modast
     --let nonfns = moduleASTnonfndefs modast
@@ -491,7 +490,7 @@ typecheckModule verboseMode pauseOnErrors flagvals modast tcenv0 = do
             TyAppTC (TyConTC "Float32") [] -> return ()
             TyAppTC (TyConTC "Float64") [] -> return ()
             m@(MetaTyVarTC _) -> unify m (TyAppTC (TyConTC "Float64") []) []
-            _ -> tcFails [text "Unable to give the type" <+> pretty zt <+>
+            _ -> tcFails [text "Unable to give the type" <+> prettyT zt <+>
                           text "to the numeric constant",
                           highlightFirstLineDoc range]
 
@@ -564,7 +563,7 @@ main = do
            if getFmtOnlyFlag flagVals
              then do
                let WholeProgramAST modules = wholeprog
-               liftIO $ putDocLn (pretty (head modules))
+               liftIO $ putDocLn (prettyT (head modules))
              else
                runCompiler ci_time wholeprog flagVals outfile
 
@@ -628,7 +627,7 @@ runCompiler ci_time wholeprog flagVals outfile = do
                                      mn_time cp_time sc_time nc_time pb_time
                                      (sum (modulesSourceLines wholeprog))
 
-toFixed :: Double -> Doc
+toFixed :: Double -> Doc any
 toFixed f = text $ printf "%.1f" f
 
 {-
@@ -937,16 +936,16 @@ dumpAllPrimitives = do
       let namesArgs = [(text (nameChar:[]) , arg) | (nameChar, arg) <- zip allNames args]
       putDocLn $ (fill 20 $ textid name)
                  <> text " = {"
-                     <+> hsep [fill 12 (name <+> text ":" <+> pretty arg) <+> text "=>"
+                     <+> hsep [fill 12 (name <+> text ":" <+> prettyT arg) <+> text "=>"
                               | (name, arg) <- namesArgs]
                      <+> fill 23 (text "prim" <+> text name <+> hsep (map fst namesArgs))
-                 <+> text "}; // :: " <> pretty ret -- <+> text "; fx=" <> pretty fx
+                 <+> text "}; // :: " <> prettyT ret -- <+> text "; fx=" <> prettyT fx
     
     dumpPrimitive (name, ((ForAllAST tvs (FnTypeAST args ret _fx _ _)), _primop)) = do
       let argNames = [text (nameChar:[]) | (nameChar, _arg) <- zip allNames args]
       putDocLn $ (fill 20 $ textid name) <+> text "::" <+> forallPart tvs
                                          <+> text "{" <+>
-                                            hsep (map (\a -> pretty a <+> text "=>") args) <+> pretty ret
+                                            hsep (map (\a -> prettyT a <+> text "=>") args) <+> prettyT ret
                                          <+> text "}"
                                          <> text ";"
       putDocLn $ (fill 20 $ textid name)
@@ -954,6 +953,6 @@ dumpAllPrimitives = do
                      <+> hsep [fill 12 name <+> text "=>"
                               | name <- argNames]
                      <+> fill 23 (text "prim" <+> text name <+> hsep argNames)
-                 <+> text "}; // :: " <> pretty ret -- <+> text "; fx=" <> pretty fx
+                 <+> text "}; // :: " <> prettyT ret -- <+> text "; fx=" <> prettyT fx
 
     dumpPrimitive (name, (_ty, _primop)) = error $ "Can't dump primitive " ++ name ++ " yet."

@@ -19,8 +19,8 @@ import Data.Map as Map(fromList, toList, Map)
 import Data.Char as Char(isLetter)
 import qualified Data.Text as T
 
-import Text.PrettyPrint.ANSI.Leijen(Pretty(..), text, hsep, (<+>),
-                                    parens, tupled, empty)
+import Data.Text.Prettyprint.Doc(Pretty(..), hsep, (<+>),
+                                    parens, tupled, emptyDoc)
 
 import Foster.Base
 import Foster.Kind
@@ -61,30 +61,30 @@ instance Eq (MetaTyVar t) where
          ++ show (mtvUniq m1) ++ "@" ++ (mtvDesc m1) ++ " and "
          ++ show (mtvUniq m2) ++ "@" ++ (mtvDesc m2) ++ ": mismatch between uniqs and refs!"
 
-hpre [] = empty
-hpre ds = empty <+> hsep ds
+hpre [] = emptyDoc
+hpre ds = emptyDoc <+> hsep ds
 
-instance Pretty TypeAST where
-    pretty x = case x of
-        PrimIntAST         size         -> pretty size
-        TyConAST nam                    -> text nam
-        TyAppAST con []     ->          pretty con
-        TyAppAST con types  -> parens $ pretty con <> hpre (map pretty types)
-        RecordTypeAST _labels types     -> text "RecordAST" <> tupled (map pretty types)
-        TupleTypeAST k   types          -> tupled (map pretty types) <> text (kindAsHash k)
-        FnTypeAST    s t fx cc cs       -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text ";"
-                                              <+> pretty fx <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
-        ForAllAST  tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> pretty rho <> text ")"
+instance PrettyT TypeAST where
+    prettyT x = case x of
+        PrimIntAST         size     -> pretty size
+        TyConAST nam                -> text nam
+        TyAppAST con []             ->          prettyT con
+        TyAppAST con types          -> parens $ prettyT con <> hpre (map prettyT types)
+        RecordTypeAST _labels types     -> text "RecordAST" <> tupled (map prettyT types)
+        TupleTypeAST k   types          -> tupled (map prettyT types) <> text (kindAsHash k)
+        FnTypeAST    s t fx cc cs       -> text "(" <> prettyT s <> text " =" <> text (briefCC cc) <> text ";"
+                                              <+> prettyT fx <> text "> " <> prettyT t <> text " @{" <> text (show cs) <> text "})"
+        ForAllAST  tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> prettyT rho <> text ")"
         TyVarAST   tv                   -> prettySrc tv
         -- MetaTyVar m                     -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> text (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
-        RefTypeAST    ty                -> text "(Ref " <> pretty ty <> text ")"
-        ArrayTypeAST  ty                -> text "(Array " <> pretty ty <> text ")"
-        RefinedTypeAST _nm ty _e        -> text "(Refined " <> pretty ty <> text ")"
+        RefTypeAST    ty                -> text "(Ref " <> prettyT ty <> text ")"
+        ArrayTypeAST  ty                -> text "(Array " <> prettyT ty <> text ")"
+        RefinedTypeAST _nm ty _e        -> text "(Refined " <> prettyT ty <> text ")"
         MetaPlaceholderAST _ nm         -> text "(.meta " <> text nm <> text ")"
 
 prettyTVs tvs = map (\(tv,k) -> parens (pretty tv <+> text "::" <+> pretty k)) tvs
 
-instance Show TypeAST where show x = show (pretty x)
+instance Show TypeAST where show x = show (prettyT x)
   {-
 instance Show TypeAST where
     show x = case x of
@@ -105,7 +105,7 @@ instance Summarizable TypeAST where
         case e of
             PrimIntAST     size            -> text $ "PrimIntAST " ++ show size
             TyConAST       nam             -> text $ nam
-            TyAppAST con   _               -> text "(TyAppAST" <+> pretty con <> text ")"
+            TyAppAST con   _               -> text "(TyAppAST" <+> prettyT con <> text ")"
             RecordTypeAST   _   _          -> text $ "RecordTypeAST"
             TupleTypeAST   k   _           -> text $ "TupleTypeAST" ++ kindAsHash k
             FnTypeAST    {}                -> text $ "FnTypeAST"
