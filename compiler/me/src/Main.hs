@@ -311,7 +311,7 @@ typecheckModule verboseMode pauseOnErrors flagvals modast tcenv0 = do
              -> [ContextBinding t] -> (Map T.Text (FosterPrim t))
              -> Seq Ident -> Seq (DataType t) -> Seq (EffectDecl t) -> Context t
    mkContext declBindings nullCtorBnds primBindings primOpMap globalvars datatypes effdecls =
-     Context declBindsMap nullCtorsMap primBindsMap primOpMap globalvars Seq.empty tyvarsMap effctors [] ctorinfo dtypes
+     Context declBindsMap nullCtorsMap primBindsMap primOpMap globalvars Seq.empty tyvarsMap effctors Seq.empty ctorinfo dtypes
        where effctors     = getCtorInfo' effdecls
              ctorinfo     = getCtorInfo  datatypes
              dtypes       = getDataTypes (datatypes Seq.>< fmap dataTypeOfEffectDecl effdecls)

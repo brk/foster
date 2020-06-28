@@ -2444,10 +2444,10 @@ tcTypeWellFormed msg ctx typ = do
         RefTypeTC     ty      -> q ty
         ArrayTypeTC   ty      -> q ty
         RefinedTypeTC v _e  _ -> q (tidType v)
-        ForAllTC   tvs rho    -> tcTypeWellFormed msg (extendTyCtx ctx tvs) rho
+        ForAllTC   tvs rho    -> tcTypeWellFormed msg (extendTyCtx ctx (Seq.fromList tvs)) rho
         TyVarTC  (SkolemTyVar {}) _mbk -> return ()
         TyVarTC  tv@(BoundTyVar _ _) mbk ->
-                 case Prelude.lookup tv (contextTypeBindings ctx) of
+                 case seqAssocLookup tv (contextTypeBindings ctx) of
                    Nothing -> tcFails [text $ "Unbound type variable "
                                            ++ show tv ++ " " ++ msg]
                    Just kind -> do --tcLift $ putStrLn $ "giving " ++ show tv ++ " kind " ++ show kind
@@ -2471,7 +2471,8 @@ tcContext emptyCtx ctxAST = do
     case toList dts of
       [dt] -> do
          sanityCheck (nm == typeFormalName (dataTypeName dt)) ("Data type name mismatch for " ++ nm)
-         let extctx = extendTyCtx ctx (map convertTyFormal $ dataTypeTyFormals dt)
+         let extctx = extendTyCtx ctx (Seq.fromList $
+                        map convertTyFormal $ dataTypeTyFormals dt)
          mapM_ (tcDataCtor nm extctx) (dataTypeCtors dt)
       many -> tcFails $ [text "Data type name" <+> text nm
                         <+> text "didn't map to a single data type!"

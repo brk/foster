@@ -21,3 +21,10 @@ mapSeqLookup k m =
         Seq.EmptyL -> MSL_Empty
         x Seq.:< xs | Seq.null xs -> MSL_Lone x
         _ -> MSL_Many s
+
+seqAssocLookup :: Eq k => k -> Seq (k, v) -> Maybe v
+seqAssocLookup k s =
+    case Seq.viewl s of
+    Seq.EmptyL -> Nothing
+    (x, v) Seq.:< xs ->
+        if k == x then Just v else seqAssocLookup k xs

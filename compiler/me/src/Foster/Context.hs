@@ -43,7 +43,7 @@ data Context ty = Context { contextBindings   :: ContextBindings ty
                           , pendingBindings   :: Seq T.Text
                           , localTypeBindings :: Map String ty -- as introduced by, e.g. foralls.
                           , contextEffectCtorInfo :: Map CtorName (Seq (CtorId, EffectCtor ty))
-                          , contextTypeBindings :: [(TyVar, Kind)]
+                          , contextTypeBindings :: Seq (TyVar, Kind)
                           , contextCtorInfo   :: Map CtorName     (Seq (CtorInfo ty))
                           , contextDataTypes  :: Map DataTypeName (Seq (DataType ty))
                           } deriving Show
@@ -126,8 +126,9 @@ termVarLookup name bindings = Map.lookup name bindings
 typeVarLookup :: String -> Map String (TyVar, Kind) -> Maybe (TyVar, Kind)
 typeVarLookup name bindings = Map.lookup name bindings
 
+extendTyCtx :: Context ty -> Seq (TyVar, Kind) -> Context ty
 extendTyCtx ctx ktvs = ctx { contextTypeBindings =
-                     ktvs ++ contextTypeBindings ctx }
+                     ktvs Seq.>< contextTypeBindings ctx }
 
 liftContextM :: (Monad m, Show t1, Show t2)
              => (t1 -> m t2) -> Context t1 -> m (Context t2)

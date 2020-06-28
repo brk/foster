@@ -24,7 +24,7 @@ import Data.Map(Map)
 import Data.List(foldl')
 import Data.Maybe(maybeToList, isJust)
 import Data.Sequence(Seq)
-import qualified Data.Sequence as Seq(singleton, (><))
+import qualified Data.Sequence as Seq(singleton, fromList, (><))
 
 import Foster.MonoType
 import Foster.Base
@@ -115,7 +115,7 @@ kNormalizeModule m ctx = do
 
         wellFormedEffectDeclTC :: EffectDecl TypeTC -> Tc ()
         wellFormedEffectDeclTC effdecl = do
-          let extctx = extendTyCtx ctx (map convertTyFormal $ effectDeclTyFormals effdecl)
+          let extctx = extendTyCtx ctx (Seq.fromList $ map convertTyFormal $ effectDeclTyFormals effdecl)
           forM_ (effectDeclCtors effdecl) $ \ec -> do
             -- Effect decls might only mention some of their type parameters in output types,
             -- which don't appear in the corresponding data type declarations. So we'll manually
