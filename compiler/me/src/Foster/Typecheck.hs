@@ -10,7 +10,7 @@ module Foster.Typecheck(tcSigmaToplevel, tcSigmaToplevelNonFn, tcTypeWellFormed,
 
 import Prelude hiding ((<$>))
 
-import qualified Data.List as List(length, zip, elem, lookup)
+import qualified Data.List as List(length, zip, elem, lookup, foldl1')
 import Data.List(foldl', (\\))
 import Control.Monad(liftM, forM, liftM, liftM2, when)
 
@@ -18,11 +18,15 @@ import qualified Data.Text as T(Text, pack, unpack, length, head)
 import Data.Map(Map)
 import qualified Data.Map as Map(lookup, insert, keys, elems, fromList, toList, null)
 import qualified Data.Set as Set(toList, fromList, intersection, difference)
+import Data.Sequence(Seq)
+import qualified Data.Sequence as Seq
 import Data.Maybe (fromMaybe)
 import Data.IORef(readIORef,writeIORef)
 import Data.UnionFind.IO(fresh)
+import Data.Foldable(toList)
 
 import Foster.Base
+import Foster.BaseUtils
 import Foster.Kind
 import Foster.TypeAST
 import Foster.TypeTC
@@ -1344,7 +1348,7 @@ tcRhoFn ctx f expTy = do
 mkFnName pendings = do
  u <- newTcUniq
  return $
-     T.pack $ (joinWith "__" (reverse $ map T.unpack pendings)) ++ ".anon" ++ "." ++ show u ++ "_"
+     T.pack $ (joinWith "__" (toList $ Seq.reverse $ fmap T.unpack pendings)) ++ ".anon" ++ "." ++ show u ++ "_"
 
 -- G{a1:k1}...{an:kn}{x1 : t1}...{xn : tn} |- e ::: tb
 -- ---------------------------------------------------------------------
@@ -1357,7 +1361,7 @@ tcSigmaFn ctx0 fnAST0 expTyRaw = do
              then do nm <- mkFnName (pendingBindings ctx0)
                      return fnAST0 { fnAstName = nm }
              else do return fnAST0
-  let ctx = ctx0 { pendingBindings = [fnAstName fnAST] }
+  let ctx = ctx0 { pendingBindings = Seq.singleton (fnAstName fnAST) }
   debug2 $ "****************tcSigmaFn: nexpTyRaw is " ++ show expTyRaw ++ " for " ++ show (fnAstName fnAST)
   case (fnTyFormals fnAST, expTyRaw) of
     ([], Check (ForAllTC exp_ktvs _)) ->
@@ -1802,12 +1806,12 @@ tcType' ctx refinementArgs ris typ = do
 kindCheckDT con tys ctx = do
   case con of
     TyConAST dtname -> do
-      case Map.lookup dtname (contextDataTypes ctx) of
-        Just [dt] -> do
+      case mapSeqLookup dtname (contextDataTypes ctx) of
+        MSL_Lone dt -> do
           let numActuals = length (dataTypeTyFormals dt)
           if length tys /= numActuals
             then tcFails [text "Inconsistent use of type constructor" <+> pretty dtname <> text ":"
-                        ,text "    Expected" <+> describeNumber numActuals "no"
+                         ,text "    Expected" <+> describeNumber numActuals "no"
                           <+> text "type parameter" <> text (sIfNotOne numActuals) <+>
                               text "but was given" <+> describeNumber (length tys) "zero"]
             else return ()
@@ -1961,8 +1965,8 @@ checkEffectPattern :: Context SigmaTC -> EPattern TypeAST -> TypeTC
                    -> Tc (Pattern TypeTC, TypeTC)
 checkEffectPattern ctx pattern ctxTy = case pattern of
   EP_Ctor     r eps ctorName -> do
-    case Map.lookup ctorName (contextEffectCtorInfo ctx) of
-      Just [(cid, effctor)] -> do
+    case mapSeqLookup ctorName (contextEffectCtorInfo ctx) of
+      MSL_Lone (cid, effctor) -> do
         let tyformals = dataCtorDTTyF $ effectCtorAsData effctor
             types     = dataCtorTypes $ effectCtorAsData effctor
             info      = CtorInfo cid (effectCtorAsData effctor)
@@ -1995,7 +1999,7 @@ checkEffectPattern ctx pattern ctxTy = case pattern of
         return (P_Ctor r ty ps info, outty' )
 
 
-      Nothing  -> tcFails [text $ "Missing definition for effect $" ++ T.unpack ctorName
+      MSL_Missing -> tcFails [text $ "Missing definition for effect $" ++ T.unpack ctorName
                           , highlightFirstLineDoc r]
       _elsewise -> tcFails [text $ "Too many or"
                                   ++ " too few definitions for effect $" ++ T.unpack ctorName]
@@ -2103,7 +2107,7 @@ checkPattern ctx pattern ctxTy = case pattern of
     -----------------------------------------------------------------------
     getCtorInfoForCtor :: Context SigmaTC -> SourceRange -> T.Text -> Tc (CtorInfo SigmaTC)
     getCtorInfoForCtor ctx r ctorName = do
-      case Map.lookup ctorName (contextCtorInfo ctx) of
+      case fmap toList $ Map.lookup ctorName (contextCtorInfo ctx) of
         Just [info] -> return info
         Nothing  -> tcFails [text $ "Missing definition for $" ++ T.unpack ctorName
                             , highlightFirstLineDoc r]
@@ -2113,13 +2117,14 @@ checkPattern ctx pattern ctxTy = case pattern of
 
 generateTypeSchemaForDataType :: Context SigmaTC -> SourceRange -> DataTypeName -> Tc RhoTC
 generateTypeSchemaForDataType ctx r typeName = do
-  case Map.lookup typeName (contextDataTypes ctx) of
-    Just [dt] -> do
-      formals <- mapM (\_ -> newTcUnificationVarTau ("dt-tyformal:" ++ showSourceRange r)) (dataTypeTyFormals dt)
-      return $ TyAppTC (TyConTC typeName) formals
-    other -> tcFails [text $ "Typecheck.generateTypeSchemaForDataType: Too many or"
-                        ++ " too few definitions for $" ++ typeName
-                        ++ "\n\t" ++ show (prettyT other)]
+  case mapSeqLookup typeName (contextDataTypes ctx) of
+    MSL_Lone dt -> do
+          formals <- mapM (\_ -> newTcUnificationVarTau ("dt-tyformal:" ++ showSourceRange r)) (dataTypeTyFormals dt)
+          return $ TyAppTC (TyConTC typeName) formals
+    MSL_Many _ -> tcFails [text $ "Typecheck.generateTypeSchemaForDataType: Too many"
+                        ++ " definitions for $" ++ typeName]
+    _ -> tcFails [text $ "Typecheck.generateTypeSchemaForDataType: No"
+                       ++ " definitions for $" ++ typeName]
 -- }}}
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -2461,18 +2466,18 @@ tcContext emptyCtx ctxAST = do
   debug2 "done converting Context TypeAST to Context TypeTC"
 
   -- For now, we disallow mutually recursive data types
-  let checkDataType :: (String, [DataType TypeTC]) -> Tc ()
-      checkDataType (nm,dts) = do {
-    case dts of
+  let checkDataType :: (String, (Seq (DataType TypeTC))) -> Tc ()
+      checkDataType (nm, dts) = do {
+    case toList dts of
       [dt] -> do
          sanityCheck (nm == typeFormalName (dataTypeName dt)) ("Data type name mismatch for " ++ nm)
          let extctx = extendTyCtx ctx (map convertTyFormal $ dataTypeTyFormals dt)
          mapM_ (tcDataCtor nm extctx) (dataTypeCtors dt)
-      dts -> tcFails $ [text "Data type name" <+> text nm
+      many -> tcFails $ [text "Data type name" <+> text nm
                         <+> text "didn't map to a single data type!"
                        ,text "Conflicting definitions:"] ++
                        map (indent 2) (numberedParenListDocs
-                                   [highlightFirstLineDoc (dataTypeRange dt) | dt <- dts])
+                          (map (highlightFirstLineDoc . dataTypeRange) many))
   }
 
   debug2 (show (Map.keys $ contextDataTypes ctx))
@@ -2480,10 +2485,10 @@ tcContext emptyCtx ctxAST = do
   mapM_ checkDataType (Map.toList $ contextDataTypes ctx)
   debug2 "Checking data ctors"
 
-  let checkDataCtors :: [DataType TypeTC] -> Tc ()
+  let checkDataCtors :: (Seq (DataType TypeTC)) -> Tc ()
       checkDataCtors dts = do
         let ctorsOf dt = [(ctor, dt) | ctor <- dataTypeCtors dt]
-        let ctors = concatMap ctorsOf dts
+        let ctors = concat $ fmap ctorsOf dts
         let dups = collectDuplicatesBy (\(ctor,_dt) -> dataCtorName ctor) ctors
         let complainAbout ctorsWithDts = do
               [text "These data type constructors have identical names: "]
@@ -2494,9 +2499,13 @@ tcContext emptyCtx ctxAST = do
           then return ()
           else tcFails (concatMap complainAbout dups)
 
-  checkDataCtors (concatMap snd $ Map.toList $ contextDataTypes ctx)
+  checkDataCtors (concatSeqList (Map.elems $ contextDataTypes ctx))
 
   return ctx
+
+concatSeqList :: [Seq x] -> Seq x
+concatSeqList [] = Seq.empty
+concatSeqList xs = List.foldl1' (Seq.><) xs
 
 numberedParenListDocs docs =
   [pretty n <> text ")" <+> hang (length (show n) + 2) d | (d, n) <- zip docs [1 :: Int ..]]

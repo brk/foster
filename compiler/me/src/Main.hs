@@ -16,6 +16,8 @@ import qualified Data.Set as Set(filter, toList, fromList, notMember, intersecti
 import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp, stronglyConnCompR)
 import Data.Map(Map)
 import Data.Set(Set)
+import Data.Sequence(Seq)
+import qualified Data.Sequence as Seq(empty, (><), fromList)
 import Data.Either(partitionEithers)
 import qualified Data.Sequence as Seq(length)
 import qualified Data.Char as Char(isAlphaNum)
@@ -278,8 +280,10 @@ typecheckModule verboseMode pauseOnErrors flagvals modast tcenv0 = do
         ctxErrsOrOK <- liftIO $ unTc tcenv0 $ do
                          let ctxAS1 = mkContext (computeContextBindings nonNullCtors)
                                          nullCtorBindings primBindings primOpMap
-                                         globalids dts (moduleASTeffects modast)
-                         let ctxTC0 = mkContext [] [] [] Map.empty [] [] []
+                                         (Seq.fromList globalids)
+                                         (Seq.fromList dts)
+                                         (Seq.fromList $ moduleASTeffects modast)
+                         let ctxTC0 = mkContext [] [] [] Map.empty Seq.empty Seq.empty Seq.empty
                          ctxTC1 <- tcContext ctxTC0 ctxAS1
                          foldlM typecheckAndFoldContextBindings ctxTC1 declBindings'
         case ctxErrsOrOK of
@@ -305,12 +309,12 @@ typecheckModule verboseMode pauseOnErrors flagvals modast tcenv0 = do
  where
    mkContext :: [ContextBinding t] -> [ContextBinding t]
              -> [ContextBinding t] -> (Map T.Text (FosterPrim t))
-             -> [Ident] -> [DataType t] -> [EffectDecl t] -> Context t
+             -> Seq Ident -> Seq (DataType t) -> Seq (EffectDecl t) -> Context t
    mkContext declBindings nullCtorBnds primBindings primOpMap globalvars datatypes effdecls =
-     Context declBindsMap nullCtorsMap primBindsMap primOpMap globalvars [] tyvarsMap effctors [] ctorinfo dtypes
+     Context declBindsMap nullCtorsMap primBindsMap primOpMap globalvars Seq.empty tyvarsMap effctors [] ctorinfo dtypes
        where effctors     = getCtorInfo' effdecls
              ctorinfo     = getCtorInfo  datatypes
-             dtypes       = getDataTypes (datatypes ++ map dataTypeOfEffectDecl effdecls)
+             dtypes       = getDataTypes (datatypes Seq.>< fmap dataTypeOfEffectDecl effdecls)
              primBindsMap = Map.fromList $ map unbind primBindings
              nullCtorsMap = Map.fromList $ map unbind nullCtorBnds
              declBindsMap = Map.fromList $ map unbind declBindings

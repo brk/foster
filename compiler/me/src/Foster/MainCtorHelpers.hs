@@ -9,6 +9,9 @@ module Foster.MainCtorHelpers where
 import Data.Map(Map)
 import qualified Data.Map as Map(fromList, unionsWith, singleton)
 import qualified Data.Text as T
+import Data.Sequence(Seq)
+import qualified Data.Sequence as Seq
+import Data.Foldable(toList)
 
 import Foster.Base
 
@@ -17,35 +20,35 @@ withDataTypeCtors dtype f =
   [f (ctorId (typeFormalName $ dataTypeName dtype) ctor) ctor n
    | (ctor, n) <- zip (dataTypeCtors dtype) [0..]]
 
-getDataTypes :: [DataType t] -> Map DataTypeName [DataType t]
-getDataTypes datatypes = Map.unionsWith (++) $ map single datatypes
+getDataTypes :: Seq (DataType t) -> Map DataTypeName (Seq (DataType t))
+getDataTypes datatypes = Map.unionsWith (Seq.><) $ toList $ fmap single datatypes
   where
-    single dt = Map.singleton (typeFormalName $ dataTypeName dt) [dt]
+    single dt = Map.singleton (typeFormalName $ dataTypeName dt) (Seq.singleton dt)
 
-getCtorInfo :: [DataType t] -> Map CtorName [CtorInfo t]
-getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
+getCtorInfo :: Seq (DataType t) -> Map CtorName (Seq (CtorInfo t))
+getCtorInfo datatypes = Map.unionsWith (Seq.><) $ toList $ fmap getCtorInfoList datatypes
   where
-    getCtorInfoList :: DataType t -> Map CtorName [CtorInfo t]
+    getCtorInfoList :: DataType t -> Map CtorName (Seq (CtorInfo t))
     getCtorInfoList (DataType formal _tyformals ctors _isForeign _range) =
           Map.fromList $ map (buildCtorInfo (typeFormalName formal)) ctors
 
     buildCtorInfo :: DataTypeName -> DataCtor t
-                  -> (CtorName, [CtorInfo t])
+                  -> (CtorName, (Seq (CtorInfo t)))
     buildCtorInfo name ctor =
-      case ctorIdFor name ctor of (n, c) -> (n, [CtorInfo c ctor])
+      case ctorIdFor name ctor of (n, c) -> (n, Seq.singleton (CtorInfo c ctor))
 
-getCtorInfo' :: [EffectDecl t] -> Map CtorName [(CtorId, EffectCtor t)]
-getCtorInfo' effdecls = Map.unionsWith (++) $ map getEffCtorInfoList effdecls
+getCtorInfo' :: Seq (EffectDecl t) -> Map CtorName (Seq (CtorId, EffectCtor t))
+getCtorInfo' effdecls = Map.unionsWith (Seq.><) $ toList $ fmap getEffCtorInfoList effdecls
   where
-    getEffCtorInfoList :: EffectDecl t -> Map CtorName [(CtorId, EffectCtor t)]
+    getEffCtorInfoList :: EffectDecl t -> Map CtorName (Seq (CtorId, EffectCtor t))
     getEffCtorInfoList (EffectDecl formal _tyformals ctors _range) =
           Map.fromList $ map (buildEffCtorInfo (typeFormalName formal)) ctors
 
     buildEffCtorInfo :: DataTypeName -> EffectCtor t
-                     -> (CtorName, [(CtorId, EffectCtor t)])
+                     -> (CtorName, Seq (CtorId, EffectCtor t))
     buildEffCtorInfo name ector =
       case ctorIdFor name (effectCtorAsData ector) of
-          (n, c) -> (n, [(c, ector)])
+          (n, c) -> (n, Seq.singleton (c, ector))
 
 -----------------------------------------------------------------------
 

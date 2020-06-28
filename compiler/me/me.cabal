@@ -66,6 +66,7 @@ executable me
       Foster.AnnExpr
       Foster.Avails
       Foster.Base
+      Foster.BaseUtils
       Foster.CFG
       Foster.CloConv
       Foster.Config

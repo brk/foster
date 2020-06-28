@@ -23,9 +23,12 @@ import Data.Set(Set)
 import Data.Map(Map)
 import Data.List(foldl')
 import Data.Maybe(maybeToList, isJust)
+import Data.Sequence(Seq)
+import qualified Data.Sequence as Seq(singleton, (><))
 
 import Foster.MonoType
 import Foster.Base
+import Foster.BaseUtils
 import Foster.KNUtil
 import Foster.Config
 import Foster.Context
@@ -64,8 +67,8 @@ ccFresh s = ccFreshId (T.pack s)
 --------------------------------------------------------------------
 
 type KNState = (Context TypeTC
-               ,Map String [DataType TypeTC]
-               ,Map String [EffectDecl TypeIL]
+               ,Map String (Seq (DataType TypeTC))
+               ,Map String (Seq (EffectDecl TypeIL))
                ,Map String (DataType TypeIL))
 -- convertDT needs st to call tcToIL
 -- kNormalCtors uses contextBindings and nullCtorBindings of Context TypeTC
@@ -91,7 +94,7 @@ kNormalizeModule m ctx = do
     effds' <- mapM (convertED st0) (moduleILeffectDecls m)
     wellFormedEffectDeclsIL effds'
 
-    let eds' = Map.fromListWith (++) [(typeFormalName (effectDeclName ed), [ed]) | ed <- effds']
+    let eds' = Map.fromListWith (Seq.><) [(typeFormalName (effectDeclName ed), Seq.singleton ed) | ed <- effds']
 
     let allDataTypes = prims' ++ dts'
     let dtypeMap = Map.fromList [(typeFormalName (dataTypeName dt), dt) | dt <- allDataTypes]
@@ -473,17 +476,17 @@ tcToIL st typ = do
      TyAppTC (TyConTC "Float32") [] -> return $ TyAppIL (TyConIL "Float32") []
      TyAppTC (TyConTC dtname) tys -> do
          let (_, dtypeMapX, effDeclMapX, _) = st
-         case Map.lookup dtname dtypeMapX of
-           Just [dt] -> case dtUnboxedRepr dt of
+         case mapSeqLookup dtname dtypeMapX of
+           MSL_Lone dt -> case dtUnboxedRepr dt of
              Nothing -> do iltys <- mapM q tys
                            return $ TyAppIL (TyConIL dtname) iltys
              Just rr -> do rr tys >>= q
-           Just dts | length dts > 1
+           MSL_Many _dts
              -> tcFails [text "Multiple definitions for data type" <+> text dtname]
-           _ -> case Map.lookup dtname effDeclMapX of
-                  Just [_] -> do iltys <- mapM q tys
-                                 return $ TyAppIL (TyConIL dtname) iltys
-                  Just eds | length eds > 1
+           _ -> case mapSeqLookup dtname effDeclMapX of
+                  MSL_Lone _ -> do iltys <- mapM q tys
+                                   return $ TyAppIL (TyConIL dtname) iltys
+                  MSL_Many _eds
                     -> tcFails [text "Multiple definitions for effect " <+> text dtname]
                   _ -> tcFails [text "Unable to find effect" <+> text dtname]
      TyAppTC _ _ -> error $ "tcToIL saw TyApp of non-TyCon"

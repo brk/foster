@@ -14,6 +14,8 @@ import Data.IORef(IORef,newIORef,readIORef,writeIORef)
 import Data.Map(Map)
 import Data.List(foldl')
 import qualified Data.Map as Map
+import Data.Sequence(Seq)
+import qualified Data.Sequence as Seq
 
 import qualified Data.Text as T
 
@@ -37,13 +39,13 @@ data Context ty = Context { contextBindings   :: ContextBindings ty
                           , nullCtorBindings  :: ContextBindings ty
                           , primitiveBindings :: ContextBindings ty
                           , primitiveOperations :: Map T.Text (FosterPrim ty)
-                          , globalIdents       :: [Ident]
-                          , pendingBindings   :: [T.Text]
+                          , globalIdents       :: Seq Ident
+                          , pendingBindings   :: Seq T.Text
                           , localTypeBindings :: Map String ty -- as introduced by, e.g. foralls.
-                          , contextEffectCtorInfo :: Map CtorName [(CtorId, EffectCtor ty)]
+                          , contextEffectCtorInfo :: Map CtorName (Seq (CtorId, EffectCtor ty))
                           , contextTypeBindings :: [(TyVar, Kind)]
-                          , contextCtorInfo   :: Map CtorName     [CtorInfo ty]
-                          , contextDataTypes  :: Map DataTypeName [DataType ty]
+                          , contextCtorInfo   :: Map CtorName     (Seq (CtorInfo ty))
+                          , contextDataTypes  :: Map DataTypeName (Seq (DataType ty))
                           } deriving Show
 
 {-
@@ -102,7 +104,7 @@ data Context ty = Context { contextBindings   :: ContextBindings ty
 -}
 
 addPendingBinding :: Context ty -> E_VarAST tx -> Context ty
-addPendingBinding ctx v = ctx { pendingBindings = (evarName v) : (pendingBindings ctx) }
+addPendingBinding ctx v = ctx { pendingBindings = (evarName v) Seq.<| (pendingBindings ctx) }
 
 prependBinding :: ContextBindings ty -> ContextBinding ty -> ContextBindings ty
 prependBinding m (TermVarBinding nm cxb) = Map.insert nm cxb m

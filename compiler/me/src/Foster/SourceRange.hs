@@ -8,7 +8,7 @@
 
 module Foster.SourceRange where
 
-import Data.List as List(replicate, intersperse)
+import Data.List as List(replicate)
 import Data.Sequence as Seq(Seq, length, index, (><))
 import qualified Data.Text as T
 
