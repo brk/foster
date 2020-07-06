@@ -15,6 +15,7 @@ import qualified Data.Set as Set(empty, singleton, union, unions, notMember,
                                                       size, toList)
 import Data.Map(Map)
 import qualified Data.Map as Map(insert, lookup, empty, fromList, elems)
+import qualified Data.Sequence as Seq(fromList)
 
 import Control.Monad.State
 
@@ -440,7 +441,7 @@ closureOfKnFn infoMap (self_id, fn) = do
                            (CaseArm (PR_Tuple norange t (map patVar varsOfClosure))
                                     (fst bodyentry)
                                     Nothing
-                                    varsOfClosure
+                                    (Seq.fromList varsOfClosure)
                                     norange) ]
                         where t        = tidType envVar
                               patVar a = PR_Atom $ P_Variable norange a

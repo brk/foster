@@ -24,7 +24,7 @@ import Data.Map(Map)
 import Data.List(foldl')
 import Data.Maybe(maybeToList, isJust)
 import Data.Sequence(Seq)
-import qualified Data.Sequence as Seq(singleton, fromList, (><))
+import qualified Data.Sequence as Seq(singleton, fromList, (><), empty)
 
 import Foster.MonoType
 import Foster.Base
@@ -387,7 +387,7 @@ kNormalize st expr =
                   let msr   = MissingSourceRange "guardwild"
                   let pwild = PR_Atom $ P_Wildcard msr (tidType v)
                   return $ KNLetFuns [kid] [kont]
-                          (KNCase t v (clump' ++ [CaseArm pwild callkont Nothing [] msr]))
+                          (KNCase t v (clump' ++ [CaseArm pwild callkont Nothing Seq.empty msr]))
                           (MissingSourceRange "case-arms")
           if anyCaseArmIsGuarded arms
             then go arms'
@@ -1772,5 +1772,5 @@ instance CanMakeFun MonoType where
 fmapCaseArm :: (p1 t1 -> p2 t2) -> (e1 -> e2) -> (t1 -> t2) -> CaseArm p1 e1 t1 -> CaseArm p2 e2 t2
 fmapCaseArm fp fe ft (CaseArm p e g b rng)
                     = CaseArm (fp p) (fe e) (fmap fe g)
-                              [TypedId (ft t) id | TypedId t id <- b] rng
+                              (fmap (\(TypedId t id) -> TypedId (ft t) id) b) rng
 

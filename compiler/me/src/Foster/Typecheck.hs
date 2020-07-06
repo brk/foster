@@ -1895,7 +1895,7 @@ tcRhoHandler  ctx rng e arms mb_xform expTy = do
         let bindings = extractPatternBindings p
         let ctxbindings = [varbind id ty | (TypedId ty id) <-
                                             TypedId resumebarety resumebareid :
-                                            TypedId resumety resumeid : bindings]
+                                            TypedId resumety resumeid : toList bindings]
         let ctx' = prependContextBindings ctx ctxbindings
 
         tcLift $ putStrLn $ show (contextBindings ctx')
@@ -1921,14 +1921,14 @@ tcRhoHandler  ctx rng e arms mb_xform expTy = do
 
   matchExp expTy (AnnHandler rng r'p eff actionThunk abranches mb_xform' (resumeid, resumebareid)) "case"
 
-extractPatternBindings :: Pattern t -> [TypedId t]
-extractPatternBindings (P_Atom (P_Wildcard    {})) = []
-extractPatternBindings (P_Atom (P_Bool        {})) = []
-extractPatternBindings (P_Atom (P_Int         {})) = []
-extractPatternBindings (P_Atom (P_Variable _ tid)) = [tid]
-extractPatternBindings (P_Ctor _ _ ps _)  = concatMap extractPatternBindings ps
-extractPatternBindings (P_Tuple _ _ ps)   = concatMap extractPatternBindings ps
-extractPatternBindings (P_Or    _ _ ps)   = concatMap extractPatternBindings ps
+extractPatternBindings :: Pattern t -> Seq (TypedId t)
+extractPatternBindings (P_Atom (P_Wildcard    {})) = Seq.empty
+extractPatternBindings (P_Atom (P_Bool        {})) = Seq.empty
+extractPatternBindings (P_Atom (P_Int         {})) = Seq.empty
+extractPatternBindings (P_Atom (P_Variable _ tid)) = Seq.singleton tid
+extractPatternBindings (P_Ctor _ _ ps _)  = seqConcatMap extractPatternBindings (Seq.fromList ps)
+extractPatternBindings (P_Tuple _ _ ps)   = seqConcatMap extractPatternBindings (Seq.fromList ps)
+extractPatternBindings (P_Or    _ _ ps)   = seqConcatMap extractPatternBindings (Seq.fromList ps)
 -- }}}
 
 -- {{{ CASE scrutinee OF branches END
@@ -1952,7 +1952,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
 
         p <- checkPattern ctx pat (typeTC ascrutinee)
         let bindings = extractPatternBindings p
-        let ctxbindings = [varbind id ty | (TypedId ty id) <- bindings]
+        let ctxbindings = [varbind id ty | (TypedId ty id) <- toList $ bindings]
         let ctx' = prependContextBindings ctx ctxbindings
         aguard <- liftMaybe (\g -> tcRho ctx' g (Check boolTypeTC)) guard
         abody <- tcRho ctx' body expTy

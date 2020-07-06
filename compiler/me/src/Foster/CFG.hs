@@ -48,6 +48,7 @@ import Data.Text.Prettyprint.Doc.Render.Terminal
 import qualified Data.Text as T
 import qualified Data.Set as Set
 import Data.Set(Set)
+import Data.Foldable(toList)
 import Control.Monad.State
 import Data.IORef
 
@@ -214,7 +215,7 @@ instance TExpr BasicBlockGraph MonoType where
            go (ILast cflast)     (bvs,fvs) = case cflast of
                     CFCont _ vs          -> (bvs, insert fvs vs)
                     CFCase v arms        -> (insertV bvs pvs, Set.insert v fvs)
-                         where pvs = concatMap caseArmBindings arms
+                         where pvs = concatMap (toList . caseArmBindings) arms
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

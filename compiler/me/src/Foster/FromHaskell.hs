@@ -9,6 +9,8 @@ import Language.Haskell.Exts.Simple(parseFile)
 import qualified Data.Text as T
 import Control.Monad.State(forM_)
 
+import qualified Data.Sequence as Seq(empty)
+
 import Data.Text.Prettyprint.Doc((<+>), (<>), pretty, line,
                                      hsep, fill, parens, vcat, list)
 
@@ -137,7 +139,7 @@ convertHaskellToFoster hspath fosterpath = do
 
       caseArmOfAlt alt =
         case alt of
-          H.Alt pat (H.UnGuardedRhs exp) _mb_binds -> CaseArm (patOfPat pat) (expOfExp exp) Nothing [] noRange
+          H.Alt pat (H.UnGuardedRhs exp) _mb_binds -> CaseArm (patOfPat pat) (expOfExp exp) Nothing Seq.empty noRange
           H.Alt _pat (H.GuardedRhss _rhss) _mb_binds -> error $ "caseArmOfAlt.guarded"
 
       expOfRhs rhs = case rhs of
@@ -187,10 +189,10 @@ convertHaskellToFoster hspath fosterpath = do
                          bod  = case (args, pats) of
                                  ([arg], [pat]) ->
                                       (E_Case noAnnot (mkVarE arg)
-                                        [CaseArm (patOfPat pat) body guard [] noRange])
+                                        [CaseArm (patOfPat pat) body guard Seq.empty noRange])
                                  _ -> (E_Case noAnnot (E_TupleAST noAnnot (error "kind0") (map mkVarE args))
                                         [CaseArm (EP_Tuple noRange (map patOfPat pats))
-                                            body guard [] noRange])
+                                            body guard Seq.empty noRange])
                                   in
                      (args, bod)
         in
@@ -220,10 +222,10 @@ convertHaskellToFoster hspath fosterpath = do
                        ([arg], [_pat]) ->
                             (E_Case noAnnot (mkVarE arg)
                               [CaseArm (patOfPat pat)
-                                  body (mkGuard guards) [] noRange | ([pat], (body, guards)) <- zip patss bodiesAndGuards])
+                                  body (mkGuard guards) Seq.empty noRange | ([pat], (body, guards)) <- zip patss bodiesAndGuards])
                        _ -> (E_Case noAnnot (E_TupleAST noAnnot (error "kind0") (map mkVarE args))
                               [CaseArm (EP_Tuple noRange (map patOfPat pats))
-                                  body (mkGuard guards) [] noRange | (pats, (body, guards)) <- zip patss bodiesAndGuards])
+                                  body (mkGuard guards) Seq.empty noRange | (pats, (body, guards)) <- zip patss bodiesAndGuards])
                         in
             FnAST noAnnot
                  (T.pack nameStr)

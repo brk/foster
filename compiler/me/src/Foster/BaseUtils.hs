@@ -6,6 +6,8 @@ import qualified Data.Sequence as Seq
 import Data.Map(Map)
 import qualified Data.Map as Map(lookup)
 
+import qualified Data.Foldable as Foldable(foldl')
+
 data MapSeqLookup a =
     MSL_Missing
   | MSL_Empty
@@ -28,3 +30,9 @@ seqAssocLookup k s =
     Seq.EmptyL -> Nothing
     (x, v) Seq.:< xs ->
         if k == x then Just v else seqAssocLookup k xs
+
+seqConcatMap :: (a -> Seq b) -> Seq a -> Seq b
+seqConcatMap f xs = seqConcat $ fmap f xs
+
+seqConcat :: Seq (Seq a) -> Seq a
+seqConcat xs = Foldable.foldl' (\acc s -> acc Seq.>< s) Seq.empty xs

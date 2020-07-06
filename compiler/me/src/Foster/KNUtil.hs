@@ -575,7 +575,7 @@ knSubst m expr =
   let qv (TypedId t id) = case Map.lookup id m of Nothing  -> TypedId t id
                                                   Just id' -> TypedId t id'
       qCaseArm (CaseArm pat e guard vs rng) =
-          CaseArm pat (knSubst m e) (fmap (knSubst m) guard) (map qv vs) rng
+          CaseArm pat (knSubst m e) (fmap (knSubst m) guard) (fmap qv vs) rng
   in
   case expr of
       KNLiteral       {}       -> expr

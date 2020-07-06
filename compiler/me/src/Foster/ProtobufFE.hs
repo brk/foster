@@ -20,7 +20,7 @@ import Codec.CBOR.Term
 
 import Data.Foldable (toList)
 import Data.List(groupBy, foldl', isInfixOf)
-import qualified Data.Sequence as Seq(Seq, fromList, spanl, null)
+import qualified Data.Sequence as Seq(Seq, fromList, spanl, null, empty)
 import qualified Data.Map as Map(lookup)
 
 import Data.Char(isLower, isPunctuation, isSymbol, isHexDigit, digitToInt, chr)
@@ -276,9 +276,11 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
 
   cb_parse_pmatch cbor = case cbor of
     TList [tok, _, cbr, TList [p, e, stmts]] | tok `tm` tok_CASE ->
-        CaseArm (cb_parse_p p) (cb_parse_stmts stmts) (Just $ cb_parse_e e) [] (cb_parse_range cbr)
+        CaseArm (cb_parse_p p) (cb_parse_stmts stmts) (Just $ cb_parse_e e)
+                Seq.empty (cb_parse_range cbr)
     TList [tok, _, cbr, TList [p, stmts]]    | tok `tm` tok_CASE ->
-        CaseArm (cb_parse_p p) (cb_parse_stmts stmts) Nothing               [] (cb_parse_range cbr)
+        CaseArm (cb_parse_p p) (cb_parse_stmts stmts) Nothing
+                Seq.empty (cb_parse_range cbr)
     _ -> error $ "cb_parse_pmatch failed: " ++ show cbor
 
 {-
@@ -398,7 +400,7 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
            go block rest (letbind thing expr)
          letbind (StmtExpr    annot e)                        expr = E_SeqAST annot e expr
          letbind (StmtLetBind annot (EP_Variable _ v, bound)) expr = E_LetAST annot (TermBinding v bound) expr
-         letbind (StmtLetBind annot (pat, bound))             expr = E_Case   annot bound [CaseArm pat expr Nothing [] (rangeOf annot)]
+         letbind (StmtLetBind annot (pat, bound))             expr = E_Case   annot bound [CaseArm pat expr Nothing Seq.empty (rangeOf annot)]
          letbind (StmtRecBind _ _) _xpr = error "shouldn't happen"
        in
       case rev_pparts of

@@ -14,6 +14,7 @@ import Data.Map(Map)
 import qualified Data.Set as Set
 import Data.Set(Set)
 import Data.List(foldl')
+import Data.Foldable(toList)
 import Data.Maybe(fromMaybe)
 import Data.IORef(writeIORef, modifyIORef, IORef)
 
@@ -530,7 +531,7 @@ checkBody expr facts =
 
       _ <- forM arms $ \arm -> do
         case caseArmGuard arm of
-            Nothing -> do facts' <- withBindings (error "withBindings.KNHandler") (caseArmBindings arm) facts
+            Nothing -> do facts' <- withBindings (error "withBindings.KNHandler") (toList $ caseArmBindings arm) facts
                           checkBody (caseArmBody arm) facts'
             Just _g -> error $ "can't yet support effect handler arms with guards in KNStaticChecks"
       checkBody action facts
@@ -676,7 +677,7 @@ checkBody expr facts =
         -}
         _ <- forM arms $ \arm -> do
             case caseArmGuard arm of
-                Nothing -> do facts' <- withBindings v (caseArmBindings arm) facts
+                Nothing -> do facts' <- withBindings v (toList $ caseArmBindings arm) facts
                               checkBody (caseArmBody arm) facts'
                 Just _g -> do --putStrLn $ "ERROR ================= can't yet support case arms with guards in KNStaticChecks"
                               error $ "can't yet support case arms with guards in KNStaticChecks"

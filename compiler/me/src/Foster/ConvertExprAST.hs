@@ -4,6 +4,8 @@ import Foster.Base
 import Foster.ExprAST
 import Foster.Context
 
+import qualified Data.Sequence as Seq(empty)
+
 import Control.Monad.State(liftM, liftM2, liftM3)
 
 convertModule :: (Show a, Show b) =>
@@ -74,11 +76,11 @@ convertTermBinding f (TermBinding evar expr) = do
 convertExprAST :: Monad m => (x -> m z) -> ExprAST x -> m (ExprAST z)
 convertExprAST f expr =
   let q = convertExprAST f in
-  let qa (CaseArm pat body guard [] rng) = do
+  let qa (CaseArm pat body guard _bindersEmpty rng) = do
         body' <- q body
         pat'  <- convertPat f pat
         grd'  <- liftMaybe q guard
-        return (CaseArm pat' body' grd' [] rng) in
+        return (CaseArm pat' body' grd' Seq.empty rng) in
   case expr of
     E_MachArrayLit rng mbt es   -> liftM2 (E_MachArrayLit rng) (mapMaybeM f mbt) (mapM (liftArrayEntryM q) es)
     E_StringAST    rng s        -> return $ (E_StringAST  rng) s

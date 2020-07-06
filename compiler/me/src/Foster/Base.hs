@@ -20,7 +20,10 @@ import Data.Set as Set(fromList, toList, difference, insert, member,
 import Data.List as List(intercalate)
 import Data.Map as Map(Map, fromListWith)
 import Data.Set as Set(Set, unions)
+import Data.Sequence as Seq(Seq)
 import qualified Data.Graph as Graph(SCC(..), stronglyConnComp)
+
+import qualified Data.Foldable as Foldable(toList)
 
 import qualified Data.Text.Prettyprint.Doc as PP(emptyDoc)
 import Data.Text.Prettyprint.Doc
@@ -189,10 +192,11 @@ data PatternFlat ty =
 data CaseArm pat expr ty = CaseArm { caseArmPattern :: pat ty
                                    , caseArmBody    :: expr
                                    , caseArmGuard   :: Maybe expr
-                                   , caseArmBindings:: [TypedId ty]
+                                   , caseArmBindings:: Seq (TypedId ty)
                                    , caseArmRange   :: SourceRange
                                    } deriving (Eq, Show)
 
+caseArmExprs :: CaseArm pat expr ty -> [expr]
 caseArmExprs arm = [caseArmBody arm] ++ caseArmGuardList arm
   where
     caseArmGuardList (CaseArm _ _ Nothing  _ _) = []
@@ -506,7 +510,7 @@ combinedFreeIdents xs = Set.unions $ map freeIdents xs
 
 caseArmFreeIds arm =
    combinedFreeIdents (caseArmExprs arm) `sans`
-        map tidIdent  (caseArmBindings arm)
+        map tidIdent  (caseArmBindings arm |> Foldable.toList)
 
 sans :: Ord a => Set a -> [a] -> Set a
 sans base toremove = Set.difference base $ Set.fromList toremove

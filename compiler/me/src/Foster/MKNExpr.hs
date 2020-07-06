@@ -31,6 +31,8 @@ import Data.Set(Set)
 import qualified Data.Map as Map
 import Data.Map(Map)
 import qualified Data.List as List(foldl', reverse, all, any)
+import qualified Data.Sequence as Seq(Seq, empty, fromList)
+import Data.Foldable(toList)
 import Data.Maybe(catMaybes, isJust, isNothing)
 import Data.Either(partitionEithers)
 
@@ -413,7 +415,7 @@ data MKFn expr ty
 
 data MKCaseArm expr ty = MKCaseArm { _mkcaseArmPattern  :: PatternRepr ty
                                    ,  mkcaseArmBody     :: expr
-                                   , _mkcaseArmBindings :: [MKBoundVar ty]
+                                   , _mkcaseArmBindings :: Seq.Seq (MKBoundVar ty)
                                    , _mkcaseArmRange    :: SourceRange
                                    }
 
@@ -1015,7 +1017,7 @@ knOfMK mb_retCont term0 = do
                         return $ unzip [(x,b) | (x, Just b) <- vals]
 
   let qarm (MKCaseArm pat body binds rng) = do
-        let binds' = map boundVar binds
+        let binds' = fmap boundVar binds
         body' <- q body
         --mb_guard' <- liftMaybe q mb_guard
         return $ CaseArm pat body' Nothing binds' rng
@@ -2894,8 +2896,8 @@ cffnOfMKCont cv (MKFn _v vs _ subterm _isrec _annot _unrollCount) = do
 
                                  blockIdTrue <- generateBlock "if.tru" [] tru
                                  blockIdFals <- generateBlock "if.fls" [] fls
-                                 let trueArm = CaseArm (pat True)  blockIdTrue Nothing [] (MissingSourceRange "if.true")
-                                 let falsArm = CaseArm (pat False) blockIdFals Nothing [] (MissingSourceRange "if.fals")
+                                 let trueArm = CaseArm (pat True)  blockIdTrue Nothing Seq.empty (MissingSourceRange "if.true")
+                                 let falsArm = CaseArm (pat False) blockIdFals Nothing Seq.empty (MissingSourceRange "if.fals")
                                  --dbgDoc $ text $ "putting block with ending case (if) " ++ show (tidIdent $ boundVar cv)
                                  v' <- qv v
                                  baPutBlock head insns (CFCase v' [trueArm, falsArm])
@@ -2905,7 +2907,7 @@ cffnOfMKCont cv (MKFn _v vs _ subterm _isrec _annot _unrollCount) = do
                                  arms' <- mapM (\(MKCaseArm pat subterm bindings range) -> do
                                                 blockid <- generateBlock "case.arm" {-bindings-} [] subterm
                                                 --dbgDoc $ text $ "bindings for " ++ show blockid ++ " are " ++ show (map (tidIdent. boundVar) bindings)
-                                                return $ CaseArm pat blockid Nothing (map boundVar bindings) range) arms
+                                                return $ CaseArm pat blockid Nothing (fmap boundVar bindings) range) arms
                                  baPutBlock head insns (CFCase v' arms')
           -- arms  :: MKCaseArm (PatternRepr) (Subterm _)
           -- arms' :: CaseArm PatternRepr BlockId MonoType
@@ -3043,7 +3045,7 @@ matchSeq ty range boundsFor subterm (v, pat) = do
   parentLink <- newOrdRef Nothing
   let patBoundVars = patternReprFreeIds pat
   let bindings = [boundsFor Map.! tidIdent tid | tid <- patBoundVars]
-  let rv = MKCase parentLink ty v [MKCaseArm pat subterm bindings range]
+  let rv = MKCase parentLink ty v [MKCaseArm pat subterm (Seq.fromList bindings) range]
   _ <- backpatchT rv [subterm]
   newOrdRef (Just rv)
 
@@ -3061,7 +3063,7 @@ findMatchingArm replaceCaseWith ty v arms lookupVar = go arms NoPossibleMatchYet
   where go [] _ = return ()
         go ((MKCaseArm pat subterm bindings range):rest) potentialMatch = do
               -- Map from pattern variable ids to bound vars.
-              let boundsFor = Map.fromList [(tidIdent (boundVar b), b) | b <- bindings]
+              let boundsFor = Map.fromList [(tidIdent (boundVar b), b) | b <- toList bindings]
 
               matchRes <- matchPatternAgainst pat v
               case (matchRes, potentialMatch) of
