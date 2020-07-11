@@ -1,5 +1,8 @@
 snafuinclude Prelude "prelude";
 snafuinclude PreludeFolds "prelude-folds";
+snafuinclude Seq "data/seq";
+snafuinclude Maybe "maybe";
+
 /*
  The generated parser's interface is
     ParseAlloc :: { YyParser };
@@ -122,11 +125,11 @@ snafuinclude PreludeFolds "prelude-folds";
 ** The action table is constructed as a single large table named yy_action[].
 ** Given state S and lookahead X, the action is computed as either:
 **
-**    (A)   N = yy_action[ yy_shift_ofst[S] + X ]
-**    (B)   N = yy_default[S]
+**    (A)   N = yy_action[ yy_shift_ofst.[S] + X ]
+**    (B)   N = yy_default.[S]
 **
 ** The (A) formula is preferred.  The B formula is used instead if
-** yy_lookahead[yy_shift_ofst[S]+X] is not equal to X.
+** yy_lookahead.[yy_shift_ofst.[S]+X] is not equal to X.
 **
 ** The formulas above are for computing the action when the lookahead is
 ** a terminal symbol.  If the lookahead is a non-terminal (as occurs after
@@ -236,7 +239,7 @@ regrow :: forall (t:Type) { Int32 => Ref (Array t) => () };
 regrow = { newSize => ra =>
   old = ra^;
   nu  = allocDArray newSize;
-  arrayEnum old { v => idx => v >^ nu[idx] };
+  arrayEnum old { v => idx => v >^ nu.[idx] };
   nu >^ ra;
   ()
 };
@@ -342,7 +345,7 @@ yy_find_shift_action = {
     then stateno
     else
       //REC loop = {
-        i = yy_shift_ofst[stateno] +Int32 (zext_i8_to_i32 iLookAhead);
+        i = yy_shift_ofst.[stateno] +Int32 (zext_i8_to_i32 iLookAhead);
         /*
         assert( i>=0 );
         // assert( i+YYNTOKEN <=SInt32 arraySize32 yy_lookahead );
@@ -350,7 +353,7 @@ yy_find_shift_action = {
         assert( iLookAhead < YYNTOKEN );
         */
 
-        if  { i >=SInt32 arrayLength32 yy_lookahead } `oror` { yy_lookahead[i] !=Int8 iLookAhead }
+        if  { i >=SInt32 arrayLength32 yy_lookahead } `oror` { yy_lookahead.[i] !=Int8 iLookAhead }
           then
 /*#ifdef YYFALLBACK
           Int8 iFallback;            // Fallback token
@@ -361,9 +364,9 @@ yy_find_shift_action = {
             continue;
           }
 #endif*/
-          yy_default[stateno]
+          yy_default.[stateno]
         else
-          yy_action[i]
+          yy_action.[i]
         end
       //};
   end
@@ -379,22 +382,22 @@ yy_find_reduce_action = {
     iLookAhead : Int8 =>    /* The look-ahead token */
 //#ifdef YYERRORSYMBOL
 //  if( stateno>YY_REDUCE_COUNT ){
-//    return yy_default[stateno];
+//    return yy_default.[stateno];
 //  }
 //#else
     //assert( stateno<=YY_REDUCE_COUNT );
 //#endif
   //assert( iLookAhead!=YYNOCODE );
-  i = yy_reduce_ofst[stateno] +Int32 (zext_i8_to_i32 iLookAhead);
+  i = yy_reduce_ofst.[stateno] +Int32 (zext_i8_to_i32 iLookAhead);
 //#ifdef YYERRORSYMBOL
-//  if( i<0 || i>=YY_ACTTAB_COUNT || yy_lookahead[i]!=iLookAhead ){
-//    return yy_default[stateno];
+//  if( i<0 || i>=YY_ACTTAB_COUNT || yy_lookahead.[i]!=iLookAhead ){
+//    return yy_default.[stateno];
 //  }
 //#else
 //  assert( i>=0 && i<YY_ACTTAB_COUNT );
-//  assert( yy_lookahead[i]==iLookAhead );
+//  assert( yy_lookahead.[i]==iLookAhead );
 //#endif
-  yy_action[i]
+  yy_action.[i]
 };
 
 /*
@@ -436,9 +439,9 @@ yy_shift = {
       else
         yyNewState
       end;
-  newstate >^ (yystackStateno yypParser)[yytop yypParser];
-  yyMajor  >^ (yystackMajor yypParser)[yytop yypParser];
-  (Yy0 yyMinor) >^ (yystackMinor yypParser)[yytop yypParser];
+  newstate >^ (yystackStateno yypParser).[yytop yypParser];
+  yyMajor  >^ (yystackMajor yypParser).[yytop yypParser];
+  (Yy0 yyMinor) >^ (yystackMinor yypParser).[yytop yypParser];
 };
 
 /* The following tables contain information about every rule that
@@ -448,11 +451,13 @@ yy_shift = {
 /* yyRuleInfoLhs:  Symbol on the left-hand side of the rule */
 %%
 
+gets = { ref => val => val >^ ref; };
+
 setMinor = { val => yypParser => offset =>
-  val >^ (yystackMinor yypParser)[yytop yypParser +Int32 offset];
+  val >^ (yystackMinor yypParser).[yytop yypParser +Int32 offset];
 };
 getMinor = { yypParser => offset =>
-  (yystackMinor yypParser)[yytop yypParser +Int32 offset]
+  (yystackMinor yypParser).[yytop yypParser +Int32 offset]
 };
 
 /*
@@ -482,7 +487,7 @@ getMinor = { yypParser => offset =>
   /* Check that the stack is large enough to grow by a single entry
   ** if the RHS of the rule is empty.  This ensures that there is room
   ** enough on the stack to push the LHS value */
-  if yyRuleInfoNRhs[yyruleno] ==Int32 0 then
+  if yyRuleInfoNRhs.[yyruleno] ==Int32 0 then
     if (yytop yypParser) >=SInt32 ((stackSize yypParser) -Int32 1) then
       yyGrowStack yypParser
     end;
@@ -507,9 +512,9 @@ getMinor = { yypParser => offset =>
 /********** End reduce actions ************************************************/
   end;
   //assert( yyruleno<sizeof(yyRuleInfo)/sizeof(yyRuleInfo[0]) );
-  yygoto = yyRuleInfoLhs[yyruleno];
-  yysize = yyRuleInfoNRhs[yyruleno];
-  yyact = yy_find_reduce_action (yystackStateno yypParser)[yysize +Int32 (yytop yypParser)]
+  yygoto = yyRuleInfoLhs.[yyruleno];
+  yysize = yyRuleInfoNRhs.[yyruleno];
+  yyact = yy_find_reduce_action (yystackStateno yypParser).[yysize +Int32 (yytop yypParser)]
                                  yygoto;
 
   /* There are no SHIFTREDUCE actions on nonterminals because the table
@@ -520,8 +525,8 @@ getMinor = { yypParser => offset =>
   //assert( yyact!=YY_ERROR_ACTION );
 
   yypParser `bumpTopBy` (yysize +Int32 1);
-  yyact  >^ (yystackStateno yypParser)[yytop yypParser];
-  yygoto >^ (  yystackMajor yypParser)[yytop yypParser];
+  yyact  >^ (yystackStateno yypParser).[yytop yypParser];
+  yygoto >^ (  yystackMajor yypParser).[yytop yypParser];
   yyact
 };
 
@@ -613,7 +618,7 @@ Parse = {
   yyendofinput = (yymajor ==Int8 0);
 //#endif
 
-  sn = (yystackStateno yypParser)[(yytop yypParser)];
+  sn = (yystackStateno yypParser).[(yytop yypParser)];
   yyact = prim ref sn;
 
   REC loop = { skipCheck : Bool =>

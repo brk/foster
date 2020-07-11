@@ -3494,7 +3494,7 @@ PRIVATE void tplt_xfer(char *name, FILE *in, FILE *out, int *lineno)
 ** a pointer to the opened file. */
 PRIVATE FILE *tplt_open(struct lemon *lemp)
 {
-  static char templatename[] = "lempar.c";
+  static char templatename[] = "lempar.foster";
   char buf[1000];
   FILE *in;
   char *tpltname;
@@ -3757,6 +3757,7 @@ PRIVATE int translate_code(struct lemon *lemp, struct rule *rp){
   }else{
     lemon_sprintf(zOvwrt, "/*%s-overwrites-%s*/",
                   rp->lhsalias, rp->rhsalias[0]);
+    //fprintf(stderr, "zOvwrt message is: %s\n", zOvwrt);
     zSkip = strstr(rp->code, zOvwrt);
     if( zSkip!=0 ){
       /* The code contains a special comment that indicates that it is safe
@@ -3790,7 +3791,7 @@ PRIVATE int translate_code(struct lemon *lemp, struct rule *rp){
     }
     if (*cp == '=') {
       seenEq = 1;
-      append_str("= Yy%d ", 0, rp->lhs->dtnum, 0);
+      append_str("`gets` Yy%d (", 0, rp->lhs->dtnum, 0);
     }
     if( ISALPHA(*cp) && (cp==rp->code || (!ISALNUM(cp[-1]) && cp[-1]!='_')) ){
       char saved;
@@ -3842,6 +3843,10 @@ PRIVATE int translate_code(struct lemon *lemp, struct rule *rp){
       append_str(cp, 1, 0, 0);
     }
   } /* End loop */
+
+  if (seenEq) {
+    append_str(");", 0, 0, 0);
+  }
 
   /* Main code generation completed */
   cp = append_str(0,0,0,0);
@@ -4072,14 +4077,32 @@ void print_stack_union(
   for(i=0; i<arraysize; i++){
     if( types[i]==0 ) continue;
     fprintf(out,"   of $Yy%d %s\n",i+1,types[i]); lineno++;
-    free(types[i]);
   }
   if( lemp->errsym && lemp->errsym->useCnt ){
     fprintf(out,"  of $Yy%d Int32\n",lemp->errsym->dtnum); lineno++;
   }
+  fprintf(out,";\n"); lineno++;
+
+  /* Print out the unYy* function defintions. */
+  fprintf(out,"unYy0 :: { YYMINORTYPE => Token };\n"); lineno++;
+  fprintf(out,"unYy0 = { mt => case mt of $Yy0 tok -> tok of _ -> prim kill-entire-process \"parser error using unYy0\" end };\n"); lineno++;
+  for(i=0; i<arraysize; i++){
+    if( types[i]==0 ) continue;
+    fprintf(out,"unYy%d :: { YYMINORTYPE => %s };\n",i+1,types[i]); lineno++;
+    fprintf(out,"unYy%d = { mt => case mt of $Yy%d x -> x of _ -> prim kill-entire-process \"parser error using unYy%d\" end };\n",i+1,i+1,i+1); lineno++;
+  }
+  if( lemp->errsym && lemp->errsym->useCnt ){
+    fprintf(out,"  of $Yy%d Int32\n",lemp->errsym->dtnum); lineno++;
+    fprintf(out,"unYy%d :: { YYMINORTYPE => Int32 };\n",lemp->errsym->dtnum); lineno++;
+    fprintf(out,"unYy%d = { mt => case mt of $Yy%d x -> x of _ -> prim kill-entire-process \"parser error using unYy%d\" end };\n",
+                  lemp->errsym->dtnum, lemp->errsym->dtnum, lemp->errsym->dtnum); lineno++;
+  }
+
+  for(i=0; i<arraysize; i++){
+    free(types[i]);
+  }
   free(stddt);
   free(types);
-  fprintf(out,";\n"); lineno++;
   fprintf(out,"type case Token of $MkToken ;\n"); lineno++; // temporarily define Token
   *plineno = lineno;
 }
@@ -4192,7 +4215,7 @@ void ReportTable(
 
   in = tplt_open(lemp);
   if( in==0 ) return;
-  out = file_open(lemp,".c","wb");
+  out = file_open(lemp,".foster","wb");
   if( out==0 ){
     fclose(in);
     return;
