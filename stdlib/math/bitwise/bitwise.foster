@@ -233,7 +233,7 @@ bit-reverse-Int8 = { n =>
 // Preconditions:
 //      fin - start <= 32
 //            start <= 32
-// Example: bitfield-mask-Int32 3 8 == 0b`1111`1111`000
+// Example: bitfield-mask-Int32 3 8 == 0b`11111`000
 bitfield-mask-Int32 :: { % start : Int32 : start <UInt32 32 =>
                          % fin   : Int32 : if fin <=UInt32 32
                                             then (fin -Int32 start) <=UInt32 32
