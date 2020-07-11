@@ -14,6 +14,12 @@ seqEmpty = { Seq FT_Empty };
 seqSingleton :: forall (a:Type) { a => Seq a };
 seqSingleton = { x => Seq (FT_Single x) };
 
+seqOf2 :: forall (a:Type) { a => a => Seq a };
+seqOf2 = { x => y => Seq (ftSnocTreeE (FT_Single x) y) };
+
+seqOf3 :: forall (a:Type) { a => a => a => Seq a };
+seqOf3 = { x => y => z => Seq (ftSnocTreeE (ftSnocTreeE (FT_Single x) y) z) };
+
 // Time, Heap: O(log n)
 seqReplicate32 :: forall (a:Type)
                    { % n : Int32 : n >=SInt32 0
