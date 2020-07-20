@@ -278,7 +278,7 @@ tcFailsMore errs = do
                                ,highlightFirstLineDoc (rangeOf e)]
 
 sanityCheck :: Bool -> String -> Tc ()
-sanityCheck cond msg = if cond then return () else tcFails [red (text msg)]
+sanityCheck cond ~msg = if cond then return () else tcFails [red (text msg)]
 
 readTcMeta :: MetaTyVar ty -> Tc (TVar ty)
 readTcMeta m = tcLift $ readIORef (mtvRef m)
