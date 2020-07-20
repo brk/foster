@@ -185,10 +185,12 @@ instance TypedWith (PatternRepr ty) ty where
       PR_Tuple _rng ty _    -> ty
       PR_Or    _rng ty _    -> ty
 
+{-
 data PatternFlat ty =
           PF_Atom        (PatternAtom ty)
         | PF_Ctor         SourceRange ty [PatternAtom ty] (CtorInfo ty)
         | PF_Tuple        SourceRange ty [PatternAtom ty]
+        -}
 
 data CaseArm pat expr ty = CaseArm { caseArmPattern :: pat ty
                                    , caseArmBody    :: expr
@@ -840,10 +842,12 @@ instance Show (Pattern ty) where
   show (P_Tuple    _ _ pats)       = "P_Tuple    " ++ show pats
   show (P_Or       _ _ pats)       = "P_Or       " ++ show pats
 
+{-
 instance Show (PatternFlat ty) where
   show (PF_Atom atom) = show atom
   show (PF_Ctor     _ _ _pats ctor) = "PF_Ctor     " ++ show (ctorInfoId ctor)
   show (PF_Tuple    _ _ pats)       = "PF_Tuple    " ++ show pats
+-}
 
 instance Show (PatternRepr ty) where
   show (PR_Atom atom) = show atom
@@ -1102,7 +1106,7 @@ deriving instance Eq Formatting
 
 deriving instance Functor PatternAtom
 deriving instance Functor PatternRepr
-deriving instance Functor PatternFlat
+--deriving instance Functor PatternFlat
 deriving instance Functor Pattern
 deriving instance Functor TypedId
 deriving instance Functor AllocInfo
