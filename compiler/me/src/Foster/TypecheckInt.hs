@@ -20,9 +20,10 @@ import Foster.AnnExpr
 import Foster.TypeTC
 import Foster.SourceRange(SourceRange, highlightFirstLine, highlightFirstLineDoc, rangeOf)
 
-tryParseInt :: SourceRange -> String -> Either String LiteralInt
+tryParseInt :: SourceRange -> T.Text -> Either String LiteralInt
 tryParseInt rng originalText =
-    let (negated, (clean {-without sign-}, expt, _cleanWithExpt), base) = extractCleanBase originalText in
+    let originalString = T.unpack originalText
+        (negated, (clean {-without sign-}, expt, _cleanWithExpt), base) = extractCleanBase originalString in
     case () of
       _ | not (onlyValidDigitsIn clean base) -> Left $
                 ("Cleaned integer must contain only valid digits for base " ++ show base ++ ": " ++ clean
@@ -37,7 +38,7 @@ tryParseInt rng originalText =
         indexOf x = (toLower x) `List.elemIndex` "0123456789abcdef"
 
         -- Precondition: the provided string must be parseable in the given radix
-        precheckedLiteralInt :: String -> Bool -> String -> Int -> Int -> LiteralInt
+        precheckedLiteralInt :: T.Text -> Bool -> String -> Int -> Int -> LiteralInt
         precheckedLiteralInt originalText negated clean expt base =
             let nat0 = parseRadixRev (fromIntegral base) (List.reverse clean)
                 nat  = if expt < 0 then error "tryParseInt can't handle negative exponent!"
@@ -76,10 +77,10 @@ extractCleanBase raw = do
     evalNeg :: (Bool, String) -> Int
     evalNeg (n, digits) = (if n then -1 else 1) * (read digits)
 
-typecheckInt :: ExprAnnot -> String -> Expected TypeTC -> Tc (AnnExpr RhoTC)
+typecheckInt :: ExprAnnot -> T.Text -> Expected TypeTC -> Tc (AnnExpr RhoTC)
 typecheckInt annot originalText expTy = do
   case tryParseInt (rangeOf annot) originalText of
-    Left  msg -> tcFails [red (text msg)]
+    Left  msg -> tcFails [red (string msg)]
     Right int -> do
       -- No need to unify with Infer here because tcRho does it for us.
       ty <- case expTy of
@@ -91,12 +92,15 @@ typecheckInt annot originalText expTy = do
 exptTooLargeForType expt (TyAppTC (TyConTC "Float32") []) = expt >= 39
 exptTooLargeForType expt _ty = expt >= 309
 
-typecheckRat :: ExprAnnot -> String -> Maybe TypeTC -> Tc (AnnExpr RhoTC)
+typecheckRat :: ExprAnnot -> T.Text -> Maybe TypeTC -> Tc (AnnExpr RhoTC)
 typecheckRat annot originalText expTy = do
   -- TODO: be more discriminating about float vs rational numbers?
-  let (negated, (cleanWithoutSign, expt, cleanEWithoutSign), base) = extractCleanBase originalText
-      cleanWithSign  = if negated then '-':cleanWithoutSign  else cleanWithoutSign
-      cleanEWithSign = if negated then '-':cleanEWithoutSign else cleanEWithoutSign
+  let originalString = T.unpack originalText 
+      (negated, (cleanWithoutSignStr, expt, cleanEWithoutSignStr), base) = extractCleanBase originalString
+      cleanWithoutSign  = T.pack cleanWithoutSignStr
+      cleanEWithoutSign = T.pack cleanEWithoutSignStr
+      cleanWithSign  = if negated then "-" `T.append` cleanWithoutSign  else cleanWithoutSign
+      cleanEWithSign = if negated then "-" `T.append` cleanEWithoutSign else cleanEWithoutSign
       float64 = TyAppTC (TyConTC "Float64") []
   ty <- case expTy of
             Nothing -> return $ float64
@@ -113,11 +117,11 @@ typecheckRat annot originalText expTy = do
       if exptTooLargeForType expt ty then
         tcFails [text "Exponent too large", highlightFirstLineDoc (rangeOf annot)]
       else do
-       case Atto.parseOnly (hexDoubleParser <* Atto.endOfInput) $ T.pack cleanWithoutSign of
+       case Atto.parseOnly (hexDoubleParser <* Atto.endOfInput) $ cleanWithoutSign of
          Left err -> tcFails [text "Failed to parse hex float literal " <+> parens (text cleanWithSign)
                              ,highlightFirstLineDoc (rangeOf annot)
                              ,text "Error was:"
-                             ,indent 8 (text err) ]
+                             ,indent 8 (string err) ]
          Right (part1,part2,mantissaText,denom,part3) -> do
            if denom > (16.0 ** 14)
              then
@@ -139,11 +143,11 @@ typecheckRat annot originalText expTy = do
         -- and multiplying by ``10 ** expt`` does not produce bit-precise results.
         -- For example, ``3e50 == (3.0 * (10 ** 50))`` is ``False``!
         -- Also, we negate separately because Atto.double returns 0.0 for "-0.0".
-        case Atto.parseOnly Atto.double $ T.pack (cleanWithoutSign ++ "e" ++ show expt) of
-          Left err -> tcFails [text "Failed to parse rational " <+> parens (text $ cleanWithSign ++ "e" ++ show expt)
+        case Atto.parseOnly Atto.double $ T.pack (T.unpack cleanWithoutSign ++ "e" ++ show expt) of
+          Left err -> tcFails [text "Failed to parse rational " <+> parens (text cleanWithSign <> text "e" <> pretty expt)
                               ,highlightFirstLineDoc (rangeOf annot)
                               ,text "Error was:"
-                              ,indent 8 (text err) ]
+                              ,indent 8 (string err) ]
           Right pos -> do
             let val = if negated then -1.0 * pos else pos
             tcMaybeWarnMisleadingRat (rangeOf annot) cleanEWithSign val
@@ -158,25 +162,26 @@ hexDoubleParser = do
   part3 <- (Atto.asciiCI (T.pack "p") *> Atto.signed Atto.decimal)
   return (part1, part2, t, 16.0 ** (fromIntegral $ T.length t), part3)
 
+tcMaybeWarnMisleadingRat :: SourceRange -> T.Text -> Double -> Tc ()
 tcMaybeWarnMisleadingRat range cleanText val = do
   -- It's possible that the literal given is "misleading",
   -- in the sense that it is neither the shortest string to
   -- uniquely identify a given floating point value, nor is
   -- it the most precise short-ish string.
-  let isExpNot = isExponentialNotation cleanText
+  let isExpNot = isExponentialNotation (T.unpack cleanText)
   let shortest = T.unpack $ toShortest val
-  let canonicalS = addPointZeroIfNeeded shortest
-  let canonicalE = T.unpack $ toExponential   (-1) val
-  let canonicalP = T.unpack $
+  let canonicalS = T.pack $ addPointZeroIfNeeded shortest
+  let canonicalE = toExponential   (-1) val
+  let canonicalP =
             if isExpNot
               then toExponential   (-1) val
               else toFixed shortestPrec val
                 where Just shortestPrec =
-                        List.elemIndex '.' (reverse canonicalS)
+                        T.findIndex (== '.') (T.reverse canonicalS)
 
-  let differingS = differingDigits cleanText canonicalS
-  let differingP = differingDigits cleanText canonicalP
-  let sameLength = length cleanText == length canonicalP
+  let differingS = differingDigitsT cleanText canonicalS
+  let differingP = differingDigitsT cleanText canonicalP
+  let sameLength = T.length cleanText == T.length canonicalP
 
   case (differingS, differingP) of
     (0, _) -> return ()
@@ -186,11 +191,11 @@ tcMaybeWarnMisleadingRat range cleanText val = do
       let alt1 = if canonicalS == canonicalP
                   then []
                   else [text "                   or, alternatively: " <> text canonicalS]
-      let alt2 = if (length canonicalE + 5) > length canonicalP
+      let alt2 = if (T.length canonicalE + 5) > T.length canonicalP
                   then []
                   else [text "         or, in exponential notation: " <> text canonicalE]
       let description =
-                if length cleanText <= length canonicalP
+                if T.length cleanText <= T.length canonicalP
                   then "is actually the floating point number "
                   else "could be written more compactly as    "
 
@@ -207,6 +212,7 @@ isExponentialNotation s = loop s
 
 addPointZeroIfNeeded s = if '.' `elem` s then s else s ++ ".0"
 
+differingDigitsT t1 t2 = differingDigits (T.unpack t1) (T.unpack t2)
 differingDigits s1 s2 = loop s1 s2 0
   where loop [] [] n = n
         loop (_:s1) [] n = loop s1 [] (n + 1)

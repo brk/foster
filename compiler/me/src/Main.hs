@@ -183,7 +183,7 @@ typecheckSCC showASTs showAnnExprs pauseOnErrors tcenv    scc ctx = do
 
         if null errsAndASTs
          then return (map OK goodexprs, newctx)
-         else return ([Errors [text $ "not all functions type checked in SCC: "
+         else return ([Errors [string $ "not all functions type checked in SCC: "
                                       ++ show (map fnAstName fns)]], newctx)
 
        where
@@ -255,7 +255,7 @@ typecheckModule verboseMode pauseOnErrors flagvals modast tcenv0 = do
     let dts = moduleASTprimTypes modast ++ moduleASTdataTypes modast
     --let fns = moduleASTfunctions modast
     --let nonfns = moduleASTnonfndefs modast
-    let defns = [(T.pack nm, e) | ToplevelDefn (nm, e) <- moduleASTitems modast]
+    let defns = [(nm, e) | ToplevelDefn (nm, e) <- moduleASTitems modast]
 
     let primBindings = computeContextBindings' (primitiveDecls ++ primopDecls)
     let allCtorTypes = concatMap extractCtorTypes dts
@@ -265,16 +265,18 @@ typecheckModule verboseMode pauseOnErrors flagvals modast tcenv0 = do
                        concatMap effectContextBindings (moduleASTeffects modast)
     let nullCtorBindings = computeContextBindings nullCtors
 
+{-
     liftIO $ when verboseMode $ do
         putDocLn $ (outLn "vvvv declBindings:====================")
-        putDocLn $ (dullyellow (vcat $ map (text . show) declBindings))
+        putDocLn $ (dullyellow (vcat $ map prettyT declBindings))
+-}
 
     rv <- case collectDuplicatesBy fst defns of
       [] -> do
         let declCG = buildCallGraphList' declBindings (Set.fromList $ map (\(TermVarBinding nm _) -> nm) declBindings)
         let globalids = map (\(TermVarBinding _ (tid, _)) -> tidIdent tid) $ declBindings ++ primBindings
         let declBindings' = topoSortBindingSCC $ Graph.stronglyConnCompR declCG -- :: [ [ContextBinding TypeAST] ]
-        let primOpMap = Map.fromList [(T.pack nm, prim)
+        let primOpMap = Map.fromList [(nm, prim)
                             | (nm, (_, prim)) <- Map.toList gFosterPrimOpsTable]
 
         ctxErrsOrOK <- liftIO $ unTc tcenv0 $ do
@@ -321,17 +323,17 @@ typecheckModule verboseMode pauseOnErrors flagvals modast tcenv0 = do
              tyvarsMap    = Map.fromList []
              unbind (TermVarBinding s t) = (s, t)
 
-   mkBinding' (s, t, isForeign) =
+   mkBinding' (bn, ty, isForeign) =
      case isForeign of
-       NotForeign   -> pair2binding (T.pack s,  t, Nothing)
-       IsForeign nm -> TermVarBinding (T.pack s)
-                         (TypedId t (GlobalSymbol (T.pack s) (RenameTo $ T.pack nm)), Nothing)
+       NotForeign   -> pair2binding (bn, ty, Nothing)
+       IsForeign nm -> TermVarBinding bn
+                         (TypedId ty (GlobalSymbol bn (RenameTo nm)), Nothing)
 
-   computeContextBindings' :: [(String, TypeAST, IsForeignDecl)] -> [ContextBinding TypeAST]
+   computeContextBindings' :: [(T.Text, TypeAST, IsForeignDecl)] -> [ContextBinding TypeAST]
    computeContextBindings' decls = map mkBinding' decls
 
-   computeContextBindings :: [(String, TypeAST, CtorId)] -> [ContextBinding TypeAST]
-   computeContextBindings decls = map (\(s,t,cid) -> pair2binding (T.pack s, t, Just cid)) decls
+   computeContextBindings :: [(T.Text, TypeAST, CtorId)] -> [ContextBinding TypeAST]
+   computeContextBindings decls = map (\(s,t,cid) -> pair2binding (s, t, Just cid)) decls
 
    effectContextBindings :: EffectDecl TypeAST -> [ContextBinding TypeAST]
    effectContextBindings ed = map (\(EffectCtor dctor outty) -> 
@@ -361,18 +363,18 @@ typecheckModule verboseMode pauseOnErrors flagvals modast tcenv0 = do
      TyAppAST (TyConAST $ typeFormalName $ dataTypeName dt)
               (map boundTyVarFor $ dataTypeTyFormals dt)
 
-   splitCtorTypes :: [(String, Either TypeAST TypeAST, CtorId)] ->
-                    ([(String, TypeAST, CtorId)]
-                    ,[(String, TypeAST, CtorId)])
+   splitCtorTypes :: [(T.Text, Either TypeAST TypeAST, CtorId)] ->
+                    ([(T.Text, TypeAST, CtorId)]
+                    ,[(T.Text, TypeAST, CtorId)])
    splitCtorTypes xs = go xs [] []
      where go [] rl rr = (reverse rl, reverse rr)
            go ((nm, Left  ty, cid):xs) rl rr = go xs ((nm, ty, cid):rl) rr
            go ((nm, Right ty, cid):xs) rl rr = go xs rl ((nm, ty, cid):rr)
 
-   extractCtorTypes :: DataType TypeAST -> [(String, Either TypeAST TypeAST, CtorId)]
+   extractCtorTypes :: DataType TypeAST -> [(T.Text, Either TypeAST TypeAST, CtorId)]
    extractCtorTypes dt = map nmCTy (dataTypeCtors dt)
      where nmCTy dc@(DataCtor name tyformals types _repr _lone _range) =
-                 (T.unpack name, ctorTypeAST tyformals dtType types, cid)
+                 (name, ctorTypeAST tyformals dtType types, cid)
                          where dtType = typeOfDataType dt
                                cid    = ctorId (typeFormalName $ dataTypeName dt) dc
 
@@ -483,7 +485,7 @@ typecheckModule verboseMode pauseOnErrors flagvals modast tcenv0 = do
           where
             funcnames = map fnAstName (moduleASTfunctions mAST)
             valuenames = Set.fromList funcnames
-            has_no_defn (s, _, _) = Set.notMember (T.pack s) valuenames
+            has_no_defn (nm, _, _) = Set.notMember nm valuenames
 
    processTcConstraints :: [(TcConstraint, SourceRange)] -> Tc ()
    processTcConstraints constraints = mapM_ processConstraint constraints
@@ -632,7 +634,7 @@ runCompiler ci_time wholeprog flagVals outfile = do
                                      (sum (modulesSourceLines wholeprog))
 
 toFixed :: Double -> Doc any
-toFixed f = text $ printf "%.1f" f
+toFixed f = text $ T.pack $ printf "%.1f" f
 
 {-
 minusGCStats (GCStats a2 b2 c2 d2 e2 f2 g2 h2 i2 j2 k2 l2 m2 n2 o2 p2 q2 r2)
@@ -654,7 +656,7 @@ reportFinalPerformanceNumbers ci_time nqueries querytime tc_time sr_time
                               n = if p < 10.0 then 2 else if p < 100.0 then 1 else 0
                               padding = fill n (text "") in
                           padding <> parens (toFixed p <> text "%")
-       let fmt str time = text str <+> (fill 11 $ text $ Criterion.secs time) <+> fmt_pct time
+       let fmt str time = text str <+> (fill 11 $ text $ T.pack $ Criterion.secs time) <+> fmt_pct time
        
        if nqueries > 0
          then do
@@ -674,7 +676,7 @@ reportFinalPerformanceNumbers ci_time nqueries querytime tc_time sr_time
                          ,text ""
                          ,fmt "CBOR-in     time:" ci_time
                          ,fmt "  capnp-out time:" pb_time
-                         ,text "overall wall-clock time:" <+> text (Criterion.secs $ total_time)
+                         ,text "overall wall-clock time:" <+> text (T.pack $ Criterion.secs $ total_time)
                          ,text "# source lines:" <+> pretty wholeProgNumLines
                          ,text "source lines/second:" <+> toFixed (fromIntegral wholeProgNumLines / total_time)
                          ]
@@ -736,7 +738,7 @@ desugarParsedModule tcenv m = do
                                         return $ FnTypeAST  s' t' fx' cc cs
           RefinedTypeP nm t e -> do t' <- q t
                                     e' <- convertExprAST q e
-                                    return $ RefinedTypeAST nm t' e'
+                                    return $ RefinedTypeAST (T.unpack nm) t' e'
           MetaPlaceholder desc -> return $ MetaPlaceholderAST MTVTau desc
 
 type TCRESULT = ModuleIL KNExpr TypeIL
@@ -765,7 +767,7 @@ typecheckSourceModule tcenv sm = do
     res <- dieOnError res0
     return (tc_time, res)
 
-lowerModule :: String -> (Double, (ModuleIL KNExpr TypeIL))
+lowerModule :: FilePath -> (Double, (ModuleIL KNExpr TypeIL))
             -> Compiled CompilerTimings
 lowerModule outfile (tc_time, kmod) = do
      flags    <- gets ccFlagVals
@@ -829,8 +831,8 @@ lowerModulePhase2 monomod0 flags outfile = do
           assocBinders <- sequence [do r <- newOrdRef Nothing
                                        let renam = case isForeign of
                                                     NotForeign -> NoRename
-                                                    IsForeign nm -> RenameTo (T.pack nm)
-                                       let xid = GlobalSymbol (T.pack s) renam
+                                                    IsForeign nm -> RenameTo nm
+                                       let xid = GlobalSymbol s renam
                                        let tid = TypedId ty xid
                                        let b = MKBound tid r
                                        return (xid, b)
@@ -883,7 +885,7 @@ lowerModulePhase2 monomod0 flags outfile = do
          putDocLn (showILProgramStructure ilprog)
          putDocLn $ (outLn "^^^ ===================================")
 
-     liftIO $ putDocLn $ (text $ "/// Mono    size: " ++ show (knSize (moduleILbody monomod0)))
+     liftIO $ putDocLn $ (string $ "/// Mono    size: " ++ show (knSize (moduleILbody monomod0)))
 
      (pb_time , _) <- ioTime $ ccWhen (not . getTypecheckOnly . ccFlagVals) $
                                    (liftIO $ dumpILProgramToCapnp ilprog (outfile ++ ".cb"))
@@ -928,16 +930,16 @@ dumpAllPrimitives = do
 
     forallPart tvs = hsep $ [text "forall"] ++ map (\(tv, k) -> parens (prettySrc tv <+> text ":" <+> pretty k)) tvs
 
-    textid str = if Char.isAlphaNum (head str)
-                    then         text str
-                    else parens (text str)
+    textid txt = if Char.isAlphaNum (T.head txt)
+                    then         text txt
+                    else parens (text txt)
 
     allNames = "abcdefghijklmnop"
 
-    dumpPrimitive :: (String, (TypeAST, FosterPrim TypeAST)) -> IO ()
+    dumpPrimitive :: (T.Text, (TypeAST, FosterPrim TypeAST)) -> IO ()
     dumpPrimitive (name, ((FnTypeAST args ret _fx _ _), _primop)) = do
       
-      let namesArgs = [(text (nameChar:[]) , arg) | (nameChar, arg) <- zip allNames args]
+      let namesArgs = [(text (T.singleton nameChar) , arg) | (nameChar, arg) <- zip allNames args]
       putDocLn $ (fill 20 $ textid name)
                  <> text " = {"
                      <+> hsep [fill 12 (name <+> text ":" <+> prettyT arg) <+> text "=>"
@@ -946,7 +948,7 @@ dumpAllPrimitives = do
                  <+> text "}; // :: " <> prettyT ret -- <+> text "; fx=" <> prettyT fx
     
     dumpPrimitive (name, ((ForAllAST tvs (FnTypeAST args ret _fx _ _)), _primop)) = do
-      let argNames = [text (nameChar:[]) | (nameChar, _arg) <- zip allNames args]
+      let argNames = [text (T.singleton nameChar) | (nameChar, _arg) <- zip allNames args]
       putDocLn $ (fill 20 $ textid name) <+> text "::" <+> forallPart tvs
                                          <+> text "{" <+>
                                             hsep (map (\a -> prettyT a <+> text "=>") args) <+> prettyT ret
@@ -959,4 +961,4 @@ dumpAllPrimitives = do
                      <+> fill 23 (text "prim" <+> text name <+> hsep argNames)
                  <+> text "}; // :: " <> prettyT ret -- <+> text "; fx=" <> prettyT fx
 
-    dumpPrimitive (name, (_ty, _primop)) = error $ "Can't dump primitive " ++ name ++ " yet."
+    dumpPrimitive (name, (_ty, _primop)) = error $ "Can't dump primitive " ++ T.unpack name ++ " yet."

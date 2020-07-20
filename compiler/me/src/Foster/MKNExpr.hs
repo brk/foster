@@ -130,14 +130,14 @@ substBinders (MKBound _ b'x) (MKBound _ b'y) = do
   mergeFreeLists b'x b'y
   writeOrdRef b'y Nothing
 
-substVarForVar'' :: Show t => MKBound t -> MKBound t -> Compiled ()
+substVarForVar'' :: PrettyT t => MKBound t -> MKBound t -> Compiled ()
 substVarForVar'' bx by = do
   mb_fx <- boundOcc bx
   mb_fy <- boundOcc by
   case (mb_fx, mb_fy) of
     (Just fx, Just fy) -> do
       ccWhen ccVerbose $ do
-        dbgDoc $ text $ "substVarForVar'' " ++ show (boundVar bx) ++ "  " ++ show (boundVar by)
+        dbgDoc $ text "substVarForVar'' " <> prettyT (boundVar bx) <> text "  " <> prettyT (boundVar by)
       substVarForVar fx fy
 
     (Just _x, Nothing)               -> do substBinders bx by
@@ -461,9 +461,8 @@ findBinder :: Ident -> Map Ident (MKBoundVar ty) -> (MKBoundVar ty)
 findBinder id m =
     case Map.lookup id m of
         Just binder -> binder
-        Nothing -> error $ "MKNExpr.hs: findBinder had nothing for " ++ show id
-                      ++ "\n; m = " ++ show [(k, tidIdent (boundVar v)) | (k,v) <- Map.toList m]
-
+        Nothing -> error $ "MKNExpr.hs: findBinder had nothing for " ++ show (prettyIdent id)
+                      -- ++ "\n; m = " ++ show [(k, tidIdent (boundVar v)) | (k,v) <- Map.toList m]
 mkFreeOcc :: TypedId ty -> WithBinders ty (FreeVar ty)
 mkFreeOcc tid = mkFreeOcc' (tidIdent tid)
 
@@ -1156,11 +1155,11 @@ collectRedexes work sbtm = go sbtm
                         bc <- mkbCount x
                         fc <- dlcCount (mkfnVar mkfn)
                         ccWhen ccVerbose $ do
-                          dbgDoc $ text $ "markFnBind: x  = (" ++ show xc ++ " vs " ++ show bc ++ ") " ++ show (tidIdent $ boundVar x)
-                          dbgDoc $ text $ "            fv = (" ++ show fc ++ ") " ++ show (tidIdent $ boundVar (mkfnVar mkfn))
+                          dbgDoc $ string $ "markFnBind: x  = (" ++ show xc ++ " vs " ++ show bc ++ ") " ++ show (prettyIdent $ tidIdent $ boundVar x)
+                          dbgDoc $ string $ "            fv = (" ++ show fc ++ ") " ++ show (prettyIdent $ tidIdent $ boundVar (mkfnVar mkfn))
                         if xc == 0 && not (isTextPrim (tidIdent $ boundVar x))
                           then do
-                            dbgDoc $ text $ "markFunBind killing dead fn binding " ++ show (tidIdent $ boundVar x)
+                            dbgDoc $ string $ "markFunBind killing dead fn binding " ++ show (prettyIdent $ tidIdent $ boundVar x)
                             writeOrdRef fn Nothing
                           else do
                             dbgDoc $ text "adding fn ordref # " <> pretty (ordRefUniq fn) <+> text " :: " <> prettyT (boundVar (mkfnVar mkfn))
@@ -1262,7 +1261,7 @@ classifyRedex' fnbinder (Just fn) (Just fnlink) args knownFns = do
 -- {{{
 type MKRenamed t = WithBinders t
 
-runCopyMKFn :: (PrettyT t, Show t, AlphaRenamish t RecStatus)
+runCopyMKFn :: (PrettyT t, AlphaRenamish t RecStatus)
             => MKFn (Subterm t) t -> Map Ident (MKBoundVar t)
             -> [(Int, FreeOcc t)]
             -> Compiled (MKFn (Subterm t) t)
@@ -1277,7 +1276,7 @@ copyBinder msg b = do
   !m <- get
   put $ extend m [tidIdent $ boundVar b] [binder]
   lift $ ccWhen ccVerbose $ do
-    dbgDoc $ text $ "copied binder " ++ show (prettyIdent $ tidIdent $ boundVar b) ++ " (" ++ msg ++ ") into " ++ show newid
+    dbgDoc $ string $ "copied binder " ++ show (prettyIdent $ tidIdent $ boundVar b) ++ " (" ++ msg ++ ") into " ++ show (prettyIdent $ newid)
   return binder
 
 ccRefresh :: Ident -> Compiled Ident
@@ -1303,7 +1302,7 @@ copyFreeOcc fv = do
     Nothing     -> lift $ mkFreeOccForBinder b
 
 -- TODO increment unroll count?
-copyMKFn :: (PrettyT t, Show t, AlphaRenamish t RecStatus)
+copyMKFn :: (PrettyT t, AlphaRenamish t RecStatus)
          => MKFn (Subterm t) t
          -> [(Int, FreeOcc t)]
          -> MKRenamed t (MKFn (Subterm t) t)
@@ -1330,7 +1329,7 @@ copyMKFn fn donations = do
   return fn'
 
 -- Returns a Subexpr with an empty parent link.
-copyMKExpr :: (PrettyT t, Show t, AlphaRenamish t RecStatus)
+copyMKExpr :: (PrettyT t, AlphaRenamish t RecStatus)
            => MKExpr t -> MKRenamed t (Subexpr t, MKExpr t)
 copyMKExpr expr = do
   let qv = copyFreeOcc
@@ -1373,7 +1372,7 @@ copyMKExpr expr = do
     MKTyApp       _ ty v arg_tys -> qv v >>= \v' ->
                                      withLinkE $ \u -> return $ MKTyApp u ty v' arg_tys
 
-copyMKTerm :: (PrettyT t, Show t, AlphaRenamish t RecStatus)
+copyMKTerm :: (PrettyT t, AlphaRenamish t RecStatus)
            => MKTerm t -> MKRenamed t (Subterm t)
 copyMKTerm term = do
   let q subterm = do tm <- lift $ readLink "copyMKTerm" subterm
@@ -1707,7 +1706,7 @@ mknInline subterm mainCont mb_gas = do
                                                         ccFreshId (txt `T.append` T.pack "_ren_")
                                                      _ -> return id'0 -- already renamed!
                                             knfn' <- alphaRenameMonoWithState knfn'0 (Map.fromList [(id'0, id'1)])
-                                            dbgDoc $ dullgreen $ text "loop-headered+renamed fn " <> prettyIdent id'1 <> text (" is " ++ show (prettyT knfn'))
+                                            dbgDoc $ dullgreen $ text "loop-headered+renamed fn " <> prettyIdent id'1 <> text " is " <> prettyT knfn'
 
                                             let unrolled = mkfnUnrollCount fn + 1
                                                 knownState = [(tidIdent $ boundVar b, b) | (b,_) <- Map.toList knownFns]
@@ -2676,7 +2675,7 @@ betaReduceOnlyCall fn args kv    work = do
         substVarForBound (kv, oldret)
 
     kvb2 <- freeBinder kv
-    dbgDoc $ text $ "      betaReduceOnlyCall on " ++ show (prettyT (mkfnVar fn))
+    dbgDoc $ text "      betaReduceOnlyCall on " <> prettyT (mkfnVar fn)
     if kvb1 /= kvb2
       then do
         dbgDoc $ text "       kv before: " <> prettyT kvb1
@@ -2752,12 +2751,12 @@ pccOfTopTerm uref subterm = do
           MKLetCont _ [(kb,c)] subterm2 -> do
             isDead  <- lift $ binderIsDead kb
             if isDead then go subterm2
-              else error $ "MKLetCont in pccTopTerm, known: " ++ show (map (tidIdent.boundVar.fst) [(kb,c)])
+              else error $ show $ text "MKLetCont in pccTopTerm, known: " <> prettyT (map (tidIdent.boundVar.fst) [(kb,c)])
 
           MKLetCont _ knowns _subterm2 -> do
                                  --subtm <- lift $ readLink "pccOfTopTerm(subterm2)" subterm2
                                  --kn <- lift $ knOfMK NoCont subtm
-                                 error $ "MKLetCont in pccTopTerm, knowns: " ++ show (map (tidIdent.boundVar.fst) knowns)
+                                 error $ show $ "MKLetCont in pccTopTerm, knowns: " <> prettyT (map (tidIdent.boundVar.fst) knowns)
           MKCont        {} -> do error $ "MKCont in pccTopTerm"
           MKRelocDoms   {} -> do error $ "MKRelocDoms in pccTopTerm"
 
@@ -2850,7 +2849,7 @@ cffnOfMKCont cv (MKFn _v vs _ subterm _isrec _annot _unrollCount) = do
                                                   mb_mkfn <- readOrdRef link
                                                   case mb_mkfn of
                                                     Nothing -> do
-                                                      dbgDoc $ text $ "cffnOfMKCont removed dead fn: " ++ show (tidIdent $ boundVar bv)
+                                                      dbgDoc $ text "cffnOfMKCont removed dead fn: " <> prettyT (tidIdent $ boundVar bv)
                                                       return []
                                                     Just mkfn -> do
                                                       dbgDoc $ text "read fn from link # " <> pretty (ordRefUniq link)
@@ -2867,7 +2866,7 @@ cffnOfMKCont cv (MKFn _v vs _ subterm _isrec _annot _unrollCount) = do
                                                 case mb_contfn of
                                                    Nothing -> do
                                                      lift $ ccWhen ccVerbose $ do
-                                                       dbgDoc $ text $ "cffnOfMKCont removed dead continuation " ++ show (tidIdent $ boundVar bv)
+                                                       dbgDoc $ text "cffnOfMKCont removed dead continuation " <> prettyT (tidIdent $ boundVar bv)
                                                    Just contfn -> do
                                                      cffnOfMKCont bv contfn)
                                                knowns

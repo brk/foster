@@ -156,7 +156,7 @@ alphaRename' fn = do
         Nothing  -> do id' <- renameI id
                        ty' <- renameT ty
                        return (TypedId ty' id' )
-        Just _u' -> error $ "KNUtil.hs: can't rename a variable twice! " ++ show id
+        Just _u' -> error $ "KNUtil.hs: can't rename a variable twice! " ++ show (prettyIdent id)
 
     renameI id@(GlobalSymbol t alt) = do u' <- fresh
                                          let id' = GlobalSymbol (t `T.append` T.pack (show u')) alt
@@ -278,7 +278,7 @@ type Renamed = StateT RenameState Compiled
 newtype KNCompilesResult = KNCompilesResult (IORef Bool)
 instance Show KNCompilesResult where show _ = ""
 
-deriving instance (Show ty, Show rs) => Show (KNExpr' rs ty) -- used elsewhere...
+--deriving instance (Show ty, Show rs) => Show (KNExpr' rs ty) -- used elsewhere...
 
 instance AExpr (KNExpr' rs t) where
     freeIdents e = case e of
@@ -321,40 +321,40 @@ typeKN expr =
 
 -- This instance is primarily needed as a prereq for KNExpr to be an AExpr,
 -- which ((childrenOf)) is needed in ILExpr for closedNamesOfKnFn.
-instance (Show ty, Show rs) => Summarizable (KNExpr' rs ty) where
+instance (PrettyT ty, Show rs) => Summarizable (KNExpr' rs ty) where
     textOf e _width =
         case e of
-            KNLiteral _  (LitText  _) -> text $ "KNString    "
-            KNLiteral _  (LitBool  b) -> text $ "KNBool      " ++ (show b)
-            KNLiteral ty (LitInt int) -> text $ "KNInt       " ++ (litIntText int) ++ " :: " ++ show ty
-            KNLiteral ty (LitFloat f) -> text $ "KNFloat     " ++ (litFloatText f) ++ " :: " ++ show ty
-            KNLiteral _ty (LitByteArray bs) -> text "KNBytes     " <> text "b" <> text (show bs)
-            KNCall     t _ _ _  -> text $ "KNCall :: " ++ show t
-            KNCallPrim _ t p  _ -> text $ "KNCallPrim  " ++ (show p) ++ " :: " ++ show t
-            KNAppCtor  t cid _ _ -> text $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
-            KNLetVal   x b  _ _ -> text $ "KNLetVal    " ++ (show x) ++ " :: " ++ (show $ typeKN b) ++ " = ... in ... "
-            KNLetRec   _ _    _ -> text $ "KNLetRec    "
-            KNLetFuns ids fns _ _ -> text $ "KNLetFuns   " ++ (show $ zip ids (map (tidIdent.fnVar) fns))
-            KNIf      t  _ _ _  -> text $ "KNIf        " ++ " :: " ++ show t
-            KNAlloc      {}     -> text $ "KNAlloc     "
-            KNDeref      {}     -> text $ "KNDeref     "
-            KNStore      {}     -> text $ "KNStore     "
-            KNCase _t v arms    -> text $ "KNCase      " ++ show v ++ " binding " ++ (show $ map caseArmBindings arms)
+            KNLiteral _  (LitText  _) -> string $ "KNString    "
+            KNLiteral _  (LitBool  b) -> string $ "KNBool      " ++ (show b)
+            KNLiteral ty (LitInt int) -> text "KNInt       " <> (text $ litIntText int) <> text " :: " <> prettyT ty
+            KNLiteral ty (LitFloat f) -> text "KNFloat     " <> (text $ litFloatText f) <> text " :: " <> prettyT ty
+            KNLiteral _ty (LitByteArray bs) -> text "KNBytes     " <> text "b" <> string (show bs)
+            KNCall     t _ _ _    -> string $ "KNCall :: " ++ show (prettyT t)
+            KNCallPrim _ t p  _   -> string $ "KNCallPrim  " ++ (show $ prettyT p) ++ " :: " ++ show (prettyT t)
+            KNAppCtor  t cid _ _  -> string $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show (prettyT t)
+            KNLetVal   x b  _ _   -> string $ "KNLetVal    " ++ (show $ prettyIdent x) ++ " :: " ++ (show $ prettyT $ typeKN b) ++ " = ... in ... "
+            KNLetRec   _ _    _   -> string $ "KNLetRec    "
+            KNLetFuns ids fns _ _ -> text "KNLetFuns   " <> pretty (zip ids (map (tidIdent.fnVar) fns))
+            KNIf      t  _ _ _  -> string $ "KNIf        " ++ " :: " ++ show (prettyT t)
+            KNAlloc      {}     -> string $ "KNAlloc     "
+            KNDeref      {}     -> string $ "KNDeref     "
+            KNStore      {}     -> string $ "KNStore     "
+            KNCase _t v arms    -> text "KNCase      " <> prettyT v <> text " binding " <> (prettyT $ map caseArmBindings arms)
             KNHandler _ _ty _eff _ arms _mb_xform _resumeid ->
-                                   text $ "KNHandler   " ++           " binding " ++ (show $ map caseArmBindings arms)
-            KNAllocArray {}     -> text $ "KNAllocArray "
-            KNArrayRead  t _    -> text $ "KNArrayRead " ++ " :: " ++ show t
-            KNArrayPoke  {}     -> text $ "KNArrayPoke "
-            KNArrayLit   {}     -> text $ "KNArrayLit  "
-            KNRecord     {}     -> text $ "KNRecord    "
-            KNTuple   _ vs _    -> text $ "KNTuple     (size " ++ (show $ length vs) ++ ")"
+                                   text "KNHandler   " <>              text " binding " <> (prettyT $ map caseArmBindings arms)
+            KNAllocArray {}     -> string $ "KNAllocArray "
+            KNArrayRead  t _    -> string $ "KNArrayRead " ++ " :: " ++ show (prettyT t)
+            KNArrayPoke  {}     -> string $ "KNArrayPoke "
+            KNArrayLit   {}     -> string $ "KNArrayLit  "
+            KNRecord     {}     -> string $ "KNRecord    "
+            KNTuple   _ vs _    -> string $ "KNTuple     (size " ++ (show $ length vs) ++ ")"
             KNVar (TypedId t (GlobalSymbol name _))
-                                -> text $ "KNVar(Global):   " ++ T.unpack name ++ " :: " ++ show t
-            KNVar (TypedId t i) -> text $ "KNVar(Local):   " ++ show i ++ " :: " ++ show t
-            KNTyApp t _e argty  -> text $ "KNTyApp     " ++ show argty ++ "] :: " ++ show t
-            KNKillProcess t m   -> text $ "KNKillProcess " ++ show m ++ " :: " ++ show t
-            KNCompiles _r _t _e -> text $ "KNCompiles    "
-            KNRelocDoms ids _   -> text $ "KNRelocDoms " ++ show ids
+                                -> text "KNVar(Global):   " <> text name <> text " :: " <> prettyT t
+            KNVar (TypedId t i) -> text "KNVar(Local):   " <> prettyIdent i <> " :: " <> prettyT t
+            KNTyApp t _e argty  -> text "KNTyApp     " <> prettyT argty <> text "] :: " <> prettyT t
+            KNKillProcess t m   -> text "KNKillProcess " <> text m <> text " :: " <> prettyT t
+            KNCompiles _r _t _e -> text "KNCompiles    "
+            KNRelocDoms ids _   -> text "KNRelocDoms " <> pretty ids
 
 instance Structured (KNExpr' rs ty) where
     childrenOf expr =
@@ -444,11 +444,8 @@ renderKN m put = if put then putDoc (prettyT m) >>= (return . Left)
 renderKNF :: FnExprIL -> String
 renderKNF m = show ((prettyT m) :: Doc AnsiStyle)
 
-instance PrettyT TypeIL where
-  prettyT t = text (show t)
-
-instance Pretty AllocMemRegion where
-  pretty rgn = text (show rgn)
+instance PrettyT TypeIL        where prettyT t  = string $ show t
+instance Pretty AllocMemRegion where pretty rgn = string $ show rgn
 
 showDecl (s, t, isForeign) =
   case isForeign of
@@ -475,7 +472,7 @@ instance (PrettyT body, PrettyT t) => PrettyT (ModuleIL body t) where
 pr YesTail = "(tail)"
 pr NotTail = "(non-tail)"
 
-instance Pretty RecStatus where pretty rs = text $ show rs
+instance Pretty RecStatus where pretty rs = string $ show rs
 
 --desc (t0, tb, tn) = text "t_opnd=" <> pretty t0 <> text "; t_before="<>pretty tb<>text "; t_after="<>pretty tn<>text "; t_elapsed="<>pretty (tn - tb)
 
@@ -484,18 +481,18 @@ instance (PrettyT ty, Pretty rs) => PrettyT (KNExpr' rs ty) where
         case e of
             KNRelocDoms ids e        -> yellow (text "<reloc-doms<" <> pretty ids <> text ">>") <$> prettyT e
             KNVar (TypedId _ (GlobalSymbol name _alt))
-                                -> (text $ "G:" ++ T.unpack name)
+                                -> (string $ "G:" ++ T.unpack name)
                        --showTyped (text $ "G:" ++ T.unpack name) t
             KNVar (TypedId t i) -> prettyId (TypedId t i)
             KNTyApp t e argtys  -> showTyped (prettyT e <> text ":[" <> hsep (punctuate comma (map prettyT argtys)) <> text "]") t
-            KNKillProcess t m   -> text ("KNKillProcess " ++ show m ++ " :: ") <> prettyT t
+            KNKillProcess t m   -> string ("KNKillProcess " ++ show m ++ " :: ") <> prettyT t
             KNLiteral t lit     -> showTyped (prettyT lit) t
             KNCall     t v [] _ -> showTyped (prettyId v <+> text "!") t
             KNCall     t v vs _ -> showTyped (prettyId v <+> hsep (map prettyT vs)) t
             KNCallPrim _ t p vs -> showUnTyped (text "prim" <+> prettyT p <+> hsep (map prettyId vs)) t
-            KNAppCtor  t cid vs _sr -> showUnTyped (text "~" <> parens (text (show cid)) <> hsep (map prettyId vs)) t
+            KNAppCtor  t cid vs _sr -> showUnTyped (text "~" <> parens (pretty cid) <> hsep (map prettyId vs)) t
             KNLetVal   x b  k _ -> lkwd "let"
-                                      <+> fill 8 (text (show x))
+                                      <+> fill 8 (prettyIdent x)
                                       <+> text "="
                                       <+> (indent 0 $ prettyT b) <+> lkwd "in"
                                    <$> prettyT k
@@ -509,7 +506,7 @@ instance (PrettyT ty, Pretty rs) => PrettyT (KNExpr' rs ty) where
                                                       -}
                                    -- <$> indent 2 end
             KNLetFuns ids fns k _sr -> text "letfuns"
-                                   <$> indent 2 (vcat [text (show id) <+> text "="
+                                   <$> indent 2 (vcat [prettyIdent id <+> text "="
                                                                       <+> prettyT fn
                                                       | (id, fn) <- zip ids fns
                                                       ])
@@ -517,7 +514,7 @@ instance (PrettyT ty, Pretty rs) => PrettyT (KNExpr' rs ty) where
                                    <$> prettyT k
                                    <$> end
             KNLetRec  ids xps e -> text "rec"
-                                   <$> indent 2 (vcat [text (show id) <+> text "="
+                                   <$> indent 2 (vcat [prettyIdent id <+> text "="
                                                                       <+> prettyT xpr
                                                       | (id, xpr) <- zip ids xps
                                                       ])
@@ -568,7 +565,7 @@ instance PrettyT FoldStatus where
     prettyT FoldNoBinding          = text "no def for callee"
 
 instance Pretty SizeCounter where
-  pretty sc = text $ show sc
+  pretty sc = string $ show sc
 
 knSubst :: Map Ident Ident -> KNExpr' r t -> KNExpr' r t
 knSubst m expr =
@@ -634,7 +631,7 @@ type AIVar = TypedId TypeIL
 
 instance Show TypeIL where
     show x = case x of
-        TyConIL nm        -> nm
+        TyConIL nm        -> T.unpack nm
         TyAppIL con types -> "(TyAppIL " ++ (show con)
                                       ++ joinWith " " ("":map show types) ++ ")"
         PrimIntIL size       -> "(PrimIntIL " ++ show size ++ ")"
@@ -647,23 +644,23 @@ instance Show TypeIL where
         TyVarIL     tv kind  -> show tv ++ ":" ++ show kind
         ArrayTypeIL ty       -> "(Array " ++ show ty ++ ")"
         PtrTypeIL   ty       -> "(Ptr " ++ show ty ++ ")"
-        RefinedTypeIL v e _  -> "(Refined " ++ show (tidIdent v) ++ "::" ++ show (tidType v) ++ " ;; " ++ show e ++ ")"
+        RefinedTypeIL _v _e _  -> "(Refined...)" --"(Refined " ++ show (tidIdent v) ++ "::" ++ show (tidType v) ++ " ;; " ++ show e ++ ")"
 
 instance Summarizable TypeIL where
     textOf e _width =
         case e of
-            TyConIL nam        -> text $ nam
-            TyAppIL con _types -> text $ "TyAppIL " ++ show con
-            PrimIntIL     size    -> text $ "PrimIntIL " ++ show size
-            RecordTypeIL  {}      -> text $ "RecordTypeIL"
-            TupleTypeIL   {}      -> text $ "TupleTypeIL"
-            FnTypeIL      {}      -> text $ "FnTypeIL"
-            CoroTypeIL    {}      -> text $ "CoroTypeIL"
-            ForAllIL ktvs _rho    -> text $ "ForAllIL " ++ show ktvs
-            TyVarIL       tv k     -> text "TyVarIL " <> pretty tv <> text " :: " <> pretty k
-            ArrayTypeIL   {}      -> text $ "ArrayTypeIL"
-            PtrTypeIL     {}      -> text $ "PtrTypeIL"
-            RefinedTypeIL v _e _  -> text $ "RefinedTypeIL " ++ show v
+            TyConIL nam           -> text $ nam
+            TyAppIL con _types    -> string $ "TyAppIL " ++ show con
+            PrimIntIL     size    -> string $ "PrimIntIL " ++ show size
+            RecordTypeIL  {}      -> string $ "RecordTypeIL"
+            TupleTypeIL   {}      -> string $ "TupleTypeIL"
+            FnTypeIL      {}      -> string $ "FnTypeIL"
+            CoroTypeIL    {}      -> string $ "CoroTypeIL"
+            ForAllIL ktvs _rho    -> string $ "ForAllIL " ++ show ktvs
+            TyVarIL       tv k    -> text "TyVarIL " <> pretty tv <> text " :: " <> pretty k
+            ArrayTypeIL   {}      -> string $ "ArrayTypeIL"
+            PtrTypeIL     {}      -> string $ "PtrTypeIL"
+            RefinedTypeIL v _e _  -> string $ "RefinedTypeIL " ++ show v
 
 instance Structured TypeIL where
     childrenOf e =

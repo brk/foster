@@ -25,11 +25,11 @@ import qualified Data.Graph as Graph(SCC(..), stronglyConnComp)
 
 import qualified Data.Foldable as Foldable(toList)
 
-import qualified Data.Text.Prettyprint.Doc as PP(emptyDoc)
+import qualified Data.Text.Prettyprint.Doc as PP(emptyDoc, list)
 import Data.Text.Prettyprint.Doc
 import Data.Text.Prettyprint.Doc.Render.Terminal
 
-import qualified Data.Text as T(Text, pack, unpack, append)
+import qualified Data.Text as T(Text, pack, unpack, append, length)
 import qualified Data.Text.Lazy as TL
 import qualified Data.ByteString as B(ByteString)
 
@@ -80,15 +80,15 @@ liftArrayIndexM f (ArrayIndex e1 e2 sr sg) = do
 -- can contain a sigma, not just a tau. See Typecheck.hs for details.
 data Expected t = Infer (IORef t) | Check t
 
-data TyVar = BoundTyVar  String SourceRange -- bound by a ForAll, that is
-           | SkolemTyVar String Uniq Kind
+data TyVar = BoundTyVar  T.Text SourceRange -- bound by a ForAll, that is
+           | SkolemTyVar T.Text Uniq Kind
 
-data TypeFormal = TypeFormal String SourceRange Kind
+data TypeFormal = TypeFormal T.Text SourceRange Kind
 typeFormalName (TypeFormal name _ _) = name
 
 instance Eq  TypeFormal where (TypeFormal s1 _ k1) ==        (TypeFormal s2 _ k2) = (s1,k1) ==        (s2,k2)
 instance Ord TypeFormal where (TypeFormal s1 _ k1) `compare` (TypeFormal s2 _ k2) = (s1,k1) `compare` (s2,k2)
-instance Show TypeFormal where show (TypeFormal s _ k) = "(TypeFormal " ++ s ++ ":" ++ show k ++ ")"
+instance Show TypeFormal where show (TypeFormal s _ k) = "(TypeFormal " ++ T.unpack s ++ ":" ++ show k ++ ")"
 
 convertTyFormal (TypeFormal name sr kind) = (BoundTyVar name sr, kind)
 
@@ -105,7 +105,7 @@ prettyDecorated (BoundTyVar name _) = text "'" <> text name
 prettyDecorated (SkolemTyVar name uniq _kind) = text "$" <> text name <> text ":" <> pretty uniq
 
 instance PrettyT t => PrettyT (MetaTyVar t) where
-  prettyT m = parens $ text ((mtvDesc m) ++ "~" ++ show (mtvUniq m))
+  prettyT m = parens $ text (mtvDesc m) <> text "~" <> string (show (mtvUniq m))
 
 instance PrettyT t => Show (MetaTyVar t) where
   show m = show (prettyT m)
@@ -115,11 +115,12 @@ data TVar t = Unbound Level | BoundTo t
 
 data MTVQ = MTVSigma | MTVTau | MTVEffect deriving (Eq)
 data MetaTyVar t = Meta { mtvConstraint :: MTVQ
-                        , mtvDesc       :: String
+                        , mtvDesc       :: T.Text
                         , mtvUniq       :: Uniq
                         , mtvRef        :: IORef (TVar t)
                         }
 
+descMTVQ :: MTVQ -> String
 descMTVQ MTVSigma  = "S"
 descMTVQ MTVTau    = "R"
 descMTVQ MTVEffect = "E"
@@ -141,7 +142,7 @@ data EPattern ty =
         | EP_Variable     SourceRange (E_VarAST ty)
         | EP_Ctor         SourceRange [EPattern ty] T.Text
         | EP_Bool         SourceRange Bool
-        | EP_Int          SourceRange String
+        | EP_Int          SourceRange T.Text
         | EP_Tuple        SourceRange [EPattern ty]
         | EP_Or           SourceRange [EPattern ty]
 
@@ -228,7 +229,7 @@ data DataType ty = DataType {
 -- CtorIds are created before typechecking.
 -- They are used to identify/disambiguate constructors.
 data CtorId       = CtorId { ctorTypeName :: DataTypeName
-                           , ctorCtorName :: String
+                           , ctorCtorName :: T.Text
                            , ctorArity    :: Int
                            } deriving (Show, Eq, Ord)
 
@@ -266,7 +267,7 @@ data LLCtorInfo ty = LLCtorInfo { ctorLLInfoId   :: CtorId
 type CtorRep = (CtorId, CtorRepr)
 
 type CtorName     = T.Text
-type DataTypeName = String
+type DataTypeName = T.Text
 
 data DataTypeSig  = DataTypeSig (Map CtorName CtorId)
 
@@ -275,13 +276,16 @@ data DataTypeSig  = DataTypeSig (Map CtorName CtorId)
 type FieldOfCtor ty = (Int, LLCtorInfo ty)
 type Occurrence ty = [FieldOfCtor ty]
 
+occType :: PrettyT t => TypedId t -> Occurrence t -> t
 occType v occ = let
                    go ty [] [] = ty
                    go _ (k:offs) (tys:tyss)
                                = go (tys !! k) offs tyss
                    go ty offs tyss =
-                        error $ "occType: " ++ show ty
-                               ++ "; offs=" ++ show offs ++ "~~~" ++ show tyss
+                        error $ show $
+                          text "occType: " <> prettyT ty
+                               <> text "; offs=" <> prettyT offs
+                               <> text "~~~" <> prettyT tyss
 
                    (offs, infos) = unzip occ
                 in go (tidType v) offs (map ctorLLInfoTys infos)
@@ -308,11 +312,11 @@ data Literal = LitInt   !LiteralInt
 
 data LiteralInt = LiteralInt { litIntValue   :: !Integer
                              , litIntMinBits :: !Int
-                             , litIntText    :: !String
+                             , litIntText    :: !T.Text
                              } deriving (Show, Eq)
 
 data LiteralFloat = LiteralFloat { litFloatValue   :: !Double
-                                 , litFloatText    :: !String
+                                 , litFloatText    :: !T.Text
                                  } deriving (Show, Eq)
 
 powersOfTwo = [2^k | k <- [1..]]
@@ -332,18 +336,18 @@ mkLiteralIntWithText integerValue originalText =
 instance PrettyT Literal where
   prettyT (LitInt int) = red     $ text (litIntText int)
   prettyT (LitFloat f) = dullred $ text (litFloatText f)
-  prettyT (LitText  t) =  dquotes (text $ T.unpack t)
+  prettyT (LitText  t) =  dquotes (text t)
   prettyT (LitBool  b) =           text (if b then "True" else "False")
-  prettyT (LitByteArray b) = text "b" <> dquotes (text $ show b)
+  prettyT (LitByteArray b) = text "b" <> dquotes (text $ T.pack $ show b)
 
 data WholeProgramAST expr ty = WholeProgramAST {
           programASTmodules    :: [ModuleAST expr ty]
      }
 
-data IsForeignDecl = NotForeign | IsForeign String deriving Show
+data IsForeignDecl = NotForeign | IsForeign T.Text deriving Show
 data ToplevelItem expr ty =
-      ToplevelDecl (String, ty, IsForeignDecl)
-    | ToplevelDefn (String, expr ty)
+      ToplevelDecl (T.Text, ty, IsForeignDecl)
+    | ToplevelDefn (T.Text, expr ty)
     | ToplevelData (DataType ty)
     | ToplevelEffect (EffectDecl ty)
 
@@ -387,7 +391,7 @@ computeIsFnRec' fnFreeIds ids =
 
 data ModuleIL expr ty = ModuleIL {
           moduleILbody        :: expr
-        , moduleILdecls       :: [(String, ty, IsForeignDecl)]
+        , moduleILdecls       :: [(T.Text, ty, IsForeignDecl)]
         , moduleILdataTypes   :: [DataType ty]
         , moduleILprimTypes   :: [DataType ty]
         , moduleILeffectDecls :: [EffectDecl ty]
@@ -402,7 +406,7 @@ data ToplevelBinding ty = TopBindArray Ident ty [Literal]
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||| Source Ranges ||||||||||||||||||||||||{{{
 
-data Formatting = Comment    {-SourceRange-} String
+data Formatting = Comment    {-SourceRange-} T.Text
                 | BlankLine
                 deriving Show
 
@@ -417,7 +421,7 @@ instance SourceRanged ExprAnnot where rangeOf (ExprAnnot _ rng _) = rng
 
 instance Show ExprAnnot where show (ExprAnnot _ rng _) = show rng
 
-data AllocationSource = AllocationSource String SourceRange deriving (Show, Eq)
+data AllocationSource = AllocationSource T.Text SourceRange deriving (Show, Eq)
 
 instance SourceRanged AllocationSource where rangeOf (AllocationSource _ sr) = sr
 
@@ -447,12 +451,12 @@ class Summarizable a where
 showStructure :: (Summarizable a, Structured a) => a -> Doc AnsiStyle
 showStructure e = showStructureP e "" False
   where
-    showStructureP :: (Summarizable b, Structured b) => b -> String -> Bool -> Doc AnsiStyle
+    showStructureP :: (Summarizable b, Structured b) => b -> T.Text -> Bool -> Doc AnsiStyle
     showStructureP e prefix isLast =
         let children = childrenOf e in
-        let thisIndent = prefix ++ (if isLast then "└─" else "├─") in
-        let nextIndent = prefix ++ (if isLast then "  " else "│ ") in
-        let padding = max 6 (60 - Prelude.length thisIndent) in
+        let thisIndent = prefix `T.append` (if isLast then "└─" else "├─") in
+        let nextIndent = prefix `T.append` (if isLast then "  " else "│ ") in
+        let padding = max 6 (60 - T.length thisIndent) in
         -- [ (child, index, numchildren) ]
         let childpairs = Prelude.zip3 children [1..]
                                (Prelude.repeat (Prelude.length children)) in
@@ -577,7 +581,7 @@ mapAllFromList :: Ord k => [(k, a)] -> Map k [a]
 mapAllFromList pairs =
   Map.fromListWith (++) (map (\(k,a) -> (k, [a])) pairs)
 
-data ArrayEntry e = AE_Int ExprAnnot String
+data ArrayEntry e = AE_Int ExprAnnot T.Text
                   | AE_Expr e
                   deriving Show
 
@@ -619,8 +623,10 @@ fmapIdent tt (GlobalSymbol t alt) = GlobalSymbol (tt t) alt
 
 data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
 
-prettyIdent i@(GlobalSymbol _ _) = text "G:" <> text (show i)
-prettyIdent i = text (show i)
+
+prettyIdent (Ident name number)   = text name <> text "!" <> pretty number
+prettyIdent (GlobalSymbol name (RenameTo alt)) = text name <> "~>" <> text alt
+prettyIdent (GlobalSymbol name _) = text "G:" <> text name
 
 prettyId (TypedId _ i) = prettyIdent i
 prettyTypedId (TypedId t i) = prettyIdent i <> text " :: " <> prettyT t
@@ -641,9 +647,9 @@ type ResumeIds = (Ident, Ident)
 --   of the assembly text and constraints.
 -- * LookupEffectHandler is a purely-internal primitive.
 data FosterPrim ty = NamedPrim (TypedId ty) -- invariant: global symbol
-                   | PrimOp { ilPrimOpName :: String
+                   | PrimOp { ilPrimOpName :: T.Text
                             , ilPrimOpType :: ty }
-                   | PrimOpInt String IntSizeBits IntSizeBits -- from, to
+                   | PrimOpInt T.Text IntSizeBits IntSizeBits -- from, to
                    | FieldLookup T.Text (Maybe Int)
                    | CoroPrim  CoroPrim ty ty
                    | PrimInlineAsm ty T.Text T.Text Bool
@@ -662,10 +668,10 @@ data AllocMemRegion = MemRegionStack
 
 data AllocInfo t = AllocInfo { allocType      :: t
                              , allocRegion    :: AllocMemRegion
-                             , allocTypeName  :: String
+                             , allocTypeName  :: T.Text
                              , allocCtorRepr  :: Maybe CtorRepr
                              , allocArraySize :: Maybe (TypedId t)
-                             , allocSite      :: String
+                             , allocSite      :: T.Text
                              , allocZeroInit  :: ZeroInit
                              }
 
@@ -732,16 +738,22 @@ instance IntSized IntSizeBits
        intSizeOf IWd = 32 -- TODO this is hacky =/
        intSizeOf IDw = 64
 
+instance PrettyT CallConv where
+  prettyT CCC    = text "CCC"
+  prettyT FastCC = text "FastCC"
+
 instance Pretty IntSizeBits    where pretty IWd = text "Word"
                                      pretty IDw = text "WordX2"
                                      pretty I1 = text "Bool"
-                                     pretty i  = text ("Int" ++ show (intSizeOf i))
+                                     pretty i  = text "Int" <> pretty (intSizeOf i)
 instance Pretty Ident          where pretty id = prettyIdent id --text (show id)
 instance PrettyT Ident where prettyT = pretty
+-- We don't use the constaint here, but want to enforce it to give ourselves
+-- the flexibility to change the definition to use it.
 instance PrettyT t => PrettyT (TypedId t)
                                where prettyT tid = pretty (tidIdent tid)
 instance SourceRanged expr => Pretty (CompilesResult expr)
-                               where pretty cr = text (show cr)
+                               where pretty cr = text (T.pack $ show cr)
 
 instance SourceRanged (Fn r e t) where rangeOf fn = rangeOf (fnAnnot fn)
 
@@ -776,10 +788,12 @@ instance Eq Ident where
     (Ident _t1 u1)         == (Ident _t2 u2) = u1 == u2 {-&& t1 == t2-}
     _ == _ = False
 
+{-
 instance Show Ident where
     show (Ident name number)   = T.unpack name ++ "!" ++ show number
     show (GlobalSymbol name (RenameTo alt)) = T.unpack name ++ "~>" ++ T.unpack alt
     show (GlobalSymbol name _) = T.unpack name
+-}
 
 instance Eq (TypedId t) where
        (==) (TypedId _ a) (TypedId _ b) = (==) a b
@@ -788,7 +802,7 @@ instance Ord (TypedId t) where
     compare (TypedId _ a) (TypedId _ b) = compareIdents a b
 
 instance (Show ty) => Show (TypedId ty)
-  where show (TypedId ty id) = show id ++ " :: " ++ show ty
+  where show (TypedId ty id) = show (pretty id) ++ " :: " ++ show ty
 
 instance Eq TyVar where
   BoundTyVar s1 _    == BoundTyVar s2 _    = s1 == s2
@@ -804,8 +818,8 @@ instance Ord TyVar where
 prettyOccurrence v occ = prettyT v <> text "/" <> pretty (map fst occ)
 
 instance Show TyVar where
-    show (BoundTyVar x _) = "'" ++ x
-    show (SkolemTyVar x u k) = "$" ++ x ++ "." ++ show u ++ "::" ++ show k
+    show (BoundTyVar x _) = "'" ++ T.unpack x
+    show (SkolemTyVar x u k) = "$" ++ T.unpack x ++ "." ++ show u ++ "::" ++ show k
 
 instance Show SourceRange where
     show _ = "<...source range...>"
@@ -816,7 +830,7 @@ instance (SourceRanged expr) => Show (CompilesResult expr) where
 
 instance Show (PatternAtom ty) where
   show (P_Wildcard _ _)            = "P_Wildcard"
-  show (P_Variable _ v)            = "P_Variable " ++ show (tidIdent v)
+  show (P_Variable _ v)            = "P_Variable " ++ show (pretty $ tidIdent v)
   show (P_Bool     _ _ b)          = "P_Bool     " ++ show b
   show (P_Int      _ _ i)          = "P_Int      " ++ show (litIntText i)
 
@@ -849,7 +863,7 @@ instance PrettyT t => PrettyT (PatternAtom t) where
   prettyT p =
     case p of
         P_Wildcard      _rng _ty          -> text "_"
-        P_Variable      _rng tid          -> text (show . tidIdent $ tid)
+        P_Variable      _rng tid          -> pretty (tidIdent tid)
         P_Bool          _rng _ty b        -> text $ if b then "True" else "False"
         P_Int           _rng _ty li       -> text (litIntText li)
 
@@ -866,32 +880,32 @@ instance Show ty => Show (EPattern ty) where
   show (EP_Variable _ v)          = "EP_Variable " ++ show v
   show (EP_Ctor     _ _pats ctor) = "EP_Ctor     " ++ show ctor
   show (EP_Bool     _ b)          = "EP_Bool     " ++ show b
-  show (EP_Int      _ str)        = "EP_Int      " ++ str
+  show (EP_Int      _ str)        = "EP_Int      " ++ T.unpack str
   show (EP_Tuple    _ pats)       = "EP_Tuple    " ++ show pats
   show (EP_Or       _ pats)       = "EP_Or       " ++ show pats
 
 instance PrettyT ty => PrettyT (EPattern ty) where
   prettyT (EP_Wildcard _)            = text "_"
   prettyT (EP_Variable _ v)          = prettyT v
-  prettyT (EP_Ctor     _ pats ctor)  = text "$" <> text (T.unpack ctor) <+> hsep (map prettyT pats)
+  prettyT (EP_Ctor     _ pats ctor)  = text "$" <> text ctor <+> hsep (map prettyT pats)
   prettyT (EP_Bool     _ b)          = pretty b
   prettyT (EP_Int      _ str)        = text str
   prettyT (EP_Tuple    _ pats)       = tupled $ map prettyT pats
   prettyT (EP_Or       _ pats)       = parens (hsep $ punctuate (text " or ") (map prettyT pats))
 
 instance PrettyT ty => PrettyT (E_VarAST ty) where
-  prettyT (VarAST (Just ty) txt) = text (T.unpack txt) <+> text "::" <+> prettyT ty
-  prettyT (VarAST Nothing   txt) = text (T.unpack txt)
+  prettyT (VarAST (Just ty) txt) = text txt <+> text "::" <+> prettyT ty
+  prettyT (VarAST Nothing   txt) = text txt
 
 instance PrettyT t => PrettyT (FosterPrim t) where
-  prettyT (NamedPrim (TypedId _ i)) = text (show i)
+  prettyT (NamedPrim (TypedId _ i)) = pretty i
   prettyT (PrimOp nm _ty) = text nm
-  prettyT (PrimOpInt op frm to) = text (op ++ "from " ++ show frm ++ " to " ++ show to)
+  prettyT (PrimOpInt op frm to) = text op <> text "from " <> pretty frm <> text " to " <> pretty to
   prettyT (CoroPrim c t1 t2) = pretty c <> text ":[" <> prettyT t1
                                        <> text "," <+> prettyT t2
                                        <> text "]"
-  prettyT (FieldLookup fieldName _) = text $ "." ++ T.unpack fieldName
-  prettyT (PrimInlineAsm _ cnt _cns _haseffects) = text "inline-asm" <+> text (show cnt)
+  prettyT (FieldLookup fieldName _) = text "." <> text fieldName
+  prettyT (PrimInlineAsm _ cnt _cns _haseffects) = text "inline-asm" <+> text cnt
   prettyT (LookupEffectHandler tag) = text "lookup_handler_for_effect{" <> pretty tag <> text "}"
 
 instance Pretty CoroPrim where
@@ -912,6 +926,17 @@ instance Pretty CtorRepr where
   pretty (CR_Nullary int) = text "##" <> pretty int <> text "~"
   pretty (CR_Value   int) = text "##" <> pretty int
 
+instance PrettyT CtorId where prettyT = pretty
+instance PrettyT CtorRepr where prettyT = pretty
+instance (PrettyT t) => PrettyT (LLCtorInfo t) where
+  prettyT (LLCtorInfo id repr tys lone) =
+    parens $ text "LLCtorInfo" <+> prettyT id <+> prettyT repr <+> prettyT tys <+> prettyT lone
+
+instance PrettyT Bool where prettyT = pretty
+instance PrettyT Int  where prettyT = pretty
+instance PrettyT T.Text where prettyT = pretty
+--instance (PrettyT t) => PrettyT (TypedId t) where prettyT = pretty
+
 instance TExpr body t => TExpr (Fn rec body t) t where
     freeTypedIds f = let bodyvars =  freeTypedIds (fnBody f) in
                      let boundvars =              (fnVars f) in
@@ -927,7 +952,7 @@ instance Pretty TypeFormal where
     text name <+> text ":" <+> pretty kind
 
 instance PrettyT IsForeignDecl where
-  prettyT ifd = text (show ifd)
+  prettyT ifd = text (T.pack $ show ifd)
 
 instance PrettyT t => PrettyT (DataType t) where
   prettyT dt =
@@ -938,7 +963,7 @@ instance PrettyT t => PrettyT (DataType t) where
      <$> text ""
 
 prettyDataTypeCtor dc =
-  text "of" <+> text "$" <> text (T.unpack $ dataCtorName dc)
+  text "of" <+> text "$" <> text (dataCtorName dc)
                         <+> (group (hang 2 $ vsep (PP.emptyDoc : map prettyT (dataCtorTypes dc))))
 
 instance PrettyT t => PrettyT (EffectDecl t) where
@@ -997,12 +1022,15 @@ string :: String -> Doc ann
 string s = pretty s
 
 -- For (temporary) compatibility with ansi-wl-pprint
-text :: String -> Doc a
+text :: T.Text -> Doc a
 text s = pretty s
 
+instance (PrettyT t) => PrettyT (Seq t) where
+  prettyT seq = align $ PP.list (map prettyT (Foldable.toList seq))
+
 instance (PrettyT t) => PrettyT (Maybe t) where
-    prettyT Nothing = pretty "Nothing"
-    prettyT (Just t) = pretty "Just" <+> prettyT t
+    prettyT Nothing = text "Nothing"
+    prettyT (Just t) = text "Just" <+> prettyT t
 
 instance PrettyT Char where prettyT c = pretty c
 instance (PrettyT a, PrettyT b) => PrettyT (a, b) where

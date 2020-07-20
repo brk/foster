@@ -146,7 +146,7 @@ data Coro = Coro {
   , coroLoc  :: Location
   , coroPrev :: Maybe Location
   , coroStack :: [(ValueEnv, SSTerm -> SSTerm)]
-} deriving (Show)
+}
 
 type ValueEnv = Map Ident SSValue
 
@@ -210,7 +210,6 @@ withEnv  gs e = modifyCoro gs (\c -> c { coroEnv  = e })
 -- or a non-normal-form expression.
 data SSTerm = SSTmExpr  IExpr
             | SSTmValue SSValue
-            deriving (Show)
 
 -- Expressions are terms that are not values.
 -- IExpr is a type-erased version of KNExpr.
@@ -235,7 +234,6 @@ data IExpr =
                         Ident  [CaseArm PatternRepr SSTerm TypeIL] [PatternRepr TypeIL]
         | ITyApp        Ident  [TypeIL]
         | IAppCtor      CtorId [Ident]
-        deriving (Show)
 
 data ShowableMachineState = SMS MachineState
 
@@ -258,7 +256,7 @@ data SSValue = SSBool      Bool
              | SSLocation  Location
              | SSFunc      SSFunc
              | SSCoro      Coro
-             deriving (Eq, Show)
+             deriving (Eq)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||||| KNExpr -> SSTerm ||||||||||||||||||||||{{{
@@ -329,7 +327,7 @@ data SSFunc = Func { ssFuncIdent      :: Ident
                    , ssFuncEnv        :: ValueEnv
                    }
 instance Show SSFunc where
-  show f = "<func " ++ show (ssFuncIdent f) ++ " ~ " ++ show (ssFuncBody f) ++ ">"
+  show f = "<func " ++ show (prettyIdent $ ssFuncIdent f) ++ " ~ " {- ++ show (ssFuncBody f) -} ++ ">"
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||| Machine State Helpers |||||||||||||||||||{{{
@@ -366,8 +364,8 @@ getval :: MachineState -> Ident -> SSValue
 getval gs id =
   case Map.lookup id (envOf gs) of
     Just v -> v
-    Nothing -> error $ "Unable to get value for " ++ show id
-                      ++ "\n\tenv (unsorted) is " ++ show (envOf gs)
+    Nothing -> error $ "Unable to get value for " ++ show (prettyIdent id)
+                      ++ "\n\tenv (unsorted) is " -- ++ show (envOf gs)
 
 -- Update the current term to be the body of the given procedure, with
 -- the environment set up to match the proc's formals to the given args.
@@ -383,7 +381,7 @@ evalIf gs v b c kont =
     SSBool True  -> kont gs b
     SSBool False -> kont gs c
     _ -> error $ "Smallstep.hs: if's conditional was not a boolean: "
-                  ++ show v ++ " => " ++ display (getval gs v)
+                  {-++ show v-} ++ " => " ++ display (getval gs v)
 
 -- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -416,13 +414,13 @@ evalExpr gs expr =
     IDeref      id -> case getval gs id of
                          SSLocation z -> lookupHeap gs z
                          other -> error $ "cannot deref non-location value "
-                                                             ++ show other
+                                                             -- ++ show other
     ILetRec  ids terms e -> evalRec gs ids terms e evalTerm evalTerm
     ILetFuns ids fns   e -> evalRec gs ids fns   e evalFunc evalTerm
 
     -- We syntatically restrict other expressions from being recursively
     -- bound, so anything that makes it past typechecking shouldn't fail here.
-    other -> error $ "Smallstep.hs: evalExpr cannot handle " ++ show other
+    other -> error $ "Smallstep.hs: evalExpr cannot handle " -- ++ show other
 
 type ExtMachineState = MachineState
 
@@ -486,7 +484,7 @@ stepExpr gs expr = do
 
     ICase  a {-_dt-} [] rejectedPatterns ->
         error $ "Smallstep.hs: Pattern match failure when evaluating case expr!"
-             ++ "\n\tFailing value: " ++ (show $ getval gs a)
+             ++ "\n\tFailing value: " {-++ (show $ getval gs a)-}
              ++ "\n\tRejected patterns: " ++ (show (list $ map prettyT rejectedPatterns))
     ICase  a {- dt-} ((CaseArm p e g _ _):bs) rejectedPatterns ->
        -- First, interpret the pattern list directly
@@ -541,9 +539,9 @@ stepExpr gs expr = do
           NamedPrim (TypedId _ id) ->
                           evalNamedPrimitive (T.unpack $ identPrefix id) gs args
           PrimOp op ty -> return $
-              withTerm gs (SSTmValue $ evalPrimitiveOp ty op args)
+              withTerm gs (SSTmValue $ evalPrimitiveOp ty (T.unpack op) args)
           PrimOpInt op from to -> return $
-              withTerm gs (SSTmValue $ evalPrimitiveOp (PrimIntIL to) op args)
+              withTerm gs (SSTmValue $ evalPrimitiveOp (PrimIntIL to) (T.unpack op) args)
           CoroPrim prim _t1 _t2 -> evalCoroPrimitive prim gs args
           PrimInlineAsm {} -> error $ "KSmallstep.hs: Interpreter cannot handle inline asm!"
           LookupEffectHandler _ -> error $ "KSmallstep.hs: Interpreter cannot yet look up effect handlers"
@@ -560,8 +558,8 @@ stepExpr gs expr = do
             return $ withTerm gs (SSTmValue $ prim_arrayRead gs n a)
           a@(SSByteString _) -> return $ withTerm gs (SSTmValue $ prim_arrayRead gs n a)
           other -> error $ "KSmallstep: Expected base of array read "
-                        ++ "(" ++ show base ++ "["++ show idxvar++"])"
-                        ++ " to be array value; had " ++ show other
+                        ++ "(" {-++ show base-} ++ "["++ show (prettyIdent idxvar)++"])"
+                        ++ " to be array value; had " -- ++ show other
 
     IArrayPoke iv base idxvar ->
         let Right n = getint $ getval gs idxvar  in
@@ -649,7 +647,7 @@ prim_arrayPoke gs n arr val = do
 arrayPoke gs base n val =
     case base of
       SSArray arr  -> prim_arrayPoke gs n arr val
-      other -> error $ "Expected base of array write to be array value; had " ++ show other
+      other -> error $ "Expected base of array write to be array value; had " -- ++ show other
 
 lowShiftBits k b = (k - 1) .&. fromIntegral b
 
@@ -729,7 +727,7 @@ evalPrimitiveOp (PrimIntIL size) nm args = evalPrimitiveIntOp size nm args
 evalPrimitiveOp (TyAppIL (TyConIL "Float64") []) nm args = evalPrimitiveDoubleOp nm args
 --evalPrimitiveOp (TyAppIL (TyConIL "Float32") []) nm args = evalPrimitiveFloat32Op nm args
 evalPrimitiveOp ty opName args =
-  error $ "Smallstep.evalPrimitiveOp " ++ show ty ++ " " ++ opName ++ " " ++ show args
+  error $ "Smallstep.evalPrimitiveOp " ++ show ty ++ " " ++ opName ++ " " -- ++ show args
 
 evalPrimitiveDoubleOp :: String -> [SSValue] -> SSValue
 evalPrimitiveDoubleOp "bitcast_i64" [SSFloat f] = let val = (fromIntegral $ coerceToWord f) in
@@ -755,7 +753,7 @@ evalPrimitiveDoubleOp "fmuladd" [SSFloat d1, SSFloat d2, SSFloat d3] =
     SSFloat (d1 * d2 + d3)
 
 evalPrimitiveDoubleOp opName args =
-  error $ "Smallstep.evalPrimitiveDoubleOp " ++ opName ++ " " ++ show args
+  error $ "Smallstep.evalPrimitiveDoubleOp " ++ opName ++ " " -- ++ show args
 
 coerceU :: (Integral a, Integral b) => (a -> a -> a) -> (b -> b -> b)
 coerceU f2 b1 b2 = fromIntegral (coerce f2 b1 b2)
@@ -873,7 +871,7 @@ evalPrimitiveIntOp I64 "fptosi_f64_i64" [SSFloat f] = SSInt64 (truncate f)
 evalPrimitiveIntOp I64 "fptoui_f64_i64" [SSFloat f] = SSInt64 (truncate f) -- TODO probably wrong
 
 evalPrimitiveIntOp size opName args =
-  error $ "Smallstep.evalPrimitiveIntOp " ++ show size ++ " " ++ opName ++ " " ++ show args
+  error $ "Smallstep.evalPrimitiveIntOp " ++ show size ++ " " ++ opName ++ " " -- ++ show args
 
 -- This is true with GHC 8.0.1 on 32-bit Linux
 --    and false with GHC 8.0.1 on 64-bit Linux (!)
@@ -1025,7 +1023,7 @@ evalNamedPrimitive "foster_fmttime_secs" gs [SSFloat d] = do
 
 evalNamedPrimitive prim _gs args = error $ "evalNamedPrimitive " ++ show prim
                                          ++ " not yet defined for args:\n"
-                                         ++ show args
+                                         -- ++ show args
 
 isSameArray (SSArray a) (SSArray b) =
   case (elems a, elems b) of
@@ -1087,7 +1085,7 @@ evalCoroPrimitive CoroInvoke gs [(SSLocation targetloc),arg] =
         return $ withExtendEnv gs2 (coroArgs newcoro) [arg]
 
 evalCoroPrimitive CoroInvoke _gs bad =
-         error $ "Wrong arguments to coro_invoke: "++ show bad
+         error $ "Wrong arguments to coro_invoke..." -- ++ show bad
 
 
 -- "Rule 4 describes the action of creating a coroutine.
@@ -1099,7 +1097,7 @@ evalCoroPrimitive CoroCreate gs [SSFunc f] =
   return $ withTerm gs2 (SSTmValue $ SSLocation loc)
 
 evalCoroPrimitive CoroCreate _gs args =
-        error $ "Wrong arguments to coro_create: " ++ show args
+        error $ "Wrong arguments to coro_create..." -- ++ show args
 
 
 -- The current coro is returned to the heap, marked suspended, with no previous coro.
@@ -1107,7 +1105,7 @@ evalCoroPrimitive CoroCreate _gs args =
 evalCoroPrimitive CoroYield gs [arg] =
   let ccoro = stCoro gs in
   case coroPrev ccoro of
-    Nothing -> error $ "Cannot yield from initial coroutine!\n" ++ show ccoro
+    Nothing -> error $ "Cannot yield from initial coroutine!\n"-- ++ show ccoro
     Just prevloc ->
       let (SSCoro prevcoro) = assert (prevloc /= coroLoc ccoro) $
                                lookupHeap gs prevloc in
@@ -1126,15 +1124,16 @@ evalCoroPrimitive CoroYield _gs _ = error $ "Wrong arguments to coro_yield"
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||  Helpers & Boilerplate  |||||||||||||||||{{{
+printStringNL :: MachineState -> String -> IO ()
 printStringNL gs s  = printString  gs (s ++ "\n")
 expectStringNL gs s = expectString gs (s ++ "\n")
 
 printString  gs s = do
-  putDoc (blue $ text s)
+  putDoc (blue $ string s)
   appendFile (outFile gs) s
 
 expectString gs s = do
-  putDoc (green $ text s)
+  putDoc (green $ string s)
   appendFile (errFile gs)  s
 
 --------------------------------------------------------------------
@@ -1183,7 +1182,7 @@ display (SSArray a   )  = show a
 display (SSTuple vals)  = "(" ++ joinWith ", " (map display vals) ++ ")"
 display (SSLocation z)  = "<location " ++ show z ++ ">"
 display (SSCtorVal id vals) = "(" ++ show id ++ joinWith " " (map display vals) ++ ")"
-display (SSFunc f) = "<closure " ++ (show $ ssFuncIdent f) ++ ">"
+display (SSFunc f) = "<closure " ++ (show $ pretty $ ssFuncIdent f) ++ ">"
 display (SSCoro    _  ) = "<coro>"
 
 -- Declare some instances that are only needed in this module.

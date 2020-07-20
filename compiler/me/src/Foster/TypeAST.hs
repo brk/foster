@@ -58,8 +58,8 @@ instance Eq (MetaTyVar t) where
        (True,  True)  -> True
        (False, False) -> False
        _ -> error $ "Malformed meta type variables "
-         ++ show (mtvUniq m1) ++ "@" ++ (mtvDesc m1) ++ " and "
-         ++ show (mtvUniq m2) ++ "@" ++ (mtvDesc m2) ++ ": mismatch between uniqs and refs!"
+         ++ show (mtvUniq m1) ++ "@" ++ (T.unpack $ mtvDesc m1) ++ " and "
+         ++ show (mtvUniq m2) ++ "@" ++ (T.unpack $ mtvDesc m2) ++ ": mismatch between uniqs and refs!"
 
 hpre [] = emptyDoc
 hpre ds = emptyDoc <+> hsep ds
@@ -73,14 +73,14 @@ instance PrettyT TypeAST where
         RecordTypeAST _labels types     -> text "RecordAST" <> tupled (map prettyT types)
         TupleTypeAST k   types          -> tupled (map prettyT types) <> text (kindAsHash k)
         FnTypeAST    s t fx cc cs       -> text "(" <> prettyT s <> text " =" <> text (briefCC cc) <> text ";"
-                                              <+> prettyT fx <> text "> " <> prettyT t <> text " @{" <> text (show cs) <> text "})"
+                                              <+> prettyT fx <> text "> " <> prettyT t <> text " @{" <> string (show cs) <> text "})"
         ForAllAST  tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> prettyT rho <> text ")"
         TyVarAST   tv                   -> prettySrc tv
         -- MetaTyVar m                     -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> text (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
         RefTypeAST    ty                -> text "(Ref " <> prettyT ty <> text ")"
         ArrayTypeAST  ty                -> text "(Array " <> prettyT ty <> text ")"
         RefinedTypeAST _nm ty _e        -> text "(Refined " <> prettyT ty <> text ")"
-        MetaPlaceholderAST _ nm         -> text "(.meta " <> text nm <> text ")"
+        MetaPlaceholderAST _ nm         -> text "(.meta " <> string nm <> text ")"
 
 prettyTVs tvs = map (\(tv,k) -> parens (pretty tv <+> text "::" <+> pretty k)) tvs
 
@@ -103,19 +103,19 @@ instance Show TypeAST where
 instance Summarizable TypeAST where
     textOf e _width =
         case e of
-            PrimIntAST     size            -> text $ "PrimIntAST " ++ show size
+            PrimIntAST     size            -> string $ "PrimIntAST " ++ show size
             TyConAST       nam             -> text $ nam
-            TyAppAST con   _               -> text "(TyAppAST" <+> prettyT con <> text ")"
-            RecordTypeAST   _   _          -> text $ "RecordTypeAST"
-            TupleTypeAST   k   _           -> text $ "TupleTypeAST" ++ kindAsHash k
-            FnTypeAST    {}                -> text $ "FnTypeAST"
-            ForAllAST  tvs _rho            -> text $ "ForAllAST " ++ show tvs
-            TyVarAST   tv                  -> text $ "TyVarAST " ++ show tv
-            -- MetaTyVar m                    -> text $ "MetaTyVar " ++ mtvDesc m
-            RefTypeAST    _                -> text $ "RefTypeAST"
-            ArrayTypeAST  _                -> text $ "ArrayTypeAST"
-            RefinedTypeAST {}              -> text $ "RefinedTypeAST"
-            MetaPlaceholderAST mtvq _      -> text $ "MetaPlaceholderAST " ++ descMTVQ mtvq
+            TyAppAST con   _               -> string "(TyAppAST" <+> prettyT con <> text ")"
+            RecordTypeAST   _   _          -> string $ "RecordTypeAST"
+            TupleTypeAST   k   _           -> string $ "TupleTypeAST" ++ kindAsHash k
+            FnTypeAST    {}                -> string $ "FnTypeAST"
+            ForAllAST  tvs _rho            -> string $ "ForAllAST " ++ show tvs
+            TyVarAST   tv                  -> string $ "TyVarAST " ++ show tv
+            -- MetaTyVar m                 -> string $ "MetaTyVar " ++ mtvDesc m
+            RefTypeAST    _                -> string $ "RefTypeAST"
+            ArrayTypeAST  _                -> string $ "ArrayTypeAST"
+            RefinedTypeAST {}              -> string $ "RefinedTypeAST"
+            MetaPlaceholderAST mtvq _      -> string $ "MetaPlaceholderAST " ++ descMTVQ mtvq
 
 instance Structured TypeAST where
     childrenOf e =
@@ -150,7 +150,7 @@ mkProcTypeWithFx fx args rets = FnTypeAST args (minimalTupleAST rets) fx CCC    
 mkFnTypeWithFx   fx args rets = FnTypeAST args (minimalTupleAST rets) fx FastCC FT_Func
 
 --------------------------------------------------------------------------------
-effectSingle :: String -> [TypeAST] -> Effect
+effectSingle :: T.Text -> [TypeAST] -> Effect
 effectSingle name tys = effectExtend (TyAppAST (TyConAST name) tys) nullFx
 
 effectExtend :: Effect -> Effect -> Effect
@@ -179,7 +179,7 @@ boxedTyVars tyvars = map (\v -> (v, KindPointerSized)) tyvars
 
 -- These names correspond to (the C symbols of)
 -- functions implemented by the Foster runtime.
-
+primitiveDecls :: [(T.Text, TypeAST, IsForeignDecl)]
 primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     [(,) "expect_i64"  $ mkProcType [i64] []
     ,(,)  "print_i64"  $ mkProcType [i64] []
@@ -250,25 +250,29 @@ primopDecls = map (\(name, (ty, _op)) -> (name, ty, NotForeign)) $ Map.toList gF
 
 intSize bitsize = show $ pretty bitsize
 
-prettyOpName nm tystr =
-  if Char.isLetter (head nm)
-    then nm ++ "-" ++ tystr  -- e.g. "bitand-Int32"
-    else nm ++        tystr  -- e.g. "+Int32"
+prettyOpName :: T.Text -> String -> T.Text
+prettyOpName nmtxt tystr =
+  let nm = T.unpack nmtxt
+      s  = if Char.isLetter (head nm)
+              then nm ++ "-" ++ tystr  -- e.g. "bitand-Int32"
+              else nm ++        tystr  -- e.g. "+Int32"
+  in T.pack s
 
 -- Note: we don't wrap LLVM's shift intrisics directly; we mask the shift
 -- value to avoid undefined values. For constant shift values, the mask will
 -- be trivially eliminated by LLVM.
+fixnumPrimitives :: IntSizeBits -> [(T.Text, (TypeAST, FosterPrim TypeAST))]
 fixnumPrimitives bitsize =
   let iKK = PrimIntAST bitsize in
   let mkPrim nm ty = (prettyOpName nm (intSize bitsize), (ty, PrimOp nm iKK)) in
-  [( "<U" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp  "<u" iKK))
-  ,( ">U" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp  ">u" iKK))
-  ,("<=U" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp "<=u" iKK))
-  ,(">=U" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp ">=u" iKK))
-  ,( "<S" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp  "<s" iKK))
-  ,( ">S" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp  ">s" iKK))
-  ,("<=S" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp "<=s" iKK))
-  ,(">=S" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp ">=s" iKK))
+  [(T.pack $  "<U" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp  "<u" iKK))
+  ,(T.pack $  ">U" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp  ">u" iKK))
+  ,(T.pack $ "<=U" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp "<=u" iKK))
+  ,(T.pack $ ">=U" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp ">=u" iKK))
+  ,(T.pack $  "<S" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp  "<s" iKK))
+  ,(T.pack $  ">S" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp  ">s" iKK))
+  ,(T.pack $ "<=S" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp "<=s" iKK))
+  ,(T.pack $ ">=S" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp ">=s" iKK))
   ] ++
   [mkPrim "+"           $ mkProcType [iKK, iKK] [iKK]
   ,mkPrim "-"           $ mkProcType [iKK, iKK] [iKK]
@@ -301,8 +305,9 @@ fixnumPrimitives bitsize =
 --      (+f64) :: Float64 -> Float64 -> Float64
 -- and internal signature
 --      (PrimOp "f+" PrimFloat64AST)
+flonumPrimitives :: String -> TypeAST -> [(T.Text, (TypeAST, FosterPrim TypeAST))]
 flonumPrimitives tystr ty =
-  let mkPrim nm fnty = (prettyOpName nm tystr, (fnty, PrimOp ("f" ++ nm) ty)) in
+  let mkPrim nm fnty = (prettyOpName nm tystr, (fnty, PrimOp ("f" `T.append` nm) ty)) in
   [mkPrim "+"       $ mkProcType [ty, ty] [ty]
   ,mkPrim "-"       $ mkProcType [ty, ty] [ty]
   ,mkPrim "*"       $ mkProcType [ty, ty] [ty]
@@ -392,9 +397,9 @@ sizeConversions = [mkTruncate p | p <- allSizePairs, isLarger  p] ++
     mkSignExt  (a, b) = (,) (mkSignExtName  a b)     $ (,) (mkFnType [PrimIntAST a] [PrimIntAST b] ) $ PrimOpInt "sext" a b
     mkZeroExt  (a, b) = (,) (mkZeroExtName  a b)     $ (,) (mkFnType [PrimIntAST a] [PrimIntAST b] ) $ PrimOpInt "zext" a b
     mkTruncate (a, b) = (,) (mkTruncateName a b)     $ (,) (mkFnType [PrimIntAST a] [PrimIntAST b] ) $ PrimOpInt "trunc" a b
-    mkTruncateName a b = "trunc_" ++ i a ++ "_to_" ++ i b
-    mkSignExtName  a b = "sext_"  ++ i a ++ "_to_" ++ i b
-    mkZeroExtName  a b = "zext_"  ++ i a ++ "_to_" ++ i b
+    mkTruncateName a b = T.pack $ "trunc_" ++ i a ++ "_to_" ++ i b
+    mkSignExtName  a b = T.pack $ "sext_"  ++ i a ++ "_to_" ++ i b
+    mkZeroExtName  a b = T.pack $ "zext_"  ++ i a ++ "_to_" ++ i b
 
     i IWd = "Word"
     i IDw = "WordX2"
@@ -419,7 +424,7 @@ eqArrayType = let a = BoundTyVar "a" (MissingSourceRange "==Ref") in
               (mkProcType [ArrayTypeAST (TyVarAST a), ArrayTypeAST (TyVarAST a)] [fosBoolType])
 
 -- These primitive names are known to the interpreter and compiler backends.
-gFosterPrimOpsTable :: Map.Map String (TypeAST, FosterPrim TypeAST)
+gFosterPrimOpsTable :: Map.Map T.Text (TypeAST, FosterPrim TypeAST)
 gFosterPrimOpsTable = Map.fromList $
   [(,) "not"                  $ (,) (mkFnType [i1]  [i1]  ) $ PrimOp "bitnot" i1
   ,(,) "==Bool"               $ (,) (mkFnType [i1,i1][i1] ) $ PrimOp "==" i1

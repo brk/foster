@@ -52,18 +52,18 @@ getCtorInfo' effdecls = Map.unionsWith (Seq.><) $ toList $ fmap getEffCtorInfoLi
 
 -----------------------------------------------------------------------
 
-ctorIdFor :: String -> DataCtor t -> (CtorName, CtorId)
+ctorIdFor :: T.Text -> DataCtor t -> (CtorName, CtorId)
 ctorIdFor tynm ctor = (dataCtorName ctor, ctorId tynm ctor)
 
 ctorId   tynm (DataCtor ctorName _tyformals types _repr _lone _range) =
-  CtorId tynm (T.unpack ctorName) (Prelude.length types)
+  CtorId tynm ctorName (Prelude.length types)
 
 -----------------------------------------------------------------------
 
-dataTypeSigs :: Show t => [DataType t] -> Map DataTypeName DataTypeSig
+dataTypeSigs :: PrettyT t => [DataType t] -> Map DataTypeName DataTypeSig
 dataTypeSigs datatypes = Map.fromList $ map ctorIdSet datatypes
  where
-  ctorIdSet :: Show t => DataType t -> (DataTypeName, DataTypeSig)
+  ctorIdSet :: PrettyT t => DataType t -> (DataTypeName, DataTypeSig)
   ctorIdSet (DataType formal _tyformals ctors _isForeign _range) =
       (typeFormalName formal,
        DataTypeSig (Map.fromList $ map (ctorIdFor (typeFormalName formal)) ctors))

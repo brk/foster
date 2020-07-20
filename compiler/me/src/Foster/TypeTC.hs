@@ -28,6 +28,10 @@ data Unifiable ty = UniConst ty
                   | UniVar (Uniq, Point (Maybe ty))
                   deriving Eq
 
+instance (PrettyT ty) => PrettyT (Unifiable ty) where
+    prettyT (UniConst t) = text "UniConst " <> prettyT t
+    prettyT (UniVar (u, _pt)) = text "UniVar " <> pretty u
+
 data TypeTC =
            PrimIntTC       IntSizeBits
          | TyConTC         DataTypeName
@@ -95,7 +99,7 @@ uni_briefCC v = show v
 prettyFuncProcComment cs =
   case cs of
     UniConst FT_Func -> text ""
-    _ -> text " /*" <> text (show cs) <> text "*/ "
+    _ -> text " /*" <> string (show cs) <> text "*/ "
 
 instance PrettyT TypeTC where
     prettyT x = case x of
@@ -103,21 +107,22 @@ instance PrettyT TypeTC where
         TyConTC nam                     -> text nam
         TyAppTC con            []       -> prettyT con
         TyAppTC con types               -> parens $ prettyT con <> hpre (map prettyT types)
-        RecordTypeTC labels types      -> text "Record" <> tupled (map (text . T.unpack) labels) <> tupled (map prettyT types)
+        RecordTypeTC labels types      -> text "Record" <> tupled (map pretty labels) <> tupled (map prettyT types)
         TupleTypeTC _kind types         -> tupled $ map prettyT types
         FnTypeTC     s t fx  cc cs _    -> text "(" <> prettyT s <> text " ="
-                                                    <> text (uni_briefCC cc) <> text ";fx=" <> prettyT fx
+                                                    <> string (uni_briefCC cc) <> text ";fx=" <> prettyT fx
                                                     <> text "> " <> prettyT t <> prettyFuncProcComment cs <> text ")"
         ForAllTC   tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> prettyT rho <> text ")"
-        TyVarTC    tv _mbk              -> text (show tv)
-        MetaTyVarTC m                   -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> pretty (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
+        TyVarTC    tv _mbk              -> string (show tv)
+        MetaTyVarTC m                   -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!"
+                                                <> pretty (show (mtvUniq m) ++ ":" ++ (T.unpack $ mtvDesc m) ++ ")")
         RefTypeTC     ty                -> text "(Ref " <> prettyT ty <> text ")"
         ArrayTypeTC   ty                -> text "(Array " <> prettyT ty <> text ")"
         RefinedTypeTC v expr args       -> text "(Refined " <> parens (prettyT v <+> text "::" <> prettyT (tidType v)) <> text " / " <> pretty args <$> showStructure expr <> text ")"
 
 instance Show TypeTC where
     show x = case x of
-        TyConTC nam -> nam
+        TyConTC nam -> T.unpack nam
         TyAppTC con types -> "(TyAppTC " ++ show con
                                       ++ joinWith " " ("":map show types) ++ ")"
         PrimIntTC size         -> "(PrimIntTC " ++ show size ++ ")"
@@ -149,18 +154,18 @@ pointedToTypeOfVarTC v = case v of
 instance Summarizable TypeTC where
     textOf e _width =
         case e of
-            TyConTC nam          -> text $ nam
-            TyAppTC con _types   -> text $ "TyAppTC " ++ show con
-            PrimIntTC     size      -> text $ "PrimIntTC " ++ show size
-            RecordTypeTC  {}        -> text $ "RecordTypeTC"
-            TupleTypeTC   {}        -> text $ "TupleTypeTC"
-            FnTypeTC      {}        -> text $ "FnTypeTC"
-            ForAllTC ktvs _rho      -> text $ "ForAllTC " ++ show ktvs
-            TyVarTC       {}        -> text $ "TyVarTC "
-            ArrayTypeTC   {}        -> text $ "ArrayTypeTC"
-            RefTypeTC     {}        -> text $ "RefTypeTC"
-            MetaTyVarTC   {}        -> text $ "MetaTyVarTC"
-            RefinedTypeTC {}        -> text $ "RefinedTypeTC"
+            TyConTC nam          -> text nam
+            TyAppTC con _types   -> string $ "TyAppTC " ++ show con
+            PrimIntTC     size      -> string $ "PrimIntTC " ++ show size
+            RecordTypeTC  {}        -> string $ "RecordTypeTC"
+            TupleTypeTC   {}        -> string $ "TupleTypeTC"
+            FnTypeTC      {}        -> string $ "FnTypeTC"
+            ForAllTC ktvs _rho      -> string $ "ForAllTC " ++ show ktvs
+            TyVarTC       {}        -> string $ "TyVarTC "
+            ArrayTypeTC   {}        -> string $ "ArrayTypeTC"
+            RefTypeTC     {}        -> string $ "RefTypeTC"
+            MetaTyVarTC   {}        -> string $ "MetaTyVarTC"
+            RefinedTypeTC {}        -> string $ "RefinedTypeTC"
 
 instance Structured TypeTC where
     childrenOf e =

@@ -55,7 +55,6 @@ import Data.IORef
 -- ||||||||||||||||||||||| CFG Data Types |||||||||||||||||||||||{{{
 data CFLast = CFCont        BlockId [MoVar] -- either ret or br
             | CFCase        MoVar [CaseArm PatternRepr BlockId MonoType]
-            deriving (Show)
 
 data Insn e x where
               ILabel   :: BlockEntry                  -> Insn C O
@@ -109,10 +108,10 @@ prettyCFFn fn = group (lbrace <+>
                                 (fnVars fn))))
                     <$> indent 4 (prettyT (fnBody fn))
                     <$> rbrace)
-                     <+> text "free-ids" <+> text (show (map prettyTypedVar (fnFreeIds fn)))
+                     <+> text "free-ids" <+> list (map prettyTypedVar (fnFreeIds fn))
                      <$> text "::" <+> prettyTypedVar (fnVar fn)
 
-instance PrettyT Label where prettyT l = text (show l)
+instance PrettyT Label where prettyT l = string (show l)
 
 instance PrettyT BasicBlock where
   prettyT bb = foldBlockNodesF prettyInsn bb emptyDoc
@@ -126,15 +125,15 @@ instance PrettyT (Graph Insn O O) where
 prettyInsn :: Insn e x -> Doc AnsiStyle -> Doc AnsiStyle
 prettyInsn i d = d <$> prettyT i
 
-prettyBlockId (b,l) = text (T.unpack b) <> text "." <> text (show l)
+prettyBlockId (b,l) = text b <> text "." <> prettyT l
 
 instance PrettyT (Insn e x) where
   prettyT (ILabel   bentry     ) = line <> prettyBlockId (fst bentry) <+> list (map prettyT (snd bentry))
-  prettyT (ILetVal  id  letable) = indent 4 (text "let" <+> text (show id) <+> text "="
+  prettyT (ILetVal  id  letable) = indent 4 (text "let" <+> prettyIdent id <+> text "="
                                                        <+> prettyT letable)
   prettyT (ILetFuns ids fns    ) = let recfun = if length ids == 1 then "fun" else "rec" in
                                   indent 4 (align $
-                                   vcat [text recfun <+> text (show id) <+> text "=" <+> prettyT fn
+                                   vcat [text recfun <+> prettyIdent id <+> text "=" <+> prettyT fn
                                         | (id,fn) <- zip ids fns])
   prettyT (ILast    cf         ) = prettyT cf
 
@@ -156,12 +155,12 @@ instance PrettyT t => PrettyT (Letable t) where
       ILLiteral   _ lit     -> prettyT lit
       ILTuple _knd vs _asrc -> (if _knd == KindAnySizeType then text "#" else text "") <>
                                  parens (hsep $ punctuate comma (map prettyT vs))
-      ILKillProcess t m     -> text ("prim KillProcess " ++ show m ++ " :: ") <> prettyT t
+      ILKillProcess t m     -> text "prim KillProcess " <> text m <> text " :: " <> prettyT t
       ILOccurrence  _ v occ -> prettyOccurrence v occ
       ILCallPrim  _ p vs    -> (text "prim" <+> prettyT p <+> hsep (map prettyId vs))
       ILCall      _ v vs    -> prettyT v <+> hsep (map prettyT vs)
       ILAppCtor   _ (c,r) vs _sr -> (parens (text (ctorCtorName c)
-                                        <>  text "~" <> text (show r)
+                                        <>  text "~" <> prettyT r
                                         <+> hsep (map prettyId vs)))
       ILAlloc     v rgn _sr -> text "(ref" <+> prettyT v <+> comment (pretty rgn) <> text ")"
       ILDeref     _ v       -> prettyT v <> text "^"

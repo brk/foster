@@ -37,7 +37,7 @@ import qualified Data.Set as Set(toList, union, unions, difference,
                                  member, Set, empty, size, fromList)
 import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
                                  insert, findWithDefault)
-import qualified Data.Text as T(pack, isInfixOf)
+import qualified Data.Text as T(pack, isInfixOf, concat)
 
 --import qualified Criterion.Measurement as Criterion(secs)
 
@@ -74,7 +74,6 @@ data ILBlock  = Block BlockEntryL [ILMiddle] ILLast
 data ILMiddle = ILLetVal      Ident   (Letable TypeLL)
               | ILTupleStore  [LLVar]  LLVar    AllocMemRegion
               | ILRebindId    Ident    LLVar
-              deriving Show
 
 -- Drop call-as-a-terminator and implicitly re-allow it as a letable value,
 -- which better matches LLVM's IR. (If/when we support exception handling,
@@ -145,7 +144,8 @@ makeAllocationsExplicit bbgp prohibitAllocations procId = do
         else do
             id' <- ccFreshId (T.pack "ref-alloc")
             let t = tidType v
-            let info = AllocInfo t memregion "ref" Nothing Nothing ("ref-allocator:"++show t) NoZeroInit
+            let info = AllocInfo t memregion "ref" Nothing Nothing
+                        (T.pack $ "ref-allocator:"++show (prettyT t)) NoZeroInit
             return $
               (mkMiddle $ CCLetVal id  (ILAllocate info sr)) <*>
               (mkMiddle $ CCLetVal id' (ILStore v (TypedId (LLPtrType t) id)))
@@ -158,7 +158,8 @@ makeAllocationsExplicit bbgp prohibitAllocations procId = do
         else do
             let t = LLStructType (map tidType vs)
             let memregion = MemRegionGlobalHeap
-            let info = AllocInfo t memregion "tup" Nothing Nothing ("tup-allocator:"++show vs) NoZeroInit
+            let info = AllocInfo t memregion "tup" Nothing Nothing
+                          (T.pack $ "tup-allocator:"++show (prettyT vs)) NoZeroInit
             return $
               (mkMiddle $ CCLetVal id (ILAllocate info (rangeOf allocsrc))) <*>
               (mkMiddle $ CCTupleStore vs (TypedId (LLPtrType t) id) memregion)
@@ -172,12 +173,13 @@ makeAllocationsExplicit bbgp prohibitAllocations procId = do
       if prohibitAllocations
         then compiledThrowE [text "Unable to eliminate allocations from " <> pretty procId]
         else do
-            id' <- ccFreshId (T.pack "ctor-alloc")
-            let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid
+            id' <- ccFreshId "ctor-alloc"
+            let tynm = T.concat [ctorTypeName cid, ".", ctorCtorName cid]
             let t = LLStructType (map tidType vs)
             let obj = (TypedId (LLPtrType t) id' )
             let memregion = MemRegionGlobalHeap
-            let info = AllocInfo t memregion tynm (Just repr) Nothing ("ctor-allocator:"++show cid) NoZeroInit
+            let info = AllocInfo t memregion tynm (Just repr) Nothing
+                          (T.pack $ "ctor-allocator:"++show (prettyT cid)) NoZeroInit
             return $
               (mkMiddle $ CCLetVal id' (ILAllocate info sr)) <*>
               (mkMiddle $ CCTupleStore vs obj memregion)  <*>
@@ -247,7 +249,8 @@ makeClosureAllocationExplicit ids clos = do
            let t = LLStructType (map tidType vs) in
            let envvar = TypedId (LLPtrType t) envid in
            let ealloc = ILAllocate (AllocInfo t memregion "env" Nothing Nothing
-                          ("env-allocator:"++show (tidIdent (closureProcVar clo))) DoZeroInit)
+                            (T.pack $ "env-allocator:"++show (prettyT $ tidIdent (closureProcVar clo)))
+                            DoZeroInit)
                           (MissingSourceRange "env-allocator") in
            (CCLetVal envid ealloc , CCTupleStore vs envvar memregion, envvar)
   let cloAllocsAndStores cloid gen_proc_var clo env_gen_id =
@@ -258,7 +261,8 @@ makeClosureAllocationExplicit ids clos = do
            let t' = fnty_of_procty (generic_procty (tidType (closureProcVar clo))) in
            let clovar = TypedId t' cloid in
            let calloc = ILAllocate (AllocInfo t memregion "clo" Nothing Nothing
-                         ("clo-allocator:"++show (tidIdent (closureProcVar clo))) DoZeroInit)
+                           (T.pack $ "clo-allocator:"++show (prettyT $ tidIdent (closureProcVar clo)))
+                           DoZeroInit)
                          (MissingSourceRange "clo-allocator") in
            (CCLetVal cloid calloc
            , [CCLetVal (tidIdent gen_proc_var) bitcast
@@ -390,7 +394,6 @@ data Avails = Avails { availSubst    :: AvailMap LLVar LLVar
                      --, availTuples'  :: AvailMap [LLVar] LLVar
                      , availOccs     :: AvailMap (LLVar, Occurrence TypeLL) LLVar
                      }  -- note: AvailMap works here because LLVar == LLRootVar...
-                     deriving Show
 
 --instance Show Avails where show a = show (pretty a)
 --instance Pretty Avails where
@@ -591,19 +594,31 @@ showILProgramStructure (ILProgram procdefs vals _decls _dtypes _lines) =
     <$> vcat (map showProcStructure procdefs)
   where
     showProcStructure (ILProcDef proc _) =
-        text (show $ procIdent proc) <+> (text "//")
-            <+> (text $ show $ map procVarDesc (procVars proc))
-            <+> (text "==>") <+> (text $ show $ procReturnType proc)
+        (prettyIdent $ procIdent proc) <+> (text "//")
+            <+> list (map procVarDesc (procVars proc))
+            <+> text "==>" <+> prettyT (procReturnType proc)
           <$> vcat (map showBlock $ procBlocks proc)
           <$> text "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^"
 
-    procVarDesc (TypedId ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
+    procVarDesc (TypedId ty id) = text "(" <+> prettyIdent id <> text " :: " <> prettyT ty <+> text ")"
 
     showBlock (Block blockid mids last) =
-            text ("vvvvvvvvvvvvvvvvvv")
-        <$> text (show blockid)
-        <$> text (concatMap (\m -> "\t" ++ show m ++ "\n") mids)
-        <$> text (show last ++ "\n^^^^^^^^^^^^^^\n")
+            text "vvvvvvvvvvvvvvvvvv"
+        <$> prettyT blockid
+        <$> indent 8 (vcat $ map prettyT mids)
+        <$> prettyT last
+        <$> text "^^^^^^^^^^^^^^\n"
+
+instance PrettyT ILMiddle where
+  prettyT (ILLetVal     id letable) = text "ILLetVal"     <+> prettyIdent id <+> prettyT letable
+  prettyT (ILTupleStore vs v _amr)  = text "ILTupleStore" <+> prettyT vs <+> prettyT v -- <+> prettyT amr
+  prettyT (ILRebindId   id v)       = text "ILRebindId"   <+> prettyIdent id <+> prettyT v
+
+instance PrettyT ILLast where
+  prettyT ILRetVoid = text "ILRetVoid"
+  prettyT (ILRet v) = text "ILRet" <+> prettyT v
+  prettyT (ILBr b vs) = text "ILBr" <+> prettyT b <+> prettyT vs
+  prettyT (ILCase v _arms _mbid) = text "ILCase" <+> prettyT v
 
 instance Show ILLast where
   show (ILRetVoid     ) = "ret void"

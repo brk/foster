@@ -41,12 +41,12 @@ data Context ty = Context { contextBindings   :: ContextBindings ty
                           , primitiveOperations :: Map T.Text (FosterPrim ty)
                           , globalIdents       :: Seq Ident
                           , pendingBindings   :: Seq T.Text
-                          , localTypeBindings :: Map String ty -- as introduced by, e.g. foralls.
+                          , localTypeBindings :: Map T.Text ty -- as introduced by, e.g. foralls.
                           , contextEffectCtorInfo :: Map CtorName (Seq (CtorId, EffectCtor ty))
                           , contextTypeBindings :: Seq (TyVar, Kind)
                           , contextCtorInfo   :: Map CtorName     (Seq (CtorInfo ty))
                           , contextDataTypes  :: Map DataTypeName (Seq (DataType ty))
-                          } deriving Show
+                          }
 
 {-
   contextBindings:
@@ -271,13 +271,13 @@ tcFailsMore :: [Doc AnsiStyle] -> Tc a
 tcFailsMore errs = do
   parents <- tcGetCurrentHistory
   case reverse parents of -- parents returned in root-to-child order.
-    []    -> tcFails $ errs ++ [text $ "[unscoped]"]
-    (e:_) -> tcFails $ errs ++ [text $ "Unification failure triggered when " ++
-                                       "typechecking source line:"
+    []    -> tcFails $ errs ++ [text "[unscoped]"]
+    (e:_) -> tcFails $ errs ++ [text "Unification failure triggered when " <>
+                                text "typechecking source line:"
                                ,prettySourceRangeInfo (rangeOf e)
                                ,highlightFirstLineDoc (rangeOf e)]
 
-sanityCheck :: Bool -> String -> Tc ()
+sanityCheck :: Bool -> T.Text -> Tc ()
 sanityCheck cond ~msg = if cond then return () else tcFails [red (text msg)]
 
 readTcMeta :: MetaTyVar ty -> Tc (TVar ty)
@@ -324,13 +324,13 @@ newTcUnificationVarEffect d = newTcUnificationVar_ MTVEffect d
 newTcUnificationVarSigma  d = newTcUnificationVar_ MTVSigma d
 newTcUnificationVarTau    d = newTcUnificationVar_ MTVTau d
 
-newTcUnificationVar_ :: MTVQ -> String -> Tc TypeTC
+newTcUnificationVar_ :: MTVQ -> T.Text -> Tc TypeTC
 newTcUnificationVar_ q desc = do
     lvl  <- tcGetLevel
     m <- newTcUnificationVarAtLevel lvl q desc
     return $ MetaTyVarTC m
 
-newTcUnificationVarAtLevel :: Level -> MTVQ -> String -> Tc (MetaTyVar TypeTC)
+newTcUnificationVarAtLevel :: Level -> MTVQ -> T.Text -> Tc (MetaTyVar TypeTC)
 newTcUnificationVarAtLevel lvl q desc = do
     u    <- newTcUniq
     ref  <- newTcRef (Unbound lvl)

@@ -28,7 +28,7 @@ data TypeP =
                           , fnTypeSource :: SourceRange }
          | ForAllP        [TypeFormal] TypeP
          | TyVarP         TyVar
-         | RefinedTypeP   String TypeP (ExprAST TypeP)
+         | RefinedTypeP   T.Text TypeP (ExprAST TypeP)
          | MetaPlaceholder String
 
 instance Show TypeP where
@@ -41,20 +41,20 @@ instance Show TypeP where
         ForAllP  tvs rho              -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
         TyVarP   tv                   -> show tv
         MetaPlaceholder s             -> "??" ++ s
-        RefinedTypeP nm ty _e         -> "(Refined " ++ nm ++ " : " ++ show ty ++ " : ... )"
+        RefinedTypeP nm ty _e         -> "(Refined " ++ T.unpack nm ++ " : " ++ show ty ++ " : ... )"
 
 instance Summarizable TypeP where
     textOf e _width =
         case e of
-            TyAppP    con  _             -> text $ "TyAppP " ++ show con
-            TyConP    nm                 -> text $ "TyConP " ++ nm
-            RecordTypeP _ _              -> text $ "RecordTypeP"
-            TupleTypeP k     _           -> text $ "TupleTypeP" ++ kindAsHash k
-            FnTypeP    _ _  _ _ _ _      -> text $ "FnTypeP"
-            ForAllP  tvs _rho            -> text $ "ForAllP " ++ show tvs
-            TyVarP   tv                  -> text $ "TyVarP " ++ show tv
-            MetaPlaceholder _s           -> text $ "MetaPlaceholder "
-            RefinedTypeP _nm _ty _e      -> text $ "RefinedTypeP"
+            TyAppP    con  _             -> string $ "TyAppP " ++ show con
+            TyConP    nm                 -> string $ "TyConP " ++ T.unpack nm
+            RecordTypeP _ _              -> string $ "RecordTypeP"
+            TupleTypeP k     _           -> string $ "TupleTypeP" ++ kindAsHash k
+            FnTypeP    _ _  _ _ _ _      -> string $ "FnTypeP"
+            ForAllP  tvs _rho            -> string $ "ForAllP " ++ show tvs
+            TyVarP   tv                  -> string $ "TyVarP " ++ show tv
+            MetaPlaceholder _s           -> string $ "MetaPlaceholder "
+            RefinedTypeP _nm _ty _e      -> string $ "RefinedTypeP"
 
 instance Structured TypeP where
     childrenOf e =

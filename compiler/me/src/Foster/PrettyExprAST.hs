@@ -52,7 +52,7 @@ instance PrettyT TypeP where
           TyConP nam          -> text nam
           TyAppP con []       ->          prettyT con
           TyAppP con ts       -> parens $ prettyT con <+> sep (map prettyT ts)
-          RecordTypeP labels ts          -> tupled (map prettyT ts) <> text (show labels)
+          RecordTypeP labels ts          -> tupled (map prettyT ts) <> string (show labels)
           TupleTypeP  k   ts             -> tupled (map prettyT ts) <> text (kindAsHash k)
           FnTypeP    ts r fx _cc _pf _sr ->
                                          text "{" <+> hsep [prettyT t <+> text "=>" | t <- ts]
@@ -84,7 +84,7 @@ emptyOrLine = group linebreak
 
 prettyTopLevelFn fn =
  withAnnot (fnAstAnnot fn) $
-  text (T.unpack $ fnAstName fn) <+> text "=" <+> prettyT fn <> text ";"
+  text (fnAstName fn) <+> text "=" <+> prettyT fn <> text ";"
 
 instance (PrettyT ty, IsQuietPlaceholder ty) => PrettyT (FnAST ty) where
   prettyT fn =
@@ -96,7 +96,7 @@ instance (PrettyT ty, IsQuietPlaceholder ty) => PrettyT (FnAST ty) where
           --args frm = group $ align $ vsep (map arg frm)
           --arg v = prettyFnFormalTy v <+> text "=>"
 
-          prettyFnFormal (TypedId _t v) = text (T.unpack $ identPrefix v)
+          prettyFnFormal (TypedId _t v) = text (identPrefix v)
           prettyFnFormalTy tid =
             if isQuietPlaceholder (tidType tid)
              then prettyFnFormal tid
@@ -112,7 +112,7 @@ instance (PrettyT ty, IsQuietPlaceholder ty) => PrettyT (ModuleExpr ty) where
         vcat (map prettyImport $ moduleASTincludes m)
     <$> vcat (map prettyItem $ moduleASTitems m)
 
-prettyImport (ident, path) = text "snafuinclude" <+> text (T.unpack ident) <+> text (T.unpack path) <> text ";"
+prettyImport (ident, path) = text "snafuinclude" <+> text ident <+> text path <> text ";"
 
 prettyItem (ToplevelDecl (s, t, NotForeign)) = text s <+> text "::" <+> prettyT t <> text ";"
 prettyItem (ToplevelDecl (s, t, IsForeign nm)) =
@@ -124,7 +124,7 @@ prettyItem (ToplevelDefn (s, e)) = text s <+> text "=" <+> prettyT e <> text ";"
 prettyItem (ToplevelData dt) = prettyT dt
 prettyItem (ToplevelEffect ed) = prettyT ed
 
-prettyId (TypedId _ i) = text (T.unpack $ identPrefix i)
+prettyId (TypedId _ i) = text (identPrefix i)
 
 prettyExpr e =
   case e of
@@ -184,9 +184,9 @@ prettyStmt e = case e of
     E_TyApp  annot e argtys -> withAnnot annot $ prettyT e <> text ":[" <> hsep (punctuate comma (map prettyT argtys)) <> text "]"
     E_TyCheck annot e ty    -> withAnnot annot $ parens' (prettyT e <+> text "as" <+> prettyT ty)
     E_KillProcess annot exp -> withAnnot annot $ parens' (text "prim kill-entire-process" <+> prettyT exp)
-    E_StringAST   annot (SS_Text  r t) -> withAnnot annot $             wasRaw r <> dquotes (text $ concatMap (formatTextChar False) $ T.unpack t)
-    E_StringAST   annot (SS_Bytes r b) -> withAnnot annot $ text "b" <> wasRaw r <> dquotes (text $ concatMap (formatBytesWord8 False) $ BS.unpack b)
-    E_BoolAST     annot b   -> withAnnot annot $ text $ show b
+    E_StringAST   annot (SS_Text  r t) -> withAnnot annot $             wasRaw r <> dquotes (string $ concatMap (formatTextChar False) $ T.unpack t)
+    E_StringAST   annot (SS_Bytes r b) -> withAnnot annot $ text "b" <> wasRaw r <> dquotes (string $ concatMap (formatBytesWord8 False) $ BS.unpack b)
+    E_BoolAST     annot b   -> withAnnot annot $ prettyT b
     
     E_CallPrimAST annot nm lits tys exprs -> withAnnot annot $ prettyCallPrim nm lits tys exprs
 
@@ -236,7 +236,7 @@ prettyStmt e = case e of
 
 prettyRecord labs exps =
     let
-      prettyField (lab, exp) = text (T.unpack lab) <> text ":" <+> prettyT exp
+      prettyField (lab, exp) = text lab <> text ":" <+> prettyT exp
       pairs = map prettyField (zip labs exps)
     in
     parens' (hsep $ punctuate comma pairs)
@@ -268,8 +268,10 @@ isOperator _                 = False
 
 instance Pretty Formatting where
   pretty BlankLine   = {-text "~" <>-} linebreak
-  pretty (Comment ('/':'/':s)) = text "//" <> text s <> hardline
-  pretty (Comment s) = pretty s -- comment markers already included
+  pretty (Comment txt) =
+    case T.unpack txt of
+      ('/':'/':s) -> text "//" <> string s <> hardline
+      _ -> text txt -- comment markers already included
 
 annotPre [BlankLine] = []
 annotPre pre = map pretty pre

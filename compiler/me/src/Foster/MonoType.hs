@@ -1,4 +1,4 @@
-{-# LANGUAGE Strict #-}
+{-# LANGUAGE Strict, StandaloneDeriving #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2010 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -38,9 +38,9 @@ data MonoType =
          | PtrType       MonoType
          | PtrTypeUnknown
          | RefinedType   (TypedId MonoType) KNMono [Ident]
-         deriving (Show, Eq)
+         deriving Eq
 
-instance Eq KNMono where e1 == e2 = show e1 == show e2
+instance Eq KNMono where (==) m1 m2 = (==) (show $ prettyT m1) (show $ prettyT m2)
 
 instance IntSizedBits MonoType where
         intSizeBitsOf (PrimInt isb) = isb
@@ -50,14 +50,14 @@ instance IntSizedBits MonoType where
 extractFnType (FnType _ _ cc pf) = (cc, pf)
 extractFnType (PtrType (StructType [FnType _ _ cc FT_Proc, _])) = (cc, FT_Func)
 
-extractFnType other = error $ "Unable to extract fn type from " ++ show other
+extractFnType other = error $ "Unable to extract fn type from " ++ show (prettyT other)
 
 boolMonoType = PrimInt I1
 
 type MoVar = TypedId MonoType
 type MoPrim = FosterPrim MonoType
 
-data MoExternDecl = MoExternDecl String MonoType deriving (Show)
+data MoExternDecl = MoExternDecl String MonoType
 
 instance Pretty CallConv where pretty CCC    = text "ccc"
                                pretty FastCC = text "fastcc"
@@ -94,8 +94,8 @@ instance Summarizable MonoType where
     textOf e _width =
         case e of
             TyCon nam           -> text $ nam
-            TyApp con _types    -> text $ "TyApp " ++ show con
-            PrimInt     size    -> text $ "PrimInt " ++ show size
+            TyApp con _types    -> text "TyApp " <> prettyT con
+            PrimInt     size    -> text "PrimInt " <> pretty size
             TupleType   {}      -> text $ "TupleType"
             StructType  {}      -> text $ "StructType"
             FnType      {}      -> text $ "FnType"
@@ -103,7 +103,7 @@ instance Summarizable MonoType where
             ArrayType   {}      -> text $ "ArrayType"
             PtrType     {}      -> text $ "PtrType"
             PtrTypeUnknown      -> text "?"
-            RefinedType v _e _  -> text $ "RefinedType " ++ show v
+            RefinedType v _e _  -> text "RefinedType " <> prettyT v
 
 instance Structured MonoType where
     childrenOf e =
@@ -180,7 +180,7 @@ alphaRenameMonoWithState fn map = do
         Nothing  -> do id' <- renameI id
                        ty' <- renameT ty
                        return (TypedId ty' id' )
-        Just _u' -> error $ "KNUtil.hs: can't rename a variable twice! " ++ show id
+        Just _u' -> error $ "KNUtil.hs: can't rename a variable twice! " ++ show (prettyIdent id)
 
     renameI id@(GlobalSymbol t alt) = do
                                      u' <- fresh

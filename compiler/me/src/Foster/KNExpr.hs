@@ -67,9 +67,9 @@ ccFresh s = ccFreshId (T.pack s)
 --------------------------------------------------------------------
 
 type KNState = (Context TypeTC
-               ,Map String (Seq (DataType TypeTC))
-               ,Map String (Seq (EffectDecl TypeIL))
-               ,Map String (DataType TypeIL))
+               ,Map T.Text (Seq (DataType TypeTC))
+               ,Map T.Text (Seq (EffectDecl TypeIL))
+               ,Map T.Text (DataType TypeIL))
 -- convertDT needs st to call tcToIL
 -- kNormalCtors uses contextBindings and nullCtorBindings of Context TypeTC
 --      but needs st to call tcToIL
@@ -133,7 +133,7 @@ kNormalizeModule m ctx = do
               KindAnySizeType ->
                 tcFails [text "The output type for effects must be representable as a pointer."
                         ,text "The effect constructor `"
-                                <> text (T.unpack $ dataCtorName (effectCtorAsData ec))
+                                <> text (dataCtorName (effectCtorAsData ec))
                                 <> text "` has an output type, " <> prettyT (effectCtorOutput ec)
                                 <> text ", which appears non-pointer-sized."
                         ,prettyWithLineNumbers (effectDeclRange effdecl)]
@@ -164,9 +164,9 @@ checkForUnboxedPolymorphism fn ft = do
     -- Ensure that the types resulting from function calls don't make
     -- dubious claims of supporting unboxed polymorphism.
     when (containsUnboxedPolymorphism (fnReturnType ft)) $
-       tcFails [text $ "Returning an unboxed-polymorphic value from "
-                    ++ show (fnIdent fn) ++ "? Inconceivable!"
-               ,text $ "Try using boxed polymorphism instead."]
+       tcFails [text "Returning an unboxed-polymorphic value from "
+                  <> prettyIdent (fnIdent fn) <> text "? Inconceivable!"
+               ,text "Try using boxed polymorphism instead."]
 
 containsUnboxedPolymorphism :: TypeIL -> Bool
 containsUnboxedPolymorphism (ForAllIL ktvs rho) =
@@ -237,7 +237,7 @@ kNormalize st expr =
         ti <- qt t
         let n = length exprs
             i32 = PrimIntTC I32
-            litint = LitInt (LiteralInt (fromIntegral n) 32 (show n))
+            litint = LitInt (LiteralInt (fromIntegral n) 32 (T.pack $ show n))
             arr = AnnAllocArray _rng (error "hmm") (AnnLiteral _rng i32 litint) ati (Just amr) NoZeroInit
             (ArrayTypeTC ati) = t
             isLiteral (Left _) = True
@@ -249,7 +249,7 @@ kNormalize st expr =
                     (\vals' -> return $ KNArrayLit ti arr' vals'))
 
       -- For anonymous function literals
-      E_AnnFn annFn -> do fn_id <- tcFresh $ show (tidIdent (fnVar annFn))
+      E_AnnFn annFn -> do fn_id <- tcFresh $ show (prettyIdent $ tidIdent (fnVar annFn))
                           knFn <- kNormalizeFn st annFn
                           let t = tidType (fnVar knFn)
                           let fnvar = KNVar (TypedId t fn_id)
@@ -365,7 +365,7 @@ kNormalize st expr =
                   kid <- knFresh "kont"
                   let kty = FnTypeIL [] t FastCC FT_Proc
                   let kontOf body = Fn {
-                          fnVar      = TypedId kty (GlobalSymbol (T.pack $ show kid) NoRename)
+                          fnVar      = TypedId kty (GlobalSymbol (T.pack $ show $ prettyIdent kid) NoRename)
                         , fnVars     = []
                         , fnBody     = body
                         , fnIsRec    = ()
@@ -403,7 +403,7 @@ kNormalize st expr =
             let (_, _, effMap, dtypeMap) = st in
             case Map.lookup (ctorTypeName cid) dtypeMap of
                Just dt -> let
-                            [ctor] = filter (\ctor -> dataCtorName ctor == T.pack (ctorCtorName cid))
+                            [ctor] = filter (\ctor -> dataCtorName ctor == ctorCtorName cid)
                                             (dataTypeCtors dt) in
                           ctor
                Nothing ->
@@ -411,7 +411,7 @@ kNormalize st expr =
                     Nothing -> error $ "lookupCtor failed for " ++ show cid
                     Just eff ->
                       let
-                        [ctor] = filter (\ctor -> dataCtorName ctor == T.pack (ctorCtorName cid))
+                        [ctor] = filter (\ctor -> dataCtorName ctor == ctorCtorName cid)
                                         (map effectCtorAsData $ concatMap effectDeclCtors eff) in
                       ctor
 
@@ -734,7 +734,7 @@ ailInt qt rng int ty = do
                     ,prettyWithLineNumbers rng]
 
 sanityCheckIntLiteralNotOversized rng typeSize int =
-    sanityCheck (typeSize >= litIntMinBits int) $
+    sanityCheck (typeSize >= litIntMinBits int) $ T.pack $
        "Int constraint violated; context-imposed exact size (in bits) was " ++ show typeSize
         ++ "\n                              but the literal intrinsically needs " ++ show (litIntMinBits int)
         ++ highlightFirstLine rng
@@ -1018,7 +1018,7 @@ kNormalCtors st dtype =
     kNormalCtor datatype (DataCtor cname _tyformals tys (Just repr) _lone range) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
-      let cid   = CtorId (typeFormalName dname) (T.unpack cname) arity
+      let cid   = CtorId (typeFormalName dname) cname arity
       let genFreshVarOfType t = do fresh <- knFresh ".autogen"
                                    return $ TypedId t fresh
       vars <- mapM genFreshVarOfType tys
@@ -1070,7 +1070,7 @@ kNormalEffectWrappers st ed = map kNormalEffectWrapper (zip [0..] (effectDeclCto
     kNormalEffectWrapper (n, EffectCtor (DataCtor cname tyformals tys drepr _lone range) outty) = do
       let dname = effectDeclName ed
       let arity = Prelude.length tys
-      let cid   = CtorId (typeFormalName dname) (T.unpack cname) arity
+      let cid   = CtorId (typeFormalName dname) cname arity
       let genFreshVarOfType t = do fresh <- knFresh ".autogen"
                                    return $ TypedId t fresh
       vars <- mapM genFreshVarOfType tys
@@ -1261,12 +1261,12 @@ rebuildWith rebuilder e = q e
 mkLetFuns []       e _sr = e
 mkLetFuns bindings e  sr = KNLetFuns ids fns e sr where (ids, fns) = unzip bindings
 
-knSinkBlocks :: (PrettyT t, Show t) => ModuleIL (KNExpr' RecStatus t) t -> Compiled (ModuleIL (KNExpr' RecStatus t) t)
+knSinkBlocks :: (PrettyT t) => ModuleIL (KNExpr' RecStatus t) t -> Compiled (ModuleIL (KNExpr' RecStatus t) t)
 knSinkBlocks m = do
   let rebuilder idsfns = [(id, localBlockSinking fn) | (id, fn) <- idsfns]
   return $ m { moduleILbody = rebuildWith rebuilder (moduleILbody m) }
 
-localBlockSinking :: (PrettyT t, Show t) => Fn RecStatus (KNExpr' RecStatus t) t -> Fn RecStatus (KNExpr' RecStatus t) t
+localBlockSinking :: (PrettyT t) => Fn RecStatus (KNExpr' RecStatus t) t -> Fn RecStatus (KNExpr' RecStatus t) t
 localBlockSinking knf =
     let newfn = rebuildFn knf in
     newfn
@@ -1307,10 +1307,10 @@ localBlockSinking knf =
 
   b2n e = case Map.lookup e block2node of
                  Just r -> r
-                 Nothing -> error $ "block2node failed for " ++ show e
+                 Nothing -> error $ "block2node failed for " ++ show (prettyT e)
   n2b e = case Map.lookup e node2block of
                  Just r -> r
-                 Nothing -> error $ "node2block failed for " ++ show e
+                 Nothing -> error $ "node2block failed for " ++ show (prettyT e)
 
   root = b2n (fnIdent knf)
 
@@ -1525,7 +1525,7 @@ computeInfo census headers =
 
 ccFreshen :: Ident -> Compiled Ident
 ccFreshen (Ident name _) = ccFreshId name
-ccFreshen id@(GlobalSymbol _ _) = error $ "KNExpr.hs: cannot freshen global " ++ show id
+ccFreshen id@(GlobalSymbol _ _) = error $ "KNExpr.hs: cannot freshen global " ++ show (prettyIdent id)
 ccFreshenTid (TypedId t id) = do id' <- ccFreshen id
                                  return $ TypedId t id'
 
@@ -1746,7 +1746,8 @@ selectUsefulArgs _id' mt (FnType args rt cc pf) = let args' = (concatMap resolve
                                                FnType args' rt cc pf
                                               where resolve (Nothing, t) = [t]
                                                     resolve (Just  _, _) = []
-selectUsefulArgs id' _ ty = error $ "KNExpr.hs wasn't expecting a non-function type for selectUsefulArgs["++show id' ++"], but got " ++ show ty
+selectUsefulArgs id' _ ty = error $ show $
+  text "KNExpr.hs wasn't expecting a non-function type for selectUsefulArgs[" <> prettyIdent id' <> text "], but got " <> prettyT ty
 
 -- {note 1}::
 -- The issue at play is that recursive polymorphic functions will recurse via

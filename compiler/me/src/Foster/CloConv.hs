@@ -176,7 +176,7 @@ monoToLL mt = case mt of
    PrimInt       isb            -> LLPrimInt       isb
    TyCon dtn                    -> LLNamedType dtn
    TyApp  (TyCon dtn) _tys      -> LLNamedType dtn
-   TyApp  con _tys      -> error $ "monoToLL can't handle TyApp of non-TyCon " ++ show con
+   TyApp  con _tys      -> error $ "monoToLL can't handle TyApp of non-TyCon " ++ show (prettyT con)
    TupleType     tys            -> llTupleType     (map q tys)
    StructType    tys            -> LLStructType    (map q tys)
    CoroType      s t            -> LLCoroType      (q s) (q t)
@@ -265,7 +265,8 @@ closureConvertLetFuns :: [Ident] -> [CFFn] -> ILM [Closure]
 closureConvertLetFuns ids fns = do
     let mkProcType ft id = case ft of
                  FnType s t cc FT_Func -> FnType s t cc FT_Proc
-                 other -> error $ "CloConv.hs: mkProcType given non-function type?? " ++ show id ++ " ; " ++ show other
+                 other -> error $ "CloConv.hs: mkProcType given non-function type?? " ++ show (prettyIdent id)
+                                                                             ++ " ; " ++ show (prettyT other)
 
     let mkProcVar  (TypedId ft id) = TypedId (mkProcType ft id) id
 
@@ -303,7 +304,7 @@ compileDecisionTree :: MoVar -> DecisionTree BlockId MonoType -> ILM BlockFin
 -- once on the path to a leaf, and once more inside the leaf itself.
 
 compileDecisionTree _scrutinee (DT_Fail ranges) =
-  error $ "can't do dt_FAIL yet, for scrutinee " ++ show _scrutinee
+  error $ "can't do dt_FAIL yet, for scrutinee " ++ show (prettyT _scrutinee)
             ++ "\n" ++ concatMap highlightFirstLine ranges
 
 compileDecisionTree _scrutinee (DT_Leaf armid []) = do
@@ -374,7 +375,7 @@ closureOfKnFn infoMap (self_id, fn) = do
     
     let envId  = snd (case Map.lookup self_id infoMap of
                              Just id -> id
-                             Nothing -> error $ "CloConv.hs: did not find info for " ++ show self_id)
+                             Nothing -> error $ "CloConv.hs: did not find info for " ++ show (prettyIdent self_id))
     -- Note that this env var has a precise type! The other's is missing.
     let envVar = TypedId (TupleType $ map tidType varsOfClosure) envId
 
@@ -391,9 +392,9 @@ closureOfKnFn infoMap (self_id, fn) = do
                               <$> text "and produced " <$> indent 8 (pretty transformedFn)
                               <$> text "then becomes " <$> indent 8 (pretty newproc)) $ -}
       if T.pack "mustbecont_" `T.isInfixOf` identPrefix self_id
-        then error $ "Failed to contify " ++ show self_id
+        then error $ "Failed to contify " ++ show (prettyIdent self_id)
         else Closure procid (llv envVar) (map llv varsOfClosure)
-                            (AllocationSource (show procid ++ ":")
+                            (AllocationSource (T.pack $ show (prettyT procid) ++ ":")
                                               (rangeOf $ procAnnot newproc))
   where
     procType proc =
@@ -493,7 +494,7 @@ closureConvertedProc procArgs f newbody = do
   case mkGlobal (fnVar f) of
     TypedId (FnType _ ftrange _ _) id ->
        return $ Proc (monoToLL ftrange) id (map llv procArgs) (fnAnnot f) newbody
-    tid -> error $ "Expected closure converted proc to have fntype, had " ++ show tid
+    tid -> error $ "Expected closure converted proc to have fntype, had " ++ show (prettyT tid)
 
  
 mkGlobal (TypedId t i) = mkGlobalWithType t i where
@@ -572,7 +573,7 @@ renderCC m put = if put then putDoc (prettyT m) >>= (return . Left)
                         else return . Right $ show (prettyT m)
 
 instance Summarizable (String, Label) where
-    textOf (str, lab) _width = text $ str ++ "." ++ show lab
+    textOf (str, lab) _width = string str <> text "." <> prettyT lab
 
 instance Structured (String, Label) where
     childrenOf _ = []
@@ -583,7 +584,7 @@ instance UniqueMonad (State ILMState) where
 prettyInsn' :: Insn' e x -> Doc AnsiStyle -> Doc AnsiStyle
 prettyInsn' i d = d <$> prettyT i
 
-prettyBlockId (b,l) = text (T.unpack b) <> text "." <> text (show l)
+prettyBlockId (b,l) = text b <> text "." <> prettyT l
 
 instance Pretty Enabled where
   pretty (Enabled _) = text "Enabled"
@@ -594,11 +595,11 @@ instance PrettyT (Set LLRootVar) where
 
 instance PrettyT (Insn' e x) where
   prettyT (CCLabel   bentry     ) = line <> prettyBlockId (fst bentry) <+> list (map prettyT (snd bentry))
-  prettyT (CCLetVal id letable  ) = indent 4 (text "let" <+> text (show id) <+> text "="
+  prettyT (CCLetVal id letable  ) = indent 4 (text "let" <+> prettyIdent id <+> text "="
                                                        <+> prettyT letable)
   prettyT (CCLetFuns ids fns    ) = let recfun = if length ids == 1 then "fun" else "rec" in
                                   indent 4 (align $
-                                   vcat [red (text recfun) <+> text (show id) <+> text "=" <+> prettyT fn
+                                   vcat [red (text recfun) <+> prettyIdent id <+> text "=" <+> prettyT fn
                                         | (id,fn) <- zip ids fns])
   prettyT (CCTupleStore vs tid _memregion) = indent 4 $ text "stores " <+> prettyT vs <+> text "to" <+> prettyT tid
   prettyT (CCRebindId d v1 v2) = indent 4 $ text "REPLACE " <+> prettyT v1 <+> text "WITH" <+> prettyT v2 <+> parens d
@@ -629,7 +630,7 @@ prettyTypedVar v = pretty (tidIdent v) <+> text "::" <+> prettyT (tidType v)
 instance PrettyT Closure where
   prettyT clo = text "(Closure" <+> text "env =(" <> pretty (tidIdent $ closureEnvVar clo)
                          <>  text ")" <$> text " proc =(" <+> prettyT (closureProcVar clo)
-                         <+> text ")" <$> text " captures" <+> text (show (map tidIdent (closureCaptures clo)))
+                         <+> text ")" <$> text " captures" <+> prettyT (map tidIdent (closureCaptures clo))
                          <+> text ")"
 
 instance PrettyT BasicBlockGraph' where
@@ -656,7 +657,7 @@ instance PrettyT CCBody where
    <$> vcat (map (\p -> line <> prettyT p) procs)
 
 
-instance PrettyT TypeLL where prettyT t = text (show t) -- TODO fix
+instance PrettyT TypeLL where prettyT t = string (show t) -- TODO fix
 
 instance PrettyT CCProc where
  prettyT proc = pretty (procIdent proc) <+> list (map prettyTypedVar (procVars proc))
@@ -664,11 +665,13 @@ instance PrettyT CCProc where
                <$> indent 4 (prettyT (procBlocks proc))
                <$> text "}"
 
+{-
 instance Show (Insn e x) where
   show (ILabel   bid) = "ILabel " ++ show bid
   show (ILetVal  id letable) = "ILetVal  " ++ show id  ++ " = " ++ show letable
   show (ILetFuns ids fns   ) = "ILetFuns " ++ show ids ++ " = " ++ show ["..." | _ <- fns]
   show (ILast    cflast    ) = "ILast    " ++ show cflast
+-}
 
 instance NonLocal Insn' where
   entryLabel (CCLabel ((_,l), _)) = l

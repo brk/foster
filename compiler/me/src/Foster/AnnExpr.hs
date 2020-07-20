@@ -125,10 +125,10 @@ instance PrettyT ty => Summarizable (AnnExpr ty) where
       AnnPrimitive _r _ p        -> text "AnnPrimitive " <> prettyT p
       E_AnnVar _r (tid, _)       -> text "AnnVar       " <> prettyT tid <> text " :: " <> prettyT (tidType tid)
       E_AnnTyApp _rng t _e argty -> text "AnnTyApp     ["  <> prettyT argty <> text  "] :: " <> prettyT t
-      E_AnnFn annFn              -> text $ "AnnFn " ++ T.unpack (identPrefix $ fnIdent annFn) ++ " // "
-        ++ (show $ fnBoundNames annFn) ++ " :: " ++ show (prettyT (fnType annFn)) where
-                   fnBoundNames :: (PrettyT t) => Fn r e t -> [String]
-                   fnBoundNames fn = map (show . prettyT) (fnVars fn)
+      E_AnnFn annFn              -> text "AnnFn " <> text (identPrefix $ fnIdent annFn) <> text " // "
+        <> (prettyT $ fnVars annFn) <> text " :: " <> prettyT (fnType annFn)
+
+
 
 instance Structured (AnnExpr ty) where
   childrenOf e =

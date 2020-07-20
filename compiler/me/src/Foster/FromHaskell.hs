@@ -91,8 +91,8 @@ convertHaskellToFoster hspath fosterpath = do
       expOfExp exp = case exp of
         H.Var qname -> expOfQName qname
         H.Con qname -> expOfQName qname
-        H.Lit (H.Int i)     -> E_IntAST noAnnot (show i)
-        H.Lit (H.PrimInt i) -> E_IntAST noAnnot (show i)
+        H.Lit (H.Int i)     -> E_IntAST noAnnot (T.pack $ show i)
+        H.Lit (H.PrimInt i) -> E_IntAST noAnnot (T.pack $ show i)
         H.Lit (H.String s)  -> E_StringAST noAnnot (SS_Text NotRaw $ T.pack s)
 
         H.App e1 e2 -> app e1 [e2]
@@ -157,8 +157,8 @@ convertHaskellToFoster hspath fosterpath = do
           H.PWildCard -> EP_Wildcard noRange
           H.PParen p  -> patOfPat p
           H.PTuple _boxed pats -> EP_Tuple noRange (map patOfPat pats)
-          H.PLit _sign (H.Int i)     -> EP_Int noRange (show i)
-          H.PLit _sign (H.PrimInt i) -> EP_Int noRange (show i)
+          H.PLit _sign (H.Int i)     -> EP_Int noRange (T.pack $ show i)
+          H.PLit _sign (H.PrimInt i) -> EP_Int noRange (T.pack $ show i)
           H.PIrrPat p  -> patOfPat p
           H.PBangPat p -> patOfPat p
           H.PInfixApp p1 qname p2 -> patOfPat (H.PApp qname [p1, p2])

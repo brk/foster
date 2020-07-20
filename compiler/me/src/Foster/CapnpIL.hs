@@ -52,8 +52,8 @@ dumpIdent :: Ident -> CapnpText
 dumpIdent (GlobalSymbol name NoRename)  = u8fromText name
 dumpIdent (GlobalSymbol _ (RenameTo name)) = u8fromText name
 dumpIdent i@(Ident _name num) = if num < 0
-                then error $ "cannot dump negative ident! " ++ show i
-                else u8fromString $ show i
+                then error $ "cannot dump negative ident! " ++ show (prettyT i)
+                else u8fromString $ show (prettyT i)
 
 -----------------------------------------------------------------------
 
@@ -82,7 +82,7 @@ dumpType (LLPrimInt size)    = dumpIntType (fromIntegral $ intSizeOf size)
 dumpType (LLNamedType "Float64") = defaultType_ Float64
 dumpType (LLNamedType "Float32") = defaultType_ Float32
 dumpType (LLNamedType nm) =
-  (defaultType_ Named) { name_of_Type_ = StrictlyJust $ u8fromString nm }
+  (defaultType_ Named) { name_of_Type_ = StrictlyJust $ u8fromText nm }
 dumpType (LLStructType types) =
   (defaultType_ Struct) { typeparts_of_Type_ = fmap dumpType types }
 dumpType (LLCoroType {}) = dumpType (LLNamedType "Foster$GenericCoro")
@@ -120,10 +120,10 @@ dumpAllocate :: AllocInfo TypeLL -> FC.PbAllocInfo
 dumpAllocate (AllocInfo typ region typename maybe_tag maybe_array_size allocsite zeroinit) =
     PbAllocInfo     { memregion_of_PbAllocInfo = dumpMemRegion region
                     , type_of_PbAllocInfo      = dumpType      typ
-                    , typename_of_PbAllocInfo  = u8fromString  typename
+                    , typename_of_PbAllocInfo  = u8fromText  typename
                     , ctorrepr_of_PbAllocInfo  = strictMB $ fmap (dumpCtorRepr "dumpAllocate") maybe_tag
                     , arraysize_of_PbAllocInfo = strictMB $ fmap dumpVar  maybe_array_size
-                    , allocsite_of_PbAllocInfo = u8fromString  allocsite
+                    , allocsite_of_PbAllocInfo = u8fromText  allocsite
                     , zeroinit_of_PbAllocInfo  = needsZeroInit zeroinit
                     }
      where needsZeroInit DoZeroInit = True
@@ -163,7 +163,7 @@ dumpTupleStore (ILTupleStore vs v r) =
                                        MemRegionGlobalHeap -> True
                                        MemRegionGlobalData -> error $ "should not tuple-store to global data!"
     }
-dumpTupleStore other = error $ "dumpTupleStore called on non-tuple-store value: " ++ show other
+dumpTupleStore other = error $ "dumpTupleStore called on non-tuple-store value: " ++ show (prettyT other)
 
 dumpLetVal :: Ident -> IL.Letable TypeLL -> FC.LetVal
 dumpLetVal id letable =
@@ -424,7 +424,7 @@ dumpCallInfo strCallConv pbCoroPrim =
 dumpCallPrimOp t op args = -- TODO actually use prim_op_size from C++ side.
     (defaultLetable t Ilcallprimop) {
         parts_of_Letable = map dumpVar args,
-        primopname_of_Letable = StrictlyJust $ u8fromString op
+        primopname_of_Letable = StrictlyJust $ u8fromText op
     }
 
 dumpCallCoroOp t coroPrim argty retty args =
@@ -469,8 +469,8 @@ dumpCtorInfo (LLCtorInfo cid repr tys _) =
 
 dumpCtorIdWithRepr from (CtorId dtn dtcn _arity, repr) =
     PbCtorId {
-          ctortypename_of_PbCtorId = u8fromString dtn
-        , ctorctorname_of_PbCtorId = u8fromString dtcn
+          ctortypename_of_PbCtorId = u8fromText dtn
+        , ctorctorname_of_PbCtorId = u8fromText dtcn
         , ctorrepr_of_PbCtorId = dumpCtorRepr from repr
     }
 
@@ -644,19 +644,19 @@ dumpProgramToModule (ILProgram procdefs vals extern_decls datatypes (SourceLines
     dumpDataTypeDecl :: DataType TypeLL -> Decl
     dumpDataTypeDecl datatype =
         let formal = dataTypeName datatype in
-        Decl { name_of_Decl = u8fromString (typeFormalName formal)
+        Decl { name_of_Decl = u8fromText (typeFormalName formal)
              , type_of_Decl = dumpDataType formal (dataTypeCtors datatype)
              , isForeign_of_Decl = False
              }
 
     dumpDecl (LLExternDecl s t NotForeign) =
-        Decl { name_of_Decl = u8fromString s
+        Decl { name_of_Decl = u8fromText s
              , type_of_Decl = dumpType t
              , isForeign_of_Decl = False
              }
 
     dumpDecl (LLExternDecl _x t (IsForeign s)) =
-        Decl { name_of_Decl = u8fromString s
+        Decl { name_of_Decl = u8fromText s
              , type_of_Decl = dumpType t
              , isForeign_of_Decl = True
              }
@@ -664,7 +664,7 @@ dumpProgramToModule (ILProgram procdefs vals extern_decls datatypes (SourceLines
     dumpDataType (TypeFormal dtName _sr KindEffect) _ctors =
         Type_ {
               tag_of_Type_ = Datatype
-            , name_of_Type_ = StrictlyJust $ u8fromString dtName
+            , name_of_Type_ = StrictlyJust $ u8fromText dtName
             , procty_of_Type_ = StrictlyNone
             , typeparts_of_Type_ = []
             , carraysize_of_Type_ = []
@@ -674,7 +674,7 @@ dumpProgramToModule (ILProgram procdefs vals extern_decls datatypes (SourceLines
     dumpDataType (TypeFormal dtName _sr KindPointerSized) ctors =
         Type_ {
               tag_of_Type_ = Datatype
-            , name_of_Type_ = StrictlyJust $ u8fromString dtName
+            , name_of_Type_ = StrictlyJust $ u8fromText dtName
             , procty_of_Type_ = StrictlyNone
             , typeparts_of_Type_ = []
             , carraysize_of_Type_ = []
@@ -693,7 +693,7 @@ dumpProgramToModule (ILProgram procdefs vals extern_decls datatypes (SourceLines
         dumpType (LLStructType tys)
 
     dumpDataType (TypeFormal dtName _sr kind) ctors =
-            error $ "CapnpIL.hs: Don't yet know how to handle " ++ dtName ++ " : " ++ show kind ++ " , with ctors..." ++ show ctors
+            error $ "CapnpIL.hs: Don't yet know how to handle " ++ T.unpack dtName ++ " : " ++ show kind ++ " , with ctors..." ++ show ctors
 
 
 

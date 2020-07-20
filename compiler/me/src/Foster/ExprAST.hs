@@ -40,8 +40,8 @@ data ExprSkel annot ty =
         -- Literals
           E_StringAST     annot SourceString
         | E_BoolAST       annot Bool
-        | E_IntAST        annot String
-        | E_RatAST        annot String
+        | E_IntAST        annot T.Text
+        | E_RatAST        annot T.Text
         | E_TupleAST      annot Kind [ExprSkel annot ty]
         | E_RecordAST     annot [T.Text] [ExprSkel annot ty]
         | E_FnAST         annot (FnAST ty)
@@ -57,7 +57,7 @@ data ExprSkel annot ty =
         | E_LetRec        annot [TermBinding ty] (ExprSkel annot ty)
         -- Use of bindings
         | E_VarAST        annot (E_VarAST ty)
-        | E_CallPrimAST   annot String [Literal] [ty] [ExprSkel annot ty]
+        | E_CallPrimAST   annot T.Text [Literal] [ty] [ExprSkel annot ty]
         | E_CallAST       annot (ExprSkel annot ty) [ExprSkel annot ty] CallAnnot
         -- Mutable ref cells
         | E_AllocAST      annot (ExprSkel annot ty) AllocMemRegion
@@ -88,7 +88,7 @@ moduleASTfunctions m = [fn | ToplevelDefn (_, E_FnAST _ fn) <- moduleASTitems m]
 moduleASTnonfndefs :: ModuleExpr ty -> [TermBinding ty]
 moduleASTnonfndefs m = concat [case expr of
                                  E_FnAST {} -> []
-                                 _          -> [TermBinding (VarAST Nothing (T.pack name)) expr]
+                                 _          -> [TermBinding (VarAST Nothing name) expr]
                               | ToplevelDefn (name, expr) <- moduleASTitems m]
 
 
@@ -100,8 +100,11 @@ termBindingName (TermBinding v _) = evarName v
 -- ||||||||||||||||||||||||| Instances ||||||||||||||||||||||||||{{{
 
 -- For (temporary) compatibility with ansi-wl-pprint
-text :: String -> Doc a
+text :: T.Text -> Doc a
 text s = pretty s
+
+string :: String -> Doc a
+string s = pretty s
 
 showSome (SS_Text  _raw txt) = take 40 $ show txt
 showSome (SS_Bytes _raw bs)  = take 40 $ show bs
@@ -111,33 +114,33 @@ instance Summarizable (ExprAST t) where
         let tryGetCallNameE (E_VarAST _rng (VarAST _mt v)) = T.unpack v
             tryGetCallNameE _                              = "" in
         case e of
-            E_StringAST _rng  _s   -> text $ "StringAST    " ++ (showSome _s)                  ++ (exprCmnts e)
-            E_BoolAST   _rng  b    -> text $ "BoolAST      " ++ (show b)                       ++ (exprCmnts e)
-            E_IntAST    _rng txt   -> text $ "IntAST       " ++ txt                            ++ (exprCmnts e)
-            E_RatAST    _rng txt   -> text $ "RatAST       " ++ txt                            ++ (exprCmnts e)
-            E_CallAST _rng b _ _   -> text $ "CallAST      " ++ tryGetCallNameE b              ++ (exprCmnts e)
+            E_StringAST _rng  _s   -> string $ "StringAST    " ++ (showSome _s)                  ++ (exprCmnts e)
+            E_BoolAST   _rng  b    -> string $ "BoolAST      " ++ (show b)                       ++ (exprCmnts e)
+            E_IntAST    _rng txt   -> string $ "IntAST       " ++ T.unpack txt                            ++ (exprCmnts e)
+            E_RatAST    _rng txt   -> string $ "RatAST       " ++ T.unpack txt                            ++ (exprCmnts e)
+            E_CallAST _rng b _ _   -> string $ "CallAST      " ++ tryGetCallNameE b              ++ (exprCmnts e)
             E_CallPrimAST _rng nm _ _ _
-                                   -> text $ "CallPrimAST  " ++ nm                             ++ (exprCmnts e)
-            E_CompilesAST {}       -> text $ "CompilesAST  "                                   ++ (exprCmnts e)
-            E_IfAST       {}       -> text $ "IfAST        "                                   ++ (exprCmnts e)
-            E_FnAST    _rng f      -> text $ "FnAST        " ++ T.unpack (fnAstName f)         ++ (exprCmnts e)
-            E_LetRec      {}       -> text $ "LetRec       "                                   ++ (exprCmnts e)
-            E_LetAST   _rng bnd _  -> text $ "LetAST       " ++ T.unpack (termBindingName bnd) ++ (exprCmnts e)
-            E_SeqAST      {}       -> text $ "SeqAST       "                                   ++ (exprCmnts e)
-            E_AllocAST    {}       -> text $ "AllocAST     "                                   ++ (exprCmnts e)
-            E_DerefAST    {}       -> text $ "DerefAST     "                                   ++ (exprCmnts e)
-            E_StoreAST    {}       -> text $ "StoreAST     "                                   ++ (exprCmnts e)
-            E_ArrayRead   {}       -> text $ "SubscriptAST "                                   ++ (exprCmnts e)
-            E_ArrayPoke   {}       -> text $ "ArrayPokeAST "                                   ++ (exprCmnts e)
-            E_RecordAST _ labs _   -> text $ "RecordAST " ++ show labs                         ++ (exprCmnts e)
-            E_TupleAST    {}       -> text $ "TupleAST     "                                   ++ (exprCmnts e)
-            E_TyApp       {}       -> text $ "TyApp        "                                   ++ (exprCmnts e)
-            E_Handler     {}       -> text $ "Handler      "                                   ++ (exprCmnts e)
-            E_Case        {}       -> text $ "Case         "                                   ++ (exprCmnts e)
-            E_KillProcess {}       -> text $ "KillProcess  "                                   ++ (exprCmnts e)
-            E_TyCheck     {}       -> text $ "TyCheck      "                                   ++ (exprCmnts e)
-            E_VarAST _rng v        -> text $ "VarAST       " ++ T.unpack (evarName v)          ++ (exprCmnts e) -- ++ " :: " ++ show (pretty $ evarMaybeType v)
-            E_MachArrayLit {}      -> text $ "MachArrayLit "                                   ++ (exprCmnts e)
+                                   -> string $ "CallPrimAST  " ++ T.unpack nm                             ++ (exprCmnts e)
+            E_CompilesAST {}       -> string $ "CompilesAST  "                                   ++ (exprCmnts e)
+            E_IfAST       {}       -> string $ "IfAST        "                                   ++ (exprCmnts e)
+            E_FnAST    _rng f      -> string $ "FnAST        " ++ T.unpack (fnAstName f)         ++ (exprCmnts e)
+            E_LetRec      {}       -> string $ "LetRec       "                                   ++ (exprCmnts e)
+            E_LetAST   _rng bnd _  -> string $ "LetAST       " ++ T.unpack (termBindingName bnd) ++ (exprCmnts e)
+            E_SeqAST      {}       -> string $ "SeqAST       "                                   ++ (exprCmnts e)
+            E_AllocAST    {}       -> string $ "AllocAST     "                                   ++ (exprCmnts e)
+            E_DerefAST    {}       -> string $ "DerefAST     "                                   ++ (exprCmnts e)
+            E_StoreAST    {}       -> string $ "StoreAST     "                                   ++ (exprCmnts e)
+            E_ArrayRead   {}       -> string $ "SubscriptAST "                                   ++ (exprCmnts e)
+            E_ArrayPoke   {}       -> string $ "ArrayPokeAST "                                   ++ (exprCmnts e)
+            E_RecordAST _ labs _   -> string $ "RecordAST " ++ show labs                         ++ (exprCmnts e)
+            E_TupleAST    {}       -> string $ "TupleAST     "                                   ++ (exprCmnts e)
+            E_TyApp       {}       -> string $ "TyApp        "                                   ++ (exprCmnts e)
+            E_Handler     {}       -> string $ "Handler      "                                   ++ (exprCmnts e)
+            E_Case        {}       -> string $ "Case         "                                   ++ (exprCmnts e)
+            E_KillProcess {}       -> string $ "KillProcess  "                                   ++ (exprCmnts e)
+            E_TyCheck     {}       -> string $ "TyCheck      "                                   ++ (exprCmnts e)
+            E_VarAST _rng v        -> string $ "VarAST       " ++ T.unpack (evarName v)          ++ (exprCmnts e) -- ++ " :: " ++ show (pretty $ evarMaybeType v)
+            E_MachArrayLit {}      -> string $ "MachArrayLit "                                   ++ (exprCmnts e)
 
 instance Structured (ExprAST t) where
     childrenOf e =

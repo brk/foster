@@ -9,6 +9,7 @@ import Prelude hiding ((<$>))
 import qualified Data.List as List(length, nub, sortBy, sortOn)
 import qualified Data.Set as Set
 import Data.UnionFind.IO(descriptor, setDescriptor, equivalent, union)
+import qualified Data.Text as T
 
 import Data.Text.Prettyprint.Doc
 import Data.Text.Prettyprint.Doc.Render.Terminal
@@ -92,7 +93,7 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
  if illegal t1 || illegal t2
   then tcFailsMore
         [text "Bound type variables and/or polymorphic types cannot be unified! Unable to unify"
-        ,text "\t" <> prettyT t1 <> pretty "\nand\n\t" <> prettyT t2
+        ,text "\t" <> prettyT t1 <> text "\nand\n\t" <> prettyT t2
         ,text "t1::", showStructure t1, text "t2::", showStructure t2]
   else do
     {-
@@ -114,7 +115,7 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
     ((TyVarTC  tv1 kind1), (TyVarTC  tv2 kind2)) ->
        if tv1 == tv2 then do tcUnifyKinds kind1 kind2
                              tcUnifyLoop constraints
-                     else tcFailsMore [text $ "Unable to unify different type variables: "
+                     else tcFailsMore [string $ "Unable to unify different type variables: "
                                        ++ show tv1 ++ " vs " ++ show tv2]
 
     (t1@(TyAppTC (TyConTC _nm1) _tys1), t2@(MetaTyVarTC {}))
@@ -134,8 +135,8 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
     ((TyConTC  nam1), (TyConTC  nam2)) ->
       if nam1 == nam2 then do tcUnifyLoop constraints
         else do msg <- getStructureContextMessage
-                tcFailsMore [text $ "Unable to unify different type constructors: "
-                                  ++ nam1 ++ " vs " ++ nam2,
+                tcFailsMore [string $ "Unable to unify different type constructors: "
+                                  ++ T.unpack nam1 ++ " vs " ++ T.unpack nam2,
                              msg]
 
     ((TyAppTC  con1 tys1), (TyAppTC  con2 tys2)) ->
@@ -147,7 +148,7 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
             labs2 = Set.fromList labels2
         case () of
             _ | Set.size labs1 /= Set.size labs2 -> do
-              tcFailsMore [text $ "Unable to unify records of different sizes"
+              tcFailsMore [string $ "Unable to unify records of different sizes"
                           ++ " ("   ++ show (List.length labels1)
                           ++ " vs " ++ show (List.length labels2)
                           ++ ")."]
@@ -157,14 +158,14 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
                       sortedtys2 = sortedByFirst (zip labels2 tys2)
                   tcUnifyMoreTypes sortedtys1 sortedtys2 constraints
             _ -> do 
-              tcFailsMore [text $ "Unable to unify records with different labels"
+              tcFailsMore [string $ "Unable to unify records with different labels"
                           ++ " ("   ++ show (labels1)
                           ++ " vs " ++ show (labels2)
                           ++ ")."]
 
     ((TupleTypeTC kind1 tys1), (TupleTypeTC kind2 tys2)) ->
         if List.length tys1 /= List.length tys2
-          then tcFailsMore [text $ "Unable to unify tuples of different lengths"
+          then tcFailsMore [string $ "Unable to unify tuples of different lengths"
                            ++ " ("   ++ show (List.length tys1)
                            ++ " vs " ++ show (List.length tys2)
                            ++ ")."]
@@ -179,11 +180,11 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
       (_, lnew2) <- tcReadLevels levels2
       case () of
         _ | List.length as1 /= List.length as2 ->
-          tcFailsMore [pretty "Unable to unify functions of different arity!\n"
-                           <> prettyT as1 <> pretty "\nvs\n" <> prettyT as2]
+          tcFailsMore [text "Unable to unify functions of different arity!\n"
+                           <> prettyT as1 <> text "\nvs\n" <> prettyT as2]
 
         _ | lnew1 == markedLevel || lnew2 == markedLevel ->
-          tcFailsMore [pretty "Occurs check failed when unifying function types"]
+          tcFailsMore [text "Occurs check failed when unifying function types"]
 
         _ -> do let nu = min lnew1 lnew2
                 withTemporaryMarkedLevels levels1 levels2 nu $ do 
@@ -197,7 +198,7 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
                 tcUnifyLoop constraints
 
     (ForAllTC {}, ForAllTC {}) ->
-         tcFailsMore [pretty "Unifying foralls?!?", prettyT t1, pretty "vs", prettyT t2]
+         tcFailsMore [text "Unifying foralls?!?", prettyT t1, text "vs", prettyT t2]
 
     ((RefinedTypeTC (TypedId t1 _n1) _e1 _), (RefinedTypeTC (TypedId t2 _n2) _e2 _)) ->
       -- TODO make sure that n/e match...
@@ -221,7 +222,7 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
     _otherwise -> do
       msg <- getStructureContextMessage
       tcFailsMore
-        [pretty "Unable to unify\n\t" <> prettyT t1 <> pretty "\nand\n\t" <> prettyT t2
+        [text "Unable to unify\n\t" <> prettyT t1 <> text "\nand\n\t" <> prettyT t2
         ,text "t1::", showStructure t1, text "t2::", showStructure t2
         ,msg]
 
@@ -329,7 +330,7 @@ isEffect nm = nm == "effect.Empty" || isEffectExtend nm
 isEffectEmpty (TyAppTC (TyConTC nm) _) = nm == "effect.Empty"
 isEffectEmpty _ = False
 
-labelName :: String -> TypeTC -> String
+labelName :: String -> TypeTC -> T.Text
 labelName _ (TyAppTC (TyConTC nm) _) = nm
 labelName msg ty = error $ "labelName(" ++ msg ++ ") used on non-ctor type " ++ show ty
 

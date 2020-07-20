@@ -43,7 +43,7 @@ end    = lkwd "end"
 
 prettyRecord labs exps =
     let
-      prettyField (lab, exp) = text (T.unpack lab) <> text ":" <+> prettyT exp
+      prettyField (lab, exp) = text lab <> text ":" <+> prettyT exp
       pairs = map prettyField (zip labs exps)
     in
     parens (hsep $ punctuate comma pairs)
@@ -83,7 +83,7 @@ instance (PrettyT ty, PrettyT expr) => PrettyT (Fn rec expr ty) where
     where args []  = emptyDoc
           args frm = emptyDoc <+> hsep (map (\v -> prettyFnFormal v <+> text "=>") frm)
 
-          prettyFnFormal (TypedId _t v) = text (show v)
+          prettyFnFormal (TypedId _t v) = prettyIdent v
 
 prettyTyFormals [] = emptyDoc
 prettyTyFormals tyfs = emptyDoc <+> text "forall" <+> hsep (map prettyTyFormal tyfs) <+> text ","
@@ -146,8 +146,10 @@ isOperator _                     = False
 instance Pretty Formatting where
   pretty BlankLine   = text "/*nl*/"
   -- Egads, is there no way of *forcing* a linebreak with wl-pprint?
-  pretty (Comment ('/':'/':s)) = text "/*" <> text s <+> text "*/"
-  pretty (Comment s) = pretty s
+  pretty (Comment t) =
+    case T.unpack t of
+      ('/':'/':s) -> text "/*" <> string s <+> text "*/"
+      _ -> text t
 
 withAnnot (ExprAnnot pre _ post) doc =
   hsep $ map pretty pre ++ [doc <> hsep (map pretty post)]

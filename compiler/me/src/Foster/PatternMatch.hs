@@ -17,6 +17,8 @@ import qualified Data.Set  as Set(size, toList, map,
 import Data.Map(Map)
 import qualified Data.Map  as Map(lookup, size)
 
+import qualified Data.Text as T(concat, pack, unpack)
+
 import Foster.Base
 import Foster.SourceRange(SourceRange)
 
@@ -71,14 +73,14 @@ instance Pretty (SPattern t) where
   pretty (SP_Wildcard) = text "_"
   pretty (SP_Variable tid) = pretty (tidIdent tid)
   pretty (SP_Or pats) = parens (hsep $ punctuate (text " or ") (map pretty pats))
-  pretty (SP_Ctor cinfo pats) = parens ((text (show $ ctorLLInfoId cinfo)
-                                      <> text (show $ ctorLLInfoRepr cinfo))
+  pretty (SP_Ctor cinfo pats) = parens (pretty (ctorLLInfoId cinfo)
+                                      <> pretty (ctorLLInfoRepr cinfo)
                                      <+> hsep (map pretty pats))
 
 
 type DataTypeSigs = Map DataTypeName DataTypeSig
 
-compilePatterns :: (IntSizedBits t, Show t)
+compilePatterns :: (IntSizedBits t, PrettyT t)
                 => [CaseArm PatternRepr a t]
                 -> DataTypeSigs
                 -> DecisionTree a t
@@ -107,19 +109,20 @@ compilePatterns bs allSigs =
           boolCtor False = ctorInfo "Bool"  "False" []                (CR_Value 0)   False
           boolCtor True  = ctorInfo "Bool"  "True"  []                (CR_Value 1)   False
           tupleCtor pats = ctorInfo "()"    "()"    (map typeOf pats) (CR_Default 0) True
-          intCtor ty li  = ctorInfo ctnm ("<"++ctnm++">") []          (CR_Value tag) False
+          intCtor ty li  = ctorInfo ctnm (brackets ctnm) []           (CR_Value tag) False
                              where
+                              brackets t = T.concat ["<", t, ">"]
                               isb  = intSizeBitsOf ty
                               bits = intSizeOf     isb
-                              ctnm = show (pretty isb)
+                              ctnm = T.pack $ show $ pretty isb
                               tag  = if litIntMinBits li <= bits
                                       then litIntValue li
-                                      else error $ "PatternMatch.hs: cannot cram a literal (" ++ litIntText li ++ ")"
+                                      else error $ "PatternMatch.hs: cannot cram a literal (" ++ T.unpack (litIntText li) ++ ")"
                                                ++ " needing " ++ show (litIntMinBits li)
                                                ++ " bits into Int"++ show bits++"!"
 
 -- "Compilation is defined by cases as follows."
-cc :: Show t => [Occurrence t] -> ClauseMatrix a t -> [SourceRange] -> DataTypeSigs -> DecisionTree a t
+cc :: PrettyT t => [Occurrence t] -> ClauseMatrix a t -> [SourceRange] -> DataTypeSigs -> DecisionTree a t
 
 -- No row to match -> failure
 cc _ (ClauseMatrix []) rngs _allSigs = DT_Fail rngs
@@ -302,7 +305,7 @@ isSignature ctorSet allSigs =
        (Just (DataTypeSig map)) -> Set.size ctorSet == Map.size map
        Nothing ->
          error $ "Error in PatternMatch.isSignature: "
-              ++ "Unknown type name " ++ typename ++ "! ctorSet = " ++ show ctorSet
+              ++ "Unknown type name " ++ T.unpack typename ++ "! ctorSet = " ++ show ctorSet
     _ -> error $ "Error in PatternMatch.isSignature: "
               ++ "Multiple type names in ctor set: " ++ show ctorSet
 
@@ -311,12 +314,12 @@ deriving instance (Show a, Show t) => Show (DecisionTree a t)
 instance Ord (CtorInfo t) where
   compare a b = compare (ctorInfoId a) (ctorInfoId b)
 
-instance (Summarizable a, Structured a, Show t) => Summarizable (DecisionTree a t) where
+instance (Summarizable a, Structured a, PrettyT t) => Summarizable (DecisionTree a t) where
     textOf e _width =
       case e of
-        DT_Fail _                ->  text $ "DT_Fail      "
-        DT_Leaf a idsoccs        -> (text $ "DT_Leaf    " ++ show idsoccs) <$> showStructure a
-        DT_Switch  occ idsdts _  ->  text $ "DT_Switch    " ++ (show occ) ++ (show $ subIds idsdts)
+        DT_Fail _                -> text "DT_Fail      "
+        DT_Leaf a idsoccs        -> text "DT_Leaf      " <> prettyT idsoccs <$> showStructure a
+        DT_Switch  occ idsdts _  -> text "DT_Switch    " <> prettyT occ <+> prettyT (subIds idsdts)
                where   subIds idsDts          = map fst idsDts
 
 instance Structured (DecisionTree a t) where

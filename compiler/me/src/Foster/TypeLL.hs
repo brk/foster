@@ -9,9 +9,11 @@ module Foster.TypeLL where
 
 import Foster.Base
 
+import qualified Data.Text as T
+
 data TypeLL =
            LLPrimInt       IntSizeBits
-         | LLNamedType     String
+         | LLNamedType     T.Text
          | LLStructType    [TypeLL]
          | LLProcType      { llProcTypeDomain   :: [TypeLL]
                            , llProcTypeRange    :: TypeLL
@@ -28,7 +30,7 @@ llBoolType = LLPrimInt I1
 type LLVar = TypedId TypeLL
 type LLPrim = FosterPrim TypeLL
 
-data LLExternDecl = LLExternDecl String TypeLL IsForeignDecl deriving (Show)
+data LLExternDecl = LLExternDecl T.Text TypeLL IsForeignDecl deriving (Show)
 
 extractCallConv (LLProcType _ _ cc) = cc
 extractCallConv (LLPtrType (LLStructType ((LLProcType _ _ cc):_))) = cc

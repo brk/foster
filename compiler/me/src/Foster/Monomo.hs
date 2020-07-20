@@ -233,7 +233,7 @@ monoKN subst inTypeExpr e =
         c' <- monoMarkDataType c dtname args
         vs' <- mapM qv vs
         return $ KNAppCtor t' c' vs' sr
-      _ -> error $ "monoKN of KNAppCtor saw unexpected type " ++ show t'
+      _ -> error $ "monoKN of KNAppCtor saw unexpected type " ++ show (prettyT t')
 
   KNLetFuns     ids fns0 b sr -> do
     let fns = computeRecursivenessAnnotations fns0 ids
@@ -258,11 +258,11 @@ monoKN subst inTypeExpr e =
     (monoids, monofns) <- monoGatherVersions ids
 
     when False $ liftIO $ do
-      putStrLn $ "monos/polys for " ++ show ids ++ ": " ++ show (fst $ unzip monos, fst $ unzip polys)
+      putStrLn $ "monos/polys for " ++ show (prettyT ids) ++ ": " ++ show (prettyT (fst $ unzip monos, fst $ unzip polys))
       putDocP $ vcat $ [showStructure (tidType (fnVar f)) | f <- snd $ unzip monos]
-      putStrLn $ "   polyids: " ++ show polyids
-      putStrLn $ "   monoids: " ++ show monoids
-      putStrLn $ "   ids':    " ++ show ids'
+      putDocLn $ text "   polyids: " <> prettyT polyids
+      putDocLn $ text "   monoids: " <> prettyT monoids
+      putDocLn $ text "   ids':    " <> prettyT ids'
       {-
       putStrLn $ "fns0:"
       putDoc $ vcat $ map pretty fns0
@@ -346,12 +346,12 @@ monoKN subst inTypeExpr e =
                  -- unknown definition, it's still okay. If all the parameters
                  -- are pointer-sized, though, we can use a generic definition.
             then return $ bitcast t' (TypedId t'' polybinder)
-            else error $ "Cannot instantiate unknown function " ++ show polybinder ++ "'s type variables "
+            else error $ "Cannot instantiate unknown function " ++ show (prettyT polybinder) ++ "'s type variables "
                ++ show ktvs
                ++ " with types "
-               ++ show argtys
+               ++ show (prettyT argtys)
                ++ "\ngenericized to "
-               ++ show monotys
+               ++ show (prettyT monotys)
                ++ " (of which at least one type is not pointer-sized). "
                ++ "\nFor now, polymorphic instantiation of non-pointer-sized types"
                ++ " is only allowed on functions at the top level!"
@@ -426,7 +426,7 @@ monoCtorInfo subst (LLCtorInfo cid repr tys isLoneCtor) = do
           tys' <- mapM (monoType subst) tys
           return $ (LLCtorInfo cid repr tys' isLoneCtor)
 
-monomorphizedEffectDeclsFrom :: [EffectDecl TypeIL] -> [(String, [MonoType])] -> Mono [DataType MonoType]
+monomorphizedEffectDeclsFrom :: [EffectDecl TypeIL] -> [(T.Text, [MonoType])] -> Mono [DataType MonoType]
 monomorphizedEffectDeclsFrom eds specs = do
    dts' <- mapM monomorphizedEffectDecls eds
    return $ concat dts'
@@ -454,7 +454,7 @@ monomorphizedEffectDeclsFrom eds specs = do
                             Just m  -> m
          in mapM (monomorphizedEffectDecl ed) (monotyss `eqSetInsert` genericTys)
 
-monomorphizedDataTypesFrom :: [DataType TypeIL] -> [(String, [MonoType])] -> Mono [DataType MonoType]
+monomorphizedDataTypesFrom :: [DataType TypeIL] -> [(T.Text, [MonoType])] -> Mono [DataType MonoType]
 monomorphizedDataTypesFrom dts specs = do
    dts' <- mapM monomorphizedDataTypes dts
    return $ concat dts'
@@ -513,9 +513,12 @@ cvtMonoId :: {-Poly-} Ident -> [MonoType] -> {-Mono-}  Ident
 cvtMonoId id tys =
   if allTypesAreBoxed tys
     then id
-    else idAppend id (show tys)
+    else idAppend id (show $ prettyT tys)
 
-getMonoName nm tys = if allTypesAreBoxed tys then nm else nm ++ (show tys)
+getMonoName :: T.Text -> [MonoType] -> T.Text
+getMonoName nm tys = if allTypesAreBoxed tys then nm else T.pack (T.unpack nm ++ (show $ prettyT tys))
+
+getMonoFormal :: TypeFormal -> [MonoType] -> TypeFormal
 getMonoFormal (TypeFormal name sr kind) tys =
                TypeFormal (getMonoName name tys) sr kind
 
@@ -654,7 +657,7 @@ monoSubstLookup subst tv@(BoundTyVar _nm _sr) =
                   else error $
                          "Monomorphization (Monomo.hs:monoSubsLookup) "
                       ++ "found no monotype for variable " ++ show tv
-                      ++ "\nsubst is " ++ show subst
+                      -- ++ "\nsubst is " ++ show subst
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||| Monadic Helpers ||||||||||||||||||||||{{{

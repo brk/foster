@@ -30,7 +30,7 @@ convertFun f (FnAST rng nm tyformals formals body toplevel) = do
     body'    <- convertExprAST f body
     return $ FnAST rng nm tyformals formals' body' toplevel
 
-convertDecl :: Monad m => (a -> m b) -> (String, a, IsForeignDecl) -> m (String, b, IsForeignDecl)
+convertDecl :: Monad m => (a -> m b) -> (str, a, IsForeignDecl) -> m (str, b, IsForeignDecl)
 convertDecl f (s, ty, isForeign) = do t <- f ty ; return (s, t, isForeign)
 
 convertDataTypeAST :: (Show a, Show b) =>
