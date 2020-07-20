@@ -40,7 +40,7 @@ import Foster.AnnExpr
 import Foster.Infer(zonkType)
 import Foster.Typecheck(tcTypeWellFormed, tcReplaceQuantifiedVars)
 import Foster.SourceRange(SourceRange(..), rangeOf, prettyWithLineNumbers,
-          highlightFirstLine, highlightFirstLineDoc, prettySourceRangeInfo)
+          highlightFirstLineStr, highlightFirstLineDoc, prettySourceRangeInfo)
 
 import Data.Text.Prettyprint.Doc
 
@@ -737,7 +737,7 @@ sanityCheckIntLiteralNotOversized rng typeSize int =
     sanityCheck (typeSize >= litIntMinBits int) $ T.pack $
        "Int constraint violated; context-imposed exact size (in bits) was " ++ show typeSize
         ++ "\n                              but the literal intrinsically needs " ++ show (litIntMinBits int)
-        ++ highlightFirstLine rng
+        ++ highlightFirstLineStr rng
 
 
 

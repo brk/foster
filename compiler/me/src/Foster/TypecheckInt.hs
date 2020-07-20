@@ -18,7 +18,7 @@ import Foster.Base
 import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeTC
-import Foster.SourceRange(SourceRange, highlightFirstLine, highlightFirstLineDoc, rangeOf)
+import Foster.SourceRange(SourceRange, highlightFirstLineStr, highlightFirstLineDoc, rangeOf)
 
 tryParseInt :: SourceRange -> T.Text -> Either String LiteralInt
 tryParseInt rng originalText =
@@ -27,7 +27,7 @@ tryParseInt rng originalText =
     case () of
       _ | not (onlyValidDigitsIn clean base) -> Left $
                 ("Cleaned integer must contain only valid digits for base " ++ show base ++ ": " ++ clean
-                 ++ "\n" ++ highlightFirstLine rng)
+                 ++ "\n" ++ highlightFirstLineStr rng)
       _ -> Right $ precheckedLiteralInt originalText negated clean expt base
  where
         onlyValidDigitsIn :: String -> Int -> Bool

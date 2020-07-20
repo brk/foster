@@ -62,7 +62,7 @@ import Foster.MainOpts
 import Foster.MKNExpr
 import Foster.Infer(unify)
 import Foster.SourceRange(SourceRange(..), SourceLines(SourceLines), rangeOf,
-          showSourceRange, appendSourceLines, highlightFirstLineDoc,
+          showSourceRangeStr, appendSourceLines, highlightFirstLineDoc,
           prettyWithLineNumbers)
 
 import Codec.CBOR.Term
@@ -733,7 +733,7 @@ desugarParsedModule tcenv m = do
           FnTypeP s t fx cc cs sr -> do s' <- mapM q s
                                         t' <- q t
                                         fx' <- case fx of
-                                                 Nothing -> return $ MetaPlaceholderAST MTVEffect   ("effectvar:" ++ showSourceRange sr)
+                                                 Nothing -> return $ MetaPlaceholderAST MTVEffect   ("effectvar:" ++ showSourceRangeStr sr)
                                                  Just xx -> q xx
                                         return $ FnTypeAST  s' t' fx' cc cs
           RefinedTypeP nm t e -> do t' <- q t

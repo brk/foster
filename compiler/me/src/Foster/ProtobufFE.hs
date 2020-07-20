@@ -14,7 +14,7 @@ import Foster.ParsedType
 import Foster.TypeAST(gFosterPrimOpsTable)
 import Foster.Tokens
 import Foster.SourceRange(SourceRange(..), SourceLines(SourceLines), SourceRanged,
-          rangeOf, rangeUnions, showSourceRange)
+          rangeOf, rangeUnions, showSourceRangeStr)
 
 import Codec.CBOR.Term
 
@@ -520,7 +520,7 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
   cb_parse_formal cbor = case cbor of
     TList [tok, _,_cbr, TList [xid]]    | tok `tm` tok_FORMAL ->
       let name = cb_parse_x_text xid in
-      let t = MetaPlaceholder (".inferred-for." ++ T.unpack name ++ "\n" ++ showSourceRange (cb_parse_range _cbr)) in -- TODO
+      let t = MetaPlaceholder (".inferred-for." ++ T.unpack name ++ "\n" ++ showSourceRangeStr (cb_parse_range _cbr)) in -- TODO
       TypedId t (Ident name 0)
     TList [tok, _,_cbr, TList [xid, t]] | tok `tm` tok_FORMAL ->
       TypedId (cb_parse_t t) (Ident (cb_parse_x_text xid) 0)
@@ -663,7 +663,7 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
                             Nothing -> error $ "Invalid codepoint..."
                         parses -> error $ "Expected one parse for " ++ show stuff ++ " but got " ++ show parses
                   else error $ "Unicode escapes can have at most 6 hex digits.\nHad: " ++ show stuff ++
-                                "\nOrig is:\n" ++ showSourceRange range
+                                "\nOrig is:\n" ++ showSourceRangeStr range
            else error $ "Parsing non-hex unicode character names is a TODO"
         parse isBytes orig =
           let go [] acc = reverse acc
@@ -742,7 +742,7 @@ parseCallPrim' primname tys args annot = do
           ([], Just _) -> E_CallPrimAST annot primname [] [] args
           _ ->
             error $ "ProtobufFE: unknown primitive/arg combo " ++ show primname
-                    ++ "\n" ++ showSourceRange (rangeOf annot)
+                    ++ "\n" ++ showSourceRangeStr (rangeOf annot)
 
 
 cb_int :: CBOR -> Int

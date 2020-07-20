@@ -18,7 +18,7 @@ import Foster.TypeLL
 import Foster.Letable hiding (Letable)
 import qualified Foster.Letable as IL
 import Foster.SourceRange(SourceRange(..), SourceLines(SourceLines),
-          highlightFirstLine, showSourceRange, rangeOf)
+          highlightFirstLineStr, showSourceRangeStr, rangeOf)
 
 import qualified Data.ByteString as BS(writeFile)
 import Data.Foldable(toList)
@@ -325,13 +325,13 @@ dumpExpr x@(ILArrayRead _t (ArrayIndex b i rng sg)) =
     (defaultLetable (typeOf x) Ilarrayread) {
           parts_of_Letable = map dumpVar [b, i]
         , stringvalue_of_Letable = StrictlyJust $ stringSG sg
-        , primopname_of_Letable = StrictlyJust $ u8fromString $ highlightFirstLine rng }
+        , primopname_of_Letable = StrictlyJust $ u8fromString $ highlightFirstLineStr rng }
 
 dumpExpr x@(ILArrayPoke (ArrayIndex b i rng sg) v) =
     (defaultLetable (typeOf x) Ilarraypoke) {
           parts_of_Letable = map dumpVar [b, i, v]
         , stringvalue_of_Letable = StrictlyJust $ stringSG sg
-        , primopname_of_Letable = StrictlyJust $ u8fromString $ highlightFirstLine rng }
+        , primopname_of_Letable = StrictlyJust $ u8fromString $ highlightFirstLineStr rng }
 
 dumpExpr _x@(ILArrayLit ty@(LLArrayType ety) arr vals) =
       (defaultLetable ty Ilarrayliteral) {
@@ -592,7 +592,7 @@ dumpProgramToModule (ILProgram procdefs vals extern_decls datatypes (SourceLines
             , inargs_of_Proc   = [dumpIdent (tidIdent v) | v <- CC.procVars p]
             , name_of_Proc     = dumpIdent $ CC.procIdent p
             , blocks_of_Proc   = map (dumpBlock predmap) (CC.procBlocks p)
-            , lines_of_Proc    = StrictlyJust $ u8fromString (showSourceRange . rangeOf $ CC.procAnnot p)
+            , lines_of_Proc    = StrictlyJust $ u8fromString (showSourceRangeStr . rangeOf $ CC.procAnnot p)
             , linkage_of_Proc  = Internal
         }
     preProcType proc =

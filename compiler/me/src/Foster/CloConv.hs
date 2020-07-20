@@ -34,7 +34,7 @@ import Foster.TypeLL
 import Foster.MonoType
 import Foster.Letable
 import Foster.PatternMatch
-import Foster.SourceRange(SourceRange(..), rangeOf, highlightFirstLine)
+import Foster.SourceRange(SourceRange(..), rangeOf, highlightFirstLineStr)
 
 -- | Closure conversion and lambda lifting.
 -- |
@@ -305,7 +305,7 @@ compileDecisionTree :: MoVar -> DecisionTree BlockId MonoType -> ILM BlockFin
 
 compileDecisionTree _scrutinee (DT_Fail ranges) =
   error $ "can't do dt_FAIL yet, for scrutinee " ++ show (prettyT _scrutinee)
-            ++ "\n" ++ concatMap highlightFirstLine ranges
+            ++ "\n" ++ concatMap highlightFirstLineStr ranges
 
 compileDecisionTree _scrutinee (DT_Leaf armid []) = do
         return $ BlockFin emptyClosedGraph armid (DTO_Leaf armid [])

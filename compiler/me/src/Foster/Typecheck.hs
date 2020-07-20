@@ -38,7 +38,7 @@ import Foster.TypecheckInt(typecheckInt, typecheckRat)
 import Foster.Output(OutputOr(Errors, OK), putDocLn)
 import Foster.PrettyAnnExpr()
 import Foster.SourceRange(SourceRange(..), rangeOf,
-          highlightFirstLine, highlightFirstLineDoc, showSourceRange, prettyWithLineNumbers)
+          highlightFirstLineStr, highlightFirstLineDoc, showSourceRangeDoc, showSourceRangeStr, prettyWithLineNumbers)
 
 import Data.Text.Prettyprint.Doc
 
@@ -173,7 +173,7 @@ inferSigmaHelper ctx (E_CallAST   rng base argtup ca) msg = do
                 r <- newTcRef (error $ "inferSigmaFn: empty result: " ++ msg)
                 tcSigmaCall     ctx rng   base argtup ca (Infer r)
 inferSigmaHelper ctx e msg = do
-    debugIf dbgSigma $ string $ "inferSigmaHelper " ++ highlightFirstLine (rangeOf e)
+    debugIf dbgSigma $ string $ "inferSigmaHelper " ++ highlightFirstLineStr (rangeOf e)
     debugIf dbgSigma $ showStructure e
     debugIf dbgSigma $ string $  "inferSigmaHelper deferring to inferRho"
     inferRho ctx e msg
@@ -186,9 +186,9 @@ checkSigma ctx e sigma = do
     (skol_tvs, rho) <- skolemize sigma
     if not (null skol_tvs)
       then do
-        debugIf dbgSigma $ string $ "checkSigma " ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show sigma
+        debugIf dbgSigma $ string $ "checkSigma " ++ highlightFirstLineStr (rangeOf e) ++ " :: " ++ show sigma
         debugIf dbgSigma $ string $ "checkSigma used " ++ show skol_tvs ++ " to skolemize " ++ show sigma ++ " to " ++ show rho
-        debugIf dbgSigma $ string $ "checkSigma deferring to checkRho for: " ++ highlightFirstLine (rangeOf e)
+        debugIf dbgSigma $ string $ "checkSigma deferring to checkRho for: " ++ highlightFirstLineStr (rangeOf e)
       else return ()
 
     ann <- checkRho ctx e rho
@@ -288,7 +288,7 @@ checkForEscapingTypeVariables e _ann ctx sigma skol_tvs = do
     let bad_tvs = filter (`elem` esc_tvs) skol_tvs
     debug $ "checkSigma escaping types from were " ++ show esc_tvs
          ++ "; bad tvs were " ++ show bad_tvs
-         ++ highlightFirstLine (rangeOf e)
+         ++ highlightFirstLineStr (rangeOf e)
     if null bad_tvs
       then return ()
       else do tytc <- zonkType (typeTC _ann)
@@ -319,7 +319,7 @@ checkRho :: Context SigmaTC -> Term -> RhoTC -> Tc (AnnExpr RhoTC)
 -- Invariant: the Rho is always in weak-prenex form
 -- {{{
 checkRho ctx e ty = do
-    debug $ "checkRho " ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show ty
+    debug $ "checkRho " ++ highlightFirstLineStr (rangeOf e) ++ " :: " ++ show ty
     debug $ "checkRho deferring to tcRho"
     tcRho ctx e (Check ty)
 -- }}}
@@ -328,16 +328,16 @@ inferRho :: Context SigmaTC -> Term -> String -> Tc (AnnExpr RhoTC)
 -- {{{
 inferRho ctx e msg = do
     ref <- newTcRef (error $ "inferRho: empty result: " ++ msg)
-    debug $ "inferRho " ++ highlightFirstLine (rangeOf e)
+    debug $ "inferRho " ++ highlightFirstLineStr (rangeOf e)
     debug $ "inferRho deferring to tcRho"
     a <- tcRho ctx e (Infer ref)
     a <- inst a "inferRho"
     debug $ "tcRho (" ++ msg ++") finished, reading inferred type from ref"
-    debug $ "tcRho (" ++ msg ++"): " ++ highlightFirstLine (rangeOf e)
+    debug $ "tcRho (" ++ msg ++"): " ++ highlightFirstLineStr (rangeOf e)
     ty <- tcLift $ readIORef ref
-    debug $ "inferRho (" ++ msg ++")" ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show ty
-    debug $ "inferRho (" ++ msg ++")" ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show (typeTC a)
-    sanityCheck (isRho $ typeTC a) (T.pack $ "inferRho wound up with a sigma type!" ++ highlightFirstLine (rangeOf a))
+    debug $ "inferRho (" ++ msg ++")" ++ highlightFirstLineStr (rangeOf e) ++ " :: " ++ show ty
+    debug $ "inferRho (" ++ msg ++")" ++ highlightFirstLineStr (rangeOf e) ++ " :: " ++ show (typeTC a)
+    sanityCheck (isRho $ typeTC a) (T.pack $ "inferRho wound up with a sigma type!" ++ highlightFirstLineStr (rangeOf a))
     return a
 
 -- }}}
@@ -549,7 +549,7 @@ tcRhoBool rng b expTy = do
             RefinedTypeTC v _ _ -> check (tidType v)
             _ -> tcFails [string $ "Unable to check Bool constant in context"
                                 ++ " expecting non-Bool type " ++ show t
-                                ++ showSourceRange (rangeOf rng)]
+                         , showSourceRangeDoc (rangeOf rng)]
     case expTy of
          Infer r -> update r (return ab)
          Check t -> check t
@@ -571,14 +571,14 @@ tcRhoText rng b expTy = do
              RefinedTypeTC v _ _ -> check (tidType v)
              PrimIntTC I8 | T.length b == 1 ->
                if fromEnum (T.head b) >= 256
-                 then tcFails [string $ "Rune cannot be represented as an Int8:"
-                               ++ showSourceRange (rangeOf rng)]
+                 then tcFails [text "Rune cannot be represented as an Int8:"
+                              , showSourceRangeDoc (rangeOf rng)]
                  else return $ AnnLiteral rng t (LitInt $ LiteralInt (fromIntegral $ fromEnum $ T.head b) 8  b)
              PrimIntTC I32 | T.length b == 1 ->
                       return $ AnnLiteral rng t (LitInt $ LiteralInt (fromIntegral $ fromEnum $ T.head b) 32 b)
              t -> tcFails [string $ "Unable to check Text constant in context"
                                     ++ " expecting non-Text type " ++ show t
-                                    ++ showSourceRange (rangeOf rng)]
+                          , showSourceRangeDoc (rangeOf rng)]
     case expTy of
          Infer r -> update r (return ab)
          Check t -> check t
@@ -602,7 +602,7 @@ tcRhoBytes rng bs expTy = do
              RefinedTypeTC v _ _ -> check (tidType v)
              t -> tcFails [string $ "Unable to check byte array constant in context"
                                     ++ " expecting non-byte-array type " ++ show t
-                                    ++ showSourceRange (rangeOf rng)]
+                          , showSourceRangeDoc (rangeOf rng)]
     case expTy of
          Infer r -> update r (return ab)
          Check t -> check t
@@ -624,7 +624,7 @@ tcRhoArrayValue ctx tau (AE_Expr expr) = do
 tcRhoArrayLit ctx annot mbt args expTy = do
 -- {{{
     tau <- case mbt of
-             Nothing -> newTcUnificationVarTau $ T.pack $ "prim array type:" ++ showSourceRange (rangeOf annot)
+             Nothing -> newTcUnificationVarTau $ T.pack $ "prim array type:" ++ showSourceRangeStr (rangeOf annot)
              Just t  -> do t' <- tcTypeAndResolve ctx t annot
                            if isTau t'
                             then return t'
@@ -643,7 +643,7 @@ tcRhoArrayLit ctx annot mbt args expTy = do
              RefinedTypeTC v _ _ -> check (tidType v)
              t -> tcFails [string $ "Unable to check array constant in context"
                                 ++ " expecting non-array type " ++ show t
-                                ++ showSourceRange (rangeOf annot)]
+                          , showSourceRangeDoc (rangeOf annot)]
     case expTy of
          Infer r -> update r (return ab)
          Check t -> check t
@@ -726,7 +726,7 @@ tcRhoDeref ctx rng e1 expTy = do
       MetaTyVarTC  {} -> return tau
       other -> tcFails [string $ "Expected deref-ed expr "
                            ++ "to have ref type, had " ++ show other,
-                        string $ highlightFirstLine (rangeOf rng)]
+                        string $ highlightFirstLineStr (rangeOf rng)]
     matchExp expTy (AnnDeref rng ty a1) "deref"
 -- }}}
 
@@ -765,11 +765,11 @@ tcRhoRecord ctx rng labels exprs expTy = do
                         ([], []) -> do tcRecord ctx rng exprs [Just t  | t <- ts]
                         (extras, missings) -> do
                           tcFailsMore [text "Mismatched labels" <+> parens (pretty extras <> pretty missings) <+> text " for record"
-                                      , string $ highlightFirstLine (rangeOf rng)]
+                                      , string $ highlightFirstLineStr (rangeOf rng)]
                       
                  _ -> tcFailsMore [string $ "Record cannot check against non-record type " ++ show t
                                   , showStructure t]
-   matchExp expTy rct (highlightFirstLine (rangeOf rng))
+   matchExp expTy rct (highlightFirstLineStr (rangeOf rng))
   where
     tcRecord ctx rng exps typs = do
       exprs <- typecheckExprsTogether ctx exps typs
@@ -813,13 +813,13 @@ tcRhoRecordLookup ctx rng expr fieldName expTy = do
             -- Apply constraint that e has a record type mapping fieldName to tX.
             tcFailsMore [string $ "Record indexing cannot yet apply constraint to meta type variable " ++ show tV
                         , showStructure tV]
-            matchExp expTy (mkRecordLookup tX) (highlightFirstLine (rangeOf rng))
+            matchExp expTy (mkRecordLookup tX) (highlightFirstLineStr (rangeOf rng))
 
       (RecordTypeTC labels tys, _) -> do
         -- Check that v is a record type mapping fieldName to tX.
         case Map.lookup fieldName (Map.fromList (zip labels tys)) of
           Just tX -> do
-                        matchExp expTy (mkRecordLookup tX) (highlightFirstLine (rangeOf rng))
+                        matchExp expTy (mkRecordLookup tX) (highlightFirstLineStr (rangeOf rng))
           Nothing -> tcFailsMore [string $ "Record indexing applied to record type without field " ++ show fieldName
                         , indent 8 (text "The following fields were available: " <> pretty (map show labels))
                         ]
@@ -848,7 +848,7 @@ tcRhoTuple ctx rng kind exprs expTy = do
                                    tcTuple ctx rng exprs [Just t  | t <- ts]
                  _ -> tcFailsMore [string $ "Tuple cannot check against non-tuple type " ++ show t
                                   , showStructure t]
-   matchExp expTy tup (highlightFirstLine (rangeOf rng))
+   matchExp expTy tup (highlightFirstLineStr (rangeOf rng))
   where
     tcTuple ctx rng exps typs = do
         exprs <- typecheckExprsTogether ctx exps typs
@@ -896,7 +896,7 @@ tcRhoArrayRead annot sg base aiexpr expTy = do
         _ ->
             tcFails [string $ "Unable to arrayread expression of non-array type " ++ show (typeTC base)
                         ++ " (context expected type " ++ show expTy ++ ")"
-                        ++ highlightFirstLine rng]
+                        ++ highlightFirstLineStr rng]
   check (typeTC base)
 -- }}}
 
@@ -924,7 +924,7 @@ tcRhoArrayPoke annot s v base i expTy = do
         _ ->
           tcFails [string $ "Unable to arraypoke expression of type " ++ show (typeTC base)
                       ++ " (context expected type " ++ show expTy ++ ")"
-                      ++ highlightFirstLine (rangeOf annot)]
+                      ++ highlightFirstLineStr (rangeOf annot)]
   check (typeTC base)
 -- }}}
 
@@ -977,7 +977,7 @@ tcRhoLet ctx rng (TermBinding v e1) e2 mt = do
     --     let x = x; in x end
     -- will be caught by the usual variable scoping rules.
     errMsg boundName = T.pack $ "Recursive binding of " ++ show boundName ++ " should use 'REC':"
-           ++ highlightFirstLine (rangeOf rng)
+           ++ highlightFirstLineStr (rangeOf rng)
 -- }}}
 
 {-
@@ -1060,16 +1060,16 @@ tcRhoTyApp ctx annot e tsAST expTy = do
     case situation of
       TI_Sigma -> do
             types <- mapM (\t -> tcTypeAndResolve ctx t annot) tsAST
-            expr <- instWith ("tcRhoTyApp: " ++ highlightFirstLine (rangeOf annot)) annot aeSigma types
+            expr <- instWith ("tcRhoTyApp: " ++ highlightFirstLineStr (rangeOf annot)) annot aeSigma types
             matchExp expTy expr "tyapp"
       TI_Empty -> matchExp expTy aeSigma "empty-tyapp"
       TI_Rho rho ->
             tcFails [string $ "Cannot apply type args to expression of"
                        ++ " non-polymorphic type: " ++ show rho
-                    ,string $ highlightFirstLine $ rangeOf e]
+                    ,string $ highlightFirstLineStr $ rangeOf e]
       TI_Unresolved ->
             tcFails [text $ "Could not instantiate due to unresolved type for the following term:"
-                    ,string $ highlightFirstLine $ rangeOf aeSigma
+                    ,string $ highlightFirstLineStr $ rangeOf aeSigma
                     ,text $ "Try adding an explicit type annotation."
                     ]
 
@@ -1137,12 +1137,12 @@ tcSigmaCallWithAnnBase ctx rng annbase argexprs ca exp_ty = do
         dbg $ text "{{{"
 
         let fun_ty = typeTC annbase
-        (args_tys, res_ty_raw, fx, _cc, _, _levels) <- unifyFun fun_ty (length argexprs) ("tSC("++tryGetVarName annbase++")" ++ highlightFirstLine (rangeOf rng))
+        (args_tys, res_ty_raw, fx, _cc, _, _levels) <- unifyFun fun_ty (length argexprs) ("tSC("++tryGetVarName annbase++")" ++ highlightFirstLineStr (rangeOf rng))
         dbg $ text "tcSigmaCall: fn type of" <+> prettyT annbase <+> text "is " <$$>
                     indent 2 (prettyT fun_ty <$$>
                               text ";; cc=" <+> prettyT _cc
                               <$$> text ";; fx=" <+> prettyT fx)
-        dbg $ string (highlightFirstLine (rangeOf rng))
+        dbg $ string (highlightFirstLineStr (rangeOf rng))
 
         dbg $ text "call: fn args tys are " <> prettyT args_tys
         dbg $ string $ "call: arg exprs are " ++ show argexprs
@@ -1150,7 +1150,7 @@ tcSigmaCallWithAnnBase ctx rng annbase argexprs ca exp_ty = do
                 T.pack $ "tcSigmaCall expected equal # of arguments! Had "
                 ++ (show $ List.length argexprs) ++ "; expected "
                 ++ (show $ List.length args_tys)
-                ++ highlightFirstLine (rangeOf rng)
+                ++ highlightFirstLineStr (rangeOf rng)
         --tcLift $ putStrLn $ "tcSigmaCall of " ++ show base
         --tcLift $ putStrLn $ show (zip argexprs args_ty)
 
@@ -1182,13 +1182,13 @@ tcSigmaCallWithAnnBase ctx rng annbase argexprs ca exp_ty = do
         if not $ isEmptyEffect fx'
           then do
             ctxFx' <- zonkType ctxFx
-            debugIf False $ string (highlightFirstLine (rangeOf rng))
+            debugIf False $ string (highlightFirstLineStr (rangeOf rng))
             debugIf False $ text "ctxFx: " <> prettyT ctxFx'
             debugIf False $ text "fx: " <> prettyT fx'
             debugIf False $ showStructure fun_ty
             debugIf False $ text "len argexprs:" <> pretty (length argexprs) <+> string ("tSC("++tryGetVarName annbase++")")
             unify fx ctxFx' [text $ "Inconsistent effects at call site: "
-                            ,string $ highlightFirstLine (rangeOf rng)
+                            ,string $ highlightFirstLineStr (rangeOf rng)
                             ,text $ "Effect of called function:"
                             ,indent 4 (prettyT fx')
                             ,text $ "Effect of calling context:"
@@ -1425,7 +1425,7 @@ tcSigmaFnHelper ctx fnAST expTyRaw tyformals = do
                           return (annbody, typeTC annbody, fx, uniquelyNamedFormals)
       Just exp_rho' -> do
             let var_tys = map tidType uniquelyNamedFormals
-            (arg_tys, body_ty, fx, _cc, _ft, _levels) <- unifyFun exp_rho' (length var_tys) ("poly-fn-lit" ++ highlightFirstLine (rangeOf annot))
+            (arg_tys, body_ty, fx, _cc, _ft, _levels) <- unifyFun exp_rho' (length var_tys) ("poly-fn-lit" ++ highlightFirstLineStr (rangeOf annot))
 
             if any hasNonTrivialRefinementDifferences (zip arg_tys var_tys)
               then
@@ -1582,7 +1582,7 @@ tcRhoFnHelper ctx f expTy = do
                            -- |arg_tys| are the corresponding arguments expected
                            -- by the context (or a type annotation on the binder'
                            -- for this function).
-                           (arg_tys, body_ty, fx, _cc, _ft, _levels) <- unifyFun fnty (length uniquelyNamedFormals) ("@" ++ highlightFirstLine rng)
+                           (arg_tys, body_ty, fx, _cc, _ft, _levels) <- unifyFun fnty (length uniquelyNamedFormals) ("@" ++ highlightFirstLineStr rng)
 
                            -- |var_tys| are the types written down by the programmer
                            -- on the function's argument variables.
@@ -1605,7 +1605,7 @@ tcRhoFnHelper ctx f expTy = do
                                                    ++ " on both its explicit argument bindings and its type signature."
                                          --, indent 2 (text "Refined signature types:" <+> indent 2 (pretty ars))
                                         -- , indent 2 (text "Refined variable types:" <+> indent 2 (pretty vrs))
-                                         , string $ highlightFirstLine rng]
+                                         , string $ highlightFirstLineStr rng]
                                          -- When we remove this check, we should un-comment one of the tests in
                                          -- bootstrap/testscase/test-fn-precond-2
                              else do
@@ -1903,7 +1903,7 @@ tcRhoHandler  ctx rng e arms mb_xform expTy = do
         aguard <- liftMaybe (\g -> tcRho ctx' g (Check boolTypeTC)) guard
         -- TODO use outty for type of resume func
         abody <- tcRho ctx' body expTy
-        unify r'p (typeTC abody) [string $ "Failed to unify all branches of case " ++ highlightFirstLine (rangeOf rng)]
+        unify r'p (typeTC abody) [string $ "Failed to unify all branches of case " ++ highlightFirstLineStr (rangeOf rng)]
         return (CaseArm p abody aguard bindings brng)
 
   abranches <- forM (zip arms ps_outtys) checkBranch
@@ -1956,7 +1956,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
         let ctx' = prependContextBindings ctx ctxbindings
         aguard <- liftMaybe (\g -> tcRho ctx' g (Check boolTypeTC)) guard
         abody <- tcRho ctx' body expTy
-        unify u (typeTC abody) [string $ "Failed to unify all branches of case " ++ highlightFirstLine (rangeOf rng)]
+        unify u (typeTC abody) [string $ "Failed to unify all branches of case " ++ highlightFirstLineStr (rangeOf rng)]
         return (CaseArm p abody aguard bindings brng)
   abranches <- forM branches checkBranch
   matchExp expTy (AnnCase rng u ascrutinee abranches) "case"
@@ -1974,14 +1974,14 @@ checkEffectPattern ctx pattern ctxTy = case pattern of
         sanityCheck (ctorArity cid == List.length eps) $
               T.pack $ "Incorrect pattern arity: expected " ++
               (show $ ctorArity cid) ++ " pattern(s), but got "
-              ++ (show $ List.length eps) ++ showSourceRange r
+              ++ (show $ List.length eps) ++ show (showSourceRangeDoc r)
         sanityCheck (ctorArity cid == List.length types) $
               T.pack $ "Invariant violated: constructor arity did not match # types!"
-              ++ showSourceRange r
+              ++ show (showSourceRangeDoc r)
 
         --ty@(TyAppTC _ metas) <- generateTypeSchemaForDataType ctx r (ctorTypeName cid)
         ty@(TyAppTC _ metas) <- do
-          formals <- mapM (\_ -> newTcUnificationVarTau (T.pack $ "eff-tyformal:" ++ showSourceRange r)) tyformals
+          formals <- mapM (\_ -> newTcUnificationVarTau (T.pack $ "eff-tyformal:" ++ show (showSourceRangeDoc r))) tyformals
           return $ TyAppTC (TyConTC $ ctorTypeName cid) formals
         
         let ktvs = map convertTyFormal tyformals
@@ -2020,7 +2020,7 @@ checkPattern ctx pattern ctxTy = case pattern of
         checkSuspiciousPatternVariable rng var =
           if T.unpack (evarName var) `elem` ["true", "false"]
           then tcFails [string $ "Error: this matches a variable, not a boolean constant!"
-                          ++ highlightFirstLine rng]
+                          ++ highlightFirstLineStr rng]
           else return ()
 
   EP_Bool     r b     -> do let boolexpr = E_BoolAST (annotForRange r) b
@@ -2041,10 +2041,10 @@ checkPattern ctx pattern ctxTy = case pattern of
     sanityCheck (ctorArity cid == List.length eps) $
           T.pack $ "Incorrect pattern arity: expected " ++
           (show $ ctorArity cid) ++ " pattern(s), but got "
-          ++ (show $ List.length eps) ++ showSourceRange r
+          ++ (show $ List.length eps) ++ showSourceRangeStr r
     sanityCheck (ctorArity cid == List.length types) $
           T.pack $ "Invariant violated: constructor arity did not match # types!"
-          ++ showSourceRange r
+          ++ showSourceRangeStr r
 
     ty@(TyAppTC _ metas) <-
                         generateTypeSchemaForDataType ctx r (ctorTypeName cid)
@@ -2093,14 +2093,14 @@ checkPattern ctx pattern ctxTy = case pattern of
     (ts, kind) <-
       case ctxTy of
         TupleTypeTC kind ts -> return (ts, kind)
-        _ -> do ts <- sequence [newTcUnificationVarTau (T.pack $ "tup" ++ showSourceRange (rangeOf ep)) | ep <- eps]
+        _ -> do ts <- sequence [newTcUnificationVarTau (T.pack $ "tup" ++ showSourceRangeStr (rangeOf ep)) | ep <- eps]
                 kind <- genUnifiableVar
                 unify ctxTy (TupleTypeTC kind ts) [text "tuple-pattern"]
 
                 return (ts, kind)
     sanityCheck (eqLen eps ts) $
             T.pack $ "Cannot match pattern against tuple type of "
-          ++ "different length." ++ showSourceRange r
+          ++ "different length." ++ showSourceRangeStr r
     ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
     return $ P_Tuple r (TupleTypeTC kind ts) ps
  where
@@ -2119,7 +2119,7 @@ generateTypeSchemaForDataType :: Context SigmaTC -> SourceRange -> DataTypeName 
 generateTypeSchemaForDataType ctx r typeName = do
   case mapSeqLookup typeName (contextDataTypes ctx) of
     MSL_Lone dt -> do
-          formals <- mapM (\_ -> newTcUnificationVarTau (T.pack $ "dt-tyformal:" ++ showSourceRange r)) (dataTypeTyFormals dt)
+          formals <- mapM (\_ -> newTcUnificationVarTau (T.pack $ "dt-tyformal:" ++ showSourceRangeStr r)) (dataTypeTyFormals dt)
           return $ TyAppTC (TyConTC typeName) formals
     MSL_Many _ -> tcFails [string $ "Typecheck.generateTypeSchemaForDataType: Too many"
                         ++ " definitions for $" ++ T.unpack typeName]
@@ -2360,7 +2360,7 @@ resolveType annot origSubst origType = go origSubst origType where
                                          Nothing -> tcFails [string $ "Typecheck.hs: ill-formed type with free bound variable " ++ T.unpack name
                                                             ,text "    " <> text "embedded within type " <> prettyT origType
                                                             ,text "    " <> text "with orig subst " <> prettyT (Map.toList origSubst)
-                                                            ,string $ highlightFirstLine (rangeOf annot)]
+                                                            ,string $ highlightFirstLineStr (rangeOf annot)]
                                          Just ty -> return ty
     RefTypeTC     ty               -> liftM  RefTypeTC    (q ty)
     ArrayTypeTC   ty               -> liftM  ArrayTypeTC  (q ty)
@@ -2617,7 +2617,7 @@ verifyNamesAreDistinct rng name names = do
         []   -> return ()
         dups -> tcFails [string $ "Error when checking " ++ name ++ ": "
                               ++ "had duplicated bindings: " ++ show dups
-                              ++ highlightFirstLine rng]
+                              ++ highlightFirstLineStr rng]
 
 verifyNonOverlappingBindings :: SourceRange -> String -> [ContextBinding ty] -> Tc ()
 verifyNonOverlappingBindings rng name binders = do
