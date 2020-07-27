@@ -170,6 +170,21 @@ static llvm::cl::opt<bool>
 optC2FBareLiterals("c2f-bareliterals",
   llvm::cl::desc("Don't wrap literals with any form of type constraint"),
   llvm::cl::cat(CtoFosterCategory));
+
+static llvm::cl::list<std::string>
+optC2FNonNullTypes("c2f-nonnull",
+  llvm::cl::desc("[typename]"),
+  llvm::cl::cat(CtoFosterCategory),
+  llvm::cl::ZeroOrMore);
+
+bool isNonNull(const std::string& name) {
+  for (auto& s : optC2FNonNullTypes) {
+    if (s == name) {
+      return true;
+    }
+  }
+  return false;
+}
 /*
 static bool startswith(const std::string& a, const std::string& b) {
   return a.size() >= b.size() && a.substr(0, b.size()) == b;
@@ -1177,11 +1192,13 @@ public:
       }
     }
 
-    llvm::outs() << "type case " << name
-      << "\n       of $" << name << "_nil\n"
+    llvm::outs() << "type case " << name;
+    if (!isNonNull(name)) {
+      llvm::outs() << "\n       of $" << name << "_nil\n";
+    }
       // TODO when foster better supports unboxed datatypes, we should probably
       // split record translation into boxed and unboxed portions.
-      << "\n       of $" << name << "\n";
+    llvm::outs() << "\n       of $" << name << "\n";
     for (auto d : rd->decls()) {
       if (auto fd = dyn_cast<FieldDecl>(d)) {
         llvm::outs() << "             " << fieldOfType(fd) << " // " << fd->getName() << "\n";
@@ -1189,15 +1206,17 @@ public:
     }
     llvm::outs() << ";\n\n";
 
-    llvm::outs() << name << "_isnil = { v => case v of $" << name << "_nil -> True of _ -> False end };\n";
-    llvm::outs() << name << "_notnil = { v => case v of $" << name << "_nil -> False of _ -> True end };\n";
+    if (!isNonNull(name)) {
+      llvm::outs() << name << "_isnil = { v => case v of $" << name << "_nil -> True of _ -> False end };\n";
+      llvm::outs() << name << "_notnil = { v => case v of $" << name << "_nil -> False of _ -> True end };\n";
+    }
 
     // Emit field getters
     for (auto d : rd->decls()) {
       if (auto fd = dyn_cast<FieldDecl>(d)) {
         auto fieldType = fd->getType().getTypePtr();
-        emitFieldGetter(rd, fd, name);
-        emitFieldAddrGetter(rd, fd, name);
+        emitFieldGetter(rd, fd, name, !isNonNull(name));
+        emitFieldAddrGetter(rd, fd, name, !isNonNull(name));
         if (isAnonymousStructOrUnionType(fieldType)) {
           std::string fieldName = fosterizedName(fd->getName());
           emitAnonFieldGetters(rd, fd, name,
@@ -1216,11 +1235,13 @@ public:
         }
         llvm::outs() << "set_" << name << "_" << fieldName
           << " = { sv : " << name << " => v : " << fieldType
-          << " => case sv\n"
-          << "of $" << name << "_nil" << " -> prim kill-entire-process \""
+          << " => case sv\n";
+        if (!isNonNull(name)) {
+          llvm::outs()  << "of $" << name << "_nil" << " -> prim kill-entire-process \""
                                       << "set_" << name << "_" << fieldName << " called on "
-                                      << name << "_nil" << "\"" << "\n"
-          << "of $" << name;
+                                      << name << "_nil" << "\"" << "\n";
+        }
+        llvm::outs() << "of $" << name;
         emitFieldsAsUnderscoresExcept(rd, fd, fieldName);
         llvm::outs() << " -> setField " << fieldName << " v end };\n";
       }
@@ -2322,7 +2343,7 @@ The corresponding AST to be matched is
   bool tryHandleCallBuiltin(const CallExpr* ce) {
     if (const DeclRefExpr* dre = dyn_cast<DeclRefExpr>(ce->getCallee()->IgnoreParenImpCasts())) {
       if (dre->getDecl()->getNameAsString() == "__builtin_clz") {
-        llvm::outs() << "cltz-" << tyName(exprTy(ce->getArg(0)));
+        llvm::outs() << "ctlz-" << tyName(exprTy(ce->getArg(0)));
         return true;
       }
       if (dre->getDecl()->getNameAsString() == "__builtin_inff") {
@@ -2642,7 +2663,8 @@ The corresponding AST to be matched is
       // translate p->f = x;  to  (set_pType_f p x)
       if (optC2FVerbose) { llvm::outs() << "/* ctx : " << ctx << " */"; }
       const Expr* base = nullptr;
-      llvm::outs() << "(set_" << fieldAccessorName(me, base, false) << " ";
+      llvm::outs() << ((ctx == ExprContext) ? "({" : "(");
+      llvm::outs() << "set_" << fieldAccessorName(me, base, false) << " ";
       llvm::outs() << "(";
       //visitStmt(base, ExprContext);
       visitWithDerefIf(base, me->isArrow() && vmpt.isMutableVar(base));
@@ -2659,7 +2681,7 @@ The corresponding AST to be matched is
           visitWithDerefIf(base, me->isArrow() && vmpt.isMutableVar(base));
         llvm::outs() << ")";
       }
-      llvm::outs() << ")";
+      llvm::outs() << ((ctx == ExprContext) ? "} !)" : ")");
     } else {
       // translate v = x;  to  (x) >^ v;
       emitPoke(binop->getLHS(), binop->getRHS(), ctx);

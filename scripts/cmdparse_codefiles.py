@@ -10,12 +10,19 @@ def argsplit(args):
     files = []
     nonfiles = []
     c2fflags = []
+    eatNext = False
 
     for a in args:
         if len(a) == 0:
             continue
-        if (a in ['-dump-cfgs', '-dump-orig-source', '-c2f-verbose', '-c2f-bareliterals']):
+        if eatNext:
             c2fflags.append(a)
+            eatNext = False
+        elif (a in ['-dump-cfgs', '-dump-orig-source', '-c2f-verbose', '-c2f-bareliterals']):
+            c2fflags.append(a)
+        elif (a in ['-c2f-nonnull']):
+            c2fflags.append(a)
+            eatNext = True
         elif a[0] == '-':
             nonfiles.append(a)
         elif re.search(r"\.[ch]$", a):
