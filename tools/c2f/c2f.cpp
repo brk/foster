@@ -1498,7 +1498,7 @@ public:
     if (it == aliased_blocks.end()) {
       return getBlockName(*cb);
     } else {
-      return getBlockName(*it->second);
+      return getBlockName(it->second, aliased_blocks);
     }
   }
 
