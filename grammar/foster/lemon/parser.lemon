@@ -1,31 +1,31 @@
 %type transunit { SynTransUnit }
-transunit(A) ::= imports_star(B) item_star(C) FINI . { A = SynTransUnit B C }
+transunit(A) ::= import_star(B) item_star(C) FINI . { A = SynTransUnit B C }
 
-%type imports_star { (Seq SynImport) }
-imports_star(A) ::=                            . { A = seqEmpty ! }
-imports_star(A) ::= imports_star(B) imports(C) . { A = seqPostpend B C }
+%type import_star { (Seq SynImport) }
+import_star(A) ::=                          . { A = seqEmpty ! }
+import_star(A) ::= import_star(B) import(C) . { A = seqPostpend B C }
 
-%type imports { SynImport }
-imports(A) ::= INCLUDE SEMI . { A = SynImport }
+%type import { SynImport }
+import(A) ::= INCLUDE(O) x(B) STR(C) SEMI(X) . { A = SynImport B C (TokenRange O X) }
 
 %type item_star { (Seq SynItem) }
 item_star(A) ::=                      . { A = seqEmpty ! }
 item_star(A) ::= item_star(B) item(C) . { A = seqPostpend B C }
 
 %type item { SynItem }
-item(A) ::= x(B) DCOLON t(C)      SEMI . { A = SynItemDecl B C }
-item(A) ::= x(B) EQUAL  phrase(C) SEMI . { A = SynItemDefn B C }
-item(A) ::= TYPE CASE tyformal(B)  parens_tyformal_star(C)   datactor_star(D) SEMI . { A = SynItemTypeCase B C D }
-item(A) ::= EFFECT    tyformal(B)  parens_tyformal_star(C) effectctor_star(D) SEMI . { A = SynItemEffect   B C D }
-item(A) ::= FOREIGN IMPORT x(B) asid_opt(C) DCOLON t(D) SEMI . { A = SynItemForeignImport B C D }
-item(A) ::= FOREIGN TYPE  tyformal(B) SEMI . { A = SynItemForeignType B }
+item(A) ::= x(B) DCOLON(D) t(C)      SEMI(X)                                             . { A = SynItemDecl B C    D (TokenRange B X) }
+item(A) ::= x(B) EQUAL(Q)  phrase(C) SEMI(X)                                             . { A = SynItemDefn B C    Q (TokenRange B X) }
+item(A) ::= TYPE(O) CASE tyformal(B)  parens_tyformal_star(C)   datactor_star(D) SEMI(X) . { A = SynItemTypeCase B C D (TokenRange O X) }
+item(A) ::= EFFECT(O)    tyformal(B)  parens_tyformal_star(C) effectctor_star(D) SEMI(X) . { A = SynItemEffect   B C D (TokenRange O X) }
+item(A) ::= FOREIGN(O) IMPORT x(B) asid_opt(C) DCOLON t(D) SEMI(X)                       . { A = SynItemForeignImport B C D (TokenRange O X) }
+item(A) ::= FOREIGN(O) TYPE  tyformal(B) SEMI(X)                                         . { A = SynItemForeignType B (TokenRange O X) }
 
 %type parens_tyformal_star { (Seq SynTyformal) }
 parens_tyformal_star(A) ::=                                            . { A = seqEmpty ! }
 parens_tyformal_star(A) ::= parens_tyformal_star(B) parens_tyformal(C) . { A = seqPostpend B C }
 
 %type parens_tyformal { SynTyformal }
-parens_tyformal(A) ::= LPAREN tyformal(B) RPAREN .  { A = B }
+parens_tyformal(A) ::= LPAREN(L) tyformal(B) RPAREN(R) .  { A = SynTyformalParens L B R }
 
 %type datactor_star { (Seq SynDataCtor) }
 datactor_star(A) ::= .                              { A = seqEmpty ! }
@@ -39,19 +39,16 @@ effectctor_star(A) ::= effectctor(C) .                    { A = seqSingleton C }
 effectctor_star(A) ::= effectctor_star(B) effectctor(C) . { A = seqPostpend B C    }
 
 %type effectctor { SynEffectCtor }
-effectctor(A) ::= OF dctor(B) tatom_star(C) .             { A = SynEffPlain B C }
-effectctor(A) ::= OF dctor(B) tatom_star(C) DARROW t(D) . { A = SynEffResume B C D }
+effectctor(A) ::= OF(O) dctor(B) tatom_star(C) .             { A = SynEffPlain B C     (TokenRange O (lastTokenFromVia B C synTypeRange)) }
+effectctor(A) ::= OF(O) dctor(B) tatom_star(C) DARROW t(D) . { A = SynEffResume B C D  (TokenRange O (D |> synTypeRange |> rangeEnd)) }
 
 %type tatom_star { (Seq SynType) }
 tatom_star(A) ::= .                        { A = seqEmpty ! }
 tatom_star(A) ::= tatom_star(B) tatom(C) . { A = seqPostpend B C }
 
-%type asid { Token }
-asid(A) ::= AS id(B) . { A = B }
-
 %type asid_opt { (Maybe Token) }
-asid_opt(A) ::= .         { A = None }
-asid_opt(A) ::= asid(B) . { A = Some B }
+asid_opt(A) ::=          . { A = None }
+asid_opt(A) ::= AS id(B) . { A = Some B }
 
 %type dctor { Token }
 dctor(A) ::= DOLLAR ctor(B)  . { A = B }
@@ -81,8 +78,8 @@ id(A) ::= UNDERIDENT(B) . { A = B }
 stmts(A) ::= stmt_start(B) stmt_cont_star(C) . { A = SynStmts (seqPrepend B C) }
 
 %type stmt_start { SynStmt }
-stmt_start(A) ::= REC pbinding(B) . { A = SynStmtRec B }
-stmt_start(A) ::= ext_pbinding(B) . { A = B }
+stmt_start(A) ::= REC(X) pbinding(B) . { A = SynStmtRec B (TokenRange X (lastOfPBinding B)) }
+stmt_start(A) ::= ext_pbinding(B)    . { A = B }
 
 %type stmt_cont_star { (Seq SynStmt) }
 stmt_cont_star(A) ::= .                                { A = seqEmpty ! }
@@ -109,16 +106,15 @@ patbind(A) ::= xid(B)    . { A = SynPatBindId B }
 patbind(A) ::= patlhs(B) . { A = SynPatBindPatLhs B }
 
 %type patlhs { SynPatLhs }
-patlhs(A) ::= UNDERSCORE                                  . { A = SynPatLhsWildcard }
-patlhs(A) ::= LET LPAREN comma_separated_list_p(B) RPAREN . { A = SynPatLhsTuple B }
+patlhs(A) ::= UNDERSCORE(X)                                     . { A = SynPatLhsWildcard (TokenRange X X) }
+patlhs(A) ::= LET(O) LPAREN comma_separated_list_p(B) RPAREN(X) . { A = SynPatLhsTuple B  (TokenRange O X) }
 
 %type comma_separated_list_p { (Seq SynPat) }
 comma_separated_list_p(A) ::= p(C)                                 . { A = seqSingleton C }
 comma_separated_list_p(A) ::= comma_separated_list_p(B) COMMA p(C) . { A = seqPostpend B C }
 
 %type e { SynExpr }
-e(A) ::=           phrase(C) binops_opt(D) . { A = SynExprChain None     C D }
-e(A) ::= SYMBOL(B) phrase(C) binops_opt(D) . { A = SynExprChain (Some B) C D }
+e(A) ::= phrase(C) binops_opt(D) . { A = SynExprChain C D }
 
 %type binops { (Seq (SynBinop, SynExpr)) }
 binops(A) ::= binop_phrase_plus(B) . { A = B }
@@ -128,19 +124,19 @@ binop(A) ::= SYMBOL(B)              . { A = SynBinopSymbol B }
 binop(A) ::= BACKTICK x(B) BACKTICK . { A = SynBinopIdent  B }
 
 %type binops_opt { (Seq (SynBinop, SynExpr)) }
-binops_opt(A) ::= . { A = seqEmpty ! }
+binops_opt(A) ::=           . { A = seqEmpty ! }
 binops_opt(A) ::= binops(B) . { A = B }
 
 %type binop_phrase { (SynBinop, SynExpr) }
 binop_phrase(A) ::= binop(B) phrase(C) . { A = (B, C) }
 
 %type binop_phrase_plus { (Seq (SynBinop, SynExpr)) }
-binop_phrase_plus(A) ::= binop_phrase(C) .                      { A = seqSingleton C }
+binop_phrase_plus(A) ::= binop_phrase(C)                      . { A = seqSingleton C }
 binop_phrase_plus(A) ::= binop_phrase_plus(B) binop_phrase(C) . { A = seqPostpend B C }
 
 %type phrase { SynExpr }
 phrase(A) ::= lvalue_plus(C) .                      { A = SynExprCall C }
-phrase(A) ::= PRIM nopr(B) lvalue_star(C) .         { A = SynExprPrim B C }
+phrase(A) ::= PRIM(O) nopr(B) lvalue_star(C) .      { A = SynExprPrim B C  (TokenRange O (lastTokenFromVia B C synExprRange)) }
 
 %type lvalue_plus { (Seq SynExpr) }
 lvalue_plus(A) ::= lvalue(C) .                      { A = seqSingleton C }
@@ -158,30 +154,29 @@ nopr(A) ::= SYMBOL(B) . { A = B }
 lvalue(A) ::= atom(B) suffix_star(C) . { A = SynExprLValue B C }
 
 %type suffix { SynSuffix }
-suffix(A) ::= CARET(B) .            { A = SynSuffixCaret B }
-suffix(A) ::= LBRACK e(B) RBRACK .  { A = SynSuffixSqBrackets B }
-suffix(A) ::= BANG(B) .             { A = SynSuffixBang B }
+suffix(A) ::= CARET(B)                       . { A = SynSuffixCaret B }
+suffix(A) ::= DOT_LBRACK(O) e(B) RBRACK(X)   . { A = SynSuffixSqBrackets B  (TokenRange O X) }
+suffix(A) ::= BANG(B)                        . { A = SynSuffixBang B }
 
 %type suffix_star { (Seq SynSuffix) }
 suffix_star(A) ::= .                           { A = seqEmpty ! }
 suffix_star(A) ::= suffix_star(B) suffix(C) .  { A = seqPostpend B C }
 
 %type atom { SynExpr }
-atom(A) ::= x(B) .                              { A = SynExprVar B }
-atom(A) ::= lit(B) .                            { A = SynExprLit B }
-atom(A) ::= ifexpr(B) .                         { A = B }
-atom(A) ::= CASE e(B) of_pmatch_plus(C) END .   { A = SynExprCase B C }
-atom(A) ::= LPAREN RPAREN .                     { A = SynExprUnit }
-atom(A) ::= LPAREN COMPILES stmts(B) RPAREN .   { A = SynExprCompiles B }
-atom(A) ::= tuple(B) .                          { A = B }
-atom(A) ::= handler(B) .                        { A = B }
-atom(A) ::= valabs(B) .                         { A = B }
+atom(A) ::= x(B)                                  . { A = SynExprVar B }
+atom(A) ::= lit(B)                                . { A = SynExprLit B }
+atom(A) ::= ifexpr(B)                             . { A = B }
+atom(A) ::= CASE(O) e(B) of_pmatch_plus(C) END(X) . { A = SynExprCase B C   (TokenRange O X) }
+atom(A) ::= LPAREN(O) RPAREN(X)                   . { A = SynExprUnit       (TokenRange O X) }
+atom(A) ::= tuple(B)                              . { A = B }
+atom(A) ::= handler(B)                            . { A = B }
+atom(A) ::= valabs(B)                             . { A = B }
 
 %type valabs { SynExpr }
-valabs(A) ::= LCURLY foralls(B) formals(C)          RCURLY . { A = SynExprValAbs (Some B) C  None }
-valabs(A) ::= LCURLY foralls(B) formals(C) stmts(D) RCURLY . { A = SynExprValAbs (Some B) C (Some D)}
-valabs(A) ::= LCURLY            formals(C)          RCURLY . { A = SynExprValAbs None     C  None }
-valabs(A) ::= LCURLY            formals(C) stmts(D) RCURLY . { A = SynExprValAbs None     C (Some D) }
+valabs(A) ::= LCURLY(O) foralls(B) formals(C)          RCURLY(X) . { A = SynExprValAbs (Some B) C  None    (TokenRange O X) }
+valabs(A) ::= LCURLY(O) foralls(B) formals(C) stmts(D) RCURLY(X) . { A = SynExprValAbs (Some B) C (Some D) (TokenRange O X) }
+valabs(A) ::= LCURLY(O)            formals(C)          RCURLY(X) . { A = SynExprValAbs None     C  None    (TokenRange O X) }
+valabs(A) ::= LCURLY(O)            formals(C) stmts(D) RCURLY(X) . { A = SynExprValAbs None     C (Some D) (TokenRange O X) }
 
 %type formals { (Seq SynFormal) }
 formals(A) ::= .                              { A = seqEmpty ! }
@@ -199,8 +194,8 @@ tyformal_star(A) ::= .                               { A = seqEmpty ! }
 tyformal_star(A) ::= tyformal_star(B) tyformal(C) .  { A = seqPostpend B C }
 
 %type handler { SynExpr }
-handler(A) ::= HANDLE e(B) effmatch_star(C)         END . { A = SynExprHandler B C None }
-handler(A) ::= HANDLE e(B) effmatch_star(C) AS e(D) END . { A = SynExprHandler B C (Some D) }
+handler(A) ::= HANDLE(O) e(B) effmatch_star(C)         END(X) . { A = SynExprHandler B C None     (TokenRange O X) }
+handler(A) ::= HANDLE(O) e(B) effmatch_star(C) AS e(D) END(X) . { A = SynExprHandler B C (Some D) (TokenRange O X) }
 
 %type effmatch_star { (Seq SynEffMatch) }
 effmatch_star(A) ::= .                               { A = seqEmpty ! }
@@ -210,8 +205,8 @@ effmatch_star(A) ::= effmatch_star(B) effmatch(C) .  { A = seqPostpend B C }
 effmatch(A) ::= OF patside(B) SARROW stmts(C) . { A = SynEffMatch B C }
 
 %type tuple { SynExpr }
-tuple(A) ::= LPAREN stmts(B) AS t(C) RPAREN .                     { A = SynExprTypeAscription B C }
-tuple(A) ::= LPAREN stmts(B) comma_e_star(C) RPAREN hash_opt(D) . { A = SynExprTuple B C D }
+tuple(A) ::= LPAREN(O) e(B) AS t(C) RPAREN(X) .                     { A = SynExprTypeAscription B C (TokenRange O X) }
+tuple(A) ::= LPAREN(O) e(B) comma_e_star(C) RPAREN(X) hash_opt(D) . { A = SynExprTuple B C D        (TokenRange O X) }
 
 %type comma_e { SynExpr }
 comma_e(A) ::= COMMA e(B) . { A = B }
@@ -252,11 +247,11 @@ patom_star(A) ::= .                        { A = seqEmpty ! }
 patom_star(A) ::= patom_star(B) patom(C) . { A = seqPostpend B C }
 
 %type patom { SynPatAtom }
-patom(A) ::= x(B) .                           { A = SynPAtomIdent B }
-patom(A) ::= UNDERSCORE(B) .                  { A = SynPAtomUnder B }
-patom(A) ::= lit(B) .                         { A = SynPAtomLit   B }
-patom(A) ::= LPAREN RPAREN .                  { A = SynPAtomUnit    }
-patom(A) ::= LPAREN p_sepby_COMMA(B) RPAREN . { A = SynPAtomTuple B }
+patom(A) ::= x(B)                                 . { A = SynPAtomIdent B }
+patom(A) ::= UNDERSCORE(B)                        . { A = SynPAtomUnder B }
+patom(A) ::= lit(B)                               . { A = SynPAtomLit   B }
+patom(A) ::= LPAREN(O) RPAREN(X)                  . { A = SynPAtomTuple (seqEmpty !) (TokenRange O X) }
+patom(A) ::= LPAREN(O) p_sepby_COMMA(B) RPAREN(X) . { A = SynPAtomTuple B            (TokenRange O X) }
 
 %type p_sepby_COMMA { (Seq SynPat) }
 p_sepby_COMMA(A) ::= p(B) .                        { A = seqSingleton B }
@@ -267,8 +262,8 @@ lit(A) ::= NUM(B) . { A = SynLitNum B }
 lit(A) ::= STR(B) . { A = SynLitStr B }
 
 %type ifexpr { SynExpr }
-ifexpr(A) ::= IF stmts(B) THEN stmts(C) ELSE stmts(D) END . { A = SynExprIf B C (Some D) }
-ifexpr(A) ::= IF stmts(B) THEN stmts(C)               END . { A = SynExprIf B C  None    }
+ifexpr(A) ::= IF(O) stmts(B) THEN stmts(C) ELSE stmts(D) END(X) . { A = SynExprIf B C (Some D) (TokenRange O X) }
+ifexpr(A) ::= IF(O) stmts(B) THEN stmts(C)               END(X) . { A = SynExprIf B C  None    (TokenRange O X) }
 
 %type tyformal { SynTyformal }
 tyformal(A) ::= x(B)               . { A = SynTyformal B None }
@@ -278,11 +273,11 @@ tyformal(A) ::= x(B) COLON kind(C) . { A = SynTyformal B (Some C) }
 kind(A) ::= x(B) . { A = B }
 
 %type t { SynType }
-t(A) ::= PERCENT x(B) COLON tp(C) COLON e(D) . { A = SynTypeRefined B C D }
+t(A) ::= PERCENT(P) x(B) COLON tp(C) COLON e(D) . { A = SynTypeRefined B C D (TokenRange P (D |> synExprRange |> rangeEnd)) }
 t(A) ::= tp(B) . { A = B }
 
 %type tp { SynType }
-tp(A) ::= tatom(B) tatom_plus(C) . { A = SynTypeApp B C }
+tp(A) ::= tatom(B) tatom_plus(C) . { A = SynTypeApp B C (fromRangePair (B |> synTypeRange) (C |> seqLast! |> synTypeRange)) }
 tp(A) ::= tatom(B) .               { A = B }
 
 %type tatom_plus { (Seq SynType) }
@@ -291,9 +286,9 @@ tatom_plus(A) ::= tatom_plus(B) tatom(C) . { A = seqPostpend B C }
 
 %type tatom { SynType }
 tatom(A) ::= a(B) . { A = SynTypeVar B }
-tatom(A) ::= LPAREN RPAREN . { A = SynTypeUnit }
-tatom(A) ::= LPAREN t_sepby_COMMA(B) RPAREN hash_opt(C) . { A = SynTypeTuple B C }
-tatom(A) ::= LCURLY t_sepby_DARROW(B) RCURLY . { A = SynTypeFn B }
+tatom(A) ::= LPAREN(O) RPAREN(X)                              . { A = SynTypeUnit      (TokenRange O X) }
+tatom(A) ::= LPAREN(O) t_sepby_COMMA(B) RPAREN(X) hash_opt(C) . { A = SynTypeTuple B C (TokenRange O (ofMaybe X C)) }
+tatom(A) ::= LCURLY(O) t_sepby_DARROW(B) RCURLY(X)            . { A = SynTypeFn B      (TokenRange O X) }
 
 %type t_sepby_DARROW { (Seq SynType) }
 t_sepby_DARROW(A) ::= t(C)                          . { A = seqSingleton C }
@@ -304,21 +299,23 @@ t_sepby_COMMA(A) ::= t(C)                        . { A = seqSingleton C }
 t_sepby_COMMA(A) ::= t_sepby_COMMA(B) COMMA t(C) . { A = seqPostpend B C }
 
 %code {
+type case TokenRange of $TokenRange Token Token;
+
 type case SynTransUnit of $SynTransUnit (Seq SynImport) (Seq SynItem);
-type case SynImport of $SynImport ;
-type case SynItem of $SynItemDecl Token SynType
-                  of $SynItemDefn Token SynExpr
-                  of $SynItemTypeCase SynTyformal (Seq SynTyformal) (Seq SynDataCtor)
-                  of $SynItemEffect   SynTyformal (Seq SynTyformal) (Seq SynEffectCtor)
-                  of $SynItemForeignImport Token (Maybe Token) SynType
-                  of $SynItemForeignType SynTyformal
+type case SynImport of $SynImport Token Token                                               TokenRange;
+type case SynItem of $SynItemDecl Token SynType                                             Token TokenRange
+                  of $SynItemDefn Token SynExpr                                             Token TokenRange
+                  of $SynItemTypeCase SynTyformal (Seq SynTyformal) (Seq SynDataCtor)       TokenRange
+                  of $SynItemEffect   SynTyformal (Seq SynTyformal) (Seq SynEffectCtor)     TokenRange
+                  of $SynItemForeignImport Token (Maybe Token) SynType                      TokenRange
+                  of $SynItemForeignType SynTyformal                                        TokenRange
                   ;
-type case SynEffectCtor of $SynEffPlain Token (Seq SynType)
-                        of $SynEffResume Token (Seq SynType) SynType
+type case SynEffectCtor of $SynEffPlain Token (Seq SynType)                                 TokenRange
+                        of $SynEffResume Token (Seq SynType) SynType                        TokenRange
                         ;
 type case SynPat of $SynPatOf SynPatside (Seq SynPatside);
-type case SynPatLhs of $SynPatLhsWildcard
-                    of $SynPatLhsTuple (Seq SynPat)
+type case SynPatLhs of $SynPatLhsWildcard                                                   TokenRange
+                    of $SynPatLhsTuple (Seq SynPat)                                         TokenRange
                     ;
 type case SynPatside of $PatDctor Token (Seq SynPatAtom)
                      of $PatAtom SynPatAtom;
@@ -326,47 +323,47 @@ type case SynPatMatch of $SynPatMatch SynPat (Maybe SynExpr) SynStmts;
 type case SynPatAtom of $SynPAtomIdent Token
                      of $SynPAtomUnder Token
                      of $SynPAtomLit   SynLit
-                     of $SynPAtomUnit
-                     of $SynPAtomTuple (Seq SynPat)
+                     of $SynPAtomTuple (Seq SynPat)                                         TokenRange
                      ;
 type case SynPatBind of $SynPatBindId Token
                      of $SynPatBindPatLhs SynPatLhs
                      ;
 type case SynFormal of $SynFormal Token (Maybe SynType);
-type case SynTyformal of $SynTyformal Token (Maybe Token);
-type case SynType of $SynTypeRefined Token SynType SynExpr
-                  of $SynTypeApp SynType (Seq SynType)
-                  of $SynTypeUnit
-                  of $SynTypeTuple (Seq SynType) (Maybe Token)
-                  of $SynTypeFn (Seq SynType)
+type case SynTyformal of $SynTyformal Token (Maybe Token)
+                      of $SynTyformalParens Token SynTyformal Token
+                      ;
+type case SynType of $SynTypeRefined Token SynType SynExpr      TokenRange
+                  of $SynTypeApp SynType (Seq SynType)          TokenRange
+                  of $SynTypeUnit                               TokenRange
+                  of $SynTypeTuple (Seq SynType) (Maybe Token)  TokenRange
+                  of $SynTypeFn (Seq SynType)                   TokenRange
                   of $SynTypeVar Token
                   ;
 type case SynBinop of $SynBinopSymbol Token
                    of $SynBinopIdent  Token
                    ;
 type case SynStmts of $SynStmts (Seq SynStmt);
-type case SynStmt of $SynStmtRec (SynPatBind, SynExpr)
+type case SynStmt of $SynStmtRec (SynPatBind, SynExpr)          TokenRange
                   of $SynStmtExpr SynExpr
                   of $SynStmtExprBind SynExpr SynExpr
                   of $SynStmtPatBind SynPatLhs SynExpr
                   ;
 type case SynExpr of $SynExprVar Token
                   of $SynExprLit SynLit
-                  of $SynExprIf  SynStmts SynStmts (Maybe SynStmts)
-                  of $SynExprCase SynExpr (Seq SynPatMatch)
-                  of $SynExprUnit
-                  of $SynExprCompiles SynStmts
-                  of $SynExprTypeAscription SynStmts SynType
-                  of $SynExprTuple          SynStmts (Seq SynExpr) (Maybe Token)
-                  of $SynExprHandler SynExpr (Seq SynEffMatch) (Maybe SynExpr)
-                  of $SynExprValAbs (Maybe (Seq SynTyformal)) (Seq SynFormal) (Maybe SynStmts)
+                  of $SynExprIf  SynStmts SynStmts (Maybe SynStmts)                         TokenRange
+                  of $SynExprCase SynExpr (Seq SynPatMatch)                                 TokenRange
+                  of $SynExprUnit                                                           TokenRange
+                  of $SynExprTypeAscription SynExpr SynType                                 TokenRange
+                  of $SynExprTuple          SynExpr (Seq SynExpr) (Maybe Token)             TokenRange
+                  of $SynExprHandler SynExpr (Seq SynEffMatch) (Maybe SynExpr)              TokenRange
+                  of $SynExprValAbs (Maybe (Seq SynTyformal)) (Seq SynFormal) (Maybe SynStmts) TokenRange
                   of $SynExprLValue SynExpr (Seq SynSuffix)
                   of $SynExprCall  (Seq SynExpr)
-                  of $SynExprPrim  Token (Seq SynExpr)
-                  of $SynExprChain (Maybe Token) SynExpr (Seq (SynBinop, SynExpr))
+                  of $SynExprPrim  Token (Seq SynExpr)                                      TokenRange
+                  of $SynExprChain SynExpr (Seq (SynBinop, SynExpr))
                   ;
 type case SynSuffix of $SynSuffixCaret Token
-                    of $SynSuffixSqBrackets SynExpr
+                    of $SynSuffixSqBrackets SynExpr                                         TokenRange
                     of $SynSuffixBang Token
                     ;
 type case SynLit of $SynLitNum Token
@@ -374,4 +371,97 @@ type case SynLit of $SynLitNum Token
                  ;
 type case SynEffMatch of $SynEffMatch SynPatside SynStmts;
 type case SynDataCtor of $SynDataCtor Token (Seq SynType);
+
+rangeStart :: { TokenRange => Token };
+rangeStart = { tr => case tr of $TokenRange s _ -> s end };
+rangeEnd :: { TokenRange => Token };
+rangeEnd = { tr => case tr of $TokenRange _ e -> e end };
+
+fromRangePair :: { TokenRange => TokenRange => TokenRange };
+fromRangePair = { s => e => TokenRange (rangeStart s) (rangeEnd e) };
+
+synItemRange :: { SynItem => TokenRange };
+synItemRange = { i =>
+  case i
+    of $SynItemDecl _ _ _          r -> r
+    of $SynItemDefn _ _ _          r -> r
+    of $SynItemTypeCase _ _ _      r -> r
+    of $SynItemEffect   _ _ _      r -> r
+    of $SynItemForeignImport _ _ _ r -> r
+    of $SynItemForeignType _       r -> r
+  end
+};
+
+synTyformalRange :: { SynTyformal => TokenRange };
+synTyformalRange = { s =>
+  case s
+    of $SynTyformal x None -> TokenRange x x
+    of $SynTyformal x ($Some y) -> TokenRange x y
+    of $SynTyformalParens l _ r -> TokenRange l r
+  end
+};
+
+synPatsideRange :: { SynPatside => TokenRange };
+synPatsideRange = { sps =>
+  case sps
+    of $PatDctor t spas if spas |> seqIsEmpty |> not -> TokenRange t (spas |> seqLast! |> synPatAtomRange |> rangeEnd)
+    of $PatDctor t _                                 -> TokenRange t t
+    of $PatAtom pa -> synPatAtomRange pa
+  end
+};
+
+synPatLhsRange :: { SynPatLhs => TokenRange };
+synPatLhsRange = { s =>
+  case s
+    of $SynPatLhsWildcard r -> r
+    of $SynPatLhsTuple _  r -> r
+  end
+};
+
+synPatAtomRange :: { SynPatAtom => TokenRange };
+synPatAtomRange = { s =>
+  case s
+    of $SynPAtomIdent t -> TokenRange t t
+    of $SynPAtomUnder t -> TokenRange t t
+    of $SynPAtomLit lit -> synLitRange lit
+    of $SynPAtomTuple _ r -> r
+  end
+};
+
+synLitRange :: { SynLit => TokenRange };
+synLitRange = { s =>
+  case s
+    of $SynLitNum t -> TokenRange t t
+    of $SynLitStr t -> TokenRange t t
+  end
+};
+
+synPatRange :: { SynPat => TokenRange };
+synPatRange = { sp =>
+  case sp of $SynPatOf patside ors ->
+    left = synPatsideRange patside;
+    if seqIsEmpty ors
+      then fromRangePair left (ors |> seqLast! |> synPatsideRange)
+      else left
+    end
+  end
+};
+
+synExprRange :: { SynExpr => TokenRange };
+synTypeRange :: { SynType => TokenRange };
+
+lastTokenFromVia :: forall (a:Type) { Token => Seq a => { a => TokenRange } => Token };
+lastTokenFromVia = { t => s => f =>
+  case seqLast? s
+    of $Some x -> f x |> rangeEnd
+    of $None   -> t
+  end
+};
+
+lastOfPBinding :: { (SynPatBind, SynExpr) => Token };
+lastOfPBinding = { p =>
+  let (_, e) = p;
+  e |> synExprRange |> rangeEnd
+};
+
 }

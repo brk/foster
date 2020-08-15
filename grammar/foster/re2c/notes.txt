@@ -5,7 +5,7 @@
   due to the overhead of the Ptr wrappers, in part due to dynamically
   allocated ref cells for function-local mutable variables.
 
-* A few simple but awkward-to-automate changes boosts performance
+* A few simple but awkward-to-automate changes boost performance
   from ~50x slower than C to ~4x slower:
 
     * Making sure Scanner.buf's type is (Array Int8)
