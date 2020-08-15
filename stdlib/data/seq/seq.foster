@@ -125,6 +125,26 @@ seqIndex =  { seq => idx =>
   ftIndex ftElemSize ft idx;
 };
 
+seqIndexFlex :: forall (a:Type) { Seq a => Int32 => Maybe a };
+seqIndexFlex =  { seq => idx =>
+  if idx <SInt32 0 then
+    seqIndex seq (seqLength32 seq +Int32 idx)
+  else
+    seqIndex seq idx
+  end
+};
+
+seqLast? :: forall (a:Type) { Seq a => Maybe a };
+seqLast? = { seq => seqIndexFlex seq -1 };
+
+seqLast! :: forall (a:Type) { Seq a => a };
+seqLast! = { seq =>
+  case seqLast? seq
+    of $Some x -> x
+    of $None -> prim kill-entire-process "seqLast! called on empty seq!"
+  end
+};
+
 seqChunk :: forall (a:Type) { Seq a => Int32 => Seq (Seq a) };
 seqChunk = { seq => chunkSize =>
   REC loop = { remainder => acc =>

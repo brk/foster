@@ -38,3 +38,11 @@ isNone = { x =>
     of $None   -> True
   end
 };
+
+mapMaybe :: forall (a:Type) (b:Type) { Maybe a => { a => b } => Maybe b };
+mapMaybe = { m => f =>
+  case m
+    of $None -> None
+    of $Some x -> Some (f x)
+  end
+};
