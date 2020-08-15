@@ -1,0 +1,6 @@
+#!/bin/sh
+
+SD=$(dirname `which $0`)/../scripts
+R=$($SD/normpath.py $SD/..)
+
+echo $R
