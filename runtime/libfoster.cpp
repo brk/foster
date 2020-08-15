@@ -433,9 +433,9 @@ char* cdataptr_unsafe(foster_bytes* b, int32_t offset) {
 
 void cstr_free(char* s) { free(s); }
 
-FILE* c2f_stdin() { return stdin; }
-FILE* c2f_stdout() { return stdout; }
-FILE* c2f_stderr() { return stderr; }
+FILE* c2f_stdin__autowrap() { return stdin; }
+FILE* c2f_stdout__autowrap() { return stdout; }
+FILE* c2f_stderr__autowrap() { return stderr; }
 
 FILE* CFile_nil() { return NULL; }
 
