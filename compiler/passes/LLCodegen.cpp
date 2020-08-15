@@ -312,7 +312,8 @@ void assertValueHasSameTypeAsPhiNode(llvm::Value* v, LLBlock* block, int i) {
   ASSERT(v->getType() == block->phiNodes[i]->getType())
       << "Can't pass a value of type " << str(v->getType())
       << " to a phi node of type " << str(block->phiNodes[i]->getType())
-      << "\n from value " << str(v) << " to block " << (block->block_id);
+      << "\n from value " << str(v) << " to block " << (block->block_id)
+      << "\n in function " << block->phiNodes[i]->getParent()->getParent()->getName() << "\n";
 }
 
 /// }}}
