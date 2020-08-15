@@ -16,3 +16,11 @@ compiler/me/dist-newstyle
 compiler/me/src/Foster/Tokens.hs
 compiler/me/src/FosterIL_capnp.hs
 compiler/me/src/FosterIL_capnp.foster
+tools/lemon-foster/lemon-foster
+**/fosterc-tmp/
+**/fosterc-z3-cache.cbor
+**/meGCstats.txt
+**/c2f.raw.foster
+grammar/foster/lemon/parser.out
+grammar/foster/re2c/fosterlexer.noyych.c
+grammar/foster/re2c/fosterlexer.noyych.foster
