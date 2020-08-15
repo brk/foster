@@ -109,6 +109,9 @@ ptrDiff32 = { p => q => p `ptrDiff` q |> trunc_i64_to_i32 };
 (+Ptr64) :: forall (a:Type) { Ptr a => Int64 => Ptr a };
 (+Ptr64) = { ptr => n => ptrPlus ptr (trunc_i64_to_i32 n) };
 
+arrGetIndex :: forall (a:Type) { Array a => Int32 => a };
+arrGetIndex = { arr => idx => arr.[idx] };
+
 ptrGetIndex :: forall (a:Type) { Ptr a => Int32 => a };
 ptrGetIndex = { ptr => idx =>
   case ptr

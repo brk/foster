@@ -20,7 +20,7 @@ def argsplit(args):
             eatNext = False
         elif (a in ['-dump-cfgs', '-dump-orig-source', '-c2f-verbose', '-c2f-bareliterals']):
             c2fflags.append(a)
-        elif (a in ['-c2f-nonnull']):
+        elif (a in ['-c2f-nonnull', '-c2f-imm', '-c2f-arr']):
             c2fflags.append(a)
             eatNext = True
         elif a[0] == '-':

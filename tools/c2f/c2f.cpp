@@ -177,6 +177,18 @@ optC2FNonNullTypes("c2f-nonnull",
   llvm::cl::cat(CtoFosterCategory),
   llvm::cl::ZeroOrMore);
 
+static llvm::cl::list<std::string>
+optC2FImmFields("c2f-imm",
+  llvm::cl::desc("[typename.fieldname] - represent directly, without a Field wrapper"),
+  llvm::cl::cat(CtoFosterCategory),
+  llvm::cl::ZeroOrMore);
+
+static llvm::cl::list<std::string>
+optC2FArrFields("c2f-arr",
+  llvm::cl::desc("[typename.fieldname] - represent as an Array instead of (nested) Ptrs"),
+  llvm::cl::cat(CtoFosterCategory),
+  llvm::cl::ZeroOrMore);
+
 bool isNonNull(const std::string& name) {
   for (auto& s : optC2FNonNullTypes) {
     if (s == name) {
@@ -185,6 +197,7 @@ bool isNonNull(const std::string& name) {
   }
   return false;
 }
+
 /*
 static bool startswith(const std::string& a, const std::string& b) {
   return a.size() >= b.size() && a.substr(0, b.size()) == b;
@@ -434,6 +447,8 @@ std::string maybeNonUppercaseTyName(const clang::Type* ty, std::string defaultNa
       return tyName(pty->getPointeeType().getTypePtr());
     }
 
+
+
     return "(Ptr " + tyName(eltTy) + ") /*411*/";
   }
 
@@ -614,6 +629,17 @@ std::string fosterizedName(const std::string& name) {
   return name;
 }
 
+bool isImmField(const FieldDecl* fd, std::string tyName) {
+  std::string fieldName = fosterizedName(fd->getName());
+  std::string specifier = tyName + "." + fieldName;
+  for (auto& s : optC2FImmFields) {
+    if (s == specifier) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool isAnonymousStructOrUnionType(const Type* ty) {
   if (auto ety = dyn_cast<ElaboratedType>(ty)) {
     if (auto rty = dyn_cast<RecordType>(ety->desugar().getTypePtr())) {
@@ -647,6 +673,27 @@ std::string fieldAccessorName(const MemberExpr* me, const Expr* & base, bool add
 
   return tyName(exprTy(base)) + path + "_" + me->getMemberNameInfo().getAsString()
                               + (addressOf ? "_addr" : "");
+}
+
+bool isArrayValuedField(const FieldDecl* fd, const std::string& name) {
+  std::string fieldName = fosterizedName(fd->getName());
+  std::string specifier = name + "." + fieldName;
+  for (auto& s : optC2FArrFields) {
+    if (s == specifier) { return true; }
+  }
+  return false;
+}
+
+bool isArrayValued(const Expr* e) {
+  if (const MemberExpr* me = dyn_cast<MemberExpr>(e->IgnoreParenImpCasts())) {
+    const Expr* base = me->getBase()->IgnoreParenImpCasts();
+    std::string name = tyName(exprTy(base));
+    const ValueDecl* md = me->getMemberDecl();
+    if (const FieldDecl* fd = dyn_cast<FieldDecl>(md)) {
+      return isArrayValuedField(fd, name);
+    }
+  }
+  return false;
 }
 
 std::string enumPrefix(const EnumDecl* ed) {
@@ -757,7 +804,7 @@ public:
       if (unop->getOpcode() == UO_AddrOf) return true;
       return looksPointery(unop->getSubExpr());
     }
-    
+
     return false;
   }
 };
@@ -812,7 +859,7 @@ public:
       if (unop->getOpcode() == UO_AddrOf) return true;
       return looksPointery(unop->getSubExpr());
     }
-    
+
     return false;
   }
 
@@ -1201,7 +1248,7 @@ public:
     llvm::outs() << "\n       of $" << name << "\n";
     for (auto d : rd->decls()) {
       if (auto fd = dyn_cast<FieldDecl>(d)) {
-        llvm::outs() << "             " << fieldOfType(fd) << " // " << fd->getName() << "\n";
+        llvm::outs() << "             " << fieldOfType(fd, name) << " // " << fd->getName() << "\n";
       }
     }
     llvm::outs() << ";\n\n";
@@ -1216,7 +1263,9 @@ public:
       if (auto fd = dyn_cast<FieldDecl>(d)) {
         auto fieldType = fd->getType().getTypePtr();
         emitFieldGetter(rd, fd, name, !isNonNull(name));
-        emitFieldAddrGetter(rd, fd, name, !isNonNull(name));
+        if (!isImmField(fd, name)) {
+          emitFieldAddrGetter(rd, fd, name, !isNonNull(name));
+        }
         if (isAnonymousStructOrUnionType(fieldType)) {
           std::string fieldName = fosterizedName(fd->getName());
           emitAnonFieldGetters(rd, fd, name,
@@ -1233,6 +1282,10 @@ public:
         if (globals.fpt.isPointeryField(fd)) {
             fieldType = "(Ptr " + fieldType + ")";
         }
+        if (isImmField(fd, name)) {
+          continue; // No setters for immediate fields!
+        }
+
         llvm::outs() << "set_" << name << "_" << fieldName
           << " = { sv : " << name << " => v : " << fieldType
           << " => case sv\n";
@@ -1262,14 +1315,27 @@ public:
     }
   }
 
-  std::string fieldOfType(const FieldDecl* fd) {
-    llvm::errs() << "fieldOfType; decl: ";
-    fd->dump();
-    if (globals.fpt.isPointeryField(fd)) {
-      return "(Field (Ptr " + tyName(exprTy(fd)) + "))";
+  std::string fieldOfType(const FieldDecl* fd, const std::string& name) {
+    if (!isImmField(fd, name)) {
+      if (globals.fpt.isPointeryField(fd)) {
+        return "(Field (Ptr " + tyName(exprTy(fd)) + "))";
+      } else {
+        return "(Field " + tyName(exprTy(fd)) + ")";
+      }
     } else {
-      return "(Field " + tyName(exprTy(fd)) + ")";
+      if (globals.fpt.isPointeryField(fd)) {
+        if (const PointerType* pty = dyn_cast<PointerType>(exprTy(fd))) {
+          if (isArrayValuedField(fd, name)) {
+            return "(Array " + tyName(pty->getPointeeType().getTypePtr()) + ")";
+          }
+        }
+
+        return "(Ptr " + tyName(exprTy(fd)) + ")";
+      } else {
+        return tyName(exprTy(fd));
+      }
     }
+
   }
 
   void emitFieldsAsUnderscoresExcept(const RecordDecl* rd,
@@ -1297,7 +1363,9 @@ public:
     }
     llvm::outs() << "of $" << name;
     emitFieldsAsUnderscoresExcept(rd, fd, fieldName);
-    llvm::outs() << " -> getField " << fieldName << " end };\n";
+    llvm::outs() << " -> ";
+    if (!isImmField(fd, name)) { llvm::outs() << "getField "; }
+    llvm::outs() << fieldName << " end };\n";
   }
 
   void emitFieldAddrGetter(const RecordDecl* rd, const FieldDecl* fd,
@@ -1313,7 +1381,7 @@ public:
     emitFieldsAsUnderscoresExcept(rd, fd, fieldName);
     llvm::outs() << " -> getFieldRef " << fieldName << " |> PtrRef end };\n";
   }
-  
+
   void emitAnonFieldGetters(const RecordDecl* ord, const FieldDecl* ofd,
                             const std::string& name,
                             const RecordDecl* erd) {
@@ -1752,9 +1820,9 @@ public:
           needsVisit = false;
         }
       }
-      
+
       if (needsVisit) { visitStmt(d, StmtContext); }
-      
+
 
       llvm::outs() << ";\n";
     }
@@ -1912,7 +1980,12 @@ public:
   }
 
   void emitPeek(const Expr* base, Indices& indices) {
-    llvm::outs() << "(ptrGetIndex ";
+    std::string accessor = "ptrGetIndex";
+    if (isArrayValued(base->IgnoreParenImpCasts())) {
+      accessor = "arrGetIndex";
+    }
+
+    llvm::outs() << "(" << accessor << " ";
     visitStmt(base);
     llvm::outs() << " ";
     emitSubscriptIndex(indices);
@@ -2181,7 +2254,7 @@ The corresponding AST to be matched is
           tgt = recordName(rty->getDecl()) + (op == "==" ? "_isnil" : "_notnil");
         }
       }
-      
+
       llvm::outs() << "(";
       visitStmt(binop->getLHS(), (binop->isCompoundAssignmentOp() ? AssignmentTarget : ExprContext));
       if (isRecordPtrNilComparison) {
@@ -2254,7 +2327,10 @@ The corresponding AST to be matched is
       Indices indices;
       if (auto base = extractBaseAndArraySubscripts(unop->getSubExpr(), indices)) {
         // Translate (&a[i]) as (ptrPlus a i)
-        llvm::outs() << "(ptrPlus ";
+        std::string operation = "ptrPlus";
+        if (isArrayValued(base)) { operation = "PtrArr"; }
+
+        llvm::outs() << "(" << operation << " ";
         visitStmt(base);
         llvm::outs() << " ";
         emitSubscriptIndex(indices);
@@ -2269,7 +2345,7 @@ The corresponding AST to be matched is
       //                                    ^- not mutable local ===> ptrSet p 3
       //   ptr_ref_001.c
       //   ptr_ref_002.c
-      //          
+      //
       //    int bar(int a) { int* z = &a; --a; ++*z; return foo(z) + *z; }
       //                                          ^                   ^
       //                                          |     not assignment ctx ==> ptrGet z
@@ -2717,7 +2793,7 @@ The corresponding AST to be matched is
         } else {
           visitStmt(binop->getRHS());
         }
-        
+
       llvm::outs() << ")";
       llvm::outs() << ")";
     } else {
@@ -3151,7 +3227,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       // and the field f1 is represented with a pointer, we must dereference the
       // pointer to get an object that f2's accessor can accept.
       visitWithDerefIf(base, me->isArrow() &&
-        (vmpt.isPointeryVar(base) || 
+        (vmpt.isPointeryVar(base) ||
          globals.fpt.isPointeryField(base->IgnoreParenImpCasts())));
       llvm::outs() << ")";
       if (ctx == BooleanContext) { llvm::outs() << " " << emitBooleanCoercion(exprTy(me)) << ")"; }
@@ -3222,10 +3298,10 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
             llvm::outs() << "('\\\\' as "
                        << tyName(clit->getType().getTypePtr()) << ")";
           } else {
-            llvm::outs() << "('" << llvm::format("%c", clit->getValue()) << "' as " 
+            llvm::outs() << "('" << llvm::format("%c", clit->getValue()) << "' as "
                        << tyName(clit->getType().getTypePtr()) << ")";
           }
-          
+
         } else {
           llvm::outs() << clit->getValue();
           llvm::outs() << " /*'\\x" << llvm::format("%02x", clit->getValue()) << "'*/ ";
@@ -3307,9 +3383,9 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
             else if (ile->hasArrayFiller()) { eltTyName = tyName(exprTy(ile->getArrayFiller())); }
             else { // TODO constant array element type?
             }
-          } 
+          }
         }
-        
+
 
         llvm::outs() << "(ptrOfArr:[" << eltTyName << "] (prim mach-array-literal";
         std::vector<const clang::Expr*> inits;
@@ -3475,7 +3551,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
                         << " = PtrRef (prim ref "
                         << fosterizedName(d->getName())
                         << ");\n";
-          currentVars.pop_back();  
+          currentVars.pop_back();
         }
       }
 
@@ -3678,7 +3754,7 @@ bool C2F_FormatStringHandler::HandlePrintfSpecifier(const analyze_printf::Printf
       } else {
         llvm::outs() << "(print_i32_bare ";
       }
-    }    
+    }
     cons.visitStmt(e);
     llvm::outs() << ");\n";
   } else if (text == "%s") {
@@ -3688,7 +3764,7 @@ bool C2F_FormatStringHandler::HandlePrintfSpecifier(const analyze_printf::Printf
       llvm::outs() << "(printStrBare ";
     }
     cons.visitStmt(ce->getArg(fs.getArgIndex() + 1));
-    llvm::outs() << ")";
+    llvm::outs() << ");";
   } else {
     std::string spec = fs.getConversionSpecifier().getCharacters();
     if (spec == "d" || spec == "u" || spec == "c" || spec == "x"
@@ -3721,7 +3797,7 @@ bool C2F_FormatStringHandler::HandlePrintfSpecifier(const analyze_printf::Printf
       } else {
         llvm::outs() << "(foster_sprintf_i32 ";
       }
-      
+
       cons.visitStmt(ce->getArg(fs.getArgIndex() + 1));
       llvm::outs() << " ('" << spec << "' as Int8) " << int(flag) << " " << width << " " << precision;
 
