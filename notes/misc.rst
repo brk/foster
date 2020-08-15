@@ -171,4 +171,45 @@ We can also compile to a native executable::
 
     fosterc   simplegl.foster --nativelib SDL --bitcode sdlWrap.bc --backend-optimize -o fostergl.exe
 
+
+Native Code Interop: Autowrapping
+---------------------------------
+
+If you poke around the source code of some of the native code that Foster code
+imports, you'll find sometimes a function imported on the Foster
+side with name ``foobar`` will be declared in C as ``foobar__autowrap``.
+
+The root of the issue is how LLVM treats typed-pointer equality when linking,
+and re-linking, LLVM bitcode.
+C doesn't have this issue because headers ensure that different
+translation units see the same type definitions.
+But on the Foster side, all imported C types are opaque pointers.
+LLVM will unify an opaque pointer type with a more concrete definition when
+linking two object files for the first time,
+but if we then try to link another library, the no-longer-opaque type will
+fail to unify with the new definition.
+This can happen even when not explicitly linking against external libraries,
+due to references to C-library functions within Foster's runtime.
+
+.. ::
+
+    For example, if ``stdlib/c2f`` imports ``c2f_stdout :: { CFile };``
+    as provided by a definition like ``FILE* c2f_stdout() { return stdout; }``
+    the following can go wrong.
+
+    First, the "shell" ``llvm::Module`` created to store the compiler-generated
+    Foster code links against ``libfoster_coro.bc`` and ``foster_runtime.bc``.
+    This is done to get access to necessary
+    symbols and internal type definitions and function attributes (such as: should
+    SSE2 be part of the ABI for generated functions?).
+
+The Foster compiler will look for a definition with an ``__autowrap`` suffix
+for imported functions. When it finds such a definition, it will generate
+a definition for the non-suffixed name which simply calls the suffixed name,
+inserting bitcasts as necessary. This breaks the unification dependency,
+avoiding potential type errors during linking.
+
+If and when LLVM adopts untyped pointers,
+this workaround will no longer be necessary.
+
 .. include:: bench.rst

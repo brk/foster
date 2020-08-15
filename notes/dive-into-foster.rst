@@ -701,7 +701,7 @@ However, things work if the programmer adds a type annotation with a constraint 
 This annotation provides a clean division of labor for the compiler's static checking machinery:
 the annotation can be checked against the function definition once, and then assumed at all other uses of ``sv``.
 Conceptually, given a function of "size" N with M call sites,
-  we would otherwise have to potentially do N * M work finding the right property at each call site.
+we would otherwise have to potentially do N * M work finding the right property at each call site.
 With an explicit annotation, we are faced instead with N + M work.
 
 ldexp/scalbn
