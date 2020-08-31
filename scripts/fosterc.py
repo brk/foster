@@ -71,10 +71,10 @@ def rpath(path):
   }[platform.system()]()
 
 def show_cmdlines(options):
-  return options and options.show_cmdlines == True
+  return options and options.show_cmdlines == True and options.quiet == False
 
 def no_compile_log(options):
-  return options and options.no_compile_log == True
+  return options and (options.no_compile_log == True or options.quiet == True)
 
 def optlevel(options):
   if options and options.backend_optimize:
@@ -364,6 +364,8 @@ def get_fosterc_parser():
                     help="Add native library to link against")
   parser.add_option("--bitcode", dest="bitcodelibs", action="append", default=[],
                     help="Add LLVM bitcode object to link against")
+  parser.add_option("-q", dest="quiet", action="store_true", default=False,
+                    help="Produce less output than usual")
   return parser
 
 def fosterc_set_options(opts):

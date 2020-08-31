@@ -7,10 +7,14 @@ TMPDIR=fosterc-tmp
 mkdir -p ${TMPDIR}
 
 MAYBE_OUT="-o $1.exe"
+MAYBE_ECHO="echo"
 
 for arg in $@; do
   if test $arg = "-o"; then
     MAYBE_OUT=""
+  fi
+  if test $arg = "-q"; then
+    MAYBE_ECHO="true"
   fi
 done
 
@@ -18,7 +22,7 @@ cxxpath() {
   echo $($SD/echo-llvmdir)/bin/clang++
 }
 
-echo ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} --cxxpath $(cxxpath) $@ $MAYBE_OUT
+$MAYBE_ECHO ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} --cxxpath $(cxxpath) $@ $MAYBE_OUT
 ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} --cxxpath $(cxxpath) $@ $MAYBE_OUT
 
 #rm -f meGCstats.txt
