@@ -75,7 +75,15 @@ void foster_coro_create(coro_func corofn, void* arg) {
 
   coro_stack sinfo;
   if (!coro_stack_alloc(&sinfo, ssize / sizeof(void*))) {
-    fprintf(stderr, "Coro stack allocation failed!\n"); fflush(stderr);
+    // If we don't format the ssize argument here, the compiler
+    // will translate the fprintf to a call to fwrite.
+    // Due to the way the backend imports this code, the result can
+    // be that fwrite is given a type that doesn't unify with other
+    // foreign-import-ed libc functions, or functions like c2f_stdout.
+    // Forcing usage of fprintf is preferable because c2f.foster
+    // doesn't import it by default.
+    fprintf(stderr, "Coro stack allocation of size %ld failed!\n", ssize);
+    fflush(stderr);
     exit(2);
   }
   //fprintf(stderr, "allocating a coro stack of size %ld (0x%lx): %p\n", ssize, ssize, sinfo.sptr);
