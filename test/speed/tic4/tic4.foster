@@ -1,0 +1,188 @@
+snafuinclude BenchMeasure "bench/measure";
+snafuinclude Prelude "prelude";
+snafuinclude PreludeFolds "prelude-folds";
+snafuinclude PreludeFixnums "prelude-fixnums";
+snafuinclude Seq "data/seq";
+snafuinclude Ryu "fmt/ryu/ryu-d2s";
+
+copy_board = { board =>
+  newDArray0 (arrayLength32 board) { i : Int32 => board.[i] };
+};
+
+make_move = { board => side_to_move => move =>
+  copy = copy_board board;
+  side_to_move >^ copy.[move];
+  copy
+};
+
+move_candidates = { board => side_to_move =>
+  s = arrayFoldlWithIndex64 board { idx : Word => v => s =>
+            if v ==Int32 0 then seqPostpend s (trunc_Word_to_i32 idx)
+                           else s end } (seqEmpty !);
+  seqToArray s;
+};
+
+is_board_full = { board =>
+  arrayFoldl board { v => rv => if v ==Int32 0 then False else rv end } True;
+};
+
+index_quadruplets = prim mach-array-literal:[Int32]
+    1 2 3 4
+    5 6 7 8
+    9 10 11 12
+    13 14 15 16
+    1 5 9 13
+    2 6 10 14
+    3 7 11 15
+    4 8 12 16
+    1 6 11 16
+    4 7 10 13
+    1 2 5 6
+    2 3 6 7
+    3 4 7 8
+    5 6 9 10
+    6 7 10 11
+    7 8 11 12
+    9 10 13 14
+    10 11 14 15
+    11 12 15 16
+;
+
+board_text = { v : Int32 =>
+  case v
+    of 0 -> "."
+    of 1 -> "x"
+    of _ -> "o"
+  end
+};
+
+print_board_oneline = { board => pscore => mscore =>
+  print_text_bare (board_text board.[0]);
+  enumRange32 1 16 { i => print_text_bare " "; print_text_bare (board_text board.[i]); () };
+  print_text_bare "  ";
+  print_i32_bare pscore;
+  print_text_bare "  ";
+  print_i32_bare mscore;
+  print_text "";
+};
+
+evaluate = { board => depth =>
+
+  player_plus_score = (prim ref 0);
+  player_minus_score = (prim ref 0);
+  game_won = (prim ref False);
+
+  fini = { (player_plus_score^, player_minus_score^, game_won^) };
+
+  REC loop = { n =>
+     if n ==Int32 arrayLength32 index_quadruplets
+     then fini !
+     else
+       player_plus_fields = (prim ref 0);
+       player_minus_fields = (prim ref 0);
+       empties = (prim ref 0);
+
+       enumRange32 0 4 { qidx =>
+         case board.[index_quadruplets.[n +Int32 qidx] -Int32 1]
+           of  0 -> incrInt32 empties; ()
+           of  1 -> incrInt32 player_plus_fields; ()
+           of -1 -> incrInt32 player_minus_fields; ()
+           of _  -> ()
+         end
+       };
+
+       case (empties^, player_plus_fields^, player_minus_fields^)
+         of (3, 1, _) -> ( player_plus_score^ +Int32 3) >^ player_plus_score;
+         of (3, _, 1) -> (player_minus_score^ +Int32 3) >^ player_minus_score;
+         of (2, 2, _) -> ( player_plus_score^ +Int32 13) >^ player_plus_score;
+         of (2, _, 2) -> (player_minus_score^ +Int32 13) >^ player_minus_score;
+         of (1, 3, _) -> ( player_plus_score^ +Int32 31) >^ player_plus_score;
+         of (1, _, 3) -> (player_minus_score^ +Int32 31) >^ player_minus_score;
+         of (0, 4, _) -> (999 -Int32 depth) >^ player_plus_score;
+                         0 >^ player_minus_score;
+                         True >^ game_won;
+         of (0, _, 4) -> (999 -Int32 depth) >^ player_minus_score;
+                         0 >^ player_plus_score;
+                         True >^ game_won;
+         of _ -> ()
+       end;
+
+       if game_won^
+       then fini !
+       else loop (n +Int32 4)
+       end
+     end
+  };
+
+  let (player_plus_score, player_minus_score, game_won) = loop 0;
+
+  if is_board_full board `both` not game_won
+  then (0, True) // draw
+  else (player_plus_score -Int32 player_minus_score, game_won)
+  end
+};
+
+negaMax = { board => side_to_move => depth => alpha => beta => maxdepth => nsearchpos =>
+  best_move = -1;
+
+  let (scorei, is_term_node) = evaluate board depth;
+  if is_term_node `either` (depth ==Int32 maxdepth)
+  then (side_to_move *Int32 scorei |> s32-to-f64, best_move, nsearchpos)
+  else
+    moves = move_candidates board side_to_move;
+
+    REC loop = { n => nsearchpos => scoref => best_move => alpha =>
+      if n ==Int32 arrayLength32 moves
+      then (scoref, best_move, nsearchpos)
+      else
+        analyzed_move = moves.[n];
+        b = make_move board side_to_move analyzed_move;
+        let (_move_score, _, nsearchpos) = negaMax b (0 -Int32 side_to_move) (depth +Int32 1)
+                                            (0.0 -f64 beta) (0.0 -f64 alpha) maxdepth nsearchpos;
+        move_score = 0.0 -f64 _move_score;
+        better = move_score >f64 scoref;
+        scoref = if better then move_score else scoref end;
+        best_move = if better then analyzed_move else best_move end;
+        alpha = max-f64 alpha scoref;
+        if alpha >=f64 beta
+          then // break
+               (scoref, best_move, nsearchpos +Int32 1)
+          else loop (n +Int32 1) (nsearchpos +Int32 1) scoref best_move alpha;
+        end
+      end
+    };
+
+    let (score, best_move, nsearchpos) = loop 0 nsearchpos (negativeInfinity-f64 !) best_move alpha;
+
+    if depth ==Int32 0 then
+      print_text_bare "Analyzed positions: ";
+      print_i32 nsearchpos;
+    end;
+
+    (score, best_move, nsearchpos)
+  end
+};
+
+main = {
+  maxdepth = cmdline-arg-or 1 7;
+  game_board = prim mach-array-literal
+                0 0 0 0
+                0 0 0 0
+                0 0 0 0
+                0 0 0 0;
+  // bench mode only, for now.
+  let (te, _) = elapsed-time {
+      depth = 0;
+      alpha = negativeInfinity-f64 !;
+      beta  = positiveInfinity-f64 !;
+      curr_player = 1;
+      let (_score, _curr_move, _nsearchpos) =
+        negaMax game_board curr_player depth alpha beta maxdepth 0;
+      ()
+  };
+    
+  print_text_bare "Evaluating an empty board to depth ";
+  print_i32_bare maxdepth;
+  print_text_bare " took ";
+  print_text (foster_fmttime_secs te);
+};
