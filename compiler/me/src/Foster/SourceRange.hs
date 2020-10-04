@@ -74,23 +74,37 @@ sourceLineTxt (SourceLines seq) n =
                          ++ (show $ Seq.length seq) ++ ">"
         else Seq.index seq n
 
-sourceLineNumbered :: SourceLines -> Int -> Doc AnsiStyle
-sourceLineNumbered (SourceLines seq) n =
-    fill 8 (pretty (n + 1) <> text ":") <> text (T.unpack $ Seq.index seq n)
-
-lineNumberPadding = fill 8 PP.emptyDoc
-
 prettyWithLineNumbers :: SourceRange -> Doc AnsiStyle
 prettyWithLineNumbers (MissingSourceRange s) = text $ "<missing range: " ++ s ++ ">"
 prettyWithLineNumbers (SourceRange bline bcol eline ecol lines _filepath) =
         line <> showSourceLinesNumbered bline bcol eline ecol lines <> line
+  where
+    showSourceLinesNumbered bline bcol eline ecol lines =
+        if bline == eline
+            then vsep [sourceLineNumbered lines bline
+                      ,lineNumberPadding <> highlightLineRangeDoc bcol ecol]
+            else vsep [sourceLineNumbered lines n | n <- [bline..eline]]
+      where
+        lineNumberPadding = fill 8 PP.emptyDoc
 
+        sourceLineNumbered :: SourceLines -> Int -> Doc AnsiStyle
+        sourceLineNumbered (SourceLines seq) n =
+            fill 8 (pretty (n + 1) <> text ":") <> text (T.unpack $ Seq.index seq n)
+
+-- Used to pretty-print type/effect variable names with source positioning.
 showSourceRangeStr = show . showSourceRangeDoc
+  where
+    showSourceRangeDoc :: SourceRange -> Doc AnsiStyle
+    showSourceRangeDoc (MissingSourceRange s) = text "<missing range: " <> text s <> text ">"
+    showSourceRangeDoc (SourceRange bline bcol eline ecol lines _filepath) =
+            line <> showSourceLinesDoc bline bcol eline ecol lines <> line
 
-showSourceRangeDoc :: SourceRange -> Doc AnsiStyle
-showSourceRangeDoc (MissingSourceRange s) = text "<missing range: " <> text s <> text ">"
-showSourceRangeDoc (SourceRange bline bcol eline ecol lines _filepath) =
-         line <> showSourceLinesDoc bline bcol eline ecol lines <> line
+    -- If a single line is specified, show it with highlighting;
+    -- otherwise, show the lines spanning the two locations (inclusive).
+    showSourceLinesDoc bline bcol eline ecol lines =
+        if bline == eline
+            then vsep [sourceLineDoc lines bline, highlightLineRangeDoc bcol ecol]
+            else vsep [sourceLineDoc lines n | n <- [bline..eline]]
 
 prettySourceRangeInfo :: SourceRange -> Doc AnsiStyle
 prettySourceRangeInfo (MissingSourceRange s) = text $ "<missing range: " ++ s ++ ">"
@@ -106,6 +120,7 @@ highlightFirstLineDoc (SourceRange bline bcol eline ecol lines _filepath) =
       where fcol  = if bline == eline then ecol else T.length lineb
             lineb = sourceLineTxt lines bline
 
+-- Used to pretty-print lines for the backend, plus various internal debug calls.
 highlightFirstLineStr :: SourceRange -> String
 highlightFirstLineStr (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
 highlightFirstLineStr (SourceRange bline bcol eline ecol lines _filepath) =
@@ -113,44 +128,17 @@ highlightFirstLineStr (SourceRange bline bcol eline ecol lines _filepath) =
       where fcol  = if lineb == linee then ecol else Prelude.length lineb
             lineb = sourceLineStr lines bline
             linee = sourceLineStr lines eline
-
--- If a single line is specified, show it with highlighting;
--- otherwise, show the lines spanning the two locations (inclusive).
-highlightLineStr line bcol ecol lines = show $ highlightLineDoc line bcol ecol lines
+            highlightLineStr line bcol ecol lines =
+                show $ highlightLineDoc line bcol ecol lines
 
 highlightLineDoc line bcol ecol lines =
     vcat [pretty $ sourceLineTxt lines line, highlightLineRangeDoc bcol ecol]
 
--- If a single line is specified, show it with highlighting;
--- otherwise, show the lines spanning the two locations (inclusive).
-showSourceLinesDoc bline bcol eline ecol lines =
-    if bline == eline
-        then vsep [sourceLineDoc lines bline, highlightLineRangeDoc bcol ecol]
-        else vsep [sourceLineDoc lines n | n <- [bline..eline]]
-
-showSourceLinesNumbered bline bcol eline ecol lines =
-    if bline == eline
-        then vsep [sourceLineNumbered lines bline
-                  ,lineNumberPadding <> highlightLineRangeDoc bcol ecol]
-        else vsep [sourceLineNumbered lines n | n <- [bline..eline]]
-
 -- Generates a string of spaces and twiddles which underlines
 -- a given range of characters.
-highlightLineRangeStr :: Int -> Int -> String
-highlightLineRangeStr bcol ecol =
-    let len = ecol - bcol in
-    if len <= 0
-        then ""
-        else (List.replicate bcol ' ') ++ (List.replicate len '~')
-
 highlightLineRangeDoc :: Int -> Int -> Doc AnsiStyle
 highlightLineRangeDoc bcol ecol =
     let len = ecol - bcol in
     if len <= 0
         then PP.emptyDoc
         else text (List.replicate bcol ' ') <> text (List.replicate len '~')
-
-reprSourceRange (MissingSourceRange s) = text "(MissingSourceRange " <> text s <> text ")"
-reprSourceRange (SourceRange bline bcol eline ecol _lines _filepath) =
-  parens (text "SourceRange" <+> pretty bline <+> pretty bcol <+> pretty eline
-                             <+> pretty ecol <+> pretty _filepath)

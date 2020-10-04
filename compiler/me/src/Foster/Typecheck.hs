@@ -38,7 +38,7 @@ import Foster.TypecheckInt(typecheckInt, typecheckRat)
 import Foster.Output(OutputOr(Errors, OK), putDocLn)
 import Foster.PrettyAnnExpr()
 import Foster.SourceRange(SourceRange(..), rangeOf,
-          highlightFirstLineStr, highlightFirstLineDoc, showSourceRangeDoc, showSourceRangeStr, prettyWithLineNumbers)
+          highlightFirstLineStr, highlightFirstLineDoc, prettySourceRangeInfo, showSourceRangeStr, prettyWithLineNumbers)
 
 import Data.Text.Prettyprint.Doc
 
@@ -173,7 +173,7 @@ inferSigmaHelper ctx (E_CallAST   rng base argtup ca) msg = do
                 r <- newTcRef (error $ "inferSigmaFn: empty result: " ++ msg)
                 tcSigmaCall     ctx rng   base argtup ca (Infer r)
 inferSigmaHelper ctx e msg = do
-    debugIf dbgSigma $ string $ "inferSigmaHelper " ++ highlightFirstLineStr (rangeOf e)
+    debugIf dbgSigma $ string "inferSigmaHelper " <> highlightFirstLineDoc (rangeOf e)
     debugIf dbgSigma $ showStructure e
     debugIf dbgSigma $ string $  "inferSigmaHelper deferring to inferRho"
     inferRho ctx e msg
@@ -186,9 +186,9 @@ checkSigma ctx e sigma = do
     (skol_tvs, rho) <- skolemize sigma
     if not (null skol_tvs)
       then do
-        debugIf dbgSigma $ string $ "checkSigma " ++ highlightFirstLineStr (rangeOf e) ++ " :: " ++ show sigma
+        debugIf dbgSigma $ string "checkSigma " <> highlightFirstLineDoc (rangeOf e) <> string (" :: " ++ show sigma)
         debugIf dbgSigma $ string $ "checkSigma used " ++ show skol_tvs ++ " to skolemize " ++ show sigma ++ " to " ++ show rho
-        debugIf dbgSigma $ string $ "checkSigma deferring to checkRho for: " ++ highlightFirstLineStr (rangeOf e)
+        debugIf dbgSigma $ string "checkSigma deferring to checkRho for: " <> highlightFirstLineDoc (rangeOf e)
       else return ()
 
     ann <- checkRho ctx e rho
@@ -549,7 +549,7 @@ tcRhoBool rng b expTy = do
             RefinedTypeTC v _ _ -> check (tidType v)
             _ -> tcFails [string $ "Unable to check Bool constant in context"
                                 ++ " expecting non-Bool type " ++ show t
-                         , showSourceRangeDoc (rangeOf rng)]
+                         , prettySourceRangeInfo (rangeOf rng)]
     case expTy of
          Infer r -> update r (return ab)
          Check t -> check t
@@ -572,13 +572,13 @@ tcRhoText rng b expTy = do
              PrimIntTC I8 | T.length b == 1 ->
                if fromEnum (T.head b) >= 256
                  then tcFails [text "Rune cannot be represented as an Int8:"
-                              , showSourceRangeDoc (rangeOf rng)]
+                              , prettySourceRangeInfo (rangeOf rng)]
                  else return $ AnnLiteral rng t (LitInt $ LiteralInt (fromIntegral $ fromEnum $ T.head b) 8  b)
              PrimIntTC I32 | T.length b == 1 ->
                       return $ AnnLiteral rng t (LitInt $ LiteralInt (fromIntegral $ fromEnum $ T.head b) 32 b)
              t -> tcFails [string $ "Unable to check Text constant in context"
                                     ++ " expecting non-Text type " ++ show t
-                          , showSourceRangeDoc (rangeOf rng)]
+                          , prettySourceRangeInfo (rangeOf rng)]
     case expTy of
          Infer r -> update r (return ab)
          Check t -> check t
@@ -602,7 +602,7 @@ tcRhoBytes rng bs expTy = do
              RefinedTypeTC v _ _ -> check (tidType v)
              t -> tcFails [string $ "Unable to check byte array constant in context"
                                     ++ " expecting non-byte-array type " ++ show t
-                          , showSourceRangeDoc (rangeOf rng)]
+                          , prettySourceRangeInfo (rangeOf rng)]
     case expTy of
          Infer r -> update r (return ab)
          Check t -> check t
@@ -643,7 +643,7 @@ tcRhoArrayLit ctx annot mbt args expTy = do
              RefinedTypeTC v _ _ -> check (tidType v)
              t -> tcFails [string $ "Unable to check array constant in context"
                                 ++ " expecting non-array type " ++ show t
-                          , showSourceRangeDoc (rangeOf annot)]
+                          , prettySourceRangeInfo (rangeOf annot)]
     case expTy of
          Infer r -> update r (return ab)
          Check t -> check t
@@ -726,7 +726,7 @@ tcRhoDeref ctx rng e1 expTy = do
       MetaTyVarTC  {} -> return tau
       other -> tcFails [string $ "Expected deref-ed expr "
                            ++ "to have ref type, had " ++ show other,
-                        string $ highlightFirstLineStr (rangeOf rng)]
+                        highlightFirstLineDoc (rangeOf rng)]
     matchExp expTy (AnnDeref rng ty a1) "deref"
 -- }}}
 
@@ -765,7 +765,7 @@ tcRhoRecord ctx rng labels exprs expTy = do
                         ([], []) -> do tcRecord ctx rng exprs [Just t  | t <- ts]
                         (extras, missings) -> do
                           tcFailsMore [text "Mismatched labels" <+> parens (pretty extras <> pretty missings) <+> text " for record"
-                                      , string $ highlightFirstLineStr (rangeOf rng)]
+                                      , highlightFirstLineDoc (rangeOf rng)]
                       
                  _ -> tcFailsMore [string $ "Record cannot check against non-record type " ++ show t
                                   , showStructure t]
@@ -896,7 +896,7 @@ tcRhoArrayRead annot sg base aiexpr expTy = do
         _ ->
             tcFails [string $ "Unable to arrayread expression of non-array type " ++ show (typeTC base)
                         ++ " (context expected type " ++ show expTy ++ ")"
-                        ++ highlightFirstLineStr rng]
+                    , highlightFirstLineDoc rng]
   check (typeTC base)
 -- }}}
 
@@ -924,7 +924,7 @@ tcRhoArrayPoke annot s v base i expTy = do
         _ ->
           tcFails [string $ "Unable to arraypoke expression of type " ++ show (typeTC base)
                       ++ " (context expected type " ++ show expTy ++ ")"
-                      ++ highlightFirstLineStr (rangeOf annot)]
+                  , highlightFirstLineDoc (rangeOf annot)]
   check (typeTC base)
 -- }}}
 
@@ -1066,10 +1066,10 @@ tcRhoTyApp ctx annot e tsAST expTy = do
       TI_Rho rho ->
             tcFails [string $ "Cannot apply type args to expression of"
                        ++ " non-polymorphic type: " ++ show rho
-                    ,string $ highlightFirstLineStr $ rangeOf e]
+                    , highlightFirstLineDoc $ rangeOf e]
       TI_Unresolved ->
             tcFails [text $ "Could not instantiate due to unresolved type for the following term:"
-                    ,string $ highlightFirstLineStr $ rangeOf aeSigma
+                    , highlightFirstLineDoc $ rangeOf aeSigma
                     ,text $ "Try adding an explicit type annotation."
                     ]
 
@@ -1142,7 +1142,7 @@ tcSigmaCallWithAnnBase ctx rng annbase argexprs ca exp_ty = do
                     indent 2 (prettyT fun_ty <$$>
                               text ";; cc=" <+> prettyT _cc
                               <$$> text ";; fx=" <+> prettyT fx)
-        dbg $ string (highlightFirstLineStr (rangeOf rng))
+        dbg $ highlightFirstLineDoc (rangeOf rng)
 
         dbg $ text "call: fn args tys are " <> prettyT args_tys
         dbg $ string $ "call: arg exprs are " ++ show argexprs
@@ -1182,13 +1182,13 @@ tcSigmaCallWithAnnBase ctx rng annbase argexprs ca exp_ty = do
         if not $ isEmptyEffect fx'
           then do
             ctxFx' <- zonkType ctxFx
-            debugIf False $ string (highlightFirstLineStr (rangeOf rng))
+            debugIf False $ highlightFirstLineDoc (rangeOf rng)
             debugIf False $ text "ctxFx: " <> prettyT ctxFx'
             debugIf False $ text "fx: " <> prettyT fx'
             debugIf False $ showStructure fun_ty
             debugIf False $ text "len argexprs:" <> pretty (length argexprs) <+> string ("tSC("++tryGetVarName annbase++")")
             unify fx ctxFx' [text $ "Inconsistent effects at call site: "
-                            ,string $ highlightFirstLineStr (rangeOf rng)
+                            ,highlightFirstLineDoc (rangeOf rng)
                             ,text $ "Effect of called function:"
                             ,indent 4 (prettyT fx')
                             ,text $ "Effect of calling context:"
@@ -1605,7 +1605,7 @@ tcRhoFnHelper ctx f expTy = do
                                                    ++ " on both its explicit argument bindings and its type signature."
                                          --, indent 2 (text "Refined signature types:" <+> indent 2 (pretty ars))
                                         -- , indent 2 (text "Refined variable types:" <+> indent 2 (pretty vrs))
-                                         , string $ highlightFirstLineStr rng]
+                                         , highlightFirstLineDoc rng]
                                          -- When we remove this check, we should un-comment one of the tests in
                                          -- bootstrap/testscase/test-fn-precond-2
                              else do
@@ -1956,7 +1956,8 @@ tcRhoCase ctx rng scrutinee branches expTy = do
         let ctx' = prependContextBindings ctx ctxbindings
         aguard <- liftMaybe (\g -> tcRho ctx' g (Check boolTypeTC)) guard
         abody <- tcRho ctx' body expTy
-        unify u (typeTC abody) [string $ "Failed to unify all branches of case " ++ highlightFirstLineStr (rangeOf rng)]
+        unify u (typeTC abody) [string $ "Failed to unify all branches of case "
+                               , highlightFirstLineDoc (rangeOf rng)]
         return (CaseArm p abody aguard bindings brng)
   abranches <- forM branches checkBranch
   matchExp expTy (AnnCase rng u ascrutinee abranches) "case"
@@ -1974,14 +1975,14 @@ checkEffectPattern ctx pattern ctxTy = case pattern of
         sanityCheck (ctorArity cid == List.length eps) $
               T.pack $ "Incorrect pattern arity: expected " ++
               (show $ ctorArity cid) ++ " pattern(s), but got "
-              ++ (show $ List.length eps) ++ show (showSourceRangeDoc r)
+              ++ (show $ List.length eps) ++ show (prettySourceRangeInfo r)
         sanityCheck (ctorArity cid == List.length types) $
               T.pack $ "Invariant violated: constructor arity did not match # types!"
-              ++ show (showSourceRangeDoc r)
+              ++ show (prettySourceRangeInfo r)
 
         --ty@(TyAppTC _ metas) <- generateTypeSchemaForDataType ctx r (ctorTypeName cid)
         ty@(TyAppTC _ metas) <- do
-          formals <- mapM (\_ -> newTcUnificationVarTau (T.pack $ "eff-tyformal:" ++ show (showSourceRangeDoc r))) tyformals
+          formals <- mapM (\_ -> newTcUnificationVarTau (T.pack $ "eff-tyformal:" ++ showSourceRangeStr r)) tyformals
           return $ TyAppTC (TyConTC $ ctorTypeName cid) formals
         
         let ktvs = map convertTyFormal tyformals
@@ -2020,7 +2021,7 @@ checkPattern ctx pattern ctxTy = case pattern of
         checkSuspiciousPatternVariable rng var =
           if T.unpack (evarName var) `elem` ["true", "false"]
           then tcFails [string $ "Error: this matches a variable, not a boolean constant!"
-                          ++ highlightFirstLineStr rng]
+                       , highlightFirstLineDoc rng]
           else return ()
 
   EP_Bool     r b     -> do let boolexpr = E_BoolAST (annotForRange r) b
@@ -2360,7 +2361,7 @@ resolveType annot origSubst origType = go origSubst origType where
                                          Nothing -> tcFails [string $ "Typecheck.hs: ill-formed type with free bound variable " ++ T.unpack name
                                                             ,text "    " <> text "embedded within type " <> prettyT origType
                                                             ,text "    " <> text "with orig subst " <> prettyT (Map.toList origSubst)
-                                                            ,string $ highlightFirstLineStr (rangeOf annot)]
+                                                            , highlightFirstLineDoc (rangeOf annot)]
                                          Just ty -> return ty
     RefTypeTC     ty               -> liftM  RefTypeTC    (q ty)
     ArrayTypeTC   ty               -> liftM  ArrayTypeTC  (q ty)
@@ -2617,7 +2618,7 @@ verifyNamesAreDistinct rng name names = do
         []   -> return ()
         dups -> tcFails [string $ "Error when checking " ++ name ++ ": "
                               ++ "had duplicated bindings: " ++ show dups
-                              ++ highlightFirstLineStr rng]
+                        , highlightFirstLineDoc rng]
 
 verifyNonOverlappingBindings :: SourceRange -> String -> [ContextBinding ty] -> Tc ()
 verifyNonOverlappingBindings rng name binders = do
