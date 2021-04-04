@@ -10,3 +10,4 @@ Internal Details
    inlining
    space-safety
    optimization-examples
+   lexer-parser
