@@ -456,18 +456,22 @@ namespace foster {
     auto tsr = TOKENSOURCE(lxr);
 
     int ntokens = 0;
+    ANTLR3_MARKER startBase = 0;
 
     pANTLR3_COMMON_TOKEN tok = NULL;
     do {
         tok = tsr->nextToken(tsr);
 
+        if (ntokens == 0) { startBase = tok->start; }
+
         //auto astr = tok->getText(tok);
         //int chan = tok->getChannel(tok);
-        printf("{ type: %3d , line: %4d , col: %4d , len: %d }%c\n",
+        printf("{ type: %3d , line: %4d , col: %4d , bufidx : %5ld , len: %d }%c\n",
           tok->type,
 
           tok->line,
           tok->charPosition,
+          tok->start - startBase,
 
           (int)(tok->stop - tok->start) + 1,
           ((tok == &tsr->eofToken) ? ' ' : ',')
