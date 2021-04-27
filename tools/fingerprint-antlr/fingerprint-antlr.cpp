@@ -64,7 +64,7 @@ void process(llvm::StringRef buffer, std::string path) {
       h = CityHash64(buffer.data(), buffer.size());
     }
     char buf[64] = {0};
-    sprintf(buf, "%16" PRIx64 , h);
+    sprintf(buf, "%016" PRIx64 , h);
     llvm::outs() << buf << " " << path << "\n";
 }
 
