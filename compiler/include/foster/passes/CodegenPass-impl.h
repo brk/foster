@@ -128,7 +128,7 @@ struct CodegenPass {
                                       llvm::IRBuilder<>& b, TypeAST* assoc,
                                       const std::vector<Value*>& args);
 
-  llvm::Value* lookupFunctionOrDie(const std::string& fullyQualifiedSymbol);
+  llvm::FunctionCallee lookupFunctionOrDie(const std::string& fullyQualifiedSymbol);
 
   void addEntryBB(llvm::Function* f);
 

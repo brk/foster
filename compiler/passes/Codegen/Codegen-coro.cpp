@@ -40,8 +40,8 @@ const char kFosterCoroCreate[] = "foster_coro_create";
 const char kCoroTransfer[]     = "coro_transfer";
 
 Value* codegenCurrentCoroSlot(llvm::Module* mod) {
-  Value* f = mod->getFunction("__foster_get_current_coro_slot");
-  return builder.CreateCall(f, llvm::None, "currentCoroSlot");
+  Function* f = mod->getFunction("__foster_get_current_coro_slot");
+  return builder.CreateCall(from(f), llvm::None, "currentCoroSlot");
 }
 
 bool isSingleElementStruct(llvm::Type* t,
@@ -310,13 +310,13 @@ Value* generateInvokeYield(bool isYield,
   ///   current_coro = coro;
   createStore(coro, current_coro_slot);
 
-  Value* coroTransfer = pass->mod->getFunction(kCoroTransfer);
+  llvm::Function* coroTransfer = pass->mod->getFunction(kCoroTransfer);
   ASSERT(coroTransfer != NULL);
   Value*      ctx_addr = gep(coro,         0, coroField_Context());
   Value* curr_ctx_addr = gep(current_coro, 0, coroField_Context());
 
   llvm::Type* coro_context_ptr_ty = coroTransfer->getType()->getContainedType(0)->getContainedType(1);
-  llvm::CallInst* transfer = builder.CreateCall(coroTransfer, {
+  llvm::CallInst* transfer = builder.CreateCall(from(coroTransfer), {
                                 builder.CreateBitCast(curr_ctx_addr, coro_context_ptr_ty),
                                 builder.CreateBitCast(     ctx_addr, coro_context_ptr_ty) });
   transfer->addAttribute(1, llvm::Attribute::InReg);
@@ -452,8 +452,9 @@ Value* emitCoroWrapperFn(
 
   Value* fn_addr = gep(fcg, 0, coroField_Fn(), "fnaddr");
   Value* fn_gen  = builder.CreateLoad(fn_addr, "fn_gen");
+  llvm::FunctionType* cfnTy = getCoroClosureFnType(retTy, argTypes);
   Value* fn      = builder.CreateBitCast(fn_gen,
-                                      rawPtrTo(getCoroClosureFnType(retTy, argTypes)));
+                                      rawPtrTo(cfnTy));
 
   // We don't initialize the parent field with the current coro
   // because it should reflect the context of its invoker,
@@ -469,7 +470,7 @@ Value* emitCoroWrapperFn(
   callArgs.push_back(env);
   //addCoroArgs(callArgs, arg);
 
-  llvm::CallInst* call  = builder.CreateCall(fn, llvm::makeArrayRef(callArgs));
+  llvm::CallInst* call  = builder.CreateCall(llvm::FunctionCallee(cfnTy, fn), llvm::makeArrayRef(callArgs));
   call->setCallingConv(llvm::CallingConv::Fast);
 
     llvm::outs() << "Coro call is " << str(call) << "\n";
@@ -584,11 +585,11 @@ Value* CodegenPass::emitCoroCreateFn(
   llvm::Value* wrapper = emitCoroWrapperFn(this, retTy, argTypes);
   // coro_func wrapper = ...;
   // foster_coro_create(wrapper, fcoro);
-  llvm::Value* foster_coro_create = this->mod->getFunction(kFosterCoroCreate);
+  llvm::Function* foster_coro_create = this->mod->getFunction(kFosterCoroCreate);
   ASSERT(foster_coro_create != NULL);
 
   Value* fcoro_gen = builder.CreateBitCast(fcoro, builder.getInt8PtrTy());
-  llvm::CallInst* call = builder.CreateCall(foster_coro_create, { wrapper, fcoro_gen });
+  llvm::CallInst* call = builder.CreateCall(from(foster_coro_create), { wrapper, fcoro_gen });
 
   // return (foster_coro_i32_i32*) fcoro;
   builder.CreateRet(builder.CreateBitCast(fcoro,

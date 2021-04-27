@@ -10,7 +10,6 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/IR/CallSite.h"
 #include "llvm/ADT/StringSwitch.h"
 
 #include "llvm/Analysis/LoopInfo.h"
@@ -51,7 +50,7 @@ struct TimerChecksInsertion : public FunctionPass {
       for (Instruction& Iref : BB) {
         Instruction* I = &Iref;
         if (llvm::CallInst* call = llvm::dyn_cast<CallInst>(I)) {
-          llvm::Value* Vtgt = call->getCalledValue();
+          llvm::Value* Vtgt = call->getCalledOperand();
           if (!Vtgt) {
             //errs() << F.getName() << " needs header due to unknown target " << str(call);
             return true; // Call to unknown function.

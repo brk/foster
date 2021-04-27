@@ -194,9 +194,9 @@ def compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir):
 
     e4 = crun(['fosteroptc', finalpath + '.preopt.bc',
                                          '-fosterc-time', '-o', outpath]
-                    + ['-tailcallopt']
                     + optlevel(options)
                     + options.optcargs)
+                    #+ ['-tailcallopt']
 
     if options.asm:
         import hashlib

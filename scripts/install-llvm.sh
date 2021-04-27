@@ -4,7 +4,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-LLVM_VERSION=10.0.0
+LLVM_VERSION=12.0.0
 LLVM_V=${LLVM_VERSION}.src
 LLVM_ROOT=${HOME}/llvm
 
@@ -37,6 +37,7 @@ pushd src
         download_llvm_component lldb
         download_llvm_component libcxx
         download_llvm_component libcxxabi
+        download_llvm_component libunwind
         #download_llvm_component clang-tools-extra
 
         echo "unpacking sources..."
@@ -53,6 +54,7 @@ pushd src
         mv compiler-rt-${LLVM_V} llvm-${LLVM_V}/projects/compiler-rt
         mv libcxx-${LLVM_V}      llvm-${LLVM_V}/projects/libcxx
         mv libcxxabi-${LLVM_V}   llvm-${LLVM_V}/projects/libcxxabi
+        mv libunwind-${LLVM_V}   llvm-${LLVM_V}/projects/libunwind
         #mv clang-tools-extra-${LLVM_V} llvm-${LLVM_V}/tools/clang/tools/extra
         echo "done unpacking sources..."
 popd

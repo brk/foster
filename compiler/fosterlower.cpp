@@ -432,7 +432,7 @@ int main(int argc, char** argv) {
     coroast->setBody(coro_parts);
     foster_generic_coro_ast = coroast;
 
-    foster_generic_coro_t = module->getTypeByName("struct.foster_bare_coro");
+    foster_generic_coro_t = llvm::StructType::getTypeByName(foster::fosterLLVMContext, "struct.foster_bare_coro");
     // Can't do this yet, because generating type maps requires
     // access to specific coro fields.
     //foster_generic_coro_t = llvm::StructType::create(module->getContext(),

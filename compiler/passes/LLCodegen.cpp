@@ -215,9 +215,9 @@ llvm::Value* emitStore(CodegenPass* pass,
 }
 
 Value* emitCallToInspectPtr(CodegenPass* pass, Value* ptr) {
-   llvm::Value* rmc = pass->mod->getFunction("inspect_ptr_for_debugging_purposes");
+   llvm::Function* rmc = pass->mod->getFunction("inspect_ptr_for_debugging_purposes");
    ASSERT(rmc) << "couldnt find inspect_ptr_for_debugging_purposes";
-   return builder.CreateCall(rmc, builder.CreateBitCast(ptr, builder.getInt8PtrTy()));
+   return builder.CreateCall(from(rmc), builder.CreateBitCast(ptr, builder.getInt8PtrTy()));
 }
 
 std::vector<llvm::Value*>
@@ -266,6 +266,11 @@ void assertRightNumberOfArgsForFunction(llvm::Value* FV,
 
 void assertValueHasExpectedType(llvm::Value* argV, llvm::Type* expectedType,
                                 llvm::Value* FV) {
+    if (!typesEq(argV->getType(), expectedType)) {
+      //builder.GetInsertBlock()->getParent()->dump();
+      //llvm::errs() << str(builder.GetInsertBlock()->getParent()) << "\n";
+      llvm::errs() << *(builder.GetInsertBlock()->getParent()->getParent()) << "\n";
+    }
     ASSERT(typesEq(argV->getType(), expectedType))
               << "\ntype mismatch: "
               << "\n had type         " << str(argV->getType())
@@ -396,16 +401,23 @@ CodegenPass::CodegenPass(llvm::Module* m, CodegenPassConfig config)
 
 std::map<std::string, llvm::Type*> gDeclaredSymbolTypes;
 
-llvm::Value* CodegenPass::lookupFunctionOrDie(const std::string&
+llvm::FunctionCallee CodegenPass::lookupFunctionOrDie(const std::string&
                                                        fullyQualifiedSymbol) {
   //DDiag() << "looking up function " << fullyQualifiedSymbol;
   llvm::Function* f = mod->getFunction(fullyQualifiedSymbol);
   assertHaveFunctionNamed(f, fullyQualifiedSymbol, this);
   if (llvm::Type* expTy = gDeclaredSymbolTypes[fullyQualifiedSymbol]) {
-    return builder.CreateBitCast(f, expTy);
-  } else {
-    return f;
+    if (expTy != f->getType() && isFunctionPointerTy(expTy)) {
+      // This codepath is triggered by, for example, io/posix,
+      // which uses foster_stdin_read_bytes with expTy = i64 ({ i64, [0 x i8] }*, i32*)*
+      llvm::FunctionType* expFnTy = llvm::dyn_cast<llvm::FunctionType>(expTy->getContainedType(0));
+      return llvm::FunctionCallee(expFnTy, builder.CreateBitCast(f, expTy));
+    }
+    ASSERT(!"lookupFunctionOrDie() tried to do an unexpected type cast!")
+      << "\nsymbol: " << fullyQualifiedSymbol
+      << "\nexpTy: " << str(expTy);
   }
+  return llvm::FunctionCallee(f->getFunctionType(), f);
 }
 
 llvm::CallingConv::ID parseCallingConv(std::string cc) {
@@ -429,7 +441,7 @@ llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
 
   // TODO null terminate?
 
-  llvm::Value* textfragment = lookupFunctionOrDie("TextFragment");
+  llvm::FunctionCallee textfragment = lookupFunctionOrDie("TextFragment");
   llvm::CallInst* call = builder.CreateCall(textfragment, { hstr, sz });
   call->setCallingConv(parseCallingConv("fastcc"));
   return call;
@@ -755,7 +767,7 @@ llvm::Value* allocateSlot(CodegenPass* pass, LLVar* rootvar) {
     auto padded_ty = llvm::StructType::get(foster::fosterLLVMContext,
                                             { builder.getInt64Ty(), builder.getInt64Ty(), ty });
     llvm::AllocaInst* slot = CreateEntryAlloca(padded_ty, rootvar->getName());
-    slot->setAlignment(llvm::MaybeAlign(16));
+    slot->setAlignment(llvm::Align(16));
     builder.CreateStore(builder.CreatePtrToInt(typemap, builder.getInt64Ty()),
                         getPointerToIndex(slot, builder.getInt32(1), ""));
     return getPointerToIndex(slot, builder.getInt32(2), "past_tymap");
@@ -771,7 +783,7 @@ void LLProcCFG::codegenToFunction(CodegenPass* pass, llvm::Function* F) {
     LLBlock* bi = blocks[i];
     pass->fosterBlocks[bi->block_id] = bi;
     bi->bb = BasicBlock::Create(builder.getContext(), bi->block_id, F);
-    ASSERT(bi->block_id == bi->bb->getName())
+    ASSERT(bi->block_id == bi->bb->getName().str())
                      << "function can't have two blocks named " << bi->block_id;
   }
 
@@ -876,7 +888,7 @@ void LLBr::codegenTerminator(CodegenPass* pass) {
   if (false && this->args.empty()) {
     llvm::outs() << "{{{ Empty args!";
     llvm::outs() << "    block_id: " << block_id << "\n";
-    llvm::outs() << "    parent: " <<  builder.GetInsertBlock()->getParent()->getName().str() << "\n";
+    llvm::outs() << "    parent: " <<  builder.GetInsertBlock()->getParent()->getName() << "\n";
     llvm::outs() << "}}}\n";
   }
   if (this->args.empty() && (llvm::StringRef(block_id).startswith(
@@ -916,10 +928,9 @@ ConstantInt* getTagForCtorId(const CtorId& c) {
 }
 
 llvm::Value* emitCallGetCtorIdOf(CodegenPass* pass, llvm::Value* v) {
-  llvm::Value* foster_ctor_id_of = pass->mod->getFunction("foster_ctor_id_of");
+  llvm::Function* foster_ctor_id_of = pass->mod->getFunction("foster_ctor_id_of");
   ASSERT(foster_ctor_id_of != NULL);
-  return builder.CreateCall(foster_ctor_id_of,
-                            emitBitcast(v, builder.getInt8PtrTy()));
+  return builder.CreateCall(from(foster_ctor_id_of), emitBitcast(v, builder.getInt8PtrTy()));
 }
 
 void codegenSwitch(CodegenPass* pass, LLSwitch* sw, llvm::Value* insp_tag) {
@@ -1166,7 +1177,7 @@ llvm::Value* emitByteArray(CodegenPass* pass, llvm::StringRef bytes, llvm::Strin
   auto arrayGlobal = emitGlobalArrayCell(pass,
                         pass->getTypeMapForType(TypeAST::i(8), ctorRepr, pass->mod, YesArray),
                         const_arr_tidy,
-                        cellname);
+                        cellname.str());
 
   auto rv = builder.CreateBitCast(getPointerToIndex(arrayGlobal, builder.getInt32(1), "cellptr"),
                                 ArrayTypeAST::getZeroLengthTypeRef(TypeAST::i(8)), "arr_ptr");
@@ -1177,8 +1188,9 @@ llvm::Value* emitByteArray(CodegenPass* pass, llvm::StringRef bytes, llvm::Strin
 
 llvm::Value* LLText::codegen(CodegenPass* pass) {
   Value* hstr = emitByteArray(pass, this->stringValue, ".txt_cell");
-  Value* textfragment = pass->lookupFunctionOrDie("TextFragment");
-  auto call = builder.CreateCall(textfragment, { hstr, builder.getInt32(this->stringValue.size()) });
+  llvm::FunctionCallee textfragment = pass->lookupFunctionOrDie("TextFragment");
+  auto call = builder.CreateCall(textfragment,
+                     { hstr, builder.getInt32(this->stringValue.size()) });
   call->setCallingConv(parseCallingConv("fastcc"));
   return call;
 }
@@ -1199,7 +1211,7 @@ llvm::Value* LLGlobalSymbol::codegen(CodegenPass* pass) {
   auto v = pass->globalValues[this->name];
   if (!v || isProc) {
     if (!v) llvm::errs() << "falling back to global proc instead of closure for " << this->name << "\n";
-    v = pass->lookupFunctionOrDie(this->name);
+    v = pass->lookupFunctionOrDie(this->name).getCallee();
   }
   return v;
 }
@@ -1208,7 +1220,7 @@ llvm::Value* LLGlobalSymbol::codegen(CodegenPass* pass) {
 llvm::Value* LLGlobalSymbol::codegenCallee(CodegenPass* pass) {
   // But if we know we're codegenning for a call site, we can use the global
   // procedure directly, instead of its closure wrapper.
-  return pass->lookupFunctionOrDie(this->name);
+  return pass->lookupFunctionOrDie(this->name).getCallee();
 }
 
 llvm::Value* LLVar::codegen(CodegenPass* pass) {
@@ -1259,12 +1271,12 @@ llvm::Value* LLInt::codegen(CodegenPass* pass) {
     // Large integer constants must be initialized from binary data.
     std::string bytes = APInt_toBase256_lsb0(arb);
     Value* base256 = emitByteArray(pass, bytes, ".intlit_");
-    Value* Int_ofBase256 = pass->mod->getFunction("Int-ofBase256");
+    Function* Int_ofBase256 = pass->mod->getFunction("Int-ofBase256");
     ASSERT (Int_ofBase256) << "Arbitrary-precision integers need a constructor in scope!" << "\n"
                            << "\n"
                            << "Try importing \"prelude/int\"."
                            << "\n";
-    auto call = builder.CreateCall(Int_ofBase256, { base256, builder.getInt1(this->negated) });
+    auto call = builder.CreateCall(from(Int_ofBase256), { base256, builder.getInt1(this->negated) });
     call->setCallingConv(parseCallingConv("fastcc"));
     return call;
   }
@@ -1310,7 +1322,7 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
     llvm::Type* pad  = llvm::ArrayType::get(builder.getInt8Ty(), 8 - ptrsize);
     llvm::StructType* sty = llvm::StructType::get(builder.getContext(), { pad8, typemap_type, pad, ty });
     llvm::AllocaInst* cell = CreateEntryAlloca(sty, "stackref");
-    cell->setAlignment(llvm::MaybeAlign(16));
+    cell->setAlignment(llvm::Align(16));
     llvm::Value* slot = getPointerToIndex(cell, builder.getInt32(3), "stackref_slot");
     builder.CreateStore(ti, getPointerToIndex(cell, builder.getInt32(1), "stackref_meta"));
     return slot;
@@ -1715,10 +1727,11 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
 llvm::Value* LLCallPrimOp::codegen(CodegenPass* pass) {
   if (this->op == "lookup_handler_for_effect") {
     // Special cased because it's the only operation that needs tag.
-    llvm::Value* fn = pass->mod->getFunction("foster__lookup_handler_for_effect");
+    llvm::Function* fn = pass->mod->getFunction("foster__lookup_handler_for_effect");
     ASSERT(fn != NULL) << "NO foster__lookup_handler_for_effect IN MODULE! :(";
 
-    llvm::CallInst* handler = builder.CreateCall(fn, { builder.getInt64(this->tag) }, "handler");
+    llvm::ArrayRef<Value*> args = { builder.getInt64(this->tag) };
+    llvm::CallInst* handler = builder.CreateCall(from(fn), args, "handler");
     return handler;
   }
   return pass->emitPrimitiveOperation(this->op, builder, this->type,
@@ -1793,7 +1806,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     callingConv = F->getCallingConv();
     FT = F->getFunctionType();
   } else if (isFunctionPointerTy(FV->getType())) {
-    FT = dyn_cast<llvm::FunctionType>(slotType(FV));
+    FT = llvm::dyn_cast<llvm::FunctionType>(FV->getType()->getContainedType(0));
   } else {
     if (!isPointerToStruct(FV->getType())) {
       // We can end up in this situation (trying to call a value that
@@ -1833,7 +1846,8 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
   // Give the instruction a name, if we can...
 
-  auto callInst = builder.CreateCall(FV, llvm::makeArrayRef(valArgs));
+  auto callInst = builder.CreateCall(llvm::FunctionCallee(FT, FV),
+                                     llvm::makeArrayRef(valArgs));
   callInst->setCallingConv(callingConv);
   trySetName(callInst, "calltmp");
 

@@ -86,7 +86,7 @@ public:
   bool isPointeryVar(const std::string& v) { return pointery[v]; }
   bool isPointeryVar(const Expr* e) {
     if (auto dre = dyn_cast<DeclRefExpr>(e->IgnoreParenImpCasts())) {
-      return pointery[dre->getDecl()->getName()];
+      return pointery[dre->getDecl()->getName().str()];
     }
     return false;
   }
@@ -95,7 +95,7 @@ public:
   bool isMutableVar(const std::string& v) { return mutableness[v]; }
   bool isMutableVar(const Expr* e) {
     if (auto dre = dyn_cast<DeclRefExpr>(e->IgnoreParenImpCasts())) {
-      return mutableness[dre->getDecl()->getName()];
+      return mutableness[dre->getDecl()->getName().str()];
             // || isDeclRefOfMutableAlias(e);
     }
     return false;
@@ -242,7 +242,7 @@ std::string tyOpSuffix(const clang::Type* ty) {
   }
 
   if (auto tdty = dyn_cast<TypedefType>(ty)) {
-    return tdty->getDecl()->getName();
+    return tdty->getDecl()->getName().str();
   }
 
   return "";
@@ -298,9 +298,9 @@ std::string getNameForAnonymousRecordTypeWithin(const Decl* d, const TagDecl* td
 
   if (td) {
     if (auto typdef = td->getTypedefNameForAnonDecl()) {
-      rv = typdef->getIdentifier()->getName();
+      rv = typdef->getIdentifier()->getName().str();
     } else if (td->getIdentifier()) {
-      rv = td->getIdentifier()->getName();
+      rv = td->getIdentifier()->getName().str();
     }
   } else {
     rv = "Anon_";
@@ -352,7 +352,7 @@ std::string tyName(const clang::Type* ty, std::string defaultName = "C2FUNK") {
 
 std::string getNamedRecordDeclName(const RecordDecl* rd) {
   if (TypedefNameDecl* tnd = rd->getTypedefNameForAnonDecl()) {
-    return tnd->getName();
+    return tnd->getNameAsString();
   }
 
   return rd->getNameAsString();
@@ -630,7 +630,7 @@ std::string fosterizedName(const std::string& name) {
 }
 
 bool isImmField(const FieldDecl* fd, std::string tyName) {
-  std::string fieldName = fosterizedName(fd->getName());
+  std::string fieldName = fosterizedName(fd->getNameAsString());
   std::string specifier = tyName + "." + fieldName;
   for (auto& s : optC2FImmFields) {
     if (s == specifier) {
@@ -676,7 +676,7 @@ std::string fieldAccessorName(const MemberExpr* me, const Expr* & base, bool add
 }
 
 bool isArrayValuedField(const FieldDecl* fd, const std::string& name) {
-  std::string fieldName = fosterizedName(fd->getName());
+  std::string fieldName = fosterizedName(fd->getNameAsString());
   std::string specifier = name + "." + fieldName;
   for (auto& s : optC2FArrFields) {
     if (s == specifier) { return true; }
@@ -745,14 +745,14 @@ bool isPointerToPlainData(const clang::Type* ty) {
 void FieldPointernessTracker::notePointeryField(const FieldDecl* fd) {
   const RecordDecl* rd = fd->getParent();
   std::string accessor = fosterizedTypeName(getRecordDeclName(rd))
-                          + "_" + fosterizedName(fd->getName());
+                          + "_" + fosterizedName(fd->getNameAsString());
   if (optC2FVerbose) { llvm::errs() << "noting pointery field: " << accessor << "\n"; }
   fullPtrFields[accessor] = true;
 }
 
 bool FieldPointernessTracker::isPointeryField(const FieldDecl* fd) {
   const RecordDecl* rd = fd->getParent();
-  std::string accessor = fosterizedTypeName(getRecordDeclName(rd)) + "_" + fosterizedName(fd->getName());
+  std::string accessor = fosterizedTypeName(getRecordDeclName(rd)) + "_" + fosterizedName(fd->getNameAsString());
   return fullPtrFields[accessor];
 }
 
@@ -820,12 +820,12 @@ public:
         if (bo->isAssignmentOp() || bo->isCompoundAssignmentOp()) {
           if (optC2FVerbose) { llvm::errs() << "MutableLocalHandler: binopvar: "
                                             << v->getDecl()->getName() << "\n"; }
-          vmpt.noteMutableVar(v->getDecl()->getName());
+          vmpt.noteMutableVar(v->getDecl()->getNameAsString());
 
           auto rhs = bo->getRHS();
           if (rhs->getType().getTypePtr()->isPointerType()) {
             if (looksPointery(rhs->IgnoreParenImpCasts())) {
-              vmpt.notePointeryVar(v->getDecl()->getName());
+              vmpt.notePointeryVar(v->getDecl()->getNameAsString());
             } else {
               llvm::errs() << "didn't look pointery:\n";
               rhs->IgnoreParenImpCasts()->dump();
@@ -835,15 +835,15 @@ public:
       }
     }
     if (auto v = Result.Nodes.getNodeAs<DeclRefExpr>("unaryopvar")) {
-      vmpt.noteMutableVar(v->getDecl()->getName());
+      vmpt.noteMutableVar(v->getDecl()->getNameAsString());
     }
     if (auto v = Result.Nodes.getNodeAs<DeclRefExpr>("addrtakenvar"))
-      vmpt.noteMutableVar(v->getDecl()->getName());
+      vmpt.noteMutableVar(v->getDecl()->getNameAsString());
     if (auto v = Result.Nodes.getNodeAs<VarDecl>("vardecl-noinit"))
-      vmpt.noteMutableVar(v->getName());
+      vmpt.noteMutableVar(v->getNameAsString());
     if (auto v = Result.Nodes.getNodeAs<VarDecl>("vardecl")) {
       if (!v->hasInit()) {
-        vmpt.noteMutableVar(v->getName());
+        vmpt.noteMutableVar(v->getNameAsString());
       }
     }
   }
@@ -1267,7 +1267,7 @@ public:
           emitFieldAddrGetter(rd, fd, name, !isNonNull(name));
         }
         if (isAnonymousStructOrUnionType(fieldType)) {
-          std::string fieldName = fosterizedName(fd->getName());
+          std::string fieldName = fosterizedName(fd->getNameAsString());
           emitAnonFieldGetters(rd, fd, name,
                                 getRecordDeclFromType(fieldType));
         }
@@ -1277,7 +1277,7 @@ public:
     // Emit field setters
     for (auto d : rd->decls()) {
       if (const FieldDecl* fd = dyn_cast<FieldDecl>(d)) {
-        std::string fieldName = fosterizedName(fd->getName());
+        std::string fieldName = fosterizedName(fd->getNameAsString());
         std::string fieldType = tyName(fd->getType().getTypePtr());
         if (globals.fpt.isPointeryField(fd)) {
             fieldType = "(Ptr " + fieldType + ")";
@@ -1353,7 +1353,7 @@ public:
 
   void emitFieldGetter(const RecordDecl* rd, const FieldDecl* fd,
                        const std::string& name, bool mightBeNil = true) {
-    std::string fieldName = fosterizedName(fd->getName());
+    std::string fieldName = fosterizedName(fd->getNameAsString());
     //llvm::outs() << name << "_" << fieldName << " :: { " << name << " => ... }";
     llvm::outs() << name << "_" << fieldName << " = { sv : " << name << " => case sv ";
     if (mightBeNil) {
@@ -1370,7 +1370,7 @@ public:
 
   void emitFieldAddrGetter(const RecordDecl* rd, const FieldDecl* fd,
                            const std::string& name, bool mightBeNil = true) {
-    std::string fieldName = fosterizedName(fd->getName());
+    std::string fieldName = fosterizedName(fd->getNameAsString());
     llvm::outs() << name << "_" << fieldName << "_addr = { sv : " << name << " => case sv ";
     if (mightBeNil) {
       llvm::outs() << "of $" << name << "_nil" << " -> prim kill-entire-process \""
@@ -1387,13 +1387,13 @@ public:
                             const RecordDecl* erd) {
     for (auto d : erd->decls()) {
       if (auto efd = dyn_cast<FieldDecl>(d)) {
-        llvm::outs() << name << "_" << fosterizedName(ofd->getName())
-                             << "_" << fosterizedName(efd->getName())
+        llvm::outs() << name << "_" << fosterizedName(ofd->getNameAsString())
+                             << "_" << fosterizedName(efd->getNameAsString())
                      << " = { sv : " << name << " => "
                      << getRecordDeclName(erd) << "_"
-                                    << fosterizedName(efd->getName())
+                                    << fosterizedName(efd->getNameAsString())
                                     << " (" <<
-                     name << "_" << fosterizedName(ofd->getName())
+                     name << "_" << fosterizedName(ofd->getNameAsString())
                                  << " " << "sv" << ") };\n";
       }
     }
@@ -1519,7 +1519,8 @@ public:
 
 class MyASTConsumer : public ASTConsumer {
 public:
-  MyASTConsumer(const CompilerInstance &CI) : lastloc(), CI(CI), FC(CI.getSourceManager()) { }
+  MyASTConsumer(const CompilerInstance &CI) : lastloc(), CI(CI), FC(CI.getSourceManager()),
+                                              rawcomments(clang::RawCommentList(CI.getSourceManager())) { }
 
   void handleIfThenElse(ContextKind ctx, IfExprOrStmt ies, const Stmt* cnd, const Stmt* thn, const Stmt* els) {
     bool needTrailingUnit = ies == AnIfStmt && !isCompoundWithTrailingReturn(thn);
@@ -1805,14 +1806,14 @@ public:
       bool needsVisit = true;
       if (d->isSingleDecl()) {
         if (const VarDecl* vd = dyn_cast<VarDecl>(d->getSingleDecl())) {
-          vmpt.noteMutableVar(vd->getName());
+          vmpt.noteMutableVar(vd->getNameAsString());
           // Unfortunately, all variables must be treated as mutable
           // when we are doing CFG-based generation, because the CFG
           // doesn't respect variable scoping rules.
 
           // We don't visit the decl itself here because it may refer to
           // out-of-scope variables.
-          currentVars.push_back(vd->getName());
+          currentVars.push_back(vd->getNameAsString());
           llvm::outs() << emitVarName(vd)
                        << " = PtrRef (prim ref "
                        << zeroValue(vd->getType().getTypePtr()) << ") /*cfg-mutlocal*/";
@@ -1862,7 +1863,7 @@ public:
               // we must re-initialize the variable.
               if (ds->isSingleDecl()) {
                 if (const VarDecl* vd = dyn_cast<VarDecl>(ds->getSingleDecl())) {
-                  bool isMut = vmpt.isMutableVar(vd->getName());
+                  bool isMut = vmpt.isMutableVar(vd->getName().str());
                   if (vd->hasInit() && isMut) {
                     emitPoke(vd, vd->getInit());
                   } else if (!isMut) {
@@ -2207,7 +2208,7 @@ The corresponding AST to be matched is
       if (it->second == BO_LAnd) return "&&";
       if (it->second == BO_LOr)  return "||";
     }
-    return binop->getOpcodeStr();
+    return binop->getOpcodeStr().str();
   }
 
   void handleBinaryOperator(const BinaryOperator* binop,
@@ -2465,7 +2466,7 @@ The corresponding AST to be matched is
     }
 
     if (auto slit = dyn_cast<StringLiteral>(ce->getArg(0)->IgnoreParenImpCasts())) {
-      const std::string& s = slit->getString();
+      const std::string& s = slit->getString().str();
       bool isFreeBSDkprintf = false;
       C2F_FormatStringHandler handler(s, s.c_str(), *Ctx, ce, *this);
       clang::analyze_format_string::ParsePrintfString(handler, &s[0], &s[s.size()],
@@ -2646,9 +2647,9 @@ The corresponding AST to be matched is
   }
 
   std::string recordName(const RecordDecl* rd) {
-    std::string name = rd->getName();
+    std::string name = rd->getNameAsString();
     if (TypedefNameDecl* tnd = rd->getTypedefNameForAnonDecl()) {
-      name = tnd->getName();
+      name = tnd->getNameAsString();
     }
     if (name == "") {
       name = getRecordDeclName(rd);
@@ -2765,7 +2766,7 @@ The corresponding AST to be matched is
   }
 
   void handleCompoundAssignment(const BinaryOperator* binop, ContextKind ctx) {
-    std::string op = binop->getOpcodeStr();
+    std::string op = binop->getOpcodeStr().str();
     if (op.back() == '=') op.pop_back();
 
     std::string tgt = mkFosterBinop(op, exprTy(binop->getLHS()), exprTy(binop->getRHS()));
@@ -3048,18 +3049,18 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
 
     auto it = duplicateVarDecls.find(vd);
     if (it == duplicateVarDecls.end()) {
-      return fosterizedName(vd->getName());
+      return fosterizedName(vd->getNameAsString());
     } else {
       std::string s;
-      std::stringstream ss(s); ss << fosterizedName(vd->getName()) << "___" << it->second;
+      std::stringstream ss(s); ss << fosterizedName(vd->getNameAsString()) << "___" << it->second;
       return ss.str();
     }
   }
 
   void visitVarDecl(const VarDecl* vd) {
-    currentVars.push_back(vd->getName());
+    currentVars.push_back(vd->getNameAsString());
     if (vd->hasInit()) {
-      if (vmpt.isMutableVar(vd->getName()) && !vmpt.isMutableVar(vd->getInit())) {
+      if (vmpt.isMutableVar(vd->getNameAsString()) && !vmpt.isMutableVar(vd->getInit())) {
         llvm::outs() << emitVarName(vd) << " = PtrRef (prim ref ";
         visitStmt(vd->getInit());
         llvm::outs() << ")"; // /*vd-mutlocal; a=" << isDeclRefOfMutableAlias(vd) << "*/";
@@ -3318,7 +3319,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       auto vd = dr->getDecl();
 
       //if (ctx != AssignmentTarget && isPrimRef(vd) && !isDeclRefOfMutableAlias(vd)) {
-      if (ctx != AssignmentTarget && vmpt.isMutableVar(vd->getName())) {
+      if (ctx != AssignmentTarget && vmpt.isMutableVar(vd->getNameAsString())) {
         llvm::outs() << "(ptrGet " << emitVarName(vd) << ")";
         if (optC2FVerbose) { llvm::outs() << "/*3067*/"; }
       } else {
@@ -3506,7 +3507,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       bool needsCFG = false;
       bool mainWithArgs = false;
       performFunctionLocalAnalysis(fd, needsCFG);
-      std::string name = fosterizedName(fd->getName());
+      std::string name = fosterizedName(fd->getNameAsString());
 
       if (globals.uglyhack.SawGlobalVariables && name == "main") {
         name = "c2f_main";
@@ -3544,12 +3545,12 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       // Rebind parameters if they are observed to be mutable locals.
       for (unsigned i = 0; i < fd->getNumParams(); ++i) {
         ParmVarDecl* d = fd->getParamDecl(i);
-        if (vmpt.isMutableVar(d->getName())) {
-          currentVars.push_back(d->getName());
+        if (vmpt.isMutableVar(d->getNameAsString())) {
+          currentVars.push_back(d->getNameAsString());
           assert(d->getName() == d->getDeclName().getAsString());
-          llvm::outs() << fosterizedName(d->getName())
+          llvm::outs() << fosterizedName(d->getNameAsString())
                         << " = PtrRef (prim ref "
-                        << fosterizedName(d->getName())
+                        << fosterizedName(d->getNameAsString())
                         << ");\n";
           currentVars.pop_back();
         }
@@ -3666,7 +3667,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
   // We could be more aggressive about updating lastsize to avoid repeated inspection of comments.
   void emitCommentsFromBefore(SourceLocation loc) {
     auto fid = FC.getSourceMgr().getFileID(loc);
-    const std::map<unsigned, RawComment *>* rawMap = rawcomments->getCommentsInFile(fid);
+    const std::map<unsigned, RawComment *>* rawMap = rawcomments.getCommentsInFile(fid);
     if (!rawMap) return;
 
     auto it = (rawcomments_lastoffset == -1) ? rawMap->begin() : rawMap->lower_bound(rawcomments_lastoffset);
@@ -3691,7 +3692,6 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
   }
 
   void Initialize(ASTContext& ctx) override {
-    rawcomments = &(ctx.getRawCommentList());
     rawcomments_lastoffset = 0;
     Ctx = &ctx;
     currStmt = nullptr;
@@ -3709,7 +3709,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
   */
 
 private:
-  RawCommentList* rawcomments;
+  RawCommentList  rawcomments;
   int             rawcomments_lastoffset;
   SourceLocation  lastloc;
   VarMutabilityAndPointernessTracker vmpt;
@@ -3766,7 +3766,7 @@ bool C2F_FormatStringHandler::HandlePrintfSpecifier(const analyze_printf::Printf
     cons.visitStmt(ce->getArg(fs.getArgIndex() + 1));
     llvm::outs() << ");";
   } else {
-    std::string spec = fs.getConversionSpecifier().getCharacters();
+    std::string spec = fs.getConversionSpecifier().getCharacters().str();
     if (spec == "d" || spec == "u" || spec == "c" || spec == "x"
        || spec == "X" // TODO properly handle uppercase vs lowercase printing.
        ) {

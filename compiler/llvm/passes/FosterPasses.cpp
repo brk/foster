@@ -18,7 +18,7 @@ void runCleanupPasses(llvm::Module& mod) {
   foster::runFunctionPassesOverModule(fpasses, &mod);
 
   llvm::legacy::PassManager passes;
-  passes.add(llvm::createDeadInstEliminationPass());
+  passes.add(llvm::createDeadCodeEliminationPass());
   passes.run(mod);
 }
 

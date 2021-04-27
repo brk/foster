@@ -41,7 +41,7 @@ public:
     AU.setPreservesCFG();
 
     // TODO should add more preserved transforms here.
-    AU.addPreserved<UnifyFunctionExitNodes>();
+    AU.addPreserved<llvm::UnifyFunctionExitNodesLegacyPass>();
     AU.addPreservedID(LowerSwitchID);
     AU.addPreservedID(LowerInvokePassID);
   }
@@ -83,6 +83,15 @@ bool SpecializeAllocations::doInitialization(Module &M) {
   return true;
 }
 
+llvm::FunctionType* tryGetFunctionType(llvm::Value* fv) {
+  return llvm::cast<llvm::FunctionType>(
+                    cast<llvm::PointerType>(fv->getType())->getElementType());
+}
+
+llvm::FunctionCallee of(llvm::Value* fv) {
+  return llvm::FunctionCallee(tryGetFunctionType(fv), fv);
+}
+
 // runOnBasicBlock - This method does the actual work of converting
 // instructions over, assuming that the pass has already been initialized.
 //
@@ -97,7 +106,7 @@ void SpecializeAllocations::runOnBasicBlock(BasicBlock& BB, bool& Changed) {
       llvm::Function* F = call->getCalledFunction();
 
       // The memalloc might be bitcasted
-      ConstantExpr* cc = dyn_cast<ConstantExpr>(call->getCalledValue());
+      ConstantExpr* cc = dyn_cast<ConstantExpr>(call->getCalledOperand());
       if (cc && cc->isCast()) {
         F = llvm::dyn_cast<Function>(cc->getOperand(0));
       }
@@ -131,8 +140,8 @@ void SpecializeAllocations::runOnBasicBlock(BasicBlock& BB, bool& Changed) {
           if (sz->getSExtValue() == 16) {
             // Replace call to memalloc with call to memalloc_16.
             Constant* mem16 = ConstantExpr::getBitCast(memalloc_16,
-                                                        call->getCalledValue()->getType());
-            CallInst* newcall = CallInst::Create(mem16, ac, "mem16_", &*I);
+                                                        call->getCalledOperand()->getType());
+            CallInst* newcall = CallInst::Create(of(mem16), ac, "mem16_", &*I);
             call->replaceAllUsesWith(newcall);
             I = --BBIL.erase(I); // remove & delete the old memalloc call.
             ++NumSpecialized;
@@ -140,8 +149,8 @@ void SpecializeAllocations::runOnBasicBlock(BasicBlock& BB, bool& Changed) {
           } else if (sz->getSExtValue() == 32) {
             // Replace call to memalloc with call to memalloc_32.
             Constant* mem32 = ConstantExpr::getBitCast(memalloc_32,
-                                                        call->getCalledValue()->getType());
-            CallInst* newcall = CallInst::Create(mem32, ac, "mem32_", &*I);
+                                                        call->getCalledOperand()->getType());
+            CallInst* newcall = CallInst::Create(of(mem32), ac, "mem32_", &*I);
             call->replaceAllUsesWith(newcall);
             I = --BBIL.erase(I); // remove & delete the old memalloc call.
             ++NumSpecialized;
@@ -150,8 +159,8 @@ void SpecializeAllocations::runOnBasicBlock(BasicBlock& BB, bool& Changed) {
           } else if (sz->getSExtValue() == 48) {
             // Replace call to memalloc with call to memalloc_48.
             Constant* mem48 = ConstantExpr::getBitCast(memalloc_48,
-                                                        call->getCalledValue()->getType());
-            CallInst* newcall = CallInst::Create(mem48, ac, "mem48_", &*I);
+                                                        call->getCalledOperand()->getType());
+            CallInst* newcall = CallInst::Create(of(mem48), ac, "mem48_", &*I);
             call->replaceAllUsesWith(newcall);
             I = --BBIL.erase(I); // remove & delete the old memalloc call.
             ++NumSpecialized;

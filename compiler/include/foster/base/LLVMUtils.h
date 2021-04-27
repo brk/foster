@@ -87,4 +87,8 @@ llvm::PointerType* ptrTo(llvm::Type*);
 
 bool isFosterFunction(llvm::Function& F);
 
+inline llvm::FunctionCallee from(llvm::Function* F) {
+  return llvm::FunctionCallee(F->getFunctionType(), F);
+}
+
 #endif

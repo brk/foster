@@ -4,7 +4,7 @@ cmake_minimum_required (VERSION 3.4.3)
 # ~~~~~~~~~~~~~~~~~~~~
 
 set(PYTHON python3)
-set(LLVM_VERSION 10.0.0)
+set(LLVM_VERSION 12.0.0)
 
 find_program(LLVM_CONFIG NAMES llvm-config llvm-config-${LLVM_VERSION}
   PATHS
@@ -91,7 +91,7 @@ endif (NOT EXISTS ${LIBRARY_OUTPUT_PATH}/nacl)
 # {{{ ~~~~~~~~~~~~~~~~~~~~ libcoro ~~~~~~~~~~~~~~~~~~~~~~
 set(CORO_METHOD CORO_ASM
     CACHE
-    DOC "libcoro implementation: CORO_{ASM,SJLJ,LOSER,PTHREAD}")
+    STRING "libcoro implementation: CORO_{ASM,SJLJ,LOSER,PTHREAD}")
 # }}}
 
 # {{{ ~~~~~~~~~~~~~~~~~~~~ Cap'n Proto ~~~~~~~~~~~~~~~~~~~~~~
@@ -178,6 +178,9 @@ string(STRIP "${LLVM_SYSLIBS}" LLVM_SYSLIBS)
 # Unfortunately CMake does the wrong thing when we try to link against
 # LLVM when the OS includes libLLVM in the system lib directory.
 set(LLVM_LDFLAGS "-L${LLVM_LIBDIR} ${LLVM_LIBS} ${LLVM_SYSLIBS}")
+
+# Newer versions of CMake forbid trailing whitepsace...
+string(STRIP "${LLVM_LDFLAGS}" LLVM_LDFLAGS)
 
 # (X)Ubuntu 17.10 ships with LLVM 5.0 in /usr/lib/x86_64-linux-gnu/libLLVM-5.0.so
 # which confuses CMake into thinking it doesn't need to provide an RPATH

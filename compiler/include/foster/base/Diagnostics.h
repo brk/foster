@@ -68,6 +68,7 @@ protected:
 public:
   DiagBase& operator<<(int64_t i) { add(i); return *this; }
   DiagBase& operator<<(const char* str) { add(str); return *this; }
+  DiagBase& operator<<(llvm::StringRef str) { add(str.str()); return *this; }
   DiagBase& operator<<(const std::string& str) { add(str); return *this; }
   DiagBase& operator<<(const SourceRangeHighlighter& h) { add(h); return *this; }
   // TODO support std::error_code

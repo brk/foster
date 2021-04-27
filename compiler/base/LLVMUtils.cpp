@@ -106,7 +106,7 @@ void validateOutputFile(const std::string& pathstr) {
   llvm::SmallString<128> outputPath(pathstr);
   llvm::sys::path::remove_filename(outputPath);
   if (outputPath.empty()) { outputPath = "./"; }
-  validateFileOrDir(outputPath.str(), "output dir", true);
+  validateFileOrDir(outputPath.str().str(), "output dir", true);
 }
 
 void runFunctionPassesOverModule(llvm::legacy::FunctionPassManager& fpasses,
@@ -140,7 +140,7 @@ struct CommentWriter : public llvm::AssemblyAnnotationWriter {
   void emitFunctionAnnot(const llvm::Function* f, formatted_raw_ostream& os) {
     if (!f->isDeclaration()) {
 
-      std::string originalName = f->getName();
+      std::string originalName = f->getName().str();
       if (originalName == "foster__main") {
         originalName = "main";
       }
@@ -193,7 +193,7 @@ std::string makePathAbsolute(std::string path) {
   llvm::SmallString<128> pathstr(path);
   std::error_code err = llvm::sys::fs::make_absolute(pathstr);
   ASSERT(!err) << err.message();
-  return pathstr.str();
+  return pathstr.str().str();
 }
 
 const char* llvmValueTag(llvm::Value* v) {

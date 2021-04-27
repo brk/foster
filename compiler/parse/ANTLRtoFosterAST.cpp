@@ -596,9 +596,9 @@ namespace foster {
       pathConcat(searchPath, spath, path);
       llvm::sys::path::replace_extension(path, "foster");
       if (llvm::sys::fs::exists(path.str())) {
-        return new foster::InputFile(path.str());
+        return new foster::InputFile(path.str().str());
       } else {
-        failedPaths.push_back(path.str());
+        failedPaths.push_back(path.str().str());
       }
 
       // Try foo/bar/bar.foster
@@ -606,9 +606,9 @@ namespace foster {
       llvm::sys::path::append(path, llvm::sys::path::stem(spath));
       llvm::sys::path::replace_extension(path, "foster");
       if (llvm::sys::fs::exists(path.str())) {
-        return new foster::InputFile(path.str());
+        return new foster::InputFile(path.str().str());
       } else {
-        failedPaths.push_back(path.str());
+        failedPaths.push_back(path.str().str());
       }
     }
     EDiag() << "Unable to resolve import path: " << spath;
@@ -711,7 +711,7 @@ void dumpToCbor(cbor::encoder& e, InputModule* mod) {
   int nlines = buf ? buf->getLineCount() : 0;
   e.write_array(nlines);
   for (int i = 0; i < nlines; ++i) {
-    e.write_string(buf->getLine(i));
+    e.write_string(buf->getLine(i).str());
   }
 
   int countHiddenTokens = 0;

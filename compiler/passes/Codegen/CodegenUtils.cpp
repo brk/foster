@@ -12,6 +12,7 @@
 
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/Support/MathExtras.h"
 
 #include <string>
 #include <sstream>
@@ -46,22 +47,22 @@ Value* signExtend(Value* v, llvm::Type* dst) {
 void emitFosterArrayBoundsCheck(llvm::Module* mod, llvm::Value* idx,
                                                    llvm::Value* len64,
                                                    const std::string& srclines) {
-  Value* fosterBoundsCheck = mod->getFunction("foster__boundscheck64");
+  llvm::Function* fosterBoundsCheck = mod->getFunction("foster__boundscheck64");
   ASSERT(fosterBoundsCheck != NULL);
 
   Value* msg_array = builder.CreateGlobalString(srclines);
   Value* msg = builder.CreateBitCast(msg_array, builder.getInt8PtrTy());
   Value* ext = signExtend(idx, len64->getType());
-  builder.CreateCall(fosterBoundsCheck, { ext, len64, msg });
+  builder.CreateCall(from(fosterBoundsCheck), { ext, len64, msg });
 }
 
 void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr) {
-  Value* fosterAssert = mod->getFunction("foster__assert");
+  llvm::Function* fosterAssert = mod->getFunction("foster__assert");
   ASSERT(fosterAssert != NULL);
 
   Value* msg_array = builder.CreateGlobalString(cstr);
   Value* msg = builder.CreateBitCast(msg_array, builder.getInt8PtrTy());
-  builder.CreateCall(fosterAssert, { cond, msg });
+  builder.CreateCall(from(fosterAssert), { cond, msg });
 }
 
 llvm::Value* getUnitValue() {
@@ -69,33 +70,20 @@ llvm::Value* getUnitValue() {
     llvm::dyn_cast<llvm::PointerType>(getUnitType()->getLLVMType()));
 }
 
-void checkPointerToIndex(Value* ptrToCompositeValue,
-                         Value* idxValue,
-                         const std::string& name) {
-  ASSERT(ptrToCompositeValue->getType()->isPointerTy());
-  llvm::Type* underlyingTy = ptrToCompositeValue->getType()->getContainedType(0);
-  if (llvm::CompositeType* cty
-      = llvm::dyn_cast<llvm::CompositeType>(underlyingTy)) {
-    ASSERT(cty->indexValid(idxValue))
-      << "Attempt to use index " << str(idxValue)
-      << "\non val of type "     << str(ptrToCompositeValue->getType())
-      << "\nwith value "         << str(ptrToCompositeValue);
-  } else {
-    llvm::errs() << builder.GetInsertBlock()->getParent() << "\n";
-    ASSERT(false) << "Pointer to non-composite type "
-                  <<  str(ptrToCompositeValue->getType())
-                  << "passed to getPointerToIndex(" << str(idxValue)
-                                         << " ... " << name << ")";
-  }
-}
-
 Value* getPointerToIndex(Value* ptrToCompositeValue,
                          Value* idxValue,
                          const std::string& name) {
-  checkPointerToIndex(ptrToCompositeValue, idxValue, name);
   std::vector<Value*> idx;
   idx.push_back(builder.getInt32(0));
   idx.push_back(idxValue);
+
+  llvm::Type* underlyingTy = ptrToCompositeValue->getType()->getContainedType(0);
+  auto indexedTy = llvm::GetElementPtrInst::getIndexedType(underlyingTy, idx);
+  ASSERT(indexedTy != nullptr)
+      << "Attempt to use index " << str(idxValue)
+      << "\non val of type "     << str(ptrToCompositeValue->getType())
+      << "\nwith value "         << str(ptrToCompositeValue);
+
   return builder.CreateGEP(ptrToCompositeValue, llvm::makeArrayRef(idx), name.c_str());
 }
 
@@ -182,9 +170,9 @@ void emitRecordMallocCallsite(llvm::Module* m,
                               llvm::Value* typemap,
                               llvm::Value* srcloc,
                               llvm::Value* typedesc) {
-  llvm::Value* rmc = m->getFunction("record_memalloc_cell");
+  llvm::Function* rmc = m->getFunction("record_memalloc_cell");
   ASSERT(rmc != NULL) << "NO record_memalloc_cell IN MODULE! :(";
-  builder.CreateCall(rmc, { mem, typemap, srcloc, typedesc });
+  builder.CreateCall(from(rmc), { mem, typemap, srcloc, typedesc });
 }
 
 // |arg| is a 1-based index (0 is the fn return value).
@@ -199,7 +187,7 @@ CodegenPass::emitMalloc(TypeAST* typ,
                         std::string typedesc,
                         std::string srcloc_str,
                         bool init) {
-  llvm::Value* memalloc_cell = mod->getFunction("memalloc_cell");
+  llvm::Function* memalloc_cell = mod->getFunction("memalloc_cell");
   ASSERT(memalloc_cell != NULL) << "NO memalloc_cell IN MODULE! :(";
 
   llvm::GlobalVariable* ti = getTypeMapForType(typ, ctorRepr, mod, NotArray);
@@ -232,7 +220,7 @@ CodegenPass::emitMalloc(TypeAST* typ,
 
 llvm::Value*
 CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
-  llvm::Value* memalloc = mod->getFunction("memalloc_array");
+  llvm::Function* memalloc = mod->getFunction("memalloc_array");
   ASSERT(memalloc != NULL) << "NO memalloc_array IN MODULE! :(";
 
   CtorRepr ctorRepr; ctorRepr.smallId = -1;
@@ -245,8 +233,8 @@ CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
   llvm::Type* typemap_type = getFunctionTypeArgType(memalloc->getType(), 1);
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
   llvm::Value* num_elts = signExtend(n, builder.getInt64Ty());
-  llvm::CallInst* mem = builder.CreateCall(memalloc, { typemap, num_elts,
-                                                       builder.getInt8(init) }, "arrmem");
+  llvm::CallInst* mem = builder.CreateCall(from(memalloc),
+                          { typemap, num_elts, builder.getInt8(init) }, "arrmem");
 
   if (this->config.trackAllocSites) {
     auto linesgv = llvm::ConstantPointerNull::get(builder.getInt8PtrTy());
@@ -269,7 +257,7 @@ llvm::Value* getMaskedForShift(IRBuilder<>& b,
       return v;
     }
   }
-  ASSERT(t->isPowerOf2ByteWidth());
+  ASSERT(llvm::isPowerOf2_32(t->getBitWidth()));
   return b.CreateAnd(v, llvm::ConstantInt::get(t, t->getBitWidth() - 1));
 }
 
@@ -278,9 +266,9 @@ createIntrinsicCall(IRBuilder<>& b, llvm::Value* v,
                     const char* valname, llvm::Intrinsic::ID id) {
   Type*  tys[] = { v->getType() };
   Module*    m = b.GetInsertBlock()->getParent()->getParent();
-  Value* intrv = llvm::Intrinsic::getDeclaration(m, id, tys);
+  llvm::Function* intrv = llvm::Intrinsic::getDeclaration(m, id, tys);
 
-  CallInst *CI = b.CreateCall(intrv, v, valname);
+  CallInst *CI = b.CreateCall(from(intrv), v, valname);
   //b.SetInstDebugLocation(CI);
   return CI;
 }
@@ -290,9 +278,9 @@ createIntrinsicCall2(IRBuilder<>& b, llvm::Value* v1, llvm::Value* v2,
                     const char* valname, llvm::Intrinsic::ID id) {
   Type*  tys[] = { v1->getType() };
   Module*    m = b.GetInsertBlock()->getParent()->getParent();
-  Value* intrv = llvm::Intrinsic::getDeclaration(m, id, tys);
+  llvm::Function* intrv = llvm::Intrinsic::getDeclaration(m, id, tys);
 
-  CallInst *CI = b.CreateCall(intrv, { v1, v2 }, valname);
+  CallInst *CI = b.CreateCall(from(intrv), { v1, v2 }, valname);
   //b.SetInstDebugLocation(CI);
   return CI;
 }
@@ -332,9 +320,9 @@ llvm::Value*
 createCtlz(IRBuilder<>& b, llvm::Value* v, const char* valname) {
   Type*  tys[] = { v->getType() };
   Module*    m = b.GetInsertBlock()->getParent()->getParent();
-  Value* intrv = llvm::Intrinsic::getDeclaration(m, llvm::Intrinsic::ctlz, tys);
+  llvm::Function* intrv = llvm::Intrinsic::getDeclaration(m, llvm::Intrinsic::ctlz, tys);
   Value* is_zero_undef = b.getInt1(false);
-  CallInst *CI = b.CreateCall(intrv, { v, is_zero_undef }, valname);
+  CallInst *CI = b.CreateCall(from(intrv), { v, is_zero_undef }, valname);
   //b.SetInstDebugLocation(CI);
   return CI;
 }
@@ -343,8 +331,8 @@ llvm::Value*
 createFMulAdd(IRBuilder<>& b, llvm::Value* v1, llvm::Value* v2, llvm::Value* v3) {
   Type*  tys[] = { v1->getType() };
   Module*    m = b.GetInsertBlock()->getParent()->getParent();
-  Value* intrv = llvm::Intrinsic::getDeclaration(m, llvm::Intrinsic::fmuladd, tys);
-  CallInst *CI = b.CreateCall(intrv, { v1, v2, v3 }, "fmuladdtmp");
+  llvm::Function* intrv = llvm::Intrinsic::getDeclaration(m, llvm::Intrinsic::fmuladd, tys);
+  CallInst *CI = b.CreateCall(from(intrv), { v1, v2, v3 }, "fmuladdtmp");
   //b.SetInstDebugLocation(CI);
   return CI;
 }
@@ -353,8 +341,8 @@ llvm::Value*
 createPowi(IRBuilder<>& b, llvm::Value* vd, llvm::Value* vi) {
   Type*  tys[] = { vd->getType() };
   Module*    m = b.GetInsertBlock()->getParent()->getParent();
-  Value* intrv = llvm::Intrinsic::getDeclaration(m, llvm::Intrinsic::powi, tys);
-  CallInst *CI = b.CreateCall(intrv, { vd, vi }, "powi");
+  llvm::Function* intrv = llvm::Intrinsic::getDeclaration(m, llvm::Intrinsic::powi, tys);
+  CallInst *CI = b.CreateCall(from(intrv), { vd, vi }, "powi");
   //b.SetInstDebugLocation(CI);
   return CI;
 }
@@ -592,17 +580,19 @@ struct LLProcStringOfCStringPrim : public LLProcPrimBase {
     Value* sz   = &*(AI++);
     Value* str = pass->emitFosterStringOfCString(cstr, sz);
     builder.CreateRet(str);
+    llvm::outs() << "codegenned " << this->name << ":\n";
+    F->dump();
   }
 };
 
-void codegenCall0ToFunction(llvm::Function* F, llvm::Value* f) {
+void codegenCall0ToFunction(llvm::Function* F, llvm::FunctionCallee f) {
     llvm::CallInst* call = builder.CreateCall(f);
     call->setCallingConv(llvm::CallingConv::C);
     // Implicitly: called function may GC...
     builder.CreateRet(builder.CreateBitCast(call, F->getReturnType()));
 }
 
-void codegenCall1ToFunctionWithArg(llvm::Function* F, llvm::Value* f, llvm::Value* n) {
+void codegenCall1ToFunctionWithArg(llvm::Function* F, llvm::FunctionCallee f, llvm::Value* n) {
     llvm::CallInst* call = builder.CreateCall(f, n);
     call->setCallingConv(llvm::CallingConv::C);
     // Implicitly: called function may GC...
@@ -611,10 +601,9 @@ void codegenCall1ToFunctionWithArg(llvm::Function* F, llvm::Value* f, llvm::Valu
     } else {
       builder.CreateRet(builder.CreateBitCast(call, F->getReturnType()));
     }
-
 }
 
-void codegenCall1ToFunction(llvm::Function* F, llvm::Value* f) {
+void codegenCall1ToFunction(llvm::Function* F, llvm::FunctionCallee f) {
     Function::arg_iterator AI = F->arg_begin();
     Value* n = &*(AI++);
     codegenCall1ToFunctionWithArg(F, f, n);

@@ -5,7 +5,7 @@
 #include "llvm/LinkAllPasses.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Config/llvm-config.h"
-#include "llvm/CodeGen/CommandFlags.inc"
+#include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/IR/DataLayout.h"
@@ -145,6 +145,8 @@ static cl::list<const PassInfo*, bool, PassNameParser>
 cmdLinePassList(cl::desc("Optimizations available:"),
   cl::cat(FosterOptCat));
 */
+
+static llvm::codegen::RegisterCodeGenFlags rcgf;
 
 void setTimingDescriptions() {
   using foster::gTimings;
@@ -523,7 +525,7 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   if (triple.getTriple().empty()) {
     triple.setTriple(HOST_TRIPLE);
   }
-  auto targetOptions = InitTargetOptionsFromCodeGenFlags();
+  auto targetOptions = llvm::codegen::InitTargetOptionsFromCodeGenFlags(triple);
 
   const Target* target = NULL;
   string errstr;
@@ -539,16 +541,17 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
                         : CodeGenOpt::Aggressive;
 
   Optional<CodeModel::Model> cgModel = None;
-  auto tm = target->createTargetMachine(triple.getTriple(),
-                                                 "", // CPU
-                                                 "", // Features
-                                                 targetOptions,
-                                                 getRelocModel(),
-                                                 cgModel
+  auto tm = target->createTargetMachine(
+                triple.getTriple(),
+                "", // CPU
+                "", // Features
+                targetOptions,
+                llvm::codegen::getRelocModel(),
+                cgModel
 #ifdef LLVM_DEFAULT_TARGET_TRIPLE
-                                               , cgOptLevel
+                , cgOptLevel
 #endif
-                                                 );
+                );
   if (!tm) {
     llvm::errs() << "Error! Creation of target machine"
         " failed for triple " << triple.getTriple() << "\n";
