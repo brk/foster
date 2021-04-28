@@ -101,8 +101,8 @@ void __foster_handle_sigsegv(int, siginfo_t* si, void*) {
 void __foster_install_sigsegv_handler() {
   struct sigaction sa = {
       .sa_sigaction = __foster_handle_sigsegv,
-      .sa_flags     = SA_ONSTACK | SA_SIGINFO,
       .sa_mask      = 0,
+      .sa_flags     = SA_ONSTACK | SA_SIGINFO,
   };
   int rv;
   rv = sigfillset(&sa.sa_mask); // block all other signals
@@ -123,9 +123,14 @@ struct FosterVirtualCPU {
   FosterVirtualCPU() : needs_resched(0)
                      , current_coro(NULL)
                      , signal_stack(NULL)
-                     {
-    // Per-vCPU initialization...
+                     {}
 
+  ~FosterVirtualCPU() {
+    foster_coro_destroy(&current_coro->ctx);
+    free(signal_stack);
+  }
+
+  void default_coro_setup() {
     current_coro = foster__runtime__alloc_default_coro();
     // Per the libcoro documentation, passing all zeros creates
     // an "empty" context which is suitable as an initial source
@@ -137,18 +142,13 @@ struct FosterVirtualCPU {
     current_coro->status = FOSTER_CORO_RUNNING;
   }
 
-  ~FosterVirtualCPU() {
-    foster_coro_destroy(&current_coro->ctx);
-    free(signal_stack);
-  }
-
   void install_signal_stack() {
     signal_stack = malloc(SIGSTKSZ);
     foster__assert(signal_stack, "signal stack allocation failed");
     stack_t ss = {
-        .ss_size = SIGSTKSZ,
         .ss_sp = signal_stack,
         .ss_flags = 0,
+        .ss_size = SIGSTKSZ,
     };
     int rv = sigaltstack(&ss, NULL);
     foster__assert(rv == 0, "signaltstack failed");
@@ -249,6 +249,7 @@ void initialize(int argc, char** argv, void* stack_base) {
   gc::initialize(stack_base);
 
   __foster_vCPUs.push_back(new FosterVirtualCPU());
+  __foster_vCPUs[0]->default_coro_setup();
   __foster_vCPUs[0]->install_signal_stack();
 
   __foster_install_sigsegv_handler();

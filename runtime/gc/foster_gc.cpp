@@ -2887,6 +2887,12 @@ void record_memalloc_cell(void* cell, typemap* typeinfo, const char* srcloc, con
 void fflush_gclog() { fflush(gclog); }
 
 __attribute__((noinline)) // this attribute will be removed once the barrier optimizer runs.
+void foster_read_pseudobarrier(void* base, void** slot) {
+  heap_cell* obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(base));
+  fprintf(gclog, "gcread() of slot %p in cell %p (base %p) with mark status = %d\n", slot, obj, base, obj_is_marked(obj));
+}
+
+__attribute__((noinline)) // this attribute will be removed once the barrier optimizer runs.
 void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot) {
   *slot = val;
 

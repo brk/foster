@@ -404,21 +404,26 @@ void optimizeModuleAndRunPasses(Module* mod) {
   legacy::PassManager passes;
   legacy::FunctionPassManager fpasses(mod);
 
-  // Forcibly inline our write barrier now that barrier optimizations have been run.
-  auto barrier = mod->getFunction("foster_write_barrier_with_obj_generic");
-  if (barrier) {
-    bool wasOptNone = barrier->hasFnAttribute(Attribute::OptimizeNone);
-    if (!wasOptNone) {
-      // OptNone requires NoInline
-      mod->getFunction("foster_write_barrier_with_obj_generic")->removeFnAttr(Attribute::NoInline);
-      mod->getFunction("foster_write_barrier_with_obj_generic")->addFnAttr(Attribute::AlwaysInline);
+  // Forcibly inline our barriers now that barrier optimizations have been run.
+  std::vector<std::string> barriers = {
+    "foster_write_barrier_with_obj_generic",
+    "foster_read_pseudobarrier"
+  };
+  for (const auto& name : barriers) {
+    auto barrier = mod->getFunction(name);
+    if (barrier) {
+      bool wasOptNone = barrier->hasFnAttribute(Attribute::OptimizeNone);
+      if (!wasOptNone) {
+        // OptNone requires NoInline
+        mod->getFunction(name)->removeFnAttr(Attribute::NoInline);
+        mod->getFunction(name)->addFnAttr(Attribute::AlwaysInline);
+      }
     }
-
-    // Mark our write barrier slowpath with the "cold" calling convention,
-    // to minimize instances of register clobbering on the fast path.
-    applyColdCC("foster_write_barrier_with_obj_fullpath", mod);
-    applyColdCC("foster_generational_write_barrier_slowpath", mod);
   }
+
+  // Mark our write barrier slowpath with the "cold" calling convention,
+  // to minimize instances of register clobbering on the fast path.
+  applyColdCC("foster_write_barrier_with_obj_fullpath", mod);
   
   { legacy::PassManager passes_first;
     passes_first.add(llvm::createVerifierPass());
