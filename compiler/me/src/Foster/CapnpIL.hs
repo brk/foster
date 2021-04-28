@@ -18,7 +18,8 @@ import Foster.TypeLL
 import Foster.Letable hiding (Letable)
 import qualified Foster.Letable as IL
 import Foster.SourceRange(SourceRange(..), SourceLines(SourceLines),
-          highlightFirstLineStr, showSourceRangeStr, rangeOf)
+          prettyWithLineNumbers, showSourceRangeStr, rangeOf)
+import Foster.Output(strDocRaw)
 
 import qualified Data.ByteString as BS(writeFile)
 import Data.Foldable(toList)
@@ -325,13 +326,13 @@ dumpExpr x@(ILArrayRead _t (ArrayIndex b i rng sg)) =
     (defaultLetable (typeOf x) Ilarrayread) {
           parts_of_Letable = map dumpVar [b, i]
         , stringvalue_of_Letable = StrictlyJust $ stringSG sg
-        , primopname_of_Letable = StrictlyJust $ u8fromString $ highlightFirstLineStr rng }
+        , primopname_of_Letable = StrictlyJust $ u8fromString $ strDocRaw $ prettyWithLineNumbers rng }
 
 dumpExpr x@(ILArrayPoke (ArrayIndex b i rng sg) v) =
     (defaultLetable (typeOf x) Ilarraypoke) {
           parts_of_Letable = map dumpVar [b, i, v]
         , stringvalue_of_Letable = StrictlyJust $ stringSG sg
-        , primopname_of_Letable = StrictlyJust $ u8fromString $ highlightFirstLineStr rng }
+        , primopname_of_Letable = StrictlyJust $ u8fromString $ strDocRaw $ prettyWithLineNumbers rng }
 
 dumpExpr _x@(ILArrayLit ty@(LLArrayType ety) arr vals) =
       (defaultLetable ty Ilarrayliteral) {

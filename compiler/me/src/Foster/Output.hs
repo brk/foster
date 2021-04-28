@@ -8,6 +8,7 @@ module Foster.Output where
 
 import Data.Text.Prettyprint.Doc
 import Data.Text.Prettyprint.Doc.Render.Terminal (renderIO, AnsiStyle)
+import Data.Text.Prettyprint.Doc.Render.String (renderString)
 
 import System.IO (stdout)
 
@@ -25,3 +26,5 @@ putDocP doc = renderIO stdout (layoutPretty defaultLayoutOptions doc)
 outLn :: String -> Doc AnsiStyle
 outLn s = pretty s <> line
 
+strDocRaw :: Doc AnsiStyle -> String
+strDocRaw doc = renderString $ layoutPretty (LayoutOptions Unbounded) doc
