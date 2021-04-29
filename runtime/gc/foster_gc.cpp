@@ -9,6 +9,8 @@
 #include "foster_globals.h"
 #include "bitmap.h"
 #include "ptr_fifo.h"
+#include "memory_range.h"
+#include "gc_helpers.h"
 
 #include "build/build_config.h" // from chromium_base
 #include "hdr_histogram.h"
@@ -96,19 +98,7 @@ namespace gc {
 FILE* gclog = NULL;
 
 // {{{ Type definitions for GC globals
-struct memory_range {
-  void* base;
-  void* bound;
-  bool contains(void* addr) const { return base <= addr && addr < bound; }
-  const char* rel(void* addr) const {
-    if (addr <  base) return "before";
-    if (addr >= bound) return "after";
-    return "within";
-  }
-  ssize_t size() const { return distance(base, bound); }
 
-  void wipe_memory(uint8_t byte) { memset(base, byte, size()); }
-};
 
 // To be suitably aligned for allocation, a pointer should be positioned
 // such that the body -- after the header -- will have the proper default alignment.
