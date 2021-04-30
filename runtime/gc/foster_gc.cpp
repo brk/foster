@@ -957,7 +957,7 @@ public:
     for (auto fid : frame15s) { display_linemap_for_frame15_id(fid); }
   }
 
-  void set_heap_size(ssize_t maxbytes) {
+  void grow_heap_by(ssize_t maxbytes) {
     // Round up; a request for 10K should be one frame15, not zero.
     auto frame15s_left = (maxbytes + ((1 << 15) - 1)) >> 15;
 
@@ -2408,7 +2408,7 @@ void initialize(void* stack_highest_addr) {
   gcglobals.lazy_mapped_line_pins               = allocate_lazily_zero_mapped<uint8_t>(      size_t(1) << (address_space_prefix_size_log() - IMMIX_LINE_SIZE_LOG));
   
 
-  global_space_allocator.set_heap_size(gSEMISPACE_SIZE());
+  global_space_allocator.grow_heap_by(gSEMISPACE_SIZE());
   gcglobals.allocator = new immix_space();
 
   gcglobals.had_problems = false;
