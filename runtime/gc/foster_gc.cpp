@@ -230,8 +230,6 @@ used_linegroup used_group_of_free_group(free_linegroup* g) {
   };
 }
 
-typedef void* ret_addr;
-typedef void* frameptr;
 // }}}
 
 struct immix_space;
@@ -402,7 +400,6 @@ struct GCGlobals {
   uint8_t*          lazy_mapped_line_marks;
   uint8_t*          lazy_mapped_line_pins;
 
-  struct hdr_histogram* hist_gc_stackscan_frames;
   struct hdr_histogram* hist_gc_stackscan_roots;
   struct hdr_histogram* hist_gc_pause_micros;
   struct hdr_histogram* hist_gc_pause_ticks;
@@ -860,7 +857,7 @@ namespace helpers {
     bool trivially_unmarkable = are_addr_bits_invalid(maybe_obj);
 
     if (GCLOG_DETAIL > 1) {
-      fprintf(gclog, "\t\tgc %d: STACK SLOT slot (%p) holds %p; might be markable? %d [tidy %d]\n",
+      fprintf(gclog, "\t\tgc %d: STACK SLOT slot (%p) holds %12p; might be markable? %d [tidy %d]\n",
                         gcglobals.num_gcs_triggered,
                         root,
                         maybe_obj,
@@ -2214,30 +2211,30 @@ void immix_worklist_t::drain() {
   initialize();
 }
 
-#include "foster_gc_backtrace_x86-inl.h"
+// Refresher: on x86, stack frames look like this,
+// provided we've told LLVM to disable frame pointer elimination:
+// 0x0
+//      ........
+//    |-----------|
+//    |local vars | <- top of stack
+//    |saved regs |
+//    |   etc     |
+//    |-----------|
+// +--| prev ebp  | <-- %ebp
+// |  |-----------|
+// |  | ret addr  | (PUSHed by call insn)
+// |  |-----------|
+// |  | fn params |
+// v  | ......... |
+//
+// 0x7f..ff (kernel starts at 0x80....)
+//
+// Each frame pointer stores the address of the previous
+// frame pointer.
+struct frameinfo { frameinfo* frameptr; void* retaddr; };
 
 // {{{ Walks the call stack and inserts roots into immix_worklist.
 void collect_roots_from_stack(void* start_frame) {
-  enum { MAX_NUM_RET_ADDRS = 4024 };
-  // Garbage collection requires 16+ KB of stack space due to these arrays.
-  ret_addr  retaddrs[MAX_NUM_RET_ADDRS];
-  frameinfo frames[MAX_NUM_RET_ADDRS];
-
-  // Collect frame pointers and return addresses
-  // for the current call stack.
-  int nFrames = foster_backtrace((frameinfo*) start_frame, frames, MAX_NUM_RET_ADDRS);
-  //fprintf(gclog, "Number of frames in backtrace: %d\n", nFrames);
-  if (nFrames > 500) {
-    gcglobals.num_big_stackwalks += 1;
-  }
-  if (nFrames == MAX_NUM_RET_ADDRS) {
-    fprintf(gclog, "ERROR: backtrace is probably incomplete due to oversized stack! (%d frames)\n", nFrames); fflush(gclog);
-    exit(2);
-  }
-  if (FOSTER_GC_TIME_HISTOGRAMS) {
-    hdr_record_value(gcglobals.hist_gc_stackscan_frames, int64_t(nFrames));
-  }
-
   // For now, we must disable frame pointer elimination
   // to ensure that we can calculate the stack pointer
   // (which requires that we have a frame pointer).
@@ -2250,24 +2247,29 @@ void collect_roots_from_stack(void* start_frame) {
   //
   // If we were willing to accept a dependency on libgcc,
   // we could use the _Unwind_Backtrace function.
-
-  for (int i = 0; i < nFrames; ++i) {
-    frameptr fp = (frameptr) frames[i].frameptr;
-    frameptr sp = (i == 0) ? fp : offset(frames[i - 1].frameptr, 2 * sizeof(void*));
-
-    // The bottom-most frame of a coroutine stack will have a null frame pointer;
-    // when we see it, we can bail out.
-    if (!fp) { break; }
+  frameinfo* frame = (frameinfo*) start_frame;
+  int i = 0;
+  while (true) {
+    frameinfo* base = frame;
+    frameinfo* next = frame->frameptr;
 
     // Iterate over all (aligned) potential root slots in the frame.
-    frameptr lower = std::min(fp, sp);
-    frameptr upper = std::max(fp, sp);
+    void* lower = std::min(base, next);
+    void* upper = std::max(base, next);
+
+    // The bottom-most frame of a coroutine stack will have an invalid
+    // frame pointer; when we see it, we can bail out.
+    const size_t oversized_frame = 1 << 18;
+    if (!base || !next || distance(lower, upper) >= oversized_frame) { break; }
 
     while (lower <= upper) {
       //fprintf(gclog, "considering potential root %p in frame %d\n", lower, i);
       helpers::consider_conservative_root((unchecked_ptr*) lower);
       lower = offset(lower, sizeof(void*));
     }
+
+    ++i;
+    frame = next;
   }
 }
 // }}}
@@ -2428,7 +2430,6 @@ void initialize(void* stack_highest_addr) {
   gcglobals.max_bytes_live_at_whole_heap_gc = 0;
   gcglobals.num_closure_calls = 0;
 
-  hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_frames);
   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_roots);
   hdr_init(1, 600000000, 3, &gcglobals.hist_gc_pause_micros); // 600M us => 600 seconds => 10 minutes
   hdr_init(1, 600000000, 2, &gcglobals.hist_gc_pause_ticks);
@@ -2625,9 +2626,6 @@ FILE* print_timing_stats() {
       foster_hdr_percentiles_print(gcglobals.hist_gc_pause_micros, gclog, 4);
     }
 
-    fprintf(gclog, "gc_stackscan_frames:\n");
-    foster_hdr_percentiles_print(gcglobals.hist_gc_stackscan_frames, gclog, 4);
-
     fprintf(gclog, "gc_stackscan_roots:\n");
     foster_hdr_percentiles_print(gcglobals.hist_gc_stackscan_roots, gclog, 4);
   }
@@ -2706,7 +2704,6 @@ int cleanup() {
   fclose(gclog); gclog = NULL;
   if (json) fprintf(json, "}\n");
   if (json) fclose(json);
-  hdr_close(gcglobals.hist_gc_stackscan_frames);
   hdr_close(gcglobals.hist_gc_stackscan_roots);
   hdr_close(gcglobals.hist_gc_pause_micros);
   hdr_close(gcglobals.hist_gc_pause_ticks);
