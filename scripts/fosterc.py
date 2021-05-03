@@ -127,6 +127,8 @@ def get_ghc_rts_args():
     #ghc_rts_args.append("-hr") # break down space used by retainer
     #ghc_rts_args.append("-hb") # break down space used by lag/use/drag/void stage
 
+    ghc_rts_args.append("-l-au") # emit eventlog, sans thread events
+
     #ghc_rts_args.append("-hySet,[],ByteString,ARR_WORDS,Node") # restrict to given types
     ghc_rts_args.append("-L50") # give longer labels
   return ghc_rts_args
