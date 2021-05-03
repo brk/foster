@@ -709,9 +709,10 @@ void mark_as_smallmedium(frame15* f) {
   finfo->frame_classification = frame15kind::immix_smallmedium;
 }
 
-// Markable objects live in the upper bits of address space;
-// the low 4 GB is for constants, (immutable) globals, etc.
-bool non_markable_addr_toosmall(void* addr) { return uintptr_t(addr) <   uintptr_t(0x100000000ULL); }
+// Markable objects live in the upper bits of address space.
+// Unfortunately it appears to be surprisingly hard to force a malloc implementation
+// to not use the lower 4 GB of virtual memory.
+bool non_markable_addr_toosmall(void* addr) { return uintptr_t(addr) <   uintptr_t(0x600000); }
 bool non_markable_addr_toobig(void* addr) {   return uintptr_t(addr) >= (uintptr_t(1) << address_space_prefix_size_log()); }
 // The compiler, runtime,  and GC cooperate to represent "small" integer values
 // as tagged pointer-sized words; if we see the tag, the other bits aren't an address!
@@ -2396,6 +2397,15 @@ void initialize(void* stack_highest_addr) {
   fprintf(gclog, "----------- gclog ------------\n");
 
   pages_boot();
+
+  void* malloced = malloc(1);
+  if (non_markable_addr_toosmall(malloced)) {
+    fprintf(stderr, "ERROR: Foster runtime appears to have been misconfigured;"
+                    " malloc() returned an address that the runtime will not mark.");
+    exit(2);
+  }
+  free(malloced);
+
 
   gcglobals.lazy_mapped_markable_handles        = (void**) allocate_lazily_zero_mapped<heap_handle<immix_space> >(1 << 20);
   // First entry reserved for free list.
