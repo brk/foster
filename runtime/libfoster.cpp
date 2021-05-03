@@ -358,6 +358,9 @@ void foster__boundscheck64_failed(int64_t idx, int64_t len, const char* srclines
   exit(1);
 }
 
+// Emitted by emitFosterArrayBoundsCheck() in CodegenUtils.cpp
+// which is in turn called by getArraySlot(); the len parameter
+// is calculated by tryBindArray().
 void foster__boundscheck64(int64_t idx, int64_t len, const char* srclines) {
   // We have the invariant that len > 0 (as a signed value), which means that
   // (idx < 0 || idx >= len) has the same result as (idx >=u len)
