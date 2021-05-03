@@ -1,4 +1,5 @@
 snafuinclude Ord "ord";
+snafuinclude Maybe "maybe";
 snafuinclude FloatConstants "math/float-constants";
 
 minReprSInt32 :: { Int32 };
@@ -539,30 +540,42 @@ pow2-Float64 :: { Float64 => Int32 => Float64 };
 pow2-Float64 = { x => i =>
   // This implementation ported from musl: https://git.musl-libc.org/cgit/musl/tree/src/math/scalbn.c
 
-  times2tothe = { x : Float64 => n : Int32 =>
+  times2tothe = { x : Float64 => n : Int32 /* (% e : Int32 : if e <=SInt32 1023 then e >=SInt32 -1022 else False end )*/ =>
+    // Scaling by a moderate exponent can be done with a straightforward multiplication.
+    //x *f64 (Float64-normal-ofBits 0 n)
+
     pow2 = (kDOUBLE_EXPONENT_BIAS +Int64 zext_i32_to_i64 n) `bitshl-Int64` kDOUBLE_MANTISSA_BITS
             |> i64-as-f64;
     pow2 *f64 x
   };
 
-  REC adjust-expt-down = { y : Float64 => n : Int32 => fin : Bool =>
+  // Scaling by large exponents must be done piecemeal, since IEEE 754 can represent
+  // only moderate exponents directly.
+
+  REC adjust-expt-down = { y : Float64 => n : Int32 /*: (% e : Int32 : e >=SInt32 -1022)*/ => fin : Bool =>
     ny = y *f64 0x1.0p1023;
     nn = n -Int32     1023;
 
     case (fin, nn >SInt32 1023)
-      of (_   , False) -> ny `times2tothe` nn
+      of (_   , False) -> 
+      //prim assert-invariants (nn <=SInt32 1023);
+      //prim assert-invariants (nn >=SInt32 -1022);
+      ny `times2tothe` nn
       of (True,  True) -> ny `times2tothe` 1023
       of (False, True) -> adjust-expt-down ny nn True
     end
   };
 
-  REC adjust-expt-up = { y : Float64 => n : Int32 => fin : Bool =>
+  REC adjust-expt-up = { y : Float64 => n : (% e : Int32 : e <=SInt32 1023) => fin : Bool =>
     // 1022 - 53 = 969
     ny = y *f64 0x1.0p-969;
     nn = n +Int32      969;
 
     case (fin, nn <SInt32 -1022)
-      of (_   , False) -> ny `times2tothe` nn
+      of (_   , False) ->
+      //prim assert-invariants (nn <=SInt32 1023);
+      //prim assert-invariants (nn >=SInt32 -1022);
+      ny `times2tothe` nn
       of (True,  True) -> ny `times2tothe` -1022
       of (False, True) -> adjust-expt-up ny nn True
     end
@@ -571,7 +584,10 @@ pow2-Float64 = { x => i =>
   case ()
     of _ if i >SInt32 1023  -> adjust-expt-down x i False
     of _ if i <SInt32 -1022 -> adjust-expt-up   x i False
-    of _ -> x `times2tothe` i
+    of _ ->
+      //prim assert-invariants (i <=SInt32 1023);
+      //prim assert-invariants (i >=SInt32 -1022);
+      x `times2tothe` i
   end
 };
 
