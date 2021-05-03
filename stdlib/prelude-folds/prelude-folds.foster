@@ -159,6 +159,11 @@ arrayFoldlFromTo64 = { arr => fst => fin => f => acc =>
   foldRange64 fst fin acc { n => acc => f arr.[trunc_i64_to_i32 n] acc }
 };
 
+arrayFoldlWithIndex64 :: forall (t:Type) (a:Type) { Array t => { Word => t => a => a } => a => a };
+arrayFoldlWithIndex64 = { arr => f => acc =>
+  arrayFoldlFromToWithIndex64 arr 0 (arrayLength arr) f acc
+};
+
 arrayFoldlFromToWithIndex64 :: forall (t:Type) (a:Type) {
               Array t => Int64 => Int64 => { Word => t => a => a } => a => a };
 arrayFoldlFromToWithIndex64 = { arr => fst => fin => f => acc =>
