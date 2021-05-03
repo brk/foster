@@ -25,12 +25,6 @@ fosterlexer.c: fosterlexer.re
 fosterlexer.noyych.c: fosterlexer.re
 	re2c -o fosterlexer.noyych.c fosterlexer.re --input custom -8 -W
 
-parser.h: parser.c
-	echo
-
-parser.c: parser.lemon
-	lemon parser.lemon
-
 lexer.png: lexer.dot
 	dot -Tpng lexer.dot > lexer.png
 
