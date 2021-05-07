@@ -125,11 +125,6 @@ optForceNSW("unsafe-use-nsw",
   cl::cat(FosterOptCat));
 
 static cl::opt<bool>
-optDisableGC("unsafe-disable-gc",
-  cl::desc("Disable all GC-related code generation (UNSAFE!)"),
-  cl::cat(FosterOptCat));
-
-static cl::opt<bool>
 optDumpPreLinkedIR("dump-prelinked",
   cl::desc("Dump LLVM IR before linking with standard library"),
   cl::cat(FosterOptCat));
