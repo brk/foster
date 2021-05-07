@@ -18,7 +18,7 @@ clang = "<llvm compiler not set>"
 bindir = "<bindir not set>"
 outdir = "<outdir not set>"
 coro_method = "<coro_method not set>"
-debug_flag = ""
+debug_flag = "" # "-gdwarf-4"
 
 def ensure_dir_exists(output):
   """Creates the given directory if it doesn't exist;
@@ -91,15 +91,13 @@ def get_libfoster_parser(usage):
                     help="Path to LLVM bin dir (llvm-link should be found here)")
   parser.add_option("--corodef", dest="corodef", action="store",
                     help="libcoro method definition, like CORO_ASM")
-  parser.add_option("--debug_mode", action="store_true", dest="debug", default=False,
-                    help="Show more information about program output.")
   parser.add_option("--verbose", action="store_true", dest="verbose", default=False,
                     help="Show more information about program output.")
   return parser
 
 if __name__ == "__main__":
   parser = get_libfoster_parser("usage: %prog [options]")
-  (options, args) = parser.parse_args()
+  (options, sources) = parser.parse_args()
 
   clang  = options.clang
   srcdir = options.srcdir
@@ -110,9 +108,6 @@ if __name__ == "__main__":
   ensure_dir_exists(outdir)
 
   coro_method = options.corodef
-  sources = args
-  if options.debug:
-    debug_flag = "-g"
 
   bitcodes = [compile_source(source) for source in sources]
 
