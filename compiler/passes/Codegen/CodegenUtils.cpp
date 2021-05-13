@@ -580,8 +580,6 @@ struct LLProcStringOfCStringPrim : public LLProcPrimBase {
     Value* sz   = &*(AI++);
     Value* str = pass->emitFosterStringOfCString(cstr, sz);
     builder.CreateRet(str);
-    llvm::outs() << "codegenned " << this->name << ":\n";
-    F->dump();
   }
 };
 

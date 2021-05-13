@@ -274,9 +274,6 @@ GlobalVariable* emitTypeMap(
   // in the type of those pointers.
   std::set<int> skippedOffsets(skippedIndexVector.begin(),
                                skippedIndexVector.end());
-  for(size_t i = 0; i < skippedIndexVector.size(); ++i) {
-    EDiag() << "plan to skip index " << skippedIndexVector[i];
-  }
   OffsetSet filteredOffsets;
   OffsetSet pointerOffsets = countPointersInType(typ, ty, mod);
   for(size_t i = 0; i < pointerOffsets.size(); ++i) {

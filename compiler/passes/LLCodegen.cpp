@@ -489,7 +489,7 @@ void addExternDecls(const std::vector<LLDecl*> decls,
       const std::string& declName = d->getName();
       TypeAST* fosterType = d->getType();
 
-      llvm::outs() << "addExternDecls() saw " << declName << " :: " << str(fosterType) << "\n";
+      //llvm::outs() << "addExternDecls() saw " << declName << " :: " << str(fosterType) << "\n";
 
       if (const FnTypeAST* fnty = fosterType->castFnTypeAST()) {
         
