@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
     return 4;
   }
 
-  {
+  if (!optOutputPath.empty()) {
     ScopedTimer timer("io.cbor");
     cbor::output_dynamic output;
     cbor::encoder enc(output);
