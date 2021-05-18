@@ -31,6 +31,7 @@ import Foster.Base
 import Foster.Kind
 import Foster.MonoType
 import Foster.Letable(Letable(..))
+import Foster.BaseUtils (seqConcatMap)
 
 import qualified Control.Applicative as AP(Applicative(..))
 
@@ -48,13 +49,15 @@ import Prettyprinter.Render.Terminal
 import qualified Data.Text as T
 import qualified Data.Set as Set
 import Data.Set(Set)
+import Data.Sequence(Seq)
+import qualified Data.Sequence as Seq
 import Data.Foldable(toList)
 import Control.Monad.State
 import Data.IORef
 
 -- ||||||||||||||||||||||| CFG Data Types |||||||||||||||||||||||{{{
-data CFLast = CFCont        BlockId [MoVar] -- either ret or br
-            | CFCase        MoVar [CaseArm PatternRepr BlockId MonoType]
+data CFLast = CFCont        BlockId (Seq MoVar) -- either ret or br
+            | CFCase        MoVar (Seq (CaseArm PatternRepr BlockId MonoType))
 
 data Insn e x where
               ILabel   :: BlockEntry                  -> Insn C O
@@ -65,18 +68,18 @@ data Insn e x where
 
 instance NonLocal Insn where
   entryLabel (ILabel ((_,l), _)) = l
-  successors (ILast last) = map blockLabel (blockTargetsOf (ILast last))
+  successors (ILast last) = toList $ fmap blockLabel (blockTargetsOf (ILast last))
                           where blockLabel (_, label) = label
 
 instance HooplNode Insn where
-  mkBranchNode l = ILast (CFCont (T.pack "hoopl.br", l)  [])
+  mkBranchNode l = ILast (CFCont (T.pack "hoopl.br", l)  Seq.empty)
   mkLabelNode  l = ILabel       ((T.pack "hoopl.br", l), [])
 
-blockTargetsOf :: Insn O C -> [BlockId]
+blockTargetsOf :: Insn O C -> Seq BlockId
 blockTargetsOf (ILast last) =
     case last of
-        CFCont b _           -> [b]
-        CFCase _ arms        -> concatMap caseArmExprs arms
+        CFCont b _           -> Seq.singleton b
+        CFCase _ arms        -> seqConcatMap (Seq.fromList . caseArmExprs) arms
 
 type BasicBlock = Block Insn C C
 data BasicBlockGraph = BasicBlockGraph { bbgEntry :: BlockEntry
@@ -138,7 +141,7 @@ instance PrettyT (Insn e x) where
   prettyT (ILast    cf         ) = prettyT cf
 
 instance PrettyT CFLast where
-  prettyT (CFCont bid     vs) = text "cont" <+> prettyBlockId bid <+>              list (map prettyT vs)
+  prettyT (CFCont bid     vs) = text "cont" <+> prettyBlockId bid <+>              list (map prettyT $ toList vs)
   prettyT (CFCase v arms)     = align $
                                text "case" <+> prettyT v <$> indent 2
                                   (vcat [ text "of" <+> fill 20 (prettyT pat)
@@ -146,7 +149,7 @@ instance PrettyT CFLast where
                                                            Nothing -> emptyDoc
                                                            Just g  -> text "if" <+> prettyBlockId g)
                                                     <+> text "->" <+> prettyBlockId bid
-                                        | (CaseArm pat bid guard _ _) <- arms
+                                        | (CaseArm pat bid guard _ _) <- toList arms
                                         ])
 
 instance PrettyT t => PrettyT (Letable t) where
@@ -186,7 +189,7 @@ graphOfClosedBlocks = foldr ((|*><*|) . blockGraph) emptyClosedGraph
 
 class FosterNode i where branchTo :: BlockId -> i O C
 
-instance FosterNode Insn where branchTo bid = ILast $ CFCont bid []
+instance FosterNode Insn where branchTo bid = ILast $ CFCont bid Seq.empty
 
 instance LabelsPtr (BlockId, ts) where targetLabels ((_, label), _) = [label]
 
@@ -212,7 +215,7 @@ instance TExpr BasicBlockGraph MonoType where
            go (ILetVal id lt)    (bvs,fvs) = (Set.insert id bvs, insert fvs $ freeTypedIds lt)
            go (ILetFuns ids fns) (bvs,fvs) = (insert bvs ids, insert fvs (concatMap freeTypedIds fns))
            go (ILast cflast)     (bvs,fvs) = case cflast of
-                    CFCont _ vs          -> (bvs, insert fvs vs)
+                    CFCont _ vs          -> (bvs, insert fvs (toList vs))
                     CFCase v arms        -> (insertV bvs pvs, Set.insert v fvs)
                          where pvs = concatMap (toList . caseArmBindings) arms
 

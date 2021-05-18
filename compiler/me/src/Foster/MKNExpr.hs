@@ -31,7 +31,7 @@ import Data.Set(Set)
 import qualified Data.Map as Map
 import Data.Map(Map)
 import qualified Data.List as List(foldl', reverse, all, any)
-import qualified Data.Sequence as Seq(Seq, empty, fromList)
+import qualified Data.Sequence as Seq(Seq, empty, fromList, singleton)
 import Data.Foldable(toList)
 import Data.Maybe(catMaybes, isJust, isNothing)
 import Data.Either(partitionEithers)
@@ -2881,13 +2881,13 @@ cffnOfMKCont cv (MKFn _v vs _ subterm _isrec _annot _unrollCount) = do
                                  
                                  resid <- lift $ ccFreshId $ T.pack ".cr"
                                  baPutBlock head (ILetVal resid (ILCall ty v' vs') : insns)
-                                        (CFCont blockid [TypedId ty resid])
+                                        (CFCont blockid (Seq.singleton $ TypedId ty resid))
 
           MKCont        _u _ty contvar vs -> do
                                  blockid <- blockIdOf' contvar
                                  vs' <- mapM qv vs
                                  --dbgDoc $ text $ "putting block with ending cont " ++ show (tidIdent $ boundVar cv)
-                                 baPutBlock head insns (CFCont blockid vs')
+                                 baPutBlock head insns (CFCont blockid (Seq.fromList vs'))
 
           MKIf          _u _ty v tru fls -> do
                                  let pat :: Bool -> PatternRepr MonoType
@@ -2899,7 +2899,7 @@ cffnOfMKCont cv (MKFn _v vs _ subterm _isrec _annot _unrollCount) = do
                                  let falsArm = CaseArm (pat False) blockIdFals Nothing Seq.empty (MissingSourceRange "if.fals")
                                  --dbgDoc $ text $ "putting block with ending case (if) " ++ show (tidIdent $ boundVar cv)
                                  v' <- qv v
-                                 baPutBlock head insns (CFCase v' [trueArm, falsArm])
+                                 baPutBlock head insns (CFCase v' (Seq.fromList [trueArm, falsArm]))
 
           MKCase        _u _ty v arms -> do
                                  v' <- qv v
@@ -2907,7 +2907,7 @@ cffnOfMKCont cv (MKFn _v vs _ subterm _isrec _annot _unrollCount) = do
                                                 blockid <- generateBlock "case.arm" {-bindings-} [] subterm
                                                 --dbgDoc $ text $ "bindings for " ++ show blockid ++ " are " ++ show (map (tidIdent. boundVar) bindings)
                                                 return $ CaseArm pat blockid Nothing (fmap boundVar bindings) range) arms
-                                 baPutBlock head insns (CFCase v' arms')
+                                 baPutBlock head insns (CFCase v' (Seq.fromList arms'))
           -- arms  :: MKCaseArm (PatternRepr) (Subterm _)
           -- arms' :: CaseArm PatternRepr BlockId MonoType
 

@@ -16,6 +16,7 @@ import qualified Data.Set as Set(empty, singleton, union, unions, notMember,
 import Data.Map(Map)
 import qualified Data.Map as Map(insert, lookup, empty, fromList, elems)
 import qualified Data.Sequence as Seq(fromList)
+import Data.Foldable(toList)
 
 import Control.Monad.State
 
@@ -238,12 +239,12 @@ closureConvertBlocks bbg = do
         ILetVal id val          -> do return (mkMiddle $ CCLetVal id (fmap monoToLL val), ent)
         ILetFuns ids fns        -> do closures <- closureConvertLetFuns ids fns
                                       return (mkMiddle $ CCLetFuns ids closures, ent)
-        ILast (CFCont b vs)     -> do return (mkLast $ CCLast ent (CCCont b (map llv vs)), ent)
+        ILast (CFCont b vs)     -> do return (mkLast $ CCLast ent (CCCont b (map llv $ toList vs)), ent)
         ILast (CFCase a arms) -> do
            allSigs <- gets ilmCtors
-           let dt = compilePatterns arms allSigs
+           let dt = compilePatterns (toList arms) allSigs
            let usedBlocks = eltsOfDecisionTree dt
-           let _unusedPats = [pat | (CaseArm pat bid _ _ _) <- arms
+           let _unusedPats = [pat | (CaseArm pat bid _ _ _) <- toList arms
                             , Set.notMember bid usedBlocks]
            -- TODO print warning if any unused patterns
            (BlockFin blocks id _occs) <- compileDecisionTree a dt
@@ -438,12 +439,12 @@ closureOfKnFn infoMap (self_id, fn) = do
         --     case env of (x, y, ...) -> body end
         newbody <- do
             let BasicBlockGraph bodyentry rk oldbodygraph = fnBody f
-            let cfcase = CFCase envVar [
+            let cfcase = CFCase envVar (Seq.fromList [
                            (CaseArm (PR_Tuple norange t (map patVar varsOfClosure))
                                     (fst bodyentry)
                                     Nothing
                                     (Seq.fromList varsOfClosure)
-                                    norange) ]
+                                    norange) ])
                         where t        = tidType envVar
                               patVar a = PR_Atom $ P_Variable norange a
                               norange  = MissingSourceRange ""
