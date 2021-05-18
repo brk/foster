@@ -1094,9 +1094,9 @@ tcRhoTyCheck ctx annot e tya expTy = do
 -- {{{
     ty <- tcTypeAndResolve ctx tya annot
     ann <- checkSigma ctx e ty
-    do tcLift $ putDocLn $ text "tycheck ann result was " <> showStructure ann
+    --do tcLift $ putDocLn $ text "tycheck ann result was " <> showStructure ann
     rv <- matchExp expTy ann "tycheck"
-    do tcLift $ putDocLn $ text "tycheck rv result was " <> showStructure rv
+    --do tcLift $ putDocLn $ text "tycheck rv result was " <> showStructure rv
     return $ rv
 -- }}}
 
