@@ -1265,6 +1265,7 @@ public:
         emitFieldGetter(rd, fd, name, !isNonNull(name));
         if (!isImmField(fd, name)) {
           emitFieldAddrGetter(rd, fd, name, !isNonNull(name));
+          emitFieldRefGetter(rd, fd, name, !isNonNull(name));
         }
         if (isAnonymousStructOrUnionType(fieldType)) {
           std::string fieldName = fosterizedName(fd->getNameAsString());
@@ -1368,10 +1369,13 @@ public:
     llvm::outs() << fieldName << " end };\n";
   }
 
-  void emitFieldAddrGetter(const RecordDecl* rd, const FieldDecl* fd,
-                           const std::string& name, bool mightBeNil = true) {
+  void emitFieldAddrRefGetter(const RecordDecl* rd, const FieldDecl* fd,
+                           const std::string& name,
+                           const std::string& suffix,
+                           bool mightBeNil = true,
+                           bool wrapAsPtr = true) {
     std::string fieldName = fosterizedName(fd->getNameAsString());
-    llvm::outs() << name << "_" << fieldName << "_addr = { sv : " << name << " => case sv ";
+    llvm::outs() << name << "_" << fieldName << "_" << suffix << " = { sv : " << name << " => case sv ";
     if (mightBeNil) {
       llvm::outs() << "of $" << name << "_nil" << " -> prim kill-entire-process \""
                                     << "get_" << name << "_" << fieldName << " called on "
@@ -1379,7 +1383,19 @@ public:
     }
     llvm::outs() << "of $" << name;
     emitFieldsAsUnderscoresExcept(rd, fd, fieldName);
-    llvm::outs() << " -> getFieldRef " << fieldName << " |> PtrRef end };\n";
+    llvm::outs() << " -> getFieldRef " << fieldName;
+    if (wrapAsPtr) { llvm::outs() << " |> PtrRef"; }
+    llvm::outs() << " end };\n";
+  }
+
+  void emitFieldAddrGetter(const RecordDecl* rd, const FieldDecl* fd,
+                           const std::string& name, bool mightBeNil = true) {
+    emitFieldAddrRefGetter(rd, fd, name, "addr", mightBeNil, true);
+  }
+
+  void emitFieldRefGetter(const RecordDecl* rd, const FieldDecl* fd,
+                           const std::string& name, bool mightBeNil = true) {
+    emitFieldAddrRefGetter(rd, fd, name, "ref", mightBeNil, false);
   }
 
   void emitAnonFieldGetters(const RecordDecl* ord, const FieldDecl* ofd,
