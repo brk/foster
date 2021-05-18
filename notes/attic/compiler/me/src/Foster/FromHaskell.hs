@@ -11,7 +11,7 @@ import Control.Monad.State(forM_)
 
 import qualified Data.Sequence as Seq(empty)
 
-import Data.Text.Prettyprint.Doc((<+>), (<>), pretty, line,
+import Prettyprinter((<+>), (<>), pretty, line,
                                      hsep, fill, parens, vcat, list)
 
 import Foster.Base

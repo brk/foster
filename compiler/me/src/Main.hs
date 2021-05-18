@@ -29,8 +29,6 @@ import Control.Monad.State(forM, when, forM_, evalStateT, gets,
 import Control.Monad.Trans.Except(runExceptT)
 import System.Exit(exitFailure)
 
-import Foster.FromHaskell(convertHaskellToFoster)
-
 import Foster.Base
 import Foster.Config
 import Foster.CFG
@@ -550,28 +548,24 @@ main = do
   args <- getArgs
   case args of
     (infile : outfile : rest) -> do
-       flagVals <- parseOpts rest
+        flagVals <- parseOpts rest
 
-       if getHs2FosterFlag flagVals
-         then convertHaskellToFoster infile outfile
-         else do
+        --liftIO $ performGC
+        --Just stats1 <- liftIO $ Criterion.getGCStats
 
-           --liftIO $ performGC
-           --Just stats1 <- liftIO $ Criterion.getGCStats
+        (ci_time, cb_program) <- ioTime $ readAndParseCbor infile
+        let wholeprog = cb_parseWholeProgram cb_program
 
-           (ci_time, cb_program) <- ioTime $ readAndParseCbor infile
-           let wholeprog = cb_parseWholeProgram cb_program
+        --liftIO $ performGC
+        --Just stats2 <- liftIO $ Criterion.getGCStats
+        --liftIO $ putStrLn $ "delta in gc stats during protobuf parsing: " ++ show (stats2 `minusGCStats` stats1)
 
-           --liftIO $ performGC
-           --Just stats2 <- liftIO $ Criterion.getGCStats
-           --liftIO $ putStrLn $ "delta in gc stats during protobuf parsing: " ++ show (stats2 `minusGCStats` stats1)
-
-           if getFmtOnlyFlag flagVals
-             then do
-               let WholeProgramAST modules = wholeprog
-               liftIO $ putDocLn (prettyT (head modules))
-             else
-               runCompiler ci_time wholeprog flagVals outfile
+        if getFmtOnlyFlag flagVals
+          then do
+            let WholeProgramAST modules = wholeprog
+            liftIO $ putDocLn (prettyT (head modules))
+          else
+            runCompiler ci_time wholeprog flagVals outfile
 
     rest -> do
       flagVals <- parseOpts rest

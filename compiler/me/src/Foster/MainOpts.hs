@@ -19,7 +19,6 @@ options =
  , Option []     ["interactive"](NoArg  Interactive)      "interactive mode (pause on errors)"
  , Option []     ["dump-prims"] (NoArg  DumpPrims)        "dump primitive bindings"
  , Option []     ["fmt"]        (NoArg  FmtOnly)          "pretty-print source AST"
- , Option []     ["hs2foster"]  (NoArg  Hs2Foster)        "pretty-print source Haskell as Foster"
  , Option []     ["inline-gas"] (ReqArg InlineGas "GAS")  "stop inlining after GAS steps"
  , Option []     ["no-donate"]  (NoArg  NoDonate)         "diable inlining donation"
  , Option []     ["no-ctor-opt"] (NoArg NoCtorOpt)        "diable ctor representation optimizations"
@@ -39,7 +38,6 @@ getInteractiveFlag(flags, _) =       Interactive `elem` flags
 getDumpIRFlag ir (flags, _) =        DumpIR ir   `elem` flags
 getDumpPrimitives(flags, _) =        DumpPrims   `elem` flags
 getFmtOnlyFlag   (flags, _) =        FmtOnly     `elem` flags
-getHs2FosterFlag (flags, _) =        Hs2Foster   `elem` flags
 getCtorOpt       (flags, _) = (not $ NoCtorOpt   `elem` flags)
 getNoPreAllocOpt (flags, _) =        NoPreAllocOpt `elem` flags
 getTypecheckOnly (flags, _) =        TypecheckOnly `elem` flags
@@ -56,7 +54,6 @@ data Flag = Interpret String
           | Interactive
           | DumpPrims
           | FmtOnly
-          | Hs2Foster
           | NoCtorOpt
           | NoPreAllocOpt
           | TypecheckOnly
