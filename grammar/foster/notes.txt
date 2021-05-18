@@ -1,3 +1,87 @@
+qsort-combined.foster (261 k lines; 1.9 MB; 320904 non-whitespace tokens and 252737 whitespace tokens.)
+
+
+Ryzen 3600 & LLVM 12 via perf stat -r20:
+
+C (unsafe due to lack of proper EOF handling):
+        33,730,299      cycles                    #    3.803 GHz                      ( +-  0.54% )  (54.89%)
+        74,495,365      instructions
+
+C with "inefficient" (YYPEEK) EOF handling: 10% more insns but only 0.5% more cycles
+        33,889,526      cycles                    #    3.891 GHz                      ( +-  0.53% )  (54.34%)
+        82,409,154      instructions              #    2.43  insn per cycle
+about 9ms for ~600k tokens, 61k lines, 1.8m source
+
+
+Go:
+        56,263,435      cycles                    #    3.696 GHz                      ( +-  0.38% )  (72.08%)
+       119,632,457      instructions              #    2.13  insn per cycle    
+
+
+Foster with ptrIncrInt32 of Scanner_cur_addr:
+       223,229,173      cycles                    #    3.872 GHz                      ( +-  0.14% )  (79.17%)
+       510,605,908      instructions              #    2.29  insn per cycle
+
+Foster with incrInt32 of Scanner_cur_ref:
+       191,238,905      cycles                    #    3.881 GHz                      ( +-  0.12% )  (83.67%)
+       397,009,583      instructions              #    2.08  insn per cycle
+
+Foster with incrInt32 of Scanner_cur_ref and YYPEEK EOF handling:
+       193,002,758      cycles                    #    3.892 GHz                      ( +-  0.25% )  (83.49%)
+       412,812,023      instructions              #    2.14  insn per cycle
+
+omitting bounds checking (unsafely) shaves 6m insns but has no effect on cycle count (!)
+below figures do not omit bounds checks:
+
+Reducing PtrRef wrappers for temporary local mutable variables:
+  (this cuts # allocations by ~4m, roughly in half)
+
+       141,228,971      cycles                    #    3.779 GHz                      ( +-  0.76% )  (78.55%)
+       303,130,561      instructions              #    2.15  insn per cycle         
+
+Pulling out yyaccept ref vars to caller to avoid ~2m allocations:
+
+       118,803,192      cycles                    #    3.764 GHz                      ( +-  0.94% )  (75.08%)
+       266,229,656      instructions              #    2.24  insn per cycle     
+
+Reusing a single mutable Token instead of allocating (saves ~4.5m allocations):
+(this is equivalent to what the corresponding C driver is actually doing)
+
+        76,856,153      cycles                    #    3.834 GHz                      ( +-  1.27% )  (80.06%)
+       187,336,534      instructions              #    2.44  insn per cycle         
+
+Using Ref instead of Ptr for yych: (1.55x insns; 1.64x cycles)
+
+        55,625,108      cycles                    #    3.838 GHz                      ( +-  0.27% )  (72.41%)
+       127,846,073      instructions
+
+omitting bounds checks, again: -8m insns, -1.5% cycles (828k)
+
+
+
+
+
+
+
+
+C baseline:
+        33,889,526      cycles                    #    3.891 GHz                      ( +-  0.53% )  (54.34%)
+        82,409,154      instructions              #    2.43  insn per cycle
+
+C code, with char** for buf:
+        35,030,464      cycles                    #    3.825 GHz                      ( +-  0.31% )  (55.98%)
+        85,631,954      instructions              #    2.44  insn per cycle         
+
+C code with indirections for fields of Token and Scanner:
+        41,337,997      cycles                    #    3.869 GHz                      ( +-  0.23% )  (62.61%)
+        97,114,852      instructions              #    2.35  insn per cycle         
+
+
+
+
+
+Older numbers:
+
 C code:
  Performance counter stats for 'tokencount.exe /home/benkarel/mlton-git/mlton/out.sxml.foster' (4 runs):
 
