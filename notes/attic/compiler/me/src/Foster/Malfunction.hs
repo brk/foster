@@ -1,7 +1,7 @@
 module Foster.Malfunction where
 
 import qualified Data.Text as T
-import Data.Text.Prettyprint
+import Prettyprinter
 
 import Foster.Base
 import Foster.KNUtil

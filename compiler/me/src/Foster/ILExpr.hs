@@ -12,8 +12,8 @@ import Prelude hiding ((<$>), (<*>))
 
 import Compiler.Hoopl
 
-import Data.Text.Prettyprint.Doc
-import Data.Text.Prettyprint.Doc.Render.Terminal
+import Prettyprinter
+import Prettyprinter.Render.Terminal
 
 import Foster.Base
 import Foster.Kind
@@ -24,7 +24,7 @@ import Foster.TypeLL
 import Foster.Letable
 import Foster.Avails(AvailMap, botAvailMap, emptyAvailMap, intersectAvailMap,
                                lookupAvailMap, insertAvailMap)
---import Foster.Output
+import Foster.Output
 import Foster.MainOpts (getNoPreAllocOpt)
 import Foster.SourceRange(SourceRange(..), SourceLines, rangeOf)
 
@@ -39,7 +39,7 @@ import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
                                  insert, findWithDefault)
 import qualified Data.Text as T(pack, isInfixOf, concat)
 
---import qualified Criterion.Measurement as Criterion(secs)
+import qualified Criterion.Measurement as Criterion(secs)
 
 --------------------------------------------------------------------
 
@@ -103,8 +103,8 @@ prepForCodegen m = do
 
     (_dh_time, procs) <- ioTime $ mapM deHooplize aprocs
 
-    --liftIO $ putDocLn $ text "explicateProcs time: " <> text (Criterion.secs ep_time)
-    --liftIO $ putDocLn $ text "deHooplize/gcr time: " <> text (Criterion.secs dh_time)
+    liftIO $ putDocLn $ text "explicateProcs time: " <> pretty (Criterion.secs _ep_time)
+    liftIO $ putDocLn $ text "deHooplize/gcr time: " <> pretty (Criterion.secs _dh_time)
 
     return $ (ILProgram procs valbinds decls dts (moduleILsourceLines m),
               preallocprocs)
@@ -117,7 +117,10 @@ prepForCodegen m = do
                                   then return $ simplifyCFG $ procBlocks p
                                   else runPreAllocationOptimizations (simplifyCFG $ procBlocks p)
      (_ae_time, g') <- ioTime $ makeAllocationsExplicit g0 failIfUsesGC (procIdent p)
-     --liftIO $ putDocLn $ text "  makeAllocExplicit time: " <> text (Criterion.secs ae_time)
+     --if getNoPreAllocOpt flagVals
+     --  then liftIO $ putDocLn $ text "  simplifyCFG time: " <> pretty (Criterion.secs _pa_time)
+     --  else liftIO $ putDocLn $ text "  preallocOpt time: " <> pretty (Criterion.secs _pa_time)
+     --liftIO $ putDocLn $ text "  makeAllocExplicit time: " <> pretty (Criterion.secs _ae_time)
 
      return (p { procBlocks = g' }, p { procBlocks = g0 })
 
@@ -582,9 +585,9 @@ runLiveness bbgp = do
 
 runPreAllocationOptimizations b0 = do
   (_av_time, b1) <- ioTime $ runAvails b0
-  --liftIO $ putDocLn $ text "  runAvails   time: " <> text (Criterion.secs av_time)
+  --liftIO $ putDocLn $ text "  runAvails   time: " <> pretty (Criterion.secs _av_time)
   (_lv_time, b2) <- ioTime $ runLiveness b1
-  --liftIO $ putDocLn $ text "  runLiveness time: " <> text (Criterion.secs lv_time)
+  --liftIO $ putDocLn $ text "  runLiveness time: " <> pretty (Criterion.secs _lv_time)
   return b2
 
 -- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{

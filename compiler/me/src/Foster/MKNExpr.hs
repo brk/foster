@@ -40,8 +40,8 @@ import Compiler.Hoopl(UniqueMonad(..), C, O, freshLabel, intToUnique,
                       blockGraph, blockJoin, blockFromList, firstNode)
 
 import Prelude hiding ((<$>))
-import Data.Text.Prettyprint.Doc
-import Data.Text.Prettyprint.Doc.Render.Terminal
+import Prettyprinter
+import Prettyprinter.Render.Terminal
 
 -- The "M" in MKNExpr stands for Mutable.
 -- This stage implements a mutable graphical program representation

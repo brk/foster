@@ -13,8 +13,8 @@ import Foster.Kind(kindAsHash)
 import Foster.ExprAST
 import Foster.ParsedType
 
-import Data.Text.Prettyprint.Doc
-import Data.Text.Prettyprint.Doc.Render.Terminal
+import Prettyprinter
+import Prettyprinter.Render.Terminal
 
 import qualified Data.Text as T
 import Data.Char(isAlpha, isPrint, ord, chr, isAscii)

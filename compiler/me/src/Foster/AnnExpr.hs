@@ -12,7 +12,7 @@ import Foster.Kind
 import Foster.TypeAST()
 import Foster.SourceRange(SourceRanged, rangeOf)
 
-import Data.Text.Prettyprint.Doc
+import Prettyprinter
 import Foster.Output(OutputOr(..))
 
 import qualified Data.Set as Set(union, unions, fromList)

@@ -6,9 +6,9 @@
 
 module Foster.Output where
 
-import Data.Text.Prettyprint.Doc
-import Data.Text.Prettyprint.Doc.Render.Terminal (renderIO, AnsiStyle)
-import Data.Text.Prettyprint.Doc.Render.String (renderString)
+import Prettyprinter
+import Prettyprinter.Render.Terminal (renderIO, AnsiStyle)
+import Prettyprinter.Render.String (renderString)
 
 import System.IO (stdout)
 

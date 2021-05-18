@@ -619,7 +619,7 @@ dumpProgramToModule (ILProgram procdefs vals extern_decls datatypes (SourceLines
         , arr_of_PbToplevelItem = StrictlyNone
         }
 
-    dumpItem (TopBindTuple id refty@(LLPtrType unboxedty) ids) =
+    dumpItem (TopBindTuple id (LLPtrType unboxedty) ids) =
       PbToplevelItem {
           name_of_PbToplevelItem = dumpIdent id
         , lit_of_PbToplevelItem = StrictlyJust $

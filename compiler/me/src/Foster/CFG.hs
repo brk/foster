@@ -42,8 +42,8 @@ import Compiler.Hoopl(UniqueMonad, CheckpointMonad, Checkpoint, HooplNode(..), L
                       blockGraph)
 import qualified Compiler.Hoopl as H((<*>))
 
-import Data.Text.Prettyprint.Doc
-import Data.Text.Prettyprint.Doc.Render.Terminal
+import Prettyprinter
+import Prettyprinter.Render.Terminal
 
 import qualified Data.Text as T
 import qualified Data.Set as Set

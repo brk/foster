@@ -68,7 +68,7 @@ import Codec.CBOR.Read (deserialiseFromBytes)
 
 import Text.Printf(printf) -- for toFixed
 import Foster.Output
-import Data.Text.Prettyprint.Doc((<+>), pretty, line, hsep, fill, parens, vcat, Doc)
+import Prettyprinter((<+>), pretty, line, hsep, fill, parens, vcat, Doc)
 
 import qualified Criterion.Measurement as Criterion(initializeTime, secs)
 

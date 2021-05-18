@@ -22,7 +22,7 @@ import qualified Data.Text as T(concat, pack, unpack)
 import Foster.Base
 import Foster.SourceRange(SourceRange)
 
-import Data.Text.Prettyprint.Doc hiding (column)
+import Prettyprinter hiding (column)
 
 {-
 Straightforward implementation of pattern match compilation

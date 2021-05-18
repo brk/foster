@@ -25,9 +25,9 @@ import qualified Data.Graph as Graph(SCC(..), stronglyConnComp)
 
 import qualified Data.Foldable as Foldable(toList)
 
-import qualified Data.Text.Prettyprint.Doc as PP(emptyDoc, list)
-import Data.Text.Prettyprint.Doc
-import Data.Text.Prettyprint.Doc.Render.Terminal
+import qualified Prettyprinter as PP(emptyDoc, list)
+import Prettyprinter
+import Prettyprinter.Render.Terminal
 
 import qualified Data.Text as T(Text, pack, unpack, append, length)
 import qualified Data.Text.Lazy as TL

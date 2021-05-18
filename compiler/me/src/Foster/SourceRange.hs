@@ -12,9 +12,9 @@ import Data.List as List(replicate)
 import Data.Sequence as Seq(Seq, length, index, (><))
 import qualified Data.Text as T
 
-import Data.Text.Prettyprint.Doc
-import qualified Data.Text.Prettyprint.Doc as PP
-import Data.Text.Prettyprint.Doc.Render.Terminal (AnsiStyle)
+import Prettyprinter
+import qualified Prettyprinter as PP
+import Prettyprinter.Render.Terminal (AnsiStyle)
 
 data SourceLines = SourceLines !(Seq T.Text)
 

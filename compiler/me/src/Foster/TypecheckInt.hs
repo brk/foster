@@ -6,7 +6,7 @@
 module Foster.TypecheckInt(typecheckInt, typecheckRat,
       tryParseInt, sanityCheck) where
 
-import Data.Text.Prettyprint.Doc
+import Prettyprinter
 import qualified Data.Text as T
 import Data.Char(toLower)
 import Data.Maybe(fromJust)

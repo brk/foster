@@ -21,7 +21,7 @@ import Foster.SourceRange(SourceRange(..), rangeOf, prettyWithLineNumbers)
 
 import qualified Data.Text as T
 
-import Data.Text.Prettyprint.Doc
+import Prettyprinter
 
 import Data.Map(Map)
 import Data.Map as Map(lookup, alter, fromList, union, empty, insert)

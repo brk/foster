@@ -19,8 +19,7 @@ import Data.Map as Map(fromList, toList, Map)
 import Data.Char as Char(isLetter)
 import qualified Data.Text as T
 
-import Data.Text.Prettyprint.Doc(Pretty(..), hsep, (<+>),
-                                    parens, tupled, emptyDoc)
+import Prettyprinter(Pretty(..), hsep, (<+>), parens, tupled, emptyDoc)
 
 import Foster.Base
 import Foster.Kind

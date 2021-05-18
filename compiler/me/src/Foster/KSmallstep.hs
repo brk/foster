@@ -30,8 +30,8 @@ import qualified Data.ByteString as BS
 import Data.Double.Conversion.Text(toFixed)
 import Criterion.Measurement(getTime, secs)
 
-import Data.Text.Prettyprint.Doc
-import Data.Text.Prettyprint.Doc.Render.Terminal
+import Prettyprinter
+import Prettyprinter.Render.Terminal
 
 import Control.Exception(assert)
 import System.Timeout(timeout)

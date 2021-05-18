@@ -19,8 +19,8 @@ import qualified Data.Sequence as Seq(fromList)
 
 import Control.Monad.State
 
-import Data.Text.Prettyprint.Doc
-import Data.Text.Prettyprint.Doc.Render.Terminal
+import Prettyprinter
+import Prettyprinter.Render.Terminal
 
 import Compiler.Hoopl(UniqueMonad(..), C, O, NonLocal(..), Graph,
                       Block, Label, Graph', freshLabel, intToUnique,

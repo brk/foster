@@ -12,8 +12,8 @@ import Foster.Base
 import Foster.AnnExpr
 import Foster.TypeTC
 
-import Data.Text.Prettyprint.Doc
-import Data.Text.Prettyprint.Doc.Render.Terminal
+import Prettyprinter
+import Prettyprinter.Render.Terminal
 
 import qualified Data.Text as T
 import Data.Char(isAlpha)

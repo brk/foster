@@ -16,7 +16,7 @@ import Foster.Config(OrdRef)
 
 import qualified Data.Text as T
 
-import Data.Text.Prettyprint.Doc
+import Prettyprinter
 
 import Data.UnionFind.IO(Point)
 

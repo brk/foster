@@ -40,7 +40,7 @@ import Foster.PrettyAnnExpr()
 import Foster.SourceRange(SourceRange(..), rangeOf,
           highlightFirstLineStr, highlightFirstLineDoc, prettySourceRangeInfo, showSourceRangeStr, prettyWithLineNumbers)
 
-import Data.Text.Prettyprint.Doc
+import Prettyprinter
 
 data TCWanted = TCSigma | TCRho deriving Show
 

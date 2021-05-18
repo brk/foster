@@ -26,8 +26,8 @@ import Foster.HashCache
 import Foster.Output(putDocLn)
 import Foster.SourceRange(SourceRange(..), rangeOf, prettyWithLineNumbers)
 
-import Data.Text.Prettyprint.Doc
-import Data.Text.Prettyprint.Doc.Render.Terminal
+import Prettyprinter
+import Prettyprinter.Render.Terminal
 
 import qualified Data.Text as T
 import qualified Data.ByteString as BS

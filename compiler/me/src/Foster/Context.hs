@@ -27,8 +27,8 @@ import Foster.TypeTC
 import Foster.Config(OrdRef(..))
 import Foster.SourceRange(SourceRange, rangeOf, highlightFirstLineDoc, prettySourceRangeInfo)
 
-import Data.Text.Prettyprint.Doc
-import Data.Text.Prettyprint.Doc.Render.Terminal
+import Prettyprinter
+import Prettyprinter.Render.Terminal
 import Foster.Output
 
 type CtxBound ty = (TypedId ty, Maybe CtorId)

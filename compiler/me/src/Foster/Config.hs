@@ -20,8 +20,8 @@ import qualified Data.Text as T(Text)
 
 import Data.Time.Clock.POSIX (getPOSIXTime)
 
-import Data.Text.Prettyprint.Doc(Doc)
-import Data.Text.Prettyprint.Doc.Render.Terminal
+import Prettyprinter(Doc)
+import Prettyprinter.Render.Terminal
 
 import System.Console.GetOpt
 

@@ -15,8 +15,8 @@ import Foster.PrettyAnnExpr
 import Foster.Config(Compiled, CompilerContext(ccUniqRef))
 import Foster.SourceRange(SourceRange)
 
-import Data.Text.Prettyprint.Doc
-import Data.Text.Prettyprint.Doc.Render.Terminal
+import Prettyprinter
+import Prettyprinter.Render.Terminal
 
 import Data.Maybe(maybeToList)
 import Data.List(foldl')

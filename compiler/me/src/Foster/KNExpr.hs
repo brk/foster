@@ -42,7 +42,7 @@ import Foster.Typecheck(tcTypeWellFormed, tcReplaceQuantifiedVars)
 import Foster.SourceRange(SourceRange(..), rangeOf, prettyWithLineNumbers,
           highlightFirstLineStr, highlightFirstLineDoc, prettySourceRangeInfo)
 
-import Data.Text.Prettyprint.Doc
+import Prettyprinter
 
 import qualified Data.Graph.Inductive.Graph            as Graph
 import qualified Data.Graph.Inductive.Query.DFS        as Graph

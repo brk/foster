@@ -23,7 +23,7 @@ import Foster.Kind
 import Foster.SourceRange(SourceRanged, rangeOf)
 
 import Data.Maybe(maybeToList)
-import Data.Text.Prettyprint.Doc
+import Prettyprinter
 import qualified Data.Text as T
 import qualified Data.ByteString as B
 

@@ -14,7 +14,7 @@ import Foster.KNUtil
 import Foster.Config (Compiled, CompilerContext(ccUniqRef), ccWhen, ccVerbose)
 import Foster.Output (putDocP)
 
-import Data.Text.Prettyprint.Doc
+import Prettyprinter
 
 import Data.Map(Map)
 import qualified Data.Map as Map(insert, lookup, empty)

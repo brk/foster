@@ -11,8 +11,8 @@ import qualified Data.Set as Set
 import Data.UnionFind.IO(descriptor, setDescriptor, equivalent, union)
 import qualified Data.Text as T
 
-import Data.Text.Prettyprint.Doc
-import Data.Text.Prettyprint.Doc.Render.Terminal
+import Prettyprinter
+import Prettyprinter.Render.Terminal
 
 import Control.Monad(liftM, liftM, liftM2, when)
 import Data.IORef(writeIORef)
