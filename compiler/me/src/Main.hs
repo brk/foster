@@ -663,9 +663,9 @@ reportFinalPerformanceNumbers ci_time nqueries querytime tc_time sr_time
        putDocLn $ vcat $ [fmt "typecheck   time:" tc_time
                          ,fmt "monomorphiz time:" mn_time
                          ,fmt "static-chk  time:" sc_time
-                         ,fmt "LH+SB       time:" ls_time
+                         ,fmt "loophd+sink time:" ls_time
                          ,fmt "inlining    time:" sr_time
-                         ,fmt "CloConv     time:" cc_time
+                         ,fmt "closureconv time:" cc_time
                          ,fmt "codegenprep time:" cp_time
                          ,fmt "'other'     time:" ct_time
                          ,fmt "sum elapsed time:" nc_time
