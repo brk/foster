@@ -620,11 +620,11 @@ runCompiler ci_time wholeprog flagVals outfile = do
        putDocP line
        exitFailure
 
-     Right (Timings tc_time sr_time mn_time cp_time sc_time pb_time) -> do
+     Right (Timings tc_time sr_time mn_time cc_time cp_time sc_time ls_time pb_time) -> do
 
        (nqueries, querytime) <- readIORef smtStatsRef
        reportFinalPerformanceNumbers ci_time nqueries querytime tc_time sr_time
-                                     mn_time cp_time sc_time nc_time pb_time
+                                     mn_time cc_time cp_time sc_time ls_time nc_time pb_time
                                      (sum (modulesSourceLines wholeprog))
 
 toFixed :: Double -> Doc any
@@ -638,12 +638,12 @@ minusGCStats (GCStats a2 b2 c2 d2 e2 f2 g2 h2 i2 j2 k2 l2 m2 n2 o2 p2 q2 r2)
 
 reportFinalPerformanceNumbers :: Double -> Int -> [ (Double, Double) ]
                               -> Double -> Double -> Double -> Double
-                              -> Double -> Double -> Double
-                              -> Int -> IO ()
+                              -> Double -> Double -> Double -> Double
+                              -> Double -> Int -> IO ()
 reportFinalPerformanceNumbers ci_time nqueries querytime tc_time sr_time
-                              mn_time cp_time sc_time
+                              mn_time cc_time cp_time sc_time ls_time
                               nc_time pb_time wholeProgNumLines = do
-       let ct_time = (nc_time - (tc_time + mn_time + cp_time + sc_time))
+       let ct_time = (nc_time - (ls_time + tc_time + mn_time + cc_time + cp_time + sc_time + sr_time))
        let total_time = ci_time + pb_time + nc_time
        let pct f1 f2 = (100.0 * f1) / f2
        let fmt_pct time = let p = pct time nc_time
@@ -661,9 +661,11 @@ reportFinalPerformanceNumbers ci_time nqueries querytime tc_time sr_time
          else return ()
                          
        putDocLn $ vcat $ [fmt "typecheck   time:" tc_time
-                         ,fmt "inlining    time:" sr_time
                          ,fmt "monomorphiz time:" mn_time
                          ,fmt "static-chk  time:" sc_time
+                         ,fmt "LH+SB       time:" ls_time
+                         ,fmt "inlining    time:" sr_time
+                         ,fmt "CloConv     time:" cc_time
                          ,fmt "codegenprep time:" cp_time
                          ,fmt "'other'     time:" ct_time
                          ,fmt "sum elapsed time:" nc_time
@@ -675,7 +677,7 @@ reportFinalPerformanceNumbers ci_time nqueries querytime tc_time sr_time
                          ,text "source lines/second:" <+> toFixed (fromIntegral wholeProgNumLines / total_time)
                          ]
 
-data CompilerTimings = Timings Double Double Double Double Double Double
+data CompilerTimings = Timings Double Double Double Double Double Double Double Double
 
 compile :: WholeProgramAST (ExprSkel ExprAnnot) TypeP -> TcEnv -> String -> Compiled CompilerTimings
 compile wholeprog tcenv outfile = do
@@ -787,10 +789,10 @@ lowerModule outfile (tc_time, kmod) = do
 
      maybeInterpretKNormalModule kmod
 
-     (mkn_time, cp_time, pb_time) <- if getTypecheckOnly flags
-                                       then return (0.0, 0.0, 0.0)
+     (ls_time, mkn_time, cc_time, cp_time, pb_time) <- if getTypecheckOnly flags
+                                       then return (0.0, 0.0, 0.0, 0.0, 0.0)
                                        else lowerModulePhase2 monomod0 flags outfile
-     return (Timings tc_time mkn_time mn_time cp_time sc_time pb_time)
+     return (Timings tc_time mkn_time mn_time cc_time cp_time sc_time ls_time pb_time)
 
   where
 
@@ -806,7 +808,7 @@ lowerModule outfile (tc_time, kmod) = do
 
 
 lowerModulePhase2 monomod0 flags outfile = do
-     monomod2 <- knLoopHeaders  monomod0
+     (lh_time, monomod2) <- ioTime $ do knLoopHeaders  monomod0
 
      whenDumpIR "mono-loop" $ do
       putDocLn $ (outLn "/// Loop-headered program =============")
@@ -814,7 +816,7 @@ lowerModulePhase2 monomod0 flags outfile = do
       _ <- liftIO $ renderKN monomod2 True
       putDocLn $ (outLn "^^^ ===================================")
 
-     monomod2a  <- knSinkBlocks   monomod2
+     (ksb_time, monomod2a) <- ioTime $ do knSinkBlocks  monomod2
 
      whenDumpIR "mono-sunk" $ do
       putDocLn $ (outLn "/// Block-sunk program =============")
@@ -861,7 +863,7 @@ lowerModulePhase2 monomod0 flags outfile = do
          _ <- liftIO $ renderKN monomod2a  True
          putDocLn $ (outLn "^^^ ===================================")
 
-     ccmod    <- closureConvert pccmod
+     (cc_time, ccmod)    <- ioTime $ do closureConvert pccmod
      whenDumpIR "cc" $ do
          putDocLn $ (outLn "/// Closure-converted program =========")
          _ <- liftIO $ renderCC ccmod True
@@ -884,7 +886,7 @@ lowerModulePhase2 monomod0 flags outfile = do
      (pb_time , _) <- ioTime $ ccWhen (not . getTypecheckOnly . ccFlagVals) $
                                    (liftIO $ dumpILProgramToCapnp ilprog (outfile ++ ".cb"))
 
-     return (mkn_time, cp_time, pb_time)
+     return (lh_time + ksb_time, mkn_time, cc_time, cp_time, pb_time)
 
   where
 
