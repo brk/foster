@@ -77,7 +77,7 @@ data Closure = Closure { closureProcVar  :: LLVar
                        , closureAllocSrc :: AllocationSource
                        } deriving (Eq, Show)
 type LLRootVar = LLVar
-data Enabled = Disabled | Enabled Bool -- bool: gc may happen in continuation.
+
 data Insn' e x where
         CCLabel      :: BlockEntryL                        -> Insn' C O
         CCLetVal     :: Ident   -> Letable TypeLL          -> Insn' O O
@@ -586,10 +586,6 @@ prettyInsn' :: Insn' e x -> Doc AnsiStyle -> Doc AnsiStyle
 prettyInsn' i d = d <$> prettyT i
 
 prettyBlockId (b,l) = text b <> text "." <> prettyT l
-
-instance Pretty Enabled where
-  pretty (Enabled _) = text "Enabled"
-  pretty Disabled    = text "Disabled"
 
 instance PrettyT (Set LLRootVar) where
   prettyT s = list (map prettyT $ Set.toList s)
