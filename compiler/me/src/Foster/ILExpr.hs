@@ -24,7 +24,7 @@ import Foster.TypeLL
 import Foster.Letable
 import Foster.Avails(AvailMap, botAvailMap, emptyAvailMap, intersectAvailMap,
                                lookupAvailMap, insertAvailMap)
-import Foster.Output
+import Foster.Output()
 import Foster.MainOpts (getNoPreAllocOpt)
 import Foster.SourceRange(SourceRange(..), SourceLines, rangeOf)
 
@@ -39,7 +39,7 @@ import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
                                  insert, findWithDefault)
 import qualified Data.Text as T(pack, isInfixOf, concat)
 
-import qualified Criterion.Measurement as Criterion(secs)
+--import qualified Criterion.Measurement as Criterion(secs)
 
 --------------------------------------------------------------------
 
@@ -103,8 +103,8 @@ prepForCodegen m = do
 
     (_dh_time, procs) <- ioTime $ mapM deHooplize aprocs
 
-    liftIO $ putDocLn $ text "explicateProcs time: " <> pretty (Criterion.secs _ep_time)
-    liftIO $ putDocLn $ text "deHooplize/gcr time: " <> pretty (Criterion.secs _dh_time)
+    -- liftIO $ putDocLn $ text "explicateProcs time: " <> pretty (Criterion.secs _ep_time)
+    -- liftIO $ putDocLn $ text "deHooplize/gcr time: " <> pretty (Criterion.secs _dh_time)
 
     return $ (ILProgram procs valbinds decls dts (moduleILsourceLines m),
               preallocprocs)
@@ -117,10 +117,10 @@ prepForCodegen m = do
                                   then return $ simplifyCFG $ procBlocks p
                                   else runPreAllocationOptimizations (simplifyCFG $ procBlocks p)
      (_ae_time, g') <- ioTime $ makeAllocationsExplicit g0 failIfUsesGC (procIdent p)
-     if getNoPreAllocOpt flagVals
-      then liftIO $ putDocLn $ text "  simplifyCFG time: " <> pretty (Criterion.secs _pa_time) <> text " for " <> pretty  (identPrefix $ procIdent p)
-      else liftIO $ putDocLn $ text "  preallocOpt time: " <> pretty (Criterion.secs _pa_time)
-     liftIO $ putDocLn $ text "  makeAllocExplicit time: " <> pretty (Criterion.secs _ae_time)
+     --if getNoPreAllocOpt flagVals
+     -- then liftIO $ putDocLn $ text "  simplifyCFG time: " <> pretty (Criterion.secs _pa_time) <> text " for " <> pretty  (identPrefix $ procIdent p)
+     -- else liftIO $ putDocLn $ text "  preallocOpt time: " <> pretty (Criterion.secs _pa_time)
+     --liftIO $ putDocLn $ text "  makeAllocExplicit time: " <> pretty (Criterion.secs _ae_time)
 
      return (p { procBlocks = g' }, p { procBlocks = g0 })
 
