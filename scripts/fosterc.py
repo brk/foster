@@ -115,10 +115,12 @@ def get_ghc_rts_args():
 
   # https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/prof-heap.html
   if options and options.profileme:
-    if options.profileme == "json":
-      ghc_rts_args.append("-pj") # general time profile in JSON format, written to me.prof  
-    else:
-      ghc_rts_args.append("-p") # general time profile, written to me.prof
+    # if options.profileme == "json":
+    #   ghc_rts_args.append("-pj") # general time profile in JSON format, written to me.prof  
+    # else:
+    #   ghc_rts_args.append("-p") # general time profile, written to me.prof
+
+    ghc_rts_args.append("-hT") # break down space used by heap closure type
 
     #ghc_rts_args.append("-hc") # break down space used by function (cost center)
     #ghc_rts_args.append("-hm") # break down space used by module (producer)
@@ -127,10 +129,10 @@ def get_ghc_rts_args():
     #ghc_rts_args.append("-hr") # break down space used by retainer
     #ghc_rts_args.append("-hb") # break down space used by lag/use/drag/void stage
 
-    ghc_rts_args.append("-l-au") # emit eventlog, sans thread events
+    #ghc_rts_args.append("-l-au") # emit eventlog, sans thread events
 
     #ghc_rts_args.append("-hySet,[],ByteString,ARR_WORDS,Node") # restrict to given types
-    ghc_rts_args.append("-L50") # give longer labels
+    #ghc_rts_args.append("-L50") # give longer labels
   return ghc_rts_args
 
 def compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir):
