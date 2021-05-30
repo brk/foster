@@ -202,6 +202,13 @@ seqContainsAny = { seq => pred =>
   //seqWhere seq pred |> seqIsEmpty |> not
 };
 
+// TODO rewrite to reduce time and space usage, using seqFind.
+seqContainsAll :: forall (a:Type) { Seq a => { a => Bool } => Bool };
+seqContainsAll = { seq => pred =>
+  seqCountWhere seq pred ==UInt32 seqLength32 seq
+  //seqWhere seq pred |> seqIsEmpty |> not
+};
+
 // Returns a pair of (e, idx) for the 
 seqFindFirstIndex :: forall (a:Type) { Seq a => { a => Bool } => Maybe (a, Int32) };
 seqFindFirstIndex = { seq => pred =>
