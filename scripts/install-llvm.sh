@@ -54,8 +54,9 @@ pushd src
         mv compiler-rt-${LLVM_V} llvm-${LLVM_V}/projects/compiler-rt
         mv libcxx-${LLVM_V}      llvm-${LLVM_V}/projects/libcxx
         mv libcxxabi-${LLVM_V}   llvm-${LLVM_V}/projects/libcxxabi
-        mv libunwind-${LLVM_V}   llvm-${LLVM_V}/projects/libunwind
+        mv libunwind-${LLVM_V}   llvm-${LLVM_V}/runtimes/libunwind
         #mv clang-tools-extra-${LLVM_V} llvm-${LLVM_V}/tools/clang/tools/extra
+
         echo "done unpacking sources..."
 popd
 }

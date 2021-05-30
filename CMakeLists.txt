@@ -98,8 +98,8 @@ set(CORO_METHOD CORO_ASM
 
 find_program(CAPNP NAMES capnp
   PATHS
-    $ENV{HOME}/.local/capnp-c++-0.7.0/bin
-    $ENV{HOME}/sw/local/capnp-c++-0.7.0/bin
+    $ENV{HOME}/.local/capnp-c++-0.8.0/bin
+    $ENV{HOME}/sw/local/capnp-c++-0.8.0/bin
   DOC "capnp: Cap'n Proto compiler driver")
 
 find_program(MINUPROTO NAMES minuproto

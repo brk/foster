@@ -396,7 +396,7 @@ knSize expr = go expr (0, 0) where
     KNLetVal      _   e1 e2 _  -> go e2 (go e1 (t, a))
     KNLetRec     _ es b        -> foldl' (\ta e -> go e ta) (go b ta) es
     KNLetFuns    _ fns b _     -> let n = length fns in
-                                  let ta' @ (t', _ ) = go b ta in
+                                  let ta'@(t', _ ) = go b ta in
                                   let (_, bodies) = foldl' (\ta fn -> go (fnBody fn) ta) ta' fns in
                                   (t' + n, n + bodies)
     _ -> ta

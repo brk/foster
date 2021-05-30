@@ -1,4 +1,4 @@
-cabal-version:       2.6
+cabal-version:       3.0
 name:                me
 version:             0.1.0.1
 synopsis:            Foster middle-end
@@ -51,6 +51,7 @@ executable me
                  union-find -any,
                  directory -any,
                  smtLib -any,
+                 souffle-haskell >= 3.0.0,
                  boxes -any,
                  process -any,
                  prettyprinter >= 1.6.1,

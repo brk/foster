@@ -117,10 +117,10 @@ prepForCodegen m = do
                                   then return $ simplifyCFG $ procBlocks p
                                   else runPreAllocationOptimizations (simplifyCFG $ procBlocks p)
      (_ae_time, g') <- ioTime $ makeAllocationsExplicit g0 failIfUsesGC (procIdent p)
-     --if getNoPreAllocOpt flagVals
-     --  then liftIO $ putDocLn $ text "  simplifyCFG time: " <> pretty (Criterion.secs _pa_time)
-     --  else liftIO $ putDocLn $ text "  preallocOpt time: " <> pretty (Criterion.secs _pa_time)
-     --liftIO $ putDocLn $ text "  makeAllocExplicit time: " <> pretty (Criterion.secs _ae_time)
+     if getNoPreAllocOpt flagVals
+      then liftIO $ putDocLn $ text "  simplifyCFG time: " <> pretty (Criterion.secs _pa_time) <> text " for " <> pretty  (identPrefix $ procIdent p)
+      else liftIO $ putDocLn $ text "  preallocOpt time: " <> pretty (Criterion.secs _pa_time)
+     liftIO $ putDocLn $ text "  makeAllocExplicit time: " <> pretty (Criterion.secs _ae_time)
 
      return (p { procBlocks = g' }, p { procBlocks = g0 })
 

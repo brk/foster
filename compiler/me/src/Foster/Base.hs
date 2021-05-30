@@ -60,7 +60,7 @@ class PrettyT t where
 data CompilesResult expr = CompilesResult (OutputOr expr)
 type Uniq = Int
 data CallConv = CCC | FastCC deriving (Eq, Show, Ord)
-type LogInt = Int
+--type LogInt = Int
 data IntSizeBits = I1 | I8 | I16 | I32 | I64 | IWd | IDw -- Word/double-word
                  deriving (Eq, Show, Ord)
 data CallAnnot = CA_None
@@ -571,7 +571,7 @@ prependedTo str txt = T.pack str `T.append` txt
 -- older implementations of the Haskell base library.
 modIORef' r f = do
   v <- readIORef r
-  let ! v' = f v
+  let !v' = f v
   writeIORef r v'
 
 liftMaybe :: Monad m => (a -> m b) -> Maybe a -> m (Maybe b)
