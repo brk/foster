@@ -215,6 +215,8 @@ primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     ,(,) "expect_f32_bare"         $ mkProcType [f32] []
 
     ,(,) "foster__logf64"          $ mkProcType [f64] [f64]
+    ,(,) "foster__tanf64"          $ mkProcType [f64] [f64]
+    ,(,) "foster__powf64"          $ mkProcType [f64, f64] [f64]
 
     ,(,) "foster_prim_Int_to_smallWord" $ mkProcType [int] [iwd]
     ,(,) "foster_prim_smallWord_to_Int" $ mkProcType [iwd] [int]

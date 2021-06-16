@@ -489,6 +489,8 @@ double foster__logf64(double f) { return log(f); }
 float  foster__tanf32(float  f) { return tanf(f); }
 double foster__tanf64(double f) { return tan(f); }
 
+double foster__powf64(double x, double y) { return pow(x, y); }
+
 int32_t get_cmdline_n_args() { return __foster_globals.args.size(); }
 
 // For GC roots to work correctly, the returned pointer
