@@ -33,47 +33,6 @@
 
 #include <signal.h>
 
-// This file provides the bootstrap "standard library" of utility functions for
-// programs compiled (to LLVM IR) with foster. Making these functions available
-// to compiled programs is a semi-automated process that could still be
-// improved. Current steps for adding a new library function:
-//   1) Write the implementation using whatever C++ features are needed.
-//   2) Add a wrapper function in the `extern "C"` section below.
-//
-// TODO: hybrid foster/C++ library functions
-//
-// The build system must take extra steps to link foster-compiled LLVM IR to
-// this code, but those steps are independent of adding new functions.
-// Specifically, we must assemble the IR to bitcode (with llvm-as),
-// compile this file to bitcode (with llvm-gcc or clang),
-// and link the two bitcode files together.
-//
-// These steps are, as of this writing, done via shell scripts and the code in
-// test/bootstrap/run_all.py
-//
-// Obvious areas for improvement:
-//   *) Make foster.cpp figure out how to insert prototypes for standard library
-//      functions automatically, rather than manually writing code to insert
-//      each prototype separately. In the general case, this probably requires
-//      exposing more LLVM IR via Foster. Having the process be completely
-//      automated for existing C symbols would be really cool! That would
-//      essentially give Foster a "FFI" for interfacing with tons of useful
-//      libraries like OpenGL, gmp, and LLVM's C bindings...
-//
-// Here's a quick sketch:
-//   Recognize an expression of the form     import foo
-//     and search for foo.ll or foo.bc in the module search path.
-// see http://llvm.org/svn/llvm-project/llvm/trunk/tools/llvm-dis/llvm-dis.cpp
-//   If found, load the module and (lazily?) extract symbol names.
-//   When a lookup for a given name fails in foster.cpp, consult
-//   the list of modules to see if it is found. If found, record the extracted
-//   type information (and insert the prototype?).
-//  (a "complete" solution would also require auto-linking against the module)
-//
-// This does not deal with block scoping of imports, or of name spaces,
-// but it is probably simple enough to be easily implemented, and useful enough
-// to make the language much faster to iterate on.
-
 ////////////////////////////////////////////////////////////////
 
 extern "C" void foster__assert(bool ok, const char* msg);
