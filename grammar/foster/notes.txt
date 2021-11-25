@@ -1,4 +1,25 @@
+When compiling tokencount:
+       ANTLR: 300ms
+       cbor-write 200ms
+
+       cbor-read 300ms
+       typecheck: 1000ms
+       early-middle-end LoC/s: 13000
+
+       inlining: 1200ms
+       capnp-write: 200ms
+       fosterlower: 300ms
+       fosteroptc: 3000ms
+
+       overall LoC/s: 3000
+
+It's significantly faster to compile the token counter with --me-arg=--no-prealloc-opt
+and it doesn't seem to degrade the resulting code's performance in any measurable way.
+
+
+running tokencount on
 qsort-combined.foster (261 k lines; 1.9 MB; 320904 non-whitespace tokens and 252737 whitespace tokens.)
+
 
 
 Ryzen 3600 & LLVM 12 via perf stat -r20:
