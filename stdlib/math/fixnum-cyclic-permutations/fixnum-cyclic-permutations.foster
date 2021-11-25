@@ -16,6 +16,7 @@ To avoid the fixpoint at zero it would be trivial to generate a wrapper which
 
 Because these functions are bijections, their inverses can be defined,
 but I have not yet found a need to include the inverse functions.
+See also https://gist.github.com/degski/6e2069d6035ae04d5d6f64981c995ec2
 */
 
 snafuinclude Bitwise "math/bitwise"; // for rotr-Int64
