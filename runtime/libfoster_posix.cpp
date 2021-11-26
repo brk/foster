@@ -14,7 +14,7 @@
 
 #ifdef OS_LINUX
 #include <fcntl.h> // for O_RDWR
-#include <cstring> // for strncpy and memset
+// <cstring> provides strncpy and memset
 #include <sys/ioctl.h>
 #include <net/if.h> // for ifreq
 
@@ -23,13 +23,9 @@
 #include <fcntl.h> // for O_RDWR
 #endif
 
-#include <math.h> // for fpclassify
-
 // Definitions of functions which are meant to be exposed to Foster code
 // (at least for bootstrapping/utility purposes) rather than an implementation
 // of runtime services themselves.
-
-extern "C" void foster__assert(bool ok, const char* msg);
 
 extern "C" {
 
@@ -160,8 +156,6 @@ int64_t foster_posix_get_tuntap_fd() {
   return int64_t(fd);
 }
 
-bool CFile_isnil__autowrap(FILE* f) { return f == nullptr; }
-
 int32_t foster_posix_access__autowrap(foster_bytes* path, int32_t mode) {
   return int32_t(access((const char*) &path->bytes[0], mode));
 }
@@ -176,96 +170,6 @@ int32_t foster_posix_strError__autowrap(foster_bytes* b, int32_t errnum) {
   char* msg = strerror(errnum);
   strncpy((char*)&b->bytes[0], msg, (int)b->cap);
   return strlen((char*)&b->bytes[0]);
-}
-
-void* foster_emit_string_of_cstring(const char*, int32_t); // defined by the Foster compiler
-
-void* foster_sprintf_i32__autowrap(int32_t x, int8_t specifier, int8_t flag,
-                         int32_t width, int32_t precision) {
-  char fmt[256];
-  char buf[512];
-  const char* flagc =
-                (flag ==  0) ? "" : // no flags; default
-                (flag ==  1) ? "+" : // signed positives
-                (flag ==  2) ? " " : // space before positives
-                (flag ==  3) ? "#" : // 0x prefix (not meaningful for d)
-                (flag ==  4) ? "0" : // left pad with zeros not spaces
-                (flag == 10) ? "-" : // as above, but left justified.
-                (flag == 11) ? "-+" : 
-                (flag == 12) ? "- " : 
-                (flag == 13) ? "-#" : 
-                (flag == 14) ? "-0" : "";
-  if (!(specifier == 'd' || specifier == 'x' || specifier == 'X'
-     || specifier == 'u' || specifier == 'c')) { specifier = 'd'; }
-
-  if (precision < 0) {
-    int status = sprintf(fmt, "%%%s%d%c", flagc, width, specifier);
-    //                         ^^ ^ ^ ^
-    //                         |/ | |  specifier 
-    //                         |  | width
-    //                         |  flags
-    //                         ^^ literal percent sign
-    if (status < 0 || status == 256) {
-      foster__assert(false, "error in foster_sprintf_i32");
-    }
-  } else {
-    int status = sprintf(fmt, "%%%s%d.%d%c", flagc, width, precision, specifier);
-    //                         ^^ ^ ^ ^  ^
-    //                         |/ | | |  specifier 
-    //                         |  | | precision
-    //                         |  | width
-    //                         |  flags
-    //                         ^^ literal percent sign
-    if (status < 0 || status == 256) {
-      foster__assert(false, "error in foster_sprintf_i32");
-    }
-  }
-  int rv = snprintf(buf, 512, fmt, x);
-  return foster_emit_string_of_cstring(buf, strlen(buf));
-}
-
-void* foster_sprintf_i64__autowrap(int64_t x, int8_t specifier, int8_t flag,
-                         int32_t width, int32_t precision) {
-  char fmt[256];
-  char buf[512];
-  const char* flagc =
-                (flag ==  0) ? "" : // no flags; default
-                (flag ==  1) ? "+" : // signed positives
-                (flag ==  2) ? " " : // space before positives
-                (flag ==  3) ? "#" : // 0x prefix (not meaningful for d)
-                (flag ==  4) ? "0" : // left pad with zeros not spaces
-                (flag == 10) ? "-" : // as above, but left justified.
-                (flag == 11) ? "-+" : 
-                (flag == 12) ? "- " : 
-                (flag == 13) ? "-#" : 
-                (flag == 14) ? "-0" : "";
-  if (!(specifier == 'd' || specifier == 'x' || specifier == 'X'
-     || specifier == 'u' || specifier == 'c')) { specifier = 'd'; }
-
-  if (precision < 0) {
-    int status = sprintf(fmt, "%%%s%dll%c", flagc, width, specifier);
-    //                         ^^ ^ ^ ^
-    //                         |/ | |  specifier 
-    //                         |  | width
-    //                         |  flags
-    //                         ^^ literal percent sign
-    if (status < 0 || status == 256) {
-      foster__assert(false, "error in foster_sprintf_i64");
-    }
-  } else {
-    int status = sprintf(fmt, "%%%s%d.%dll%c", flagc, width, precision, specifier);
-    //                         ^^ ^ ^ ^  ^
-    //                         |/ | | |  specifier 
-    //                         |  | | precision
-    //                         |  | width
-    //                         |  flags
-    //                         ^^ literal percent sign
-    if (status < 0 || status == 256) {
-      foster__assert(false, "error in foster_sprintf_i64");
-    }
-  }
-  int rv = snprintf(buf, 512, fmt, x);
-  return foster_emit_string_of_cstring(buf, strlen(buf));
 }
 
 }

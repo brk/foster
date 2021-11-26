@@ -150,9 +150,6 @@ void fosterSchedulingTimerThread(std::atomic<bool>& ending) {
 };
 // }}}
 
-// primitive defined by the compiler itself
-extern "C" void* foster_emit_string_of_cstring(const char*, int32_t);
-
 namespace foster {
 namespace runtime {
 
@@ -386,12 +383,6 @@ char* cdataptr_unsafe(foster_bytes* b, int32_t offset) {
 }
 
 void cstr_free(char* s) { free(s); }
-
-FILE* c2f_stdin__autowrap() { return stdin; }
-FILE* c2f_stdout__autowrap() { return stdout; }
-FILE* c2f_stderr__autowrap() { return stderr; }
-
-FILE* CFile_nil() { return NULL; }
 
 int8_t foster_crypto_hash_sha256(foster_bytes* output, foster_bytes* input) {
   if (output->cap != crypto_hash_sha256_BYTES) {

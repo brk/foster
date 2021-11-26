@@ -44,6 +44,7 @@ void* memalloc_cell(foster::runtime::gc::typemap* typeinfo);
 void* memalloc_array(foster::runtime::gc::typemap* typeinfo, int64_t n, int8_t init);
 void foster__assert(bool, const char*);
 
+void* foster_emit_string_of_cstring(const char*, int32_t); // defined by the Foster compiler
 }
 
 #ifndef PRId64
