@@ -178,9 +178,6 @@ int32_t foster_posix_strError__autowrap(foster_bytes* b, int32_t errnum) {
   return strlen((char*)&b->bytes[0]);
 }
 
-int32_t foster_Float32_classify(float  f) { return int32_t(fpclassify(f)); }
-int32_t foster_Float64_classify(double f) { return int32_t(fpclassify(f)); }
-
 void* foster_emit_string_of_cstring(const char*, int32_t); // defined by the Foster compiler
 
 void* foster_sprintf_i32__autowrap(int32_t x, int8_t specifier, int8_t flag,
