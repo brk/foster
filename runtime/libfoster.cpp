@@ -16,7 +16,6 @@
 #include <cstdlib>
 #include <cmath>
 
-#include <vector>
 #include <string>
 
 #include "libfoster.h"
@@ -42,9 +41,6 @@ extern "C" void foster__assert(bool ok, const char* msg);
 const bool kUseSchedulingTimerThread = false;
 
 FosterGlobals __foster_globals;
-
-struct FosterVirtualCPU;
-std::vector<FosterVirtualCPU*> __foster_vCPUs;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -123,26 +119,21 @@ struct FosterVirtualCPU {
 
 // {{{
 
-inline static FosterVirtualCPU* __foster_get_current_vCPU() {
-  // TODO use TLS to store current vCPU?
-  return __foster_vCPUs[0];
-}
+FosterVirtualCPU* foster__current_vCPU = nullptr;
 
 extern "C" foster_bare_coro** __foster_get_current_coro_slot() {
-  return &(__foster_get_current_vCPU()->current_coro);
+  return &(foster__current_vCPU->current_coro);
 }
 
 // $ gotest.sh speed/siphash --optc-arg=-foster-insert-timer-checks --backend-optimize
 // $ test-tmpdir/siphash/siphash 64 20048
 extern "C" void __foster_do_resched() {
-  FosterVirtualCPU* v = __foster_get_current_vCPU();
-  v->needs_resched.store(false);
+  foster__current_vCPU->needs_resched.store(false);
   printf("__foster_do_resched...\n");
 }
 
 extern "C" bool __foster_need_resched_threadlocal() {
-  FosterVirtualCPU* v = __foster_get_current_vCPU();
-  return v->needs_resched.load();
+  return foster__current_vCPU->needs_resched.load();
 }
 
 // Rather than muck about with alarms, etc,
@@ -154,7 +145,7 @@ void fosterSchedulingTimerThread(std::atomic<bool>& ending) {
     printf("fosterSchedulingTimerThread\n");
 
     // Mark all execution contexts as needing rescheduling.
-    __foster_get_current_vCPU()->needs_resched.store(true); // just one for now
+    foster__current_vCPU->needs_resched.store(true); // just one for now
   }
 };
 // }}}
@@ -207,9 +198,9 @@ void initialize(int argc, char** argv, void* stack_base) {
 
   gc::initialize(stack_base);
 
-  __foster_vCPUs.push_back(new FosterVirtualCPU());
-  __foster_vCPUs[0]->default_coro_setup();
-  __foster_vCPUs[0]->install_signal_stack();
+  foster__current_vCPU = new FosterVirtualCPU();
+  foster__current_vCPU->default_coro_setup();
+  foster__current_vCPU->install_signal_stack();
 
   __foster_install_sigsegv_handler();
 
