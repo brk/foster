@@ -2715,7 +2715,7 @@ The corresponding AST to be matched is
       if (!currentVars.empty() && vmpt.isPointeryVar(currentVars.back())) {
         return "PtrNil";
       } else {
-        return recordName(rty->getDecl()) + "_nil";
+        return "(" + recordName(rty->getDecl()) + "_nil !)";
       }
     }
     if (typ->isPointerType()) return "PtrNil";

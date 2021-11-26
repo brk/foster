@@ -365,25 +365,6 @@ int64_t memcpy_i8_to_at_from_at_len(foster_bytes* to,   int64_t   to_at,
   return req_len - len;
 }
 
-// Copies a byte array (Array Int8) from the Foster heap
-// to the C heap, adding a null terminator.
-char* cstr(foster_bytes* not_assumed_null_terminated) {
-  size_t len = not_assumed_null_terminated->cap;
-  char* rv = (char*) malloc(len + 1);
-  memcpy(rv, not_assumed_null_terminated->bytes, len);
-  rv[len] = '\0';
-  return rv;
-}
-
-// Yields a direct pointer into the Foster heap,
-// typed for use in C. Note that the returned C pointer
-// does not point to a null terminated buffer!
-char* cdataptr_unsafe(foster_bytes* b, int32_t offset) {
-  return (char*) &b->bytes[0] + offset;
-}
-
-void cstr_free(char* s) { free(s); }
-
 int8_t foster_crypto_hash_sha256(foster_bytes* output, foster_bytes* input) {
   if (output->cap != crypto_hash_sha256_BYTES) {
     return 1;
@@ -391,19 +372,6 @@ int8_t foster_crypto_hash_sha256(foster_bytes* output, foster_bytes* input) {
   return crypto_hash_sha256(reinterpret_cast<unsigned char*>(output->bytes),
                             reinterpret_cast<const unsigned char*>(input->bytes),
                             input->cap); // returns zero
-}
-
-double foster_strtof64(foster_bytes* b, int32_t roundmode) {
-  char* c = cstr(b);
-  double f = atof(c);
-  free(c);
-  return f;
-}
-
-void* foster_gdtoa64__autowrap(double f, int32_t mode, int32_t ndig, int32_t rounding, int32_t* decpt) {
-  char buf[64];
-  sprintf(buf, "%g", f);
-  return foster_emit_string_of_cstring(buf, strlen(buf));
 }
 
 void print_f32_bare(float f) { return fprint_f32_bare(stdout, f); }

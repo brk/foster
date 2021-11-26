@@ -415,6 +415,11 @@ foreign import c2f_stdout :: { CFile };
 foreign import c2f_stderr :: { CFile };
 
 foreign import CFile_isnil :: { CFile => Bool };
+foreign import CFile_nil :: { CFile };
+
+foreign import foster__cstr            as cstr :: { Array Int8 => CString };
+foreign import foster__cstr_free       as cstr_free :: { CString => () };
+foreign import foster__cdataptr_unsafe as cdataptr_unsafe :: { Array Int8 => Int32 => CString };
 
 foreign import foster_sprintf_i32 :: { Int32 => Int8 => Int8 => Int32 => Int32 => Text };
 foreign import foster_sprintf_i64 :: { Int64 => Int8 => Int8 => Int32 => Int32 => Text };

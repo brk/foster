@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include <cstring> // for strlen
+#include <cstdlib> // for malloc/free
 
 #include "libfoster.h"
 
@@ -12,8 +13,44 @@ FILE* c2f_stdin__autowrap() { return stdin; }
 FILE* c2f_stdout__autowrap() { return stdout; }
 FILE* c2f_stderr__autowrap() { return stderr; }
 
-FILE* CFile_nil() { return NULL; }
+FILE* CFile_nil__autowrap() { return NULL; }
 bool CFile_isnil__autowrap(FILE* f) { return f == NULL; }
+
+// Copies a byte array (Array Int8) from the Foster heap
+// to the C heap, adding a null terminator.
+char* foster__cstr(foster_bytes* not_assumed_null_terminated) {
+  size_t len = not_assumed_null_terminated->cap;
+  char* rv = (char*) malloc(len + 1);
+  memcpy(rv, not_assumed_null_terminated->bytes, len);
+  rv[len] = '\0';
+  return rv;
+}
+
+// Yields a direct pointer into the Foster heap,
+// typed for use in C. Note that the returned C pointer
+// does not point to a null terminated buffer!
+char* foster__cdataptr_unsafe(foster_bytes* b, int32_t offset) {
+  return (char*) &b->bytes[0] + offset;
+}
+
+void foster__cstr_free(char* s) { free(s); }
+
+
+// Currently unused
+double foster_strtof64(foster_bytes* b, int32_t roundmode) {
+  char* c = foster__cstr(b);
+  double f = atof(c);
+  free(c);
+  return f;
+}
+
+// Currently unused
+void* foster_gdtoa64__autowrap(double f, int32_t mode, int32_t ndig, int32_t rounding, int32_t* decpt) {
+  char buf[64];
+  sprintf(buf, "%g", f);
+  return foster_emit_string_of_cstring(buf, strlen(buf));
+}
+
 
 
 void* foster_sprintf_i32__autowrap(int32_t x, int8_t specifier, int8_t flag,
