@@ -55,10 +55,10 @@ void __foster_handle_sigsegv(int, siginfo_t* si, void*) {
 
 void __foster_install_sigsegv_handler() {
   struct sigaction sa = {
-      .sa_sigaction = __foster_handle_sigsegv,
       .sa_mask      = 0,
       .sa_flags     = SA_ONSTACK | SA_SIGINFO,
   };
+  sa.sa_sigaction = __foster_handle_sigsegv;
   int rv;
   rv = sigfillset(&sa.sa_mask); // block all other signals
   foster__assert(rv == 0, "sigfillset failed");
