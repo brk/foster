@@ -320,6 +320,7 @@ flonumPrimitives tystr ty =
   ,mkPrim "round"   $ mkProcType [ty]     [ty]
   ,mkPrim "trunc"   $ mkProcType [ty]     [ty]
   ,mkPrim "powi"    $ mkProcType [ty, i32]    [ty]
+  ,mkPrim "pow"     $ mkProcType [ty, ty]     [ty]
   ,mkPrim "muladd"  $ mkProcType [ty, ty, ty] [ty]
   ]
 

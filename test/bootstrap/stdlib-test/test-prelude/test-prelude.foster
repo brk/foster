@@ -390,6 +390,9 @@ test-logf = {
 
   print_float_p9f64  (log-s32 100);
   expect_float_p9f64 4.605170186;
+
+  print_float_p9f64  (pow-f64 123.456 1.23);
+  expect_float_p9f64 373.731761652;
 };
 
 test-heapsort = {

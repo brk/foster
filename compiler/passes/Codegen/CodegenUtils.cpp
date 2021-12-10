@@ -347,6 +347,16 @@ createPowi(IRBuilder<>& b, llvm::Value* vd, llvm::Value* vi) {
   return CI;
 }
 
+llvm::Value*
+createPow(IRBuilder<>& b, llvm::Value* vd, llvm::Value* vi) {
+  Type*  tys[] = { vd->getType() };
+  Module*    m = b.GetInsertBlock()->getParent()->getParent();
+  llvm::Function* intrv = llvm::Intrinsic::getDeclaration(m, llvm::Intrinsic::pow, tys);
+  CallInst *CI = b.CreateCall(from(intrv), { vd, vi }, "pow");
+  //b.SetInstDebugLocation(CI);
+  return CI;
+}
+
 llvm::Function*
 getFunction(IRBuilder<>& b, const std::string& name) {
   Module* m = b.GetInsertBlock()->getParent()->getParent();
@@ -495,6 +505,7 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "bitlshr") { return b.CreateLShr(VL, getMaskedForShift(b, VL, VR), "lshrtmp"); }
   else if (op == "bitashr") { return b.CreateAShr(VL, getMaskedForShift(b, VL, VR), "ashrtmp"); }
   else if (op == "fpowi")   { return createPowi(b, VL, VR); }
+  else if (op == "fpow")    { return createPow(b, VL, VR); }
 
   ASSERT(args.size() > 2) << "CodegenUtils.cpp missing implementation of " << op << "\n";
 
