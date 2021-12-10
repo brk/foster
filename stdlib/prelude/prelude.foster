@@ -40,11 +40,8 @@ cmdline-arg-or = { i => d =>
 
 /////
 
-log-f64  = { f : Float64 => foster__logf64 f };
 log-s32  = { i : Int32 => log-f64 (prim s32-to-f64 i) };
 log-s64! = { i : Int64 => log-f64 (prim s64-to-f64-unsafe i) };
-
-pow-f64  = { x : Float64 => y : Float64 => foster__powf64 x y };
 
 /////
 

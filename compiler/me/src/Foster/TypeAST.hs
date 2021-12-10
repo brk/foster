@@ -208,10 +208,6 @@ primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     ,(,) "print_f32_bare"          $ mkProcType [f32] []
     ,(,) "expect_f32_bare"         $ mkProcType [f32] []
 
-    ,(,) "foster__logf64"          $ mkProcType [f64] [f64]
-    ,(,) "foster__tanf64"          $ mkProcType [f64] [f64]
-    ,(,) "foster__powf64"          $ mkProcType [f64, f64] [f64]
-
     -- Calls to this function are internally transformed to AIAllocArray nodes.
     -- forall a, i32 -> Array a
     ,(,) "allocDArray" $ let a = BoundTyVar "a" (MissingSourceRange "allocDArray") in
