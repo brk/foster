@@ -209,20 +209,6 @@ int cleanup() {
   return gc::cleanup();
 }
 
-
-int fprint_b2(FILE* f, uint64_t x, uint8_t N) {
-  if (N >= 64) N = 64;
-
-  char* buf = new char[N+1];
-  buf[N] = '\0';
-  for (uint8_t i = 0; i < N; ++i) {
-    buf[(N-1) - i] = (x & (uint64_t(1)<<i)) ? '1' : '0';
-  }
-  int n = fprintf(f, "0b%s\n", buf);
-  delete [] buf;
-  return n;
-}
-
 void fprint_f32(FILE* f, float x) { fprintf(f, "%f\n", x); }
 void fprint_f32_bare(FILE* f, float x) { fprintf(f, "%f", x); }
 void fprint_f32x(FILE* f, float x) { fprintf(f, "%a\n", x); }
