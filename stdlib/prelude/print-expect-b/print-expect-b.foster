@@ -1,0 +1,29 @@
+snafuinclude Prelude "prelude";
+snafuinclude Text "text";
+
+fmt-i64bb = { x : Int64 => n : Int32 =>
+  bitchr = { i : Int64 =>
+    if 0 ==Int64 (bitand-Int64 x (bitshl-Int64 1 i))
+    then ('0' as Int8)
+    else ('1' as Int8)
+    end
+  };
+
+  len = n +Int32 2;
+  arr = newDArray0 len { i =>
+          case i
+            of 0 -> ('0' as Int8)
+            of 1 -> ('b' as Int8)
+            of _ -> bitchr (zext_i32_to_i64 (n -Int32 (i -Int32 1)))
+          end
+        };
+  TextFragment arr len
+};
+
+print_i8b  = { x : Int8  => print_text (fmt-i64bb (zext_i8_to_i64  x) 8) };
+print_i32b = { x : Int32 => print_text (fmt-i64bb (zext_i32_to_i64 x) 32) };
+print_i64b = { x : Int64 => print_text (fmt-i64bb x 64) };
+
+expect_i8b  = { x : Int8  => expect_text (fmt-i64bb (zext_i8_to_i64 x) 8) };
+expect_i32b = { x : Int32 => expect_text (fmt-i64bb (zext_i32_to_i64 x) 32) };
+expect_i64b = { x : Int64 => expect_text (fmt-i64bb x 64) };

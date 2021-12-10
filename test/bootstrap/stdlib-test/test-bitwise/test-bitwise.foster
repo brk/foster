@@ -1,5 +1,6 @@
 snafuinclude Bitwise "math/bitwise";
 snafuinclude PreludePrintExpect "prelude/print-expect";
+snafuinclude PreludePrintExpectB "prelude/print-expect-b";
 snafuinclude Prelude "prelude"; // for print_i32x and print_i1.
 
 main = {

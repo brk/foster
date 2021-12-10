@@ -233,7 +233,6 @@ void fprint_p9f64(FILE* f, double x) { fprintf(f, "%.9f\n", x); }
 // TODO .17g for doubles?
 
 void fprint_i64(FILE* f, int64_t x) { fprintf(f, "%" PRId64 "\n", x); }
-void fprint_i64bb(FILE* f, int64_t x, uint8_t N) { fprint_b2(f, x, N); }
 
 void fprint_bytes_from(FILE* f, foster_bytes* array, uint32_t n, uint32_t off) {
   uint32_t c = array->cap;
@@ -322,9 +321,6 @@ int32_t force_gc_for_debugging_purposes() {
 
 void  print_i64(int64_t x) { fprint_i64(stdout, x); }
 void expect_i64(int64_t x) { fprint_i64(stderr, x); }
-
-void  print_i64bb(int64_t x, uint8_t N) { fprint_i64bb(stdout, x, N); }
-void expect_i64bb(int64_t x, uint8_t N) { fprint_i64bb(stderr, x, N); }
 
 // C type "bool" becomes LLVM "i8 zeroext", not "i1"
 

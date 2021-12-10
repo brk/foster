@@ -5,6 +5,7 @@ snafuinclude Range   "range";
 snafuinclude Bitwise "math/bitwise";
 snafuinclude Prelude "prelude";
 snafuinclude TcpReassembly "net/tcp-reassembly";
+snafuinclude PreludePrintExpectB "prelude/print-expect-b";
 
 /////
 

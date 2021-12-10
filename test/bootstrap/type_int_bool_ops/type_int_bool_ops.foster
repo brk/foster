@@ -1,4 +1,5 @@
 snafuinclude PreludePrintExpect "prelude/print-expect";
+snafuinclude PreludePrintExpectB "prelude/print-expect-b";
 snafuinclude Text "text";
 
 main = {

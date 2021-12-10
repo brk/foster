@@ -1,6 +1,8 @@
 snafuinclude Big "math/bignum";
 snafuinclude Nat "math/bignat";
 
+snafuinclude PreludePrintExpectB "prelude/print-expect-b";
+
 main = {
   //t0 !;
   //t1 !;

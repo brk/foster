@@ -15,13 +15,5 @@ foreign import c2f_stderr :: { CFile };
 print_i8   = { x : Int8  => x |> sext_i8_to_i64 |> print_i64 };
 print_i32  = { x : Int32 => x |> sext_i32_to_i64 |> print_i64 };
 
-print_i8b  = { x : Int8  => print_i64bb (zext_i8_to_i64  x) 8 };
-print_i32b = { x : Int32 => print_i64bb (zext_i32_to_i64 x) 32 };
-print_i64b = { x : Int64 => print_i64bb x 64 };
-
 expect_i8  = { x : Int8  => x |> sext_i8_to_i64 |> expect_i64 };
 expect_i32 = { x : Int32 => x |> sext_i32_to_i64 |> expect_i64 };
-
-expect_i8b  = { x : Int8  => expect_i64bb (zext_i8_to_i64 x) 8 };
-expect_i32b = { x : Int32 => expect_i64bb (zext_i32_to_i64 x) 32 };
-expect_i64b = { x : Int64 => expect_i64bb x 64 };

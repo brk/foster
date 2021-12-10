@@ -182,8 +182,6 @@ primitiveDecls :: [(T.Text, TypeAST, IsForeignDecl)]
 primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     [(,) "expect_i64"  $ mkProcType [i64] []
     ,(,)  "print_i64"  $ mkProcType [i64] []
-    ,(,)  "print_i64bb" $ mkProcType [i64, i8] []
-    ,(,) "expect_i64bb" $ mkProcType [i64, i8] []
 
     ,(,) "opaquely_i32" $ mkProcType [i32] [i32]
     ,(,) "opaquely_i64" $ mkProcType [i64] [i64]

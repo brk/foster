@@ -1,4 +1,5 @@
 snafuinclude Prelude "prelude";
+snafuinclude PreludePrintExpectB "prelude/print-expect-b";
 snafuinclude Bitwise "math/bitwise";
 
 type case NatInf
