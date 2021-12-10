@@ -214,11 +214,6 @@ primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     ,(,) "foster__tanf64"          $ mkProcType [f64] [f64]
     ,(,) "foster__powf64"          $ mkProcType [f64, f64] [f64]
 
-    ,(,) "foster_prim_Int_to_smallWord" $ mkProcType [int] [iwd]
-    ,(,) "foster_prim_smallWord_to_Int" $ mkProcType [iwd] [int]
-    ,(,) "foster_prim_Int_to_BigInt"    $ mkProcType [int] [big]
-    ,(,) "foster_prim_BigInt_to_Int"    $ mkProcType [big] [int]
-
     -- Calls to this function are internally transformed to AIAllocArray nodes.
     -- forall a, i32 -> Array a
     ,(,) "allocDArray" $ let a = BoundTyVar "a" (MissingSourceRange "allocDArray") in
