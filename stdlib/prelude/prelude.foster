@@ -7,6 +7,9 @@ snafuinclude PreludeFolds   "prelude-folds";
 snafuinclude PreludePrintExpect "prelude/print-expect";
 snafuinclude PreludeMemcpy "prelude/memcpy";
 
+ignore :: forall (a:Type) { a => () };
+ignore = { _a => () };
+
 // TODO test codegen of not_ vs primitive not
 not_   = { a : Bool => if a then False else True end };
 

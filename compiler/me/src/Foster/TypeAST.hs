@@ -201,10 +201,6 @@ primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     ,(,) "expect_float_f64"        $ mkProcType [f64] []
     ,(,) "print_float_f32"         $ mkProcType [f32] []
     ,(,) "expect_float_f32"        $ mkProcType [f32] []
-    ,(,) "print_f64_bare"          $ mkProcType [f64] []
-    ,(,) "expect_f64_bare"         $ mkProcType [f64] []
-    ,(,) "print_f32_bare"          $ mkProcType [f32] []
-    ,(,) "expect_f32_bare"         $ mkProcType [f32] []
 
     -- Calls to this function are internally transformed to AIAllocArray nodes.
     -- forall a, i32 -> Array a

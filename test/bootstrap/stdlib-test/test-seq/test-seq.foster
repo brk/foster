@@ -1,5 +1,6 @@
 snafuinclude Seq "data/seq";
 snafuinclude Prelude "prelude";
+snafuinclude Ryu "fmt/ryu/ryu-d2s";
 
 print_arri32 = { arr : Array Int32 =>
   print_text_bare "[";
@@ -163,8 +164,8 @@ part2 = {
   print_seq ys print_i32_bare;
 
   zs = seqPrefixSumFromLeftExclusiveSerial xs { x => y => x +f64 (y |> s32-to-f64) } 0.0;
-  expect_text "[1.000000, 3.000000, 6.000000, 10.000000, ]";
-  print_seq zs { f => f |> print_f64_bare };
+  expect_text "[1.0, 3.0, 6.0, 10.0, ]";
+  print_seq zs { f => f |> ryuFloat64 |> print_text_bare |> ignore };
 };
 
 main = {

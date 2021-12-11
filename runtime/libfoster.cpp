@@ -210,10 +210,7 @@ int cleanup() {
 }
 
 void fprint_f32(FILE* f, float x) { fprintf(f, "%f\n", x); }
-void fprint_f32_bare(FILE* f, float x) { fprintf(f, "%f", x); }
-void fprint_f32x(FILE* f, float x) { fprintf(f, "%a\n", x); }
 void fprint_f64(FILE* f, double x) { fprintf(f, "%f\n", x); }
-void fprint_f64_bare(FILE* f, double x) { fprintf(f, "%f", x); }
 void fprint_p9f64(FILE* f, double x) { fprintf(f, "%.9f\n", x); }
 // TODO .17g for doubles?
 
@@ -355,15 +352,8 @@ int8_t foster_crypto_hash_sha256(foster_bytes* output, foster_bytes* input) {
                             input->cap); // returns zero
 }
 
-void print_f32_bare(float f) { return fprint_f32_bare(stdout, f); }
-void expect_f32_bare(float f) { return fprint_f32_bare(stderr, f); }
-
-void print_f64_bare(double f) { return fprint_f64_bare(stdout, f); }
-void expect_f64_bare(double f) { return fprint_f64_bare(stderr, f); }
-
 void print_float_f32(float f) { return fprint_f32(stdout, f); }
 void expect_float_f32(float f) { return fprint_f32(stderr, f); }
-void print_float_f32x(float f) { return fprint_f32x(stdout, f); }
 
 void print_float_f64(double f) { return fprint_f64(stdout, f); }
 void expect_float_f64(double f) { return fprint_f64(stderr, f); }
