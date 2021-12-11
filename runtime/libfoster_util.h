@@ -10,7 +10,6 @@
 namespace foster {
 
 std::string humanize_s(double val, const char* unit);
-std::string fmt_secs(double secs);
 
 } // namespace foster
 

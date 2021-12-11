@@ -4,6 +4,7 @@ snafuinclude PreludeFolds "prelude-folds";
 snafuinclude PreludeFixnums "prelude-fixnums";
 snafuinclude Seq "data/seq";
 snafuinclude Ryu "fmt/ryu/ryu-d2s";
+snafuinclude Fmt "fmt";
 
 copy_board = { board =>
   newDArray0 (arrayLength32 board) { i : Int32 => board.[i] };
@@ -184,5 +185,5 @@ main = {
   print_text_bare "Evaluating an empty board to depth ";
   print_i32_bare maxdepth;
   print_text_bare " took ";
-  print_text (foster_fmttime_secs te);
+  print_text (fmt-duration te);
 };

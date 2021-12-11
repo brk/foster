@@ -1,6 +1,7 @@
 snafuinclude Bytes "bytes";
 snafuinclude Prelude "prelude";
 snafuinclude Measure "bench/measure";
+snafuinclude Fmt "fmt";
 
 // Stress-test: one 42k line expression
 
@@ -144,7 +145,7 @@ main = {
       print_i64 len;
 
       print_float_p9f64 calloc;
-      print_text (foster_fmttime_secs cbuild);
+      print_text (fmt-duration cbuild);
   end;
 };
 

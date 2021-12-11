@@ -1,6 +1,7 @@
 snafuinclude Text "text";
 snafuinclude Prelude "prelude";
 snafuinclude Base64 "encoding/base64";
+snafuinclude Fmt "fmt";
 
 // Foster version of
 // https://github.com/kostya/benchmarks/blob/master/base64/test.c
@@ -22,5 +23,5 @@ main = {
   print_text_bare "encode: ";
   print_i64_bare sr^;
   print_text_bare ", ";
-  print_text (foster_fmttime_secs s);
+  print_text (fmt-duration s);
 };

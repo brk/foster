@@ -1,5 +1,6 @@
 snafuinclude Prelude "prelude";
 snafuinclude Bench "bench/measure";
+snafuinclude Fmt "fmt";
 
 // Reimplementation of the C code from http://blog.vmchale.com/article/fast-functional
 //
@@ -25,5 +26,5 @@ main = {
               then print_i32 -1
           end } 100`000;
   print_text_bare "Time per iteration for 32-bit collatz_106239 : ";
-  print_text (foster_fmttime_secs (s `div-f64` 100`000.0));
+  print_text (fmt-duration (s `div-f64` 100`000.0));
 };

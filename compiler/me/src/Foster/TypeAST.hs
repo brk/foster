@@ -221,7 +221,6 @@ primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     ,(,) "foster_getticks"         $ mkProcType [] [i64]
     ,(,) "foster_getticks_elapsed" $ mkProcType [i64, i64] [f64]
 
-    ,(,) "foster_fmttime_secs"     $ mkProcType [f64] [fosStringType]
     ,(,) "foster_gettime_microsecs"    $ mkProcType [] [i64]
     ,(,) "foster_gettime_elapsed_secs" $ mkProcType [i64, i64] [f64]
     ]

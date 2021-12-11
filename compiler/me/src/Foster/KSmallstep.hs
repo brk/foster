@@ -1016,9 +1016,6 @@ evalNamedPrimitive "foster_gettime_microsecs" gs [] = do
 
 evalNamedPrimitive "foster_gettime_elapsed_secs" gs [SSInt64 t1_us, SSInt64 t2_us] = do
   return $ withTerm gs (SSTmValue $ SSFloat (fromIntegral (t2_us - t1_us) * 1e6))
-
-evalNamedPrimitive "foster_fmttime_secs" gs [SSFloat d] = do
-  return $ withTerm gs (SSTmValue $ textFragmentOf $ T.pack (secs d))
 -- }}}
 
 evalNamedPrimitive prim _gs args = error $ "evalNamedPrimitive " ++ show prim

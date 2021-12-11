@@ -1,4 +1,5 @@
 snafuinclude Text "text";
+snafuinclude Fmt "fmt";
 
 main = {
   t = foster_gettime_microsecs !;
@@ -7,17 +8,17 @@ main = {
   expect_float_p9f64 d;
 
   expect_text ("0.0 s");
-  print_text (foster_fmttime_secs d);
+  print_text (fmt-duration d);
 
   expect_text ("-1.000 s");
-  print_text (foster_fmttime_secs -1.0);
+  print_text (fmt-duration -1.0);
 
   expect_text ("1.234e-21 s");
-  print_text (foster_fmttime_secs 0.000000000000000000001234);
+  print_text (fmt-duration 0.000000000000000000001234);
 
-  expect_text ("1.23457e-19 s");
-  print_text (foster_fmttime_secs 0.00000000000000000012345678);
+  expect_text ("1.2345678e-19 s");
+  print_text (fmt-duration 0.00000000000000000012345678);
 
   expect_text ("12.35 fs");
-  print_text (foster_fmttime_secs 0.000000000000012345678);
+  print_text (fmt-duration 0.000000000000012345678);
 };

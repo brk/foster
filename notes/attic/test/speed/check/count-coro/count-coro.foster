@@ -1,9 +1,10 @@
 snafuinclude Bench "bench/measure";
 snafuinclude Prelude "prelude";
+snafuinclude Fmt "fmt";
 
 main = {
   let (secs, ()) = elapsed-time (test_count_2 10`000`000);
-  print_text (foster_fmttime_secs secs);
+  print_text (fmt-duration secs);
 };
 
 test_count_2 = { n =>

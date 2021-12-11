@@ -1,4 +1,6 @@
 snafuinclude Text "text";
+snafuinclude RyuD2S "fmt/ryu/ryu-d2s";
+snafuinclude RyuD2Fixed "fmt/ryu/ryu-d2fixed";
 
 fmt-i64 :: { Int64 => Text };
 fmt-i64 = { v => v |> tmp_Text_of_Int64 };
@@ -18,4 +20,31 @@ fmt-f64x = { f =>
   else
     "fmt-f64x: TODO handle inf/nan etc"
   end
+};
+
+fmt-duration = { secs: Float64 =>
+  if secs <f64 0.0
+    then "-" ++Text (fmt-duration (0.0 -f64 secs))
+    else
+        let (unit, secs, small) = case ()
+            of _ if secs >=f64 1.0  -> (" s", secs             , False)
+            of _ if secs >=f64 1e-3 -> (" ms", secs *f64 1e3   , False)
+            of _ if secs >=f64 1e-6 -> (" μs", secs *f64 1e6   , False)
+            of _ if secs >=f64 1e-9 -> (" ns", secs *f64 1e9   , False)
+            of _ if secs >=f64 1e-12 -> (" ps", secs *f64 1e12 , False)
+            of _ if secs >=f64 1e-15 -> (" fs", secs *f64 1e15 , False)
+            of _ if secs >=f64 1e-18 -> (" as", secs *f64 1.0e18 , False)
+            of _ -> (" s", secs, True)
+        end;
+
+        case ()
+            of _ if secs ==f64 0.0 -> "0.0 s"
+            of _ if small -> ryuFloat64 secs ++Text unit
+            of _ if secs >=f64 1e9 -> ryu-d2fixed 4 secs ++Text unit
+            of _ if secs >=f64 1e3 -> ryu-d2fixed 0 secs ++Text unit
+            of _ if secs >=f64 1e2 -> ryu-d2fixed 1 secs ++Text unit
+            of _ if secs >=f64 1e1 -> ryu-d2fixed 2 secs ++Text unit
+            of _                   -> ryu-d2fixed 3 secs ++Text unit
+        end
+  end;
 };

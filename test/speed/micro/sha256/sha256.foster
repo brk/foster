@@ -3,6 +3,7 @@ snafuinclude Prelude "prelude";
 snafuinclude Posix "io/posix";
 snafuinclude Bytes "bytes";
 snafuinclude Bench "bench/measure";
+snafuinclude Fmt "fmt";
 
 foreign import foster_crypto_hash_sha256 as nacl_sha256 :: { Array Int8 => Array Int8 => Int8 };
 
@@ -18,5 +19,5 @@ main = {
   };
   */
   print_text (sha256string h);
-  foster_fmttime_secs s |> print_text;
+  s |> fmt-duration |> print_text;
 };

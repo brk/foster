@@ -2470,7 +2470,7 @@ void initialize(void* stack_highest_addr) {
 
 
 void gclog_time(const char* msg, double secs, FILE* json) {
-  auto ss = fmt_secs(secs);
+  auto ss = humanize_s(secs, "s");
   fprintf(gclog, "%s: %s\n", msg, ss.c_str());
   if (json) {
   fprintf(json, "'%s_s' : %f\n", msg, secs);

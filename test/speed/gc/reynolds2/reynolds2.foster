@@ -1,5 +1,6 @@
 snafuinclude Bench "bench/measure";
 snafuinclude Prelude "prelude";
+snafuinclude Fmt "fmt";
 
 type case Tree
   of $Lf
@@ -32,6 +33,6 @@ reynolds2 = {
 
 main = {
   let (t, _) = elapsed-time { reynolds2 ! };
-  ts = foster_fmttime_secs t;
+  ts = fmt-duration t;
   print_text ts;
 };

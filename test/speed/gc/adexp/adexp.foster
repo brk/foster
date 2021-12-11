@@ -1,6 +1,7 @@
 snafuinclude Prelude "prelude";
 snafuinclude Map "data/map";
 snafuinclude Measure "bench/measure";
+snafuinclude Fmt "fmt";
 
 // This program re-implements the ADEXP parsing code from the following blog posts:
 //
@@ -87,9 +88,9 @@ DIK/N0400F320 UY37 BATTY""";
 
   ff = elapsed_time_n { msg = parseAdexpMessage bytes; () } 100000;
   print_text "elapsed:";
-  print_text (foster_fmttime_secs ff);
+  print_text (fmt-duration ff);
   print_text "per-op:";
-  print_text (foster_fmttime_secs (ff `div-f64` 100000.0));
+  print_text (fmt-duration (ff `div-f64` 100000.0));
 
   ()
 };

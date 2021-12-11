@@ -4,6 +4,7 @@ snafuinclude Bitwise "math/bitwise";
 snafuinclude Bytes "bytes";
 snafuinclude CBOR "encoding/cbor";
 snafuinclude Bench "bench/measure";
+snafuinclude Fmt "fmt";
 
 // Try testing with
 // echo "3903e7" | xxd -r -p | $PATH_TO/cborpipe | xxd -p
@@ -77,10 +78,10 @@ runCBORPipe = {
         stdout = 1;
         let (entime, cboroutbytes) = elapsed-time { putCBOR cbor };
         let (wrtime, nwrote) = elapsed-time { write_bytes_to_fd stdout cboroutbytes };
-        expect_text ("Input: "  ++Text (foster_fmttime_secs rdtime));
-        expect_text ("Decode: " ++Text (foster_fmttime_secs detime));
-        expect_text ("Encode: " ++Text (foster_fmttime_secs entime));
-        expect_text ("Output: " ++Text (foster_fmttime_secs wrtime));
+        expect_text ("Input: "  ++Text (fmt-duration rdtime));
+        expect_text ("Decode: " ++Text (fmt-duration detime));
+        expect_text ("Encode: " ++Text (fmt-duration entime));
+        expect_text ("Output: " ++Text (fmt-duration wrtime));
         ()
   end
 };

@@ -3,6 +3,7 @@ snafuinclude Text "text";
 snafuinclude List "data/list";
 snafuinclude Prelude "prelude";
 snafuinclude Bench "bench/measure";
+snafuinclude Fmt "fmt";
 
 // https://www.cs.indiana.edu/~sabry/papers/yield-pp.pdf
 
@@ -221,7 +222,7 @@ noinline_llvm_foon = { fnlist =>
 
 
 noinline_fmttime = { t =>
-  foster_fmttime_secs t;
+  fmt-duration t;
 };
 
 noinline_llvm_build_flist = { len =>
