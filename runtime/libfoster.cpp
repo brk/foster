@@ -214,7 +214,6 @@ void fprint_f32_bare(FILE* f, float x) { fprintf(f, "%f", x); }
 void fprint_f32x(FILE* f, float x) { fprintf(f, "%a\n", x); }
 void fprint_f64(FILE* f, double x) { fprintf(f, "%f\n", x); }
 void fprint_f64_bare(FILE* f, double x) { fprintf(f, "%f", x); }
-void fprint_f64x(FILE* f, double x) { fprintf(f, "%a\n", x); }
 void fprint_p9f64(FILE* f, double x) { fprintf(f, "%.9f\n", x); }
 // TODO .17g for doubles?
 
@@ -368,9 +367,6 @@ void print_float_f32x(float f) { return fprint_f32x(stdout, f); }
 
 void print_float_f64(double f) { return fprint_f64(stdout, f); }
 void expect_float_f64(double f) { return fprint_f64(stderr, f); }
-
-void print_float_f64x(double f) { return fprint_f64x(stdout, f); }
-void expect_float_f64x(double f) { return fprint_f64x(stderr, f); }
 
 void print_float_p9f64(double f) { return fprint_p9f64(stdout, f); }
 void expect_float_p9f64(double f) { return fprint_p9f64(stderr, f); }

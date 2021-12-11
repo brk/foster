@@ -1,0 +1,21 @@
+snafuinclude Text "text";
+
+fmt-i64 :: { Int64 => Text };
+fmt-i64 = { v => v |> tmp_Text_of_Int64 };
+
+fmt-f64x :: { Float64 => Text };
+fmt-f64x = { f =>
+  if isFiniteNonZero-f64 f
+  then
+    expt = ilogb-Float64!! f;
+    mantissaBits = bitand-Int64 kDOUBLE_MANTISSA_MASK (f64-as-i64 f);
+    mantissaHex0 = textStripLeftWhile (tmp_Text_16_of_UInt64 mantissaBits) { c => c ==Int8 ('0' as Int8) };
+    mantissaHex = textStripRightWhile mantissaHex0 { c => c ==Int8 ('0' as Int8) };
+    //234.567
+    //0x1.d5224dd2f1aap+7
+    trailer = if expt ==Int64 0 then "p0" else "p+" ++Text fmt-i64 expt end;
+    "0x1." ++Text mantissaHex ++Text trailer
+  else
+    "fmt-f64x: TODO handle inf/nan etc"
+  end
+};

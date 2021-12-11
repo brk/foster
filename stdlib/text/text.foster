@@ -112,6 +112,37 @@ expect_i1 = { b : Bool => b |> textOfBool |> expect_text };
 
 /////
 
+textStripRightWhile :: { Text => { Int8 => Bool } => Text };
+textStripRightWhile = { t => p =>
+  arr = t |> snafuBytesOfText |> bytesFlattenRaw;
+  REC loop = { idx => todrop =>
+    case ()
+      of _ if idx <SInt32 0 -> todrop
+      of _ if p (prim subscript arr idx) -> loop (idx -Int32 1) (todrop +Int32 1)
+      of _ -> todrop
+    end
+  };
+  todrop = loop (arrayLength32 arr -Int32 1) 0;
+  TextFragment arr (arrayLength32 arr -Int32 todrop)
+};
+
+textStripLeftWhile :: { Text => { Int8 => Bool } => Text };
+textStripLeftWhile = { t => p =>
+  bs = t |> snafuBytesOfText;
+  lim = bytesLength32 bs -Int32 1;
+  REC loop = { idx =>
+    case ()
+      of _ if idx >SInt32 lim -> idx
+      of _ if bytesGet32! idx bs |> p -> loop (idx +Int32 1)
+      of _ -> idx
+    end
+  };
+  todrop = loop 0;
+  bytesDrop32 bs todrop |> bytesFlattenRaw |> textFromRawASCII
+};
+
+/////
+
 assert :: { Bool => Text => () };
 assert = { cond : Bool => msg : Text =>
   if cond then () else
