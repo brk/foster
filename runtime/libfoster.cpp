@@ -380,12 +380,12 @@ void* foster_get_cmdline_arg_n_raw(int32_t n) {
 extern int32_t opaquely_i32(int32_t n);
 
 // Provided by third_party/fftw_cycle/cycle-wrapper.cpp
-extern int64_t __foster_getticks();
-extern double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
+extern int64_t foster__getticks();
+extern double  foster__getticks_elapsed(int64_t t1, int64_t t2);
 
-int64_t foster_getticks() { return __foster_getticks(); }
+int64_t foster_getticks() { return foster__getticks(); }
 double  foster_getticks_elapsed(int64_t t1, int64_t t2) {
-  return __foster_getticks_elapsed(t1, t2);
+  return foster__getticks_elapsed(t1, t2);
 }
 
 int64_t foster_gettime_microsecs() {
