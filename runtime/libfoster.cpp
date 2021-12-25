@@ -235,13 +235,19 @@ using namespace foster::runtime;
 
 extern "C" {
 
+float foster__atanf32(float x) { return atan(x); }
+double foster__atanf64(double x) { return atan(x); }
+
+float foster__atan2f32(float x, float y) { return atan2(x, y); }
+double foster__atan2f64(double x, double y) { return atan2(x, y); }
+
 //////////////////////////////////////////////////////////////////
 
 // Int is represented (opaquely) as a inversely-tagged pointer.
 typedef void* Int;
 // A 0 in the low bit signifies a pointer to a bignum.
 // A 1 in the low bit signifies a (signed) 63-bit integer
-// in the high bits.
+// in the high bits (assuming a 64-bit target).
 // Thus a "small" integer K is represented as 2K + 1,
 // with the restriction that K fits in 63 bits. A signed 64-bit integer
 // S is small if the top two bits of S are both zero or both one.

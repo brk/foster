@@ -189,6 +189,7 @@ test-bytes = {
   test-bytes-foldl-bytes !;
   test-bytes-inspection !;
   test-bytes-flattening !;
+  test-bytes-splitfirst !;
 };
 
 test-bytes-foldl-bytes = {
@@ -299,6 +300,16 @@ test-bytes-flattening = {
   expect_i8x b"5".[0]; print_i8x (bytesGet! 7 bsf );
   expect_i8x b"6".[0]; print_i8x (bytesGet! 8 bsf );
   expect_i8x b"7".[0]; print_i8x (bytesGet! 9 bsf );
+};
+
+test-bytes-splitfirst = {
+  let (a, b, c) = bytesSplitFirst (bytesOfRawArray b"abc = xyz") (bytesOfRawArray b"=");
+  expect_i1 True;
+  print_i1 (a `bytesEqual` bytesOfRawArray b"abc ");
+  expect_i1 True;
+  print_i1 (b `bytesEqual` bytesOfRawArray b"=");
+  expect_i1 True;
+  print_i1 (c `bytesEqual` bytesOfRawArray b" xyz");
 };
 
 test-div-mod = {

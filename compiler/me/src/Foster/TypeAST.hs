@@ -308,6 +308,8 @@ flonumPrimitives tystr ty =
   ,mkPrim "sin"     $ mkProcType [ty]     [ty]
   ,mkPrim "cos"     $ mkProcType [ty]     [ty]
   ,mkPrim "tan"     $ mkProcType [ty]     [ty]
+  ,mkPrim "atan"    $ mkProcType [ty]     [ty]
+  ,mkPrim "atan2"   $ mkProcType [ty, ty] [ty]
   ,mkPrim "ceil"    $ mkProcType [ty]     [ty]
   ,mkPrim "floor"   $ mkProcType [ty]     [ty]
   ,mkPrim "round"   $ mkProcType [ty]     [ty]

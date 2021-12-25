@@ -544,6 +544,24 @@ bytesIndexFrom = { b => idx => c =>
   loop idx
 };
 
+bytesSplitFirst :: { Bytes => Bytes => (Bytes, Bytes, Bytes) };
+bytesSplitFirst = { haystack => needle =>
+  len = bytesLength haystack;
+  REC loop = { idx =>
+    if idx ==Int64 len
+    then (haystack, bytesEmpty !, bytesEmpty !)
+    else
+      dropped = bytesDrop haystack idx;
+      if bytesHasPrefix dropped needle
+      then (bytesTake haystack idx, needle, bytesDrop dropped (bytesLength needle))
+      else loop (idx +Int64 1)
+      end
+    end
+  };
+
+  loop 0;
+};
+
 /*
 bytesDescribe :: { Bytes => Text };
 bytesDescribe = { bytes =>

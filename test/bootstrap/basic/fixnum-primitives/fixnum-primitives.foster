@@ -295,6 +295,7 @@ test-float-classification = {
 
   test-modf !;
   test-pow2 !;
+  test-trig !;
 
   expect_text "0x1.d5224dd2f1aap+7";
   print_text (fmt-f64x 234.567);
@@ -486,4 +487,51 @@ test-pow2 = {
   check 64.0 1.0 6;
   check 32.0 2.0 4;
   check 96.0 1.5 6;
+};
+
+test-trig = {
+  pi = 3.141592653589793;
+  npi = -3.141592653589793;
+  nz = -0.0;
+  pinf = positiveInfinity-f64 !;
+  ninf = negativeInfinity-f64 !;
+  nan  = 0.0 `div-f64` 0.0;
+
+  check-atan = { e => x =>
+    expect_text (ryuFloat64 e);
+    print_text (ryuFloat64 (atan-f64 x));
+  };
+  check-atan 0.0 0.0;
+
+  check-atan2 = { e => x => y =>
+    expect_text (ryuFloat64 e);
+    print_text (ryuFloat64 (atan2-f64 x y));
+  };
+  check-atan2 pi 0.0 -1.0;
+  check-atan2 pi 0.0 nz;
+  check-atan2 npi nz -1.0;
+  check-atan2 npi nz nz;
+
+  check-atan2 0.0 0.0 1.0;
+  check-atan2 0.0 0.0 0.0;
+  check-atan2 nz nz 1.0;
+  check-atan2 nz nz 0.0;
+
+  check-atan2 (pi `div-f64` 2.0) pinf 1.0;
+  check-atan2 (npi `div-f64` 2.0) ninf 1.0;
+
+  check-atan2 (3.0 *f64 pi `div-f64` 4.0) pinf ninf;
+  check-atan2 (3.0 *f64 npi `div-f64` 4.0) ninf ninf;
+
+  check-atan2 (1.0 *f64 pi `div-f64` 4.0) pinf pinf;
+  check-atan2 (1.0 *f64 npi `div-f64` 4.0) ninf pinf;
+
+
+  check-atan2 pi 1.0 ninf;
+  check-atan2 npi -1.0 ninf;
+  check-atan2 0.0 1.0 pinf;
+  check-atan2 nz -1.0 pinf;
+
+  check-atan2 nan nan pinf;
+  check-atan2 nan 1.0 nan;
 };

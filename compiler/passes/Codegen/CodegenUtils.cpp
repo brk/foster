@@ -5,6 +5,7 @@
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
 #include "base/LLVMUtils.h"
+#include "pystring/pystring.h"
 
 #include "passes/CodegenPass-impl.h"
 #include "parse/FosterTypeAST.h"
@@ -371,9 +372,17 @@ createCall1(IRBuilder<>& b, const std::string& name, llvm::Value* vd) {
 }
 
 llvm::Value*
-createFtan(IRBuilder<>& b, llvm::Value* vd) {
-  auto name = vd->getType()->isFloatTy() ? "foster__tanf32" : "foster__tanf64";
-  return createCall1(b, name, vd);
+createCall1FloatPrim(IRBuilder<>& b, llvm::Value* vd, const std::string& name) {
+  std::string fullname = "foster__"
+              + pystring::slice(name, 1)
+              + (vd->getType()->isFloatTy() ? "f32" : "f64");
+  return createCall1(b, fullname, vd);
+}
+
+llvm::Value*
+createFatan2(IRBuilder<>& b, llvm::Value* vd, llvm::Value* vr) {
+  auto name = vd->getType()->isFloatTy() ? "foster__atan2f32" : "foster__atan2f64";
+  return b.CreateCall(getFunction(b, name), { vd, vr });
 }
 
 llvm::Value*
@@ -439,7 +448,8 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "sitofp_f32")     { return b.CreateSIToFP(VL, b.getFloatTy(),  "sitofp_f32tmp"); }
   else if (op == "uitofp_f32")     { return b.CreateUIToFP(VL, b.getFloatTy(),  "uitofp_f32tmp"); }
   else if (op == "bitcast")        { return b.CreateBitCast(VL, assoc->getLLVMType(), "bitcast_tmp"); }
-  else if (op == "ftan")           { return createFtan(b, VL); }
+  else if (op == "ftan")           { return createCall1FloatPrim(b, VL, op); }
+  else if (op == "fatan")          { return createCall1FloatPrim(b, VL, op); }
   else if (op == "Int-isSmall")    { return createIntIsSmall(b, VL); }
   else if (op == "Int-toSmall")    { return createIntToSmall(b, VL); }
   else if (op == "Int-ofSmall")    { return createIntOfSmall(b, VL); }
@@ -447,6 +457,8 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   ASSERT(args.size() > 1) << "CodegenUtils.cpp missing implementation of " << op << "\n";
 
   Value* VR = args.at(1);
+
+  if (op == "fatan2") { return createFatan2(b, VL, VR); }
 
   if ((VL->getType() != VR->getType()) && op != "fpowi") {
     llvm::errs() << b.GetInsertBlock()->getParent() << "\n";
