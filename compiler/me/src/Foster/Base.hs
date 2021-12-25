@@ -641,7 +641,7 @@ prettyTypedId (TypedId t i) = prettyIdent i <> text " :: " <> prettyT t
 type ResumeIds = (Ident, Ident)
 
 -- * NamedPrim refers to global (function) symbols provided by the runtime (or interpreter)
---   rather than via the compiler. Example: prim_print_bytes_stdout.
+--   rather than via the compiler. Example: memcpy_i8_to_at_from_at_len.
 -- * PrimOp mostly identifes simple operations open-coded by the compiler.
 --   Examples: fixnum comparisons and bitwise operations.
 --   PrimOps are passed through to the back end, for consumption by CodegenPass::emitPrimitiveOperation().
