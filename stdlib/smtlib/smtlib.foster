@@ -1,0 +1,267 @@
+/* Ported from https://github.com/yav/smtLib/ (MIT licensed) */
+
+/*
+-- This file is based on:
+--
+-- "The SMT-LIB Standard, Version 2.0"
+-- by Clark Barrett Aaron Stump Cesare Tinelli
+-- Release: December 21, 2010
+-- Appendix C
+--
+-- URL:
+-- http://goedel.cs.uiowa.edu/smtlib/papers/smt-lib-reference-v2.0-r10.12.21.pdf
+*/
+
+// https://github.com/yav/smtLib/blob/master/src/SMTLib2/AST.hs
+
+type case SMT_Name of $SMT_Name Text;
+type case SMT_Ident of $SMT_Ident SMT_Name (Seq Int);
+type case SMT_Quant of $SMT_Exists 
+                    of $SMT_Forall;
+type case SMT_Binder of $SMT_Bind SMT_Name SMT_Type;
+type case SMT_Defn of $SMT_Name SMT_Expr;
+type case SMT_Literal
+  of $SMT_LitBV   Int Int   // value, width (in bits)
+  of $SMT_LitNum  Int
+  of $SMT_LitFrac Rational
+  of $SMT_LitStr  Text
+  ;
+
+type case SMT_Type
+  of $SMT_TApp SMT_Ident (Array SMT_Type)
+  of $SMT_TVar SMT_Name
+  ;
+
+type case SMT_Expr
+  of $SMT_Lit   SMT_Literal
+  of $SMT_App   SMT_Ident (Maybe SMT_Type) (Seq SMT_Expr)
+  of $SMT_Quant SMT_Quant (Array SMT_Binder) SMT_Expr
+  of $SMT_Let  (Array SMT_Defn) SMT_Expr
+  of $SMT_Annot SMT_Expr (Array SMT_Attr)
+  ;
+
+type case SMT_Attr of $SMT_Attr SMT_Name (Maybe SMT_Expr); // expanded type SMT_AttrVal = SMT_Expr
+
+type case SMT_Option
+  of $SMT_OptPrintSuccess            Bool
+  of $SMT_OptExpandDefinitions       Bool
+  of $SMT_OptInteractiveMode         Bool
+  of $SMT_OptProduceProofs           Bool
+  of $SMT_OptProduceUnsatCores       Bool
+  of $SMT_OptProduceModels           Bool
+  of $SMT_OptProduceAssignments      Bool
+  of $SMT_OptRegularOutputChannel    Text
+  of $SMT_OptDiagnosticOutputChannel Text
+  of $SMT_OptRandomSeed              Int
+  of $SMT_OptVerbosity               Int
+  of $SMT_OptAttr                    SMT_Attr
+  ;
+
+type case SMT_InfoFlag
+  of $SMT_InfoAllStatistics
+  of $SMT_InfoErrorBehavior
+  of $SMT_InfoName
+  of $SMT_InfoAuthors
+  of $SMT_InfoVersion
+  of $SMT_InfoStatus
+  of $SMT_InfoReasonUnknown
+  of $SMT_InfoAttr            SMT_Attr
+  ;
+
+type case SMT_Command
+  of $SMT_CmdSetLogic     SMT_Name
+  of $SMT_CmdSetOption    SMT_Option
+  of $SMT_CmdSetInfo      SMT_Attr
+  of $SMT_CmdDeclareType  SMT_Name Int
+  of $SMT_CmdDefineType   SMT_Name (Array SMT_Name) SMT_Type
+  of $SMT_CmdDeclareConst SMT_Name SMT_Type
+  of $SMT_CmdDeclareFun SMT_Name (Array SMT_Type) SMT_Type
+  of $SMT_CmdDeclareDatatype SMT_Name (Array SMT_Name) (Array (SMT_Name, Array (SMT_Name, SMT_Type)))
+  of $SMT_CmdDeclareDatatypes (Array (SMT_Name, Int))
+                              (Array ((Array SMT_Name), Array (SMT_Name, Array (SMT_Name, SMT_Type))))
+  of $SMT_CmdDefineFun SMT_Name (Array Binder) SMT_Type SMT_Expr
+  of $SMT_CmdPush Int
+  of $SMT_CmdPop  Int
+  of $SMT_CmdAssert SMT_Expr
+  of $SMT_CmdCheckSat
+  of $SMT_CmdGetAssertions
+  of $SMT_CmdGetValue (Array SMT_Expr)
+  of $SMT_CmdGetProof
+  of $SMT_CmdGetUnsatCore
+  of $SMT_CmdGetInfo   SMT_InfoFlag
+  of $SMT_CmdGetOption SMT_Name
+  of $SMT_CmdComment   Text
+  of $SMT_CmdExit
+  ;
+
+type case SMT_Script of $SMT_Script (Array SMT_Command);
+
+smt_app :: { SMT_Ident => (Seq SMT_Expr) => SMT_Expr };
+smt_app = { f => es => SMT_App f None es };
+
+smt_app_t :: { Text => (Seq SMT_Expr) => SMT_Expr };
+smt_app_t = { f => es => smt_app (SMT_Ident (SMT_Name f) seqEmpty) es };
+
+// https://github.com/yav/smtLib/blob/master/src/SMTLib2/BitVector.hs
+
+tBitVec :: { Int => SMT_Type };
+tBitVec = { n => SMT_TApp (SMT_Ident "BitVec" (seqSingleton n)) seqEmpty };
+
+bv :: { Int => Int => SMT_Expr };
+bv = { num => w => SMT_Lit (SMT_LitBV num w) };
+
+concat :: { SMT_Expr => SMT_Expr => SMT_Expr };
+concat = { x => y => smt_app_t "concat" (seqOf2 x y) };
+
+extract :: { Int => Int => SMT_Expr => SMT_Expr };
+extract i j x = smt_app_t (I "extract" (seqOf2 i j)) (seqSingleton x)
+
+bvnot ::  { SMT_Expr => SMT_Expr };
+bvnot x = smt_app_t "bvnot" (seqSingleton x)
+
+bvand :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvand = { x => y => smt_app_t "bvand" (seqOf2 x y)
+
+bvor :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvor = { x => y => smt_app_t "bvor" (seqOf2 x y)
+
+bvneg :: { SMT_Expr => SMT_Expr };
+bvneg = { x => smt_app_t "bvneg" (seqSingleton x) };
+
+bvadd :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvadd = { x => y => smt_app_t "bvadd" (seqOf2 x y)
+
+bvmul :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvmul = { x => y => smt_app_t "bvmul" (seqOf2 x y)
+
+bvudiv :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvudiv = { x => y => smt_app_t "bvudiv" (seqOf2 x y)
+
+bvurem :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvurem = { x => y => smt_app_t "bvurem" (seqOf2 x y)
+
+bvshl :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvshl = { x => y => smt_app_t "bvshl" (seqOf2 x y)
+
+bvlshr :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvlshr = { x => y => smt_app_t "bvlshr" (seqOf2 x y)
+
+bvult :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvult = { x => y => smt_app_t "bvult" (seqOf2 x y)
+
+bvnand :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvnand = { x => y => smt_app_t "bvnand" (seqOf2 x y)
+
+bvnor :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvnor = { x => y => smt_app_t "bvnor" (seqOf2 x y)
+
+bvxor :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvxor = { x => y => smt_app_t "bvxor" (seqOf2 x y)
+
+bvxnor :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvxnor = { x => y => smt_app_t "bvxnor" (seqOf2 x y)
+
+bvcomp :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvcomp = { x => y => smt_app_t "bvcomp" (seqOf2 x y)
+
+bvsub :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvsub = { x => y => smt_app_t "bvsub" (seqOf2 x y)
+
+bvsdiv :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvsdiv = { x => y => smt_app_t "bvsdiv" (seqOf2 x y)
+
+bvsrem :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvsrem = { x => y => smt_app_t "bvsrem" (seqOf2 x y)
+
+bvsmod :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvsmod = { x => y => smt_app_t "bvsmod" (seqOf2 x y)
+
+bvashr :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvashr = { x => y => smt_app_t "bvashr" (seqOf2 x y)
+
+repeat :: { Int => SMT_Expr => SMT_Expr => SMT_Expr };
+repeat = { i => x => y => smt_app_t (I "repeat" (seqSingleton i)) (seqOf2 x y)
+
+zero_extend :: { Int => SMT_Expr => SMT_Expr };
+zero_extend = { i => x => smt_app_t (I "zero_extend" (seqSingleton i)) (seqSingleton x)
+
+sign_extend :: { Int => SMT_Expr => SMT_Expr };
+sign_extend = { i => x => smt_app_t (I "sign_extend" (seqSingleton i)) (seqSingleton x)
+
+rotate_left :: { Int => SMT_Expr => SMT_Expr };
+rotate_left = { i => x => smt_app_t (I "rotate_left" (seqSingleton i)) (seqSingleton x)
+
+rotate_right :: { Int => SMT_Expr => SMT_Expr };
+rotate_right = { i => x => smt_app_t (I "rotate_right" (seqSingleton i)) (seqSingleton x)
+
+bvule :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvule = { x => y => smt_app_t "bvule" (seqOf2 x y)
+
+bvugt :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvugt = { x => y => smt_app_t "bvugt" (seqOf2 x y)
+
+bvuge :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvuge = { x => y => smt_app_t "bvuge" (seqOf2 x y)
+
+bvslt :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvslt = { x => y => smt_app_t "bvslt" (seqOf2 x y)
+
+bvsle :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvsle = { x => y => smt_app_t "bvsle" (seqOf2 x y)
+
+bvsgt :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvsgt = { x => y => smt_app_t "bvsgt" (seqOf2 x y)
+
+bvsge :: { SMT_Expr => SMT_Expr => SMT_Expr };
+bvsge = { x => y => smt_app_t "bvsge" (seqOf2 x y)
+
+
+// https://github.com/yav/smtLib/blob/master/src/SMTLib2/Core.hs
+
+tBool :: { SMT_Type };
+tBool = { SMT_TApp "Bool" seqEmpty };
+
+smt_true :: { SMT_Expr };
+smt_true = { smt_app_t "true" seqEmpty };
+
+smt_false :: { SMT_Expr };
+smt_false = { smt_app_t "false" seqEmpty };
+
+smt_not :: { SMT_Expr => SMT_Expr };
+smt_not = { p => app "not" (seqSingleton p); };
+
+(==>) :: { SMT_Expr => SMT_Expr => SMT_Expr };
+(==>) = { p => q => smt_app_t "=>" (seqOf2 p q) };
+
+smt_and :: { SMT_Expr => SMT_Expr => SMT_Expr };
+smt_and = { p => q => smt_app_t "and" (seqOf2 p q) };
+
+smt_or :: { SMT_Expr => SMT_Expr => SMT_Expr };
+smt_or = { p => q => smt_app_t "or" (seqOf2 p q) };
+
+smt_xor :: { SMT_Expr => SMT_Expr => SMT_Expr };
+smt_xor = { p => q => smt_app_t "xor" (seqOf2 p q) };
+
+(===) :: { SMT_Expr => SMT_Expr => SMT_Expr };
+(===) = { x => y => smt_app_t "=" (seqOf2 x y) };
+
+(=/=) :: { SMT_Expr => SMT_Expr => SMT_Expr };
+(=/=) = { x => y => smt_app_t "distinct" (seqOf2 x y) };
+
+ite :: { SMT_Expr => SMT_Expr => SMT_Expr => SMT_Expr };
+ite = { b => x => y => smt_app_t "ite" (seqOf3 b x y) };
+
+// https://github.com/yav/smtLib/blob/master/src/SMTLib2/Array.hs
+
+tArray :: { SMT_Type => SMT_Type => SMT_Type };
+tArray = { x => y => SMT_TApp "Array" (seqOf2 x y) };
+
+select :: { SMT_Expr => SMT_Expr => SMT_Expr };
+select = { x => y => smt_app_t "select" (seqOf2 x y) };
+
+store :: { SMT_Expr => SMT_Expr => SMT_Expr => SMT_Expr };
+store = { x => y => z => smt_app_t "store" (seqOf3 x y z) };
+
+
+
+
