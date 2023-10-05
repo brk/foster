@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.4.3)
+cmake_minimum_required (VERSION 3.6)
 
 # {{{ We need to set up the compiler paths before calling project()...
 # ~~~~~~~~~~~~~~~~~~~~
@@ -50,7 +50,7 @@ if (NOT (${CMAKE_CXX_COMPILER} STREQUAL ${CLANG}))
   return()
 endif (NOT (${CMAKE_CXX_COMPILER} STREQUAL ${CLANG}))
 
-cmake_policy(VERSION 3.0)
+cmake_policy(VERSION 3.6)
 
 ####################### Configuration Rules ########################
 
