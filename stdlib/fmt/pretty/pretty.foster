@@ -1,0 +1,109 @@
+snafuinclude Text "text";
+snafuinclude Int "prelude/int";
+snafuinclude Gen "control/gen";
+
+// Based on http://okmij.org/ftp/continuations/PPYield/yield-pp.pdf
+
+
+
+type case Doc
+  of $DocText Text
+  of $DocLine
+  of $DocHJuxt Doc Doc
+  of $DocGroup Doc
+;
+
+traverse1 :: { Doc => () };
+traverse1 = { doc =>
+  case doc
+    of $DocText t -> print_text_bare "Text "; print_text t;
+    of $DocLine   -> print_text "Line";
+    of $DocHJuxt d1 d2 -> traverse1 d1 ; traverse1 d2
+    of $DocGroup d ->
+        print_text "Begin Group";
+        traverse1 d;
+        print_text "End Group";
+  end
+};
+
+traverse2 :: { Doc => () @(Gen Text) };
+traverse2 = { doc =>
+  case doc
+    of $DocText t -> do_Gen ("Text " ++Text t);
+    of $DocLine   -> do_Gen "Line";
+    of $DocHJuxt d1 d2 -> traverse2 d1 ; traverse2 d2
+    of $DocGroup d ->
+        do_Gen "Begin Group";
+        traverse2 d;
+        do_Gen "End Group";
+  end
+};
+
+tranW :: { { () @(Gen Text) } => { () @(Gen (Text, Int)) } };
+tranW = { g =>
+    {
+        handle g !
+          of $Gen t -> do_Gen (t, 0) |> resume
+        end
+    }
+};
+/*
+
+pretty :: { Int => Doc => Text };
+pretty = { pageWidth => d =>
+
+};
+
+// type HP = Int
+type case StreamHPA
+    of $StreamHPA_TE   Int Text
+    of $StreamHPA_LE   Int
+    of $StreamHPA_GBeg Int
+    of $StreamHPA_GEnd Int
+// type Buf = Seq StreamHPA
+// type Buffer = List Buf
+
+trHPA_go :: { }
+trHPA_go = { q0 => g =>
+  case (q0, g)
+    of (q,         $StreamHPB_GBeg _) -> Cons (seqEmpty !) q
+    of ($Cons b q, $StreamHPB_GEnd p) ->
+    of ($Nil     , $StreamHPB_TE p) ->
+    of ($Cons b q, $StreamHPB_TE p) -> Cons (seqPrepend b (StreamHPA_TE p)) q
+    of $StreamHPA_LE   Int
+    
+    of $StreamHPA_GEnd _
+};
+*/
+
+// Exponential-time reference implementation/semantics.
+
+pretty1 :: { Int => Doc => Text };
+pretty1 = { pageWidth => d =>
+    let (t, _) = format1 pageWidth False pageWidth d;
+    t
+};
+
+format1 :: { Int => Bool => Int => Doc => (Text, Int) };
+format1 = { pageWidth => fit => widthLeft => doc =>
+  case doc
+    of $DocText t -> (t, widthLeft -Int asciiSize t)
+    of $DocLine   -> if fit then (" ", widthLeft -Int 1)
+                            else ("\n", pageWidth) end
+    of $DocHJuxt d1 d2 ->
+        let (s1, r1) = format1 pageWidth fit widthLeft d1;
+        let (s2, r2) = format1 pageWidth fit r1        d2;
+        (s1 ++Text s2, r2)
+    of $DocGroup d -> format1 pageWidth (either fit (width1 d <=Int widthLeft)) widthLeft d
+  end
+};
+
+width1 :: { Doc => Int };
+width1 = { doc =>
+  case doc
+    of $DocText t -> asciiSize t
+    of $DocLine   -> 1
+    of $DocHJuxt d1 d2 -> width1 d1 +Int width1 d2
+    of $DocGroup d -> width1 d
+  end
+};
