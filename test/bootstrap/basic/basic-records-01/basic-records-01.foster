@@ -1,0 +1,79 @@
+
+snafuinclude Prelude "prelude";
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
+takeRecordFooBar :: { (foo:::Int64, bar:::Float64) => Int64 };
+takeRecordFooBar = { r => r.foo };
+
+takeRecordBarFoo :: forall (a:Type) { (bar:::Float64, foo:::a) => a};
+takeRecordBarFoo = { r => r.foo };
+
+takeRecordBar :: { (bar:::Float64) => () };
+takeRecordBar = { r => () };
+
+// inferRecordFoo = { r => r.foo }; // field selection against a metavariable
+// test-inferRecordFoo = {
+//   prim log-type inferRecordFoo;
+
+//   expect_i64 1;
+//   print_i64 (inferRecordFoo r01);
+
+//   prim log-type inferRecordFoo;
+// };
+
+main = {
+  r01 =  ( bar : 2.3 , foo : 1 );
+
+  r02 =  ( bar : 3.3 , foo : 2.3 );
+
+  prim log-type r01;
+
+  expect_i64 1;
+  print_i64 (takeRecordFooBar r01);
+
+  expect_i64 1;
+  print_i64 (takeRecordBarFoo r01);
+
+  // Restriction: do we want to allow this? It doesn't quite match the "labeled tuple"
+  // intuition; it's not as if we can ascribe the type (A, B) to a value of type (A, B, C).
+  // (We could allow it without needing runtime operations but we couldn't allow
+  //  ascribing the types (A, C) or (B, C) or (B, A) etc without needing runtime coercion).
+  //expect_i64 1;
+  //print_i64 (( bar : 2.3 , foo : 1 ) as (foo:::Int64)).foo;
+
+  // Records with disjoint types: should this be a static error,
+  // or should it (silently) drop the foo field?
+  //r03 = if True then ( bar : 2.3 , foo : 1 ) else ( foo : 2, bar:"Text" ) end;
+  //r03 = if True then (( bar : 2.3 , foo : 1 ) as (foo:::Int64)) else (( foo : 2, bar:"Text" ) as (foo:::Int64)) end;
+  //expect_i64 1;
+  //print_i64 (r01.foo);
+
+  //
+  //takeRecordBar r01;
+
+  /*
+
+  r01 = {{ foo : 1, bar : 2 }};
+
+  r01 = (( foo : 1, bar : 2 ));
+
+  r01 = r( foo : 1, bar : 2 );
+
+  r01 = $ foo: 1 bar: 2;
+
+  retval = someFunc with args ( foo: 1, bar: 2 )
+
+  retval = someFunc with args ( $ foo: 1 bar: 2)
+
+  retval = someFunc with args (foo: 1 bar: 2)
+
+  retval = someFunc with args <| foo: 1 bar: 2
+*/
+
+  expect_i1 False;
+  print_i1 (prim __COMPILES__ r01.quux);
+
+  expect_i64 1;
+  print_i64 r01.foo;
+
+};
