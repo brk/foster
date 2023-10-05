@@ -1,0 +1,34 @@
+snafuinclude Pretty "fmt/pretty";
+snafuinclude Prelude "prelude";
+snafuinclude PrintExpect "prelude/print-expect";
+snafuinclude Gen "control/gen";
+
+main = {
+    doc1 = DocGroup ((DocText "A") `DocHJuxt`
+                (DocLine `DocHJuxt` DocGroup (DocText "B"
+                    `DocHJuxt` (DocLine `DocHJuxt` DocText "C"))));
+    expect_i1 True;
+    print_i1 ("A B C" ==TextBytes (pretty1 5 doc1));
+
+    expect_i1 True;
+    print_i1 ("A\nB C" ==TextBytes (pretty1 3 doc1));
+
+    expect_i1 True;
+    print_i1 ("A\nB\nC" ==TextBytes (pretty1 2 doc1));
+
+    //traverse1 doc1;
+
+/*
+    handle traverse2 doc1
+      of $Gen t -> print_text t;
+                   resume ()
+    end
+*/    
+    handle tranW { traverse2 doc1 }
+      of $Gen (t, i) -> print_text_bare (t ++Text ": "); print_i32 i;
+                        resume ()
+    end
+};
+
+asciiSize :: { Text => Int };
+asciiSize = { t => prim Int-ofSmall (textLength t |> zext_i32_to_Word) };
