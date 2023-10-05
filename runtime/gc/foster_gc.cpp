@@ -712,7 +712,7 @@ void mark_as_smallmedium(frame15* f) {
 // Markable objects live in the upper bits of address space.
 // Unfortunately it appears to be surprisingly hard to force a malloc implementation
 // to not use the lower 4 GB of virtual memory.
-bool non_markable_addr_toosmall(void* addr) { return uintptr_t(addr) <   uintptr_t(0x600000); }
+bool non_markable_addr_toosmall(void* addr) { return uintptr_t(addr) <   uintptr_t(0x400000); }
 bool non_markable_addr_toobig(void* addr) {   return uintptr_t(addr) >= (uintptr_t(1) << address_space_prefix_size_log()); }
 // The compiler, runtime,  and GC cooperate to represent "small" integer values
 // as tagged pointer-sized words; if we see the tag, the other bits aren't an address!
@@ -2401,7 +2401,7 @@ void initialize(void* stack_highest_addr) {
   void* malloced = malloc(1);
   if (non_markable_addr_toosmall(malloced)) {
     fprintf(stderr, "ERROR: Foster runtime appears to have been misconfigured;"
-                    " malloc() returned an address that the runtime will not mark.");
+                    " malloc() returned an address (%p) that the runtime will not mark.", malloced);
     exit(2);
   }
   free(malloced);
