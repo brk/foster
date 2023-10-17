@@ -3,7 +3,7 @@ packages: me.cabal
 source-repository-package
   type: git
   location: https://github.com/brk/minuproto.git
-  tag: 721665cb485ab85b566cebd3f02edde4d94a3d6c
+  tag:  3a93a7a16361cd5e7c0451c6e5c29e0ed3ee2444
 
 source-repository-package
   type: git

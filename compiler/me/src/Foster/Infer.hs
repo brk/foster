@@ -459,7 +459,13 @@ collectAllUnificationVars xs = do foldlM go Set.empty xs  >>= return . Set.toLis
 -- from instantiated meta type variables.
 zonkType :: TypeTC -> Tc TypeTC
 -- {{{
-zonkType x = do
+zonkType t = zonkTypeWithFuel 12345 t
+
+zonkTypeWithFuel 0 t = do
+  occurdCheck t
+
+zonkTypeWithFuel fuel x = do
+    let zonkType t = zonkTypeWithFuel (fuel - 1) t
     case x of
         MetaTyVarTC m -> do mty <- readTcMeta m
                             case mty of
@@ -484,6 +490,28 @@ zonkType x = do
                                       r' <- zonkType r
                                       fx' <- zonkType fx
                                       return $ FnTypeTC ss' r' fx' cc cs levels
+
+occurdCheck {-m-} t = do
+  -- b <- zonkType (MetaTyVarTC m)
+  tcFailsMore $ [text $ "Heuristic occurs check "
+        --,indent 8 (pretty (MetaTyVarTC m))
+        --,text "which is bound to"
+        --,indent 8 (pretty b)
+        ,text "failed in"
+        ,indent 8 (prettyT t)
+        ] ++ {- msgs ++ -}
+        [text "This type error generally arises when different parts of your"
+        ,text "program disagree about whether they are dealing with a polymorphic"
+        ,text "type such as `List a` or just `a`."
+        ,text "This is sometimes caused by swapped function arguments..."
+        ,text "Less commonly, it arises from use of"
+        ,text "polymorphic recursion, which usually needs an explicit annotation"
+        ,text "on both the recursive call site and the recursive function definition."
+        ,indent 4 (text "(Incidentally, in case you're curious, the reason"
+              <$> text " this is a problem the compiler can't just solve for you"
+              <$> text " is that it requires higher-order unification, which is"
+              <$> text " undecidable in theory. And that's not great because it"
+              <$> text " would make the compiler slow(er) and fragile(r)...)")]
 -- }}}
 
 -- {{{ Unification driver
@@ -493,27 +521,4 @@ zonkType x = do
 -- types is updated according to the unification solution.
 unify :: TypeTC -> TypeTC -> [Doc AnsiStyle] -> Tc ()
 unify t1 t2 msgs = do tcOnError msgs (tcUnifyTypes t1 t2) return
-                            {-
-  where
-     occurdCheck m t = do b <- zonkType (MetaTyVarTC m)
-                          tcFailsMore $ [text $ "Occurs check for"
-                               ,indent 8 (pretty (MetaTyVarTC m))
-                               ,text "which is bound to"
-                               ,indent 8 (pretty b)
-                               ,text "failed in"
-                               ,indent 8 (pretty t)
-                               ] ++ msgs ++
-                               [text "This type error generally arises when different parts of your"
-                               ,text "program disagree about whether they are dealing with a polymorphic"
-                               ,text "type such as `List a` or just `a`."
-                               ,text "This is sometimes caused by swapped function arguments..."
-                               ,text "Less commonly, it arises from use of"
-                               ,text "polymorphic recursion, which usually needs an explicit annotation"
-                               ,text "on both the recursive call site and the recursive function definition."
-                               ,indent 4 (text "(Incidentally, in case you're curious, the reason"
-                                      <$> text " this is a problem the compiler can't just solve for you"
-                                      <$> text " is that it requires higher-order unification, which is"
-                                      <$> text " undecidable in theory. And that's not great because it"
-                                      <$> text " would make the compiler slow(er) and fragile(r)...)")]
-                                      -}
 -- }}}

@@ -9,6 +9,8 @@ main = {
   //f5 !;
   //f6 !;
 
+  needs-occurs-check !;
+
   expect_i32 7000;
   print_i32 7000;
 
@@ -22,6 +24,11 @@ main = {
   print_i1 (prim __COMPILES__ x); // "Unknown variable x"
 
   ();
+};
+
+needs-occurs-check = {
+  expect_i1 False;
+  print_i1 (prim __COMPILES__ { REC fz = { fz }; fz }); // "Occurs check for (~!86:letrec_f) failed in (() => (~!86:letrec_f) @{FT_Func})"
 };
 
 take_text = { t : Text => () };
@@ -136,9 +143,6 @@ f2 = { r : Ref Int32 =>
 
   expect_i1 True;
   print_i1 (prim __COMPILES__ { REC f = { x : Bool => if x then () else f True end }; f }); // "Recursive bindings should use 'rec', not 'let':"
-
-  expect_i1 False;
-  print_i1 (prim __COMPILES__ { REC f = { f }; f }); // "Occurs check for (~!86:letrec_f) failed in (() => (~!86:letrec_f) @{FT_Func})"
 
   expect_i1 False;
   print_i1 (prim __COMPILES__ case True ^ of _ -> () end); // "Unable to check Bool constant in context expecting non-Bool type (Ref (~!97:ref_type))"
