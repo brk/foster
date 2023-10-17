@@ -439,22 +439,8 @@ void optimizeModuleAndRunPasses(Module* mod) {
   }
 
   if (!optOptimizeZero) {
-    if (!optNoCoalesceLoads) {
-      // Standard optimizations can destroy opportunities for bitcast loads;
-      // in particular, they can detect "redundant" loads and eliminate them
-      // (thereby turning 4 coalescable loads into 3 non-coalescable loads).
-      // The GVN pass is to eliminate silly renamings.
-      fpasses.add(createGVNPass(true));
-      fpasses.add(foster::createBitcastLoadRecognizerPass());
-    }
-
     AddOptimizationPasses(passes, fpasses, 2, /*DisableInline*/ optNoInline);
     AddStandardLinkPasses(passes);
-
-    // Finish up by coalescing any load patterns introduced by optimization.
-    if (!optNoCoalesceLoads) {
-      fpasses.add(foster::createBitcastLoadRecognizerPass());
-    }
   }
 
   /*

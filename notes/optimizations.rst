@@ -155,6 +155,21 @@ rather than::
 Status: not yet implemented. I am curious about
 how often such an optimization would actually apply.
 
+Load merging
+~~~~~~~~~~~~
+
+Foster used to implement a custom LLVM optimization to detect and merge
+piecewise loads + shifts + ors, based on http://blog.regehr.org/archives/959
+
+LLVM later implemented a more complete/exhaustive version of this optimization,
+so ours was removed.
+
+At the time I observed that standard compiler optimizations could interfere
+with my implementation by detecting "redundant" loads and eliminating them,
+thereby turning 4 coalescable loads into 3 non-coalescable loads.
+I don't know offhand if LLVM's implementation suffers from the same interference.
+
+
 Pipe Operator
 ~~~~~~~~~~~~~
 
