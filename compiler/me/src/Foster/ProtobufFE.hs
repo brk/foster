@@ -245,13 +245,13 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
       (E_VarAST _ v : args) | evarName v == T.pack "|>" ->
         case args of
           -- foo froz |> bar baz ~~~> bar baz (foo froz)
-          [eexpr, E_CallAST _rng subbase subargs ca] | not (Prelude.null subargs)
-                        -> E_CallAST annot subbase (subargs ++ [eexpr]) ca
+          [eexpr, E_CallAST _rng subbase subargs ca cf] | not (Prelude.null subargs)
+                        -> E_CallAST annot subbase (subargs ++ [eexpr]) ca (CallPipe cf)
           -- foo |> bar !   ~~~> (bar !) foo
           -- foo |> bar     ~~~> (bar  ) foo
-          [eexpr, rest] -> E_CallAST annot rest [eexpr] caDefault
+          [eexpr, rest] -> E_CallAST annot rest [eexpr] caDefault (CallPipe CallJuxtaposition)
           _ -> error $ "cb_parse_call given unexpected args input: " ++ show args
-      (base : args) -> E_CallAST annot base args caDefault
+      (base : args) -> E_CallAST annot base args caDefault CallJuxtaposition
       _ -> error "cb_parse_call with no callee??"
 
   cb_parse_lvalue cbor = case cbor of
@@ -292,7 +292,7 @@ cb_parseSourceModuleWithLines lines sourceFile cbor = case cbor of
    case cbor of
     TList [tok, _,_cbr, TList []]  | tok `tm` tok_DEREF        -> E_DerefAST annot expr
     TList [tok, _,_cbr, TList [e]] | tok `tm` tok_SUBSCRIPT    -> parseCallPrim' (T.pack "subscript") [] [expr, cb_parse_e e] annot
-    TList [tok, _,_cbr, TList []]  | tok `tm` tok_VAL_APP      -> E_CallAST annot expr [] CA_None
+    TList [tok, _,_cbr, TList []]  | tok `tm` tok_VAL_APP      -> E_CallAST annot expr [] CA_None CallJuxtaposition
     TList [tok, _,_cbr, TList tys] | tok `tm` tok_VAL_TYPE_APP -> E_TyApp annot expr (map cb_parse_t tys)
     TList [tok, _,_cbr, TList [x]] | tok `tm` tok_FIELDLOOKUP  ->
         E_CallPrimAST annot "record-lookup" [LitText $ cb_parse_id_text x] [] [expr]
@@ -891,7 +891,7 @@ attachFormatting expr = do
    E_TupleAST     _ k  exprs -> liftM3' E_TupleAST    ana (return k) (mapM q exprs)
    E_LetRec       _ bnz e    -> liftM3' E_LetRec      ana (mapM convertTermBinding bnz) (q e)
    E_LetAST       _ bnd e    -> liftM3' E_LetAST      ana (convertTermBinding bnd) (q e)
-   E_CallAST      _ b  es ca -> liftM4' E_CallAST     ana (q b) (mapM q es) (return ca)
+   E_CallAST      _ b  es ca cf -> liftM5' E_CallAST     ana (q b) (mapM q es) (return ca) (return cf)
    E_CallPrimAST  _ nm l t e -> liftM5' E_CallPrimAST ana (return nm) (return l) (return t) (mapM q e)
    E_FnAST        _ fn       -> liftM2' E_FnAST       ana (attachFormattingFn fn)
    E_ArrayRead    _ (ArrayIndex a b rng2 s) -> do x <- q a

@@ -18,7 +18,7 @@ import Prettyprinter.Render.Terminal
 
 import qualified Data.Text as T
 import Data.Char(isAlpha, isPrint, ord, chr, isAscii)
-import Data.List(isPrefixOf)
+import Data.List(isPrefixOf, uncons)
 import Numeric(showHex)
 import Data.Word(Word8)
 import qualified Data.ByteString as BS(unpack)
@@ -177,6 +177,19 @@ prettyCallExprs es = hang 4 $ sep (map (group.prettyAtom) es)
 prettyCallPrim nm []   tys exprs = text "prim" <+> text nm                  <+> prettyCallExprs exprs
 prettyCallPrim nm lits tys exprs = text "prim" <+> text nm <+> prettyT lits <+> prettyCallExprs exprs
 
+unsnoc xs = case uncons (reverse xs) of
+              Nothing -> Nothing
+              Just (hd, tl) -> Just (reverse tl, hd)
+
+prettyCallFlavor e es cf =
+  case cf of
+    CallJuxtaposition -> prettyAtom e <+> prettyCallExprs es
+    CallPipe flavor ->
+      case unsnoc es of
+          Nothing -> prettyAtom e <+> prettyCallExprs es
+          Just (args, tail) ->
+            prettyAtom tail <+> text "|>" <+> prettyCallFlavor e args flavor
+
 prettyStmt :: (PrettyT ty, IsQuietPlaceholder ty) => ExprAST ty -> Doc AnsiStyle
 prettyStmt e = case e of
     E_MachArrayLit annot _mbt args -> withAnnot annot $ parens' $ text "prim mach-array-literal" <+> hsep (map prettyT args)
@@ -190,11 +203,11 @@ prettyStmt e = case e of
     
     E_CallPrimAST annot nm lits tys exprs -> withAnnot annot $ prettyCallPrim nm lits tys exprs
 
-    E_CallAST annot e [e1,e2] _ | isOperator e
+    E_CallAST annot e [e1,e2] _ _ | isOperator e
                             -> withAnnot annot $ hang 4 $ group $
                                                  prettyAtom e1 <$> prettyT e <+> group (prettyAtom e2)
-    E_CallAST annot e es _TODOcallAnnot
-                            -> withAnnot annot $ prettyAtom e <+> prettyCallExprs es
+    E_CallAST annot e es _TODOcallAnnot flavor
+                            -> withAnnot annot $ prettyCallFlavor e es flavor
     E_LetAST  annot (TermBinding evar bound) expr ->
                                withAnnot annot $
                               {- lkwd "let"

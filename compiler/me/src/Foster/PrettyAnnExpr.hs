@@ -222,10 +222,10 @@ instance PrettyT (AnnExpr TypeTC) where
             E_StringAST   annot s   -> withAnnot annot $ dquotes (text $ T.unpack s)
             E_BoolAST     annot b   -> withAnnot annot $ text $ show b
             E_PrimAST     annot nm  -> withAnnot annot $ text nm
-            E_CallAST annot e []    -> withAnnot annot $ pretty e <+> text "!"
-            E_CallAST annot e [e1,e2] | isOperator e
-                                    -> withAnnot annot $ pretty e1 <+> pretty e <+> pretty e2
-            E_CallAST annot e es    -> withAnnot annot $ pretty e <+> hsep (map prettyAtom es)
+            E_CallAST annot e []      _ -> withAnnot annot $ pretty e <+> text "!"
+            E_CallAST annot e [e1,e2] _ | isOperator e
+                                        -> withAnnot annot $ pretty e1 <+> pretty e <+> pretty e2
+            E_CallAST annot e es      _ -> withAnnot annot $ pretty e <+> hsep (map prettyAtom es)
             E_LetAST  annot (TermBinding evar bound) expr ->
                                        withAnnot annot $
                                       lkwd "let"

@@ -169,7 +169,7 @@ inferSigmaHelper ctx (E_TyCheck annot e ta) _msg = do
 inferSigmaHelper ctx (E_VarAST rng v) _msg = tcSigmaVar ctx rng (evarName v)
 inferSigmaHelper ctx (E_FnAST _rng f)  msg = do r <- newTcRef (error $ "inferSigmaFn: empty result: " ++ msg)
                                                 tcSigmaFn  ctx f (Infer r)
-inferSigmaHelper ctx (E_CallAST   rng base argtup ca) msg = do
+inferSigmaHelper ctx (E_CallAST   rng base argtup ca _callflavor) msg = do
                 r <- newTcRef (error $ "inferSigmaFn: empty result: " ++ msg)
                 tcSigmaCall     ctx rng   base argtup ca (Infer r)
 inferSigmaHelper ctx e msg = do
@@ -364,7 +364,7 @@ tcRho ctx expr expTy = do
       E_BoolAST   rng b              -> tcRhoBool         rng   b          expTy
       E_StringAST rng txtorbytes     -> tcRhoTextOrBytes  rng   txtorbytes expTy
       E_MachArrayLit rng mbt args    -> tcRhoArrayLit ctx rng   mbt args   expTy
-      E_CallAST   rng base argtup ca -> tcRhoCall     ctx rng   base argtup ca expTy
+      E_CallAST   rng base argtup ca _ -> tcRhoCall     ctx rng   base argtup ca expTy
       E_RecordAST rng labels exprs   -> tcRhoRecord   ctx rng   labels exprs expTy
       E_TupleAST  rng boxy exprs     -> tcRhoTuple    ctx rng   boxy exprs  expTy
       E_IfAST   rng a b c            -> tcRhoIf       ctx rng   a b c      expTy

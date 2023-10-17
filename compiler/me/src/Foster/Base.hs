@@ -63,6 +63,9 @@ data CallConv = CCC | FastCC deriving (Eq, Show, Ord)
 --type LogInt = Int
 data IntSizeBits = I1 | I8 | I16 | I32 | I64 | IWd | IDw -- Word/double-word
                  deriving (Eq, Show, Ord)
+data CallFlavor = CallJuxtaposition
+                | CallPipe CallFlavor
+                deriving (Show, Eq)
 data CallAnnot = CA_None
                | CA_DoInline
                | CA_NoInline deriving (Eq, Show, Ord)

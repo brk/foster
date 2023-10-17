@@ -14,7 +14,7 @@ module Foster.ExprAST(
 where
 
 import Foster.Base(Structured(..), Summarizable(..), Literal, TypeFormal,
-                   ToplevelItem(..), ModuleAST(..), CallAnnot,
+                   ToplevelItem(..), ModuleAST(..), CallAnnot, CallFlavor,
                    TypedId(..), ArrayIndex(..),
                    AllocMemRegion, childrenOfArrayIndex, ArrayEntry(..),
                    CaseArm(..), caseArmExprs, EPattern(..), E_VarAST(..),
@@ -58,7 +58,7 @@ data ExprSkel annot ty =
         -- Use of bindings
         | E_VarAST        annot (E_VarAST ty)
         | E_CallPrimAST   annot T.Text [Literal] [ty] [ExprSkel annot ty]
-        | E_CallAST       annot (ExprSkel annot ty) [ExprSkel annot ty] CallAnnot
+        | E_CallAST       annot (ExprSkel annot ty) [ExprSkel annot ty] CallAnnot CallFlavor
         -- Mutable ref cells
         | E_AllocAST      annot (ExprSkel annot ty) AllocMemRegion
         | E_DerefAST      annot (ExprSkel annot ty)
@@ -118,7 +118,7 @@ instance Summarizable (ExprAST t) where
             E_BoolAST   _rng  b    -> string $ "BoolAST      " ++ (show b)                       ++ (exprCmnts e)
             E_IntAST    _rng txt   -> string $ "IntAST       " ++ T.unpack txt                            ++ (exprCmnts e)
             E_RatAST    _rng txt   -> string $ "RatAST       " ++ T.unpack txt                            ++ (exprCmnts e)
-            E_CallAST _rng b _ _   -> string $ "CallAST      " ++ tryGetCallNameE b              ++ (exprCmnts e)
+            E_CallAST _rng b _ _ _ -> string $ "CallAST      " ++ tryGetCallNameE b              ++ (exprCmnts e)
             E_CallPrimAST _rng nm _ _ _
                                    -> string $ "CallPrimAST  " ++ T.unpack nm                             ++ (exprCmnts e)
             E_CompilesAST {}       -> string $ "CompilesAST  "                                   ++ (exprCmnts e)
@@ -155,7 +155,7 @@ instance Structured (ExprAST t) where
             E_MachArrayLit _rng _ty entries -> [e | AE_Expr e <- entries]
             E_CompilesAST _rng Nothing   -> []
             E_CompilesAST _rng (Just e)  -> [e]
-            E_CallAST     _rng b exprs _ -> b:exprs
+            E_CallAST     _rng b exprs _ _ -> b:exprs
             E_CallPrimAST  rng _nm _ls _ts exprs -> exprs
             E_IfAST       _rng    a b c  -> [a, b, c]
             E_FnAST       _rng f         -> [fnAstBody f]
@@ -192,7 +192,7 @@ exprAnnot e = case e of
       E_LetAST        annot _ _   -> annot
       E_LetRec        annot _ _   -> annot
       E_CallPrimAST   ann _ _ _ _ -> ann
-      E_CallAST       annot _ _ _ -> annot
+      E_CallAST       annot _ _ _ _ -> annot
       E_CompilesAST   annot _     -> annot
       E_KillProcess   annot _     -> annot
       E_IfAST         annot _ _ _ -> annot

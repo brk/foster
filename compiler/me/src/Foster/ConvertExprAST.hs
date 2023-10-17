@@ -6,7 +6,7 @@ import Foster.Context
 
 import qualified Data.Sequence as Seq(empty)
 
-import Control.Monad.State(liftM, liftM2, liftM3)
+import Control.Monad.State(liftM, liftM2, liftM3, liftM4)
 
 convertModule :: (Show a, Show b) =>
                  (a -> Tc b) -> ModuleExpr a -> Tc (ModuleExpr b)
@@ -109,8 +109,8 @@ convertExprAST f expr =
     E_Case         rng e arms   -> liftM2 (E_Case         rng) (q e) (mapM qa arms)
     E_LetRec       rng bnz e    -> liftM2 (E_LetRec       rng) (mapM (convertTermBinding f) bnz) (q e)
     E_LetAST       rng bnd e    -> liftM2 (E_LetAST       rng) (convertTermBinding f bnd) (q e)
-    E_CallAST      rng b exprs callAnnot
-                                -> liftM3 (E_CallAST      rng) (q b) (mapM q exprs) (return callAnnot)
+    E_CallAST      rng b exprs callAnnot flavor
+                                -> liftM4 (E_CallAST      rng) (q b) (mapM q exprs) (return callAnnot) (return flavor)
     E_CallPrimAST  rng nm ls ts exprs
                                 -> liftM2 (E_CallPrimAST  rng nm ls) (mapM f ts) (mapM q exprs)
     E_FnAST        rng fn       -> liftM  (E_FnAST        rng) (convertFun f fn)
