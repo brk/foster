@@ -205,7 +205,7 @@ seqContainsAny = { seq => pred =>
 // TODO rewrite to reduce time and space usage, using seqFind.
 seqContainsAll :: forall (a:Type) { Seq a => { a => Bool } => Bool };
 seqContainsAll = { seq => pred =>
-  seqCountWhere seq pred ==UInt32 seqLength32 seq
+  seqCountWhere seq pred ==Int32 seqLength32 seq
   //seqWhere seq pred |> seqIsEmpty |> not
 };
 
