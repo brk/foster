@@ -158,8 +158,8 @@ effectExtend eff row = TyAppAST (TyConAST "effect.Extend") [eff, row]
 effectsExtends :: [Effect] -> Effect -> Effect
 effectsExtends effs eff = foldr effectExtend eff effs
 
-effectsClosed :: [Effect] -> Effect
-effectsClosed effs = effectsExtends effs nullFx
+_effectsClosed :: [Effect] -> Effect
+_effectsClosed effs = effectsExtends effs nullFx
 --------------------------------------------------------------------------------
 
 i8  = PrimIntAST I8

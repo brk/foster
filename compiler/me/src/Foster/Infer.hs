@@ -325,7 +325,7 @@ unifyLabels ls1 ls2 constraints =
                    unifyLabels ll1 ll2 (TypeConstrEq l1 l2 : constraints)
 
 isEffectExtend nm = nm == "effect.Extend"
-isEffect nm = nm == "effect.Empty" || isEffectExtend nm
+_isEffect nm = nm == "effect.Empty" || isEffectExtend nm
 
 isEffectEmpty (TyAppTC (TyConTC nm) _) = nm == "effect.Empty"
 isEffectEmpty _ = False
@@ -407,7 +407,7 @@ updateLevel level typ = do
     RefTypeTC     ty        -> go ty
     ArrayTypeTC   ty        -> go ty
     RefinedTypeTC v _ _     -> go (tidType v)
-    FnTypeTC  ss r fx _ _ levels -> do
+    FnTypeTC  _ss _r _fx _ _ levels -> do
       (lold, lnew) <- tcReadLevels levels
       case () of
         _ | lnew == genericLevel -> tcFails [text "Escaped generic level..."]

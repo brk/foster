@@ -881,7 +881,6 @@ attachFormatting expr = do
    E_KillProcess  _ e        -> liftM2' E_KillProcess ana (q e)
    E_CompilesAST  _ me       -> liftM2' E_CompilesAST ana (liftMaybeM q me)
    E_IfAST        _ a b c    -> liftM4' E_IfAST       ana (q a) (q b) (q c)
-   E_SeqAST {}               -> undefined
    E_AllocAST     _ a rgn    -> liftM3' E_AllocAST    ana (q a) (return rgn)
    E_DerefAST     _ a        -> liftM2' E_DerefAST    ana (q a)
    E_StoreAST     _ a b      -> liftM3' E_StoreAST    ana (q a) (q b)

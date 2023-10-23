@@ -174,8 +174,8 @@ parens' d = {-nest 1-} (parens d)
 prettyCallExprs [] = text "!"
 prettyCallExprs es = hang 4 $ sep (map (group.prettyAtom) es)
 
-prettyCallPrim nm []   tys exprs = text "prim" <+> text nm                  <+> prettyCallExprs exprs
-prettyCallPrim nm lits tys exprs = text "prim" <+> text nm <+> prettyT lits <+> prettyCallExprs exprs
+prettyCallPrim nm []   _tys exprs = text "prim" <+> text nm                  <+> prettyCallExprs exprs
+prettyCallPrim nm lits _tys exprs = text "prim" <+> text nm <+> prettyT lits <+> prettyCallExprs exprs
 
 unsnoc xs = case uncons (reverse xs) of
               Nothing -> Nothing

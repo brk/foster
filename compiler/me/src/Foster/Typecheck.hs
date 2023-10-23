@@ -803,7 +803,7 @@ tcRhoRecordLookup ctx rng expr fieldName expTy = do
    case (tV, expTy) of
       (MetaTyVarTC {}, Check tX) -> do
             -- Apply constraint that e has a record type mapping fieldName to tX.
-            tcFailsMore [string $ "Record indexing cannot yet apply constraint to meta type variable " ++ show tV
+            _ <- tcFailsMore [string $ "Record indexing cannot yet apply constraint to meta type variable " ++ show tV
                         , showStructure tV]
             -- No need to matchExp because we're just passing through the context-provided type.
             return (mkRecordLookup tX)
@@ -811,7 +811,7 @@ tcRhoRecordLookup ctx rng expr fieldName expTy = do
       (MetaTyVarTC {}, Infer _) -> do
             tX <- newTcUnificationVarTau $ "record_index"
             -- Apply constraint that e has a record type mapping fieldName to tX.
-            tcFailsMore [string $ "Record indexing cannot yet apply constraint to meta type variable " ++ show tV
+            _ <- tcFailsMore [string $ "Record indexing cannot yet apply constraint to meta type variable " ++ show tV
                         , showStructure tV]
             matchExp expTy (mkRecordLookup tX) (highlightFirstLineStr (rangeOf rng))
 
@@ -2326,7 +2326,7 @@ tcReplaceQuantifiedVars prvNextPairs ty =
         TupleTypeTC k  types -> liftM (TupleTypeTC k) (mapM q types)
         RefTypeTC    t       -> liftM RefTypeTC    (q t)
         ArrayTypeTC  t       -> liftM ArrayTypeTC  (q t)
-        FnTypeTC  ss t fx cc cs levels -> do
+        FnTypeTC  ss t fx cc cs _levels -> do
                 ss' <- mapM q ss
                 t' <- q t
                 fx' <- q fx

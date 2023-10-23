@@ -99,10 +99,6 @@ termBindingName (TermBinding v _) = evarName v
 
 -- ||||||||||||||||||||||||| Instances ||||||||||||||||||||||||||{{{
 
--- For (temporary) compatibility with ansi-wl-pprint
-text :: T.Text -> Doc a
-text s = pretty s
-
 string :: String -> Doc a
 string s = pretty s
 
@@ -156,7 +152,7 @@ instance Structured (ExprAST t) where
             E_CompilesAST _rng Nothing   -> []
             E_CompilesAST _rng (Just e)  -> [e]
             E_CallAST     _rng b exprs _ _ -> b:exprs
-            E_CallPrimAST  rng _nm _ls _ts exprs -> exprs
+            E_CallPrimAST  _rng _nm _ls _ts exprs -> exprs
             E_IfAST       _rng    a b c  -> [a, b, c]
             E_FnAST       _rng f         -> [fnAstBody f]
             E_SeqAST      _rng  _a _b    -> unbuildSeqs e
