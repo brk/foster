@@ -1,0 +1,94 @@
+snafuinclude Text "text";
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
+effect YldA (a:Type)
+  of $YldA a => (Int32, Int32)
+  ;
+
+// do_YldA :: forall (a:Type) { a => (Int32, Int32) };
+
+effect YldB (a:Type)
+  of $YldB a => (Int32, Int32)
+  ;
+
+
+//fst = { p => case p of (a, b) -> a end };
+
+main = {
+  hr = noinline_llvm_handling !;
+
+  expect_i32 88;
+  print_i32 88;
+
+  expect_text "44";
+  print_text hr;
+  ()
+};
+
+
+yieldingAB :: { Int8 => Text @(YldA Int32, YldB Int32) };
+yieldingAB = { inp : Int8 =>
+  print_text "first yield about to happen";
+  print_i8 inp;
+  x01 = do_YldA 0x12;
+
+  expect_text "resumed after first yield; second yield about to happen";
+  print_text "resumed after first yield; second yield about to happen";
+
+  x23 = do_YldB 0x34;
+  // If we had ``do_Ylded 3.2`` would we get @(Yld Text, Yld Float64)
+  // or would we get a type conflict between Text and Float64?
+  
+  "44"
+};
+
+sequ :: forall (e:Effect) { { () @e } => { () @e } => () @e };
+sequ = { a => b => a ! ; b ! };
+
+
+
+
+//noinline_llvm_handling :: { () @() };    // correctly induces an effect type violation.
+//noinline_llvm_handling :: { () };        // defaults to flexible effect inference when no explicit annotation.
+//noinline_llvm_handling :: forall (e:Effect) { () @(YldA Int32,YldB Int32,e) };        // fails because e is not a constant effect label
+//noinline_llvm_handling :: forall (e:Effect) { () @(YldA Int32,YldB Int32|e) };        // fails with (spurious?) error: 'e must be effect.Empty
+                              // I think the error is spurious due to unification/subsumption confusion.
+
+
+noinline_llvm_handling = {
+  /*
+      txt = handle   (yieldingAB 99)
+        of $YldA x -> print_text_bare "yldA: "; print_i32x x; "ylded"
+        as { fin => print_text_bare "fin: "; print_text fin; fin } // not triggered because we don't resume
+      end;
+
+      txt
+      */
+
+
+  withAHandled = {
+      handle   (yieldingAB 99)
+        of $YldA x -> 
+            expect_text_bare "yldA: "; expect_i32 x;
+            print_text_bare "yldA: "; print_i32 x; resume (12,34)  //"43"
+        //as { final => print_text_bare "final: "; print_text final; final }
+      end
+  };
+
+
+  expect_text "first yield about to happen";
+  expect_i8 99;
+
+  resB = handle (withAHandled !)
+           of $YldB x -> 
+              expect_text "yldB: 52";
+              print_text_bare "yldB: "; print_i32 x; resume (45, 67)
+           as { retn =>
+              expect_text "retnB: 44";
+              print_text_bare "retnB: "; print_text retn; retn }
+         end;
+  
+  expect_text "done handling";
+  print_text "done handling";
+  resB
+};
