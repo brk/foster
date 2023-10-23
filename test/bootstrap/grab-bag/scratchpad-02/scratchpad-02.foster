@@ -1,0 +1,150 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
+//snafuinclude Fixnums "prelude-fixnums";
+
+// Computes x * (2^i).
+// Corresponds to the C math function `ldexp` (and, on most systems, `scalbn`).
+noinline_llvm_pow2-Float64 :: { Float64 => Int32 => Float64 };
+noinline_llvm_pow2-Float64 = { x => i =>
+  // This implementation ported from musl: https://git.musl-libc.org/cgit/musl/tree/src/math/scalbn.c
+
+  times2tothe = { x : Float64 => n : Int32 =>
+    pow2 = (1023 +Int64 zext_i32_to_i64 n) `bitshl-Int64` 52
+            |> i64-as-f64;
+    pow2 *f64 x
+  };
+
+  REC adjust-expt-down = { y : Float64 => n : Int32 => fin : Bool =>
+    ny = y *f64 0x1.0p1023;
+    nn = n -Int32     1023;
+
+    case (fin, nn >SInt32 1023)
+      of (_   , False) -> ny `times2tothe` nn
+      of (True,  True) -> ny `times2tothe` 1023
+      of (False, True) -> adjust-expt-down ny nn True
+    end
+  };
+
+  REC adjust-expt-up = { y : Float64 => n : Int32 => fin : Bool =>
+    // 1022 - 53 = 969
+    ny = y *f64 0x1.0p-969;
+    nn = n +Int32      969;
+
+    case (fin, nn <SInt32 -1022)
+      of (_   , False) -> ny `times2tothe` nn
+      of (True,  True) -> ny `times2tothe` -1022
+      of (False, True) -> adjust-expt-up ny nn True
+    end
+  };
+
+  case ()
+    of _ if i >SInt32 1023  -> adjust-expt-down x i False
+    of _ if i <SInt32 -1022 -> adjust-expt-up   x i False // #(inlined)
+    of _ -> x `times2tothe` i
+  end
+};
+
+/*
+Compilation of guarded pattern matching turns 
+      u = ()
+      case u
+        of _ if i >SInt32 1023  -> adjust-expt-down x i False
+        of _ -> x `times2tothe` i
+      end
+
+into
+
+      u = ();
+      k1585 = {
+        k1586 = { rv = kill process "guarded pattern match failed";
+                  [cont fretC] rv };
+        case u
+          of _ -> [cont fretB] times2tothe x i
+          of _ -> [cont fretB] k1586 !
+      }
+      case u
+        of _ ->
+          if i >SInt32 1023
+            then
+               [cont fretA] adjust-expt-down x i False
+            else
+               [cont fretA] k1585 !
+            end
+      end
+
+
+      Note that if we try to contify times2tothe before k1586,
+      it will appear as though times2tothe cannot be contified
+      because it can return multiple places (k1585 or the body of adjust-expt-down).
+*/
+
+main = {
+  //modf-Float64 1e-323;
+
+  x = noinline_llvm_pow2-Float64 2.0 3;
+  y = noinline_llvm_pow2-Float64 4.0 1025;
+  if x ==f64 y
+   then prim kill-entire-process "oops"
+  end;
+  ()
+  //modf-Float64 4`503`599`627`370`495.4;
+
+  /*
+  noinline_llvm_captureconst !;
+  noinline_llvm_constprop !;
+  noinline_llvm_hof-until-case {0 ==Int32 opaquely_i32 0} { print_i32 0; };
+  noinline_llvm_hof-until-case {0 ==Int32 opaquely_i32 0} { print_i32 1; };
+*/
+
+/*
+  print_i32 0xabc;
+  print_i32x ((0x7c as Int8) |> zext_i8_to_i32);
+  print_i32x ((0x7c as Int8) |> sext_i8_to_i32);
+  print_i32x ((0x81 as Int8) |> zext_i8_to_i32);
+  print_i32x ((0x81 as Int8) |> sext_i8_to_i32);
+  print_i8b 0x81;
+  print_i64bb 0x81 8;
+  */
+};
+
+
+
+/*
+
+
+noinline_llvm_captureconst = {
+  n = 42;
+  foo = { print_i32 n; };
+
+  expect_i32 n;
+  expect_i32 n;
+  expect_i32 n;
+
+  foo !;
+  foo !;
+  foo !;
+};
+
+noinline_llvm_constprop = {
+  n = 42;
+  foo = { n = 42; print_i32 n; };
+
+  expect_i32 n;
+  expect_i32 n;
+  expect_i32 n;
+
+  foo !;
+  foo !;
+  foo !;
+};
+
+noinline_llvm_hof-until-case = { c : {Bool} => b : { () } =>
+  case c !
+    of True  -> 0
+    of False -> b !; noinline_llvm_hof-until-case c b
+  end
+};
+
+*/
+
+

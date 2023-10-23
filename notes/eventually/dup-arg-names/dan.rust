@@ -1,0 +1,5 @@
+fn foo(x : i32, x : i32) -> i32 {
+  return x + x;
+}
+
+fn main() { foo(1, 2); }

@@ -1,0 +1,83 @@
+snafuinclude PreludePrintExpect "prelude/print-expect";
+
+snafuinclude Prelude "prelude";
+main = {
+  a = allocDArray:[Int32] 8;
+  arrayEnumFrom a 0 { v => i => expect_i64 i; print_i64 i };
+};
+
+digitNumBits :: { Int32 };
+digitNumBits = { wordNumBits32 !  -Int32 4 };
+
+digitNumBitsWord :: { Word };
+digitNumBitsWord = { zext_i32_to_Word (digitNumBits !) };
+
+digitNumBitsMask :: { Word };
+digitNumBitsMask = {
+  (bitshl-Word 1 (zext_i32_to_Word (digitNumBits !))
+         -Word 1)
+};
+addCarryOfWord :: { Word => Word };
+addCarryOfWord = { n =>
+  bitlshr-Word n (sext_i32_to_Word (digitNumBits !));
+  // shift right (>>) by 60 for word size of i64
+};
+
+// Postcondition: returned array is normalized.
+//
+foster_nat_add_digits :: { Array Word => Array Word => Array Word };
+foster_nat_add_digits = { a => b =>
+  case
+    if (arrayLength32 a) <SInt32 (arrayLength32 b)
+      then (a, b)
+      else (b, a)
+    end
+  of (sm, lg) ->
+
+    c = allocDArray:[Word] (arrayLength32 lg +Int32 1);
+    u = foldRange 0 (arrayLength32 sm) 0 { i => u =>
+        ci = (a.[i] +Word b.[i] +Word u);
+        unext = addCarryOfWord ci;
+        (bitand-Word ci (digitNumBitsMask !)) >^ c.[i];
+        unext
+      };
+    p = if arrayLength32 sm <SInt32 arrayLength32 lg
+          then
+            foldRange (arrayLength32 sm) (arrayLength32 lg) u { i => u =>
+              (lg.[i] +Word u) >^ c.[i];
+              unext = addCarryOfWord c.[i];
+              (bitand-Word c.[i] (digitNumBitsMask !)) >^ c.[i];
+              unext
+            }
+          else
+            u
+        end;
+
+    p >^ c.[arrayLength32 lg];
+
+    // The C version clears digits from used to olduse,
+    // but we don't need to because we allocate from scratch.
+
+    trimLeadingZeroWords c
+  end
+};
+
+trimLeadingZeroWords :: { Array Word => Array Word };
+trimLeadingZeroWords = { a =>
+  REC findFirstNonZero = { n : Int32 =>
+     if n ==Int32 0 // or a.[n] !=Int64 0
+       then n
+       else if a.[n] !=Word 0
+              then n
+              else findFirstNonZero (n -Int32 1)
+            end
+     end
+  };
+  start = arrayLength32 a -Int32 1;
+  n     = findFirstNonZero start;
+
+  if n ==Int32 start
+    then a
+    else copyOfArrayTo a (n +Int32 1)
+  end
+};
