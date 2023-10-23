@@ -1,0 +1,18 @@
+main = {
+  fryer
+	|> start
+	|> next { glazer |> start }
+	|> next { Future_wait ( belts_start ()
+                              , sprinkleSprinkler_start ()
+                              , sauceDripper_start ()) } 
+        |> catchError cannotGetConveyorBeltRunning
+	|> next { tellEveryoneDonutsAreJustAboutDone } 
+	|> next { Future_wait (croissantFactory_start ()
+                              , giantBakingOvents_start ()
+                              , butterbutterer_start ())
+			|> catchError handleBakingFailures
+			|> timeout scriptLoadingTimeout handleBakingFailures
+			|> catchError cannotGetConveyorBeltRunning } 
+        |> catchError cannotGetConveyorBeltRunning
+        |> next { logger_info "let's eat!" }
+};
