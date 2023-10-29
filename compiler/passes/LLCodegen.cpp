@@ -14,10 +14,12 @@
 #include "passes/CodegenPass-impl.h"
 
 #include "llvm/IR/Attributes.h"
+#include "llvm/IR/AttributeMask.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/InlineAsm.h"
+#include "llvm/IR/DataLayout.h"
 
 #include "llvm/IR/Metadata.h"
 #include "llvm/ADT/Statistic.h"
@@ -46,8 +48,8 @@ STATISTIC(MEMCPY_FROM_GLOBAL_TO_HEAP, "[foster] statically emitted memcpy operat
 
 namespace foster {
 
-void codegenLL(LLModule* prog, llvm::Module* mod, CodegenPassConfig config) {
-  CodegenPass cp(mod, config);
+void codegenLL(LLModule* prog, llvm::Module* mod, /*llvm::DataLayout dl,*/ CodegenPassConfig config) {
+  CodegenPass cp(mod, /*dl,*/ config);
   prog->codegenModule(&cp);
   cp.emitTypeMapListGlobal();
 }
@@ -61,7 +63,7 @@ char kFosterMain[] = "foster__main";
 int  kUnknownBitsize = 999; // keep in sync with IntSizeBits in Base.hs
 
 // {{{ Internal helper functions
-bool tryBindArray(CodegenPass* pass, Value* base, Value*& arr, Value*& len);
+bool tryBindArray(CodegenPass* pass, llvm::Type* sty, Value* base, Value*& arr, Value*& len);
 
 namespace {
 
@@ -73,6 +75,7 @@ llvm::Type* getLLVMType(TypeAST* type) {
 llvm::Type* slotType(llvm::Type* t) { return t->getContainedType(0); }
 llvm::Type* slotType(llvm::Value* v) { return slotType(v->getType()); }
 
+#if 0
 bool isLargishStructPointerTy(llvm::Type* ty) {
   if (llvm::PointerType* pt = llvm::dyn_cast<llvm::PointerType>(ty)) {
     if (llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(pt->getElementType())) {
@@ -86,7 +89,9 @@ bool isPointerToUnknown(Type* ty) {
   return ty->isPointerTy() &&
          slotType(ty)->isIntegerTy(kUnknownBitsize);
 }
+#endif
 
+#if 0
 bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
   //DDiag() << "matchesExceptForUnknownPointers ? " << str(aty) << " =?= " << str(ety);
   if (aty == ety) return true;
@@ -110,15 +115,18 @@ bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
   }
   return true;
 }
+#endif
 
 llvm::Value* emitBitcast(llvm::Value* v, llvm::Type* dstTy, llvm::StringRef msg = "") {
   llvm::Type* srcTy = v->getType();
   if (srcTy->isVoidTy()) {
     return getNullOrZero(dstTy);
   }
+  /*
   if (isFunctionPointerTy(srcTy) && isLargishStructPointerTy(dstTy)) {
     ASSERT(false) << "cannot cast " << str(srcTy) << " to " << str(dstTy) << "\n" << str(v);
   }
+  */
   if (dstTy->isPointerTy() != srcTy->isPointerTy()) {
     llvm::errs() << builder.GetInsertBlock()->getParent() << "\n";
     ASSERT(false) << "cannot cast " << str(srcTy) << " to " << str(dstTy) << "\ndue to pointer-type mismatch\n" << str(v);
@@ -146,8 +154,8 @@ llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot
 // TODO (eventually) try emitting masks of loaded/stored heap pointers
 // to measure performance overhead of high/low tags.
 
-inline llvm::Value* emitNonVolatileLoad(llvm::Value* v, llvm::Twine name) {
-  return builder.CreateLoad(v, false, name);
+inline llvm::Value* emitNonVolatileLoad(llvm::Type* ty, llvm::Value* v, llvm::Twine name) {
+  return builder.CreateLoad(ty, v, false, name);
 }
 
 enum WriteSelector {
@@ -168,24 +176,14 @@ llvm::Value* emitGCWriteOrStore(CodegenPass* pass,
         && w != WriteKnownNonGC;
   //maybeEmitCallToLogPtrWrite(pass, ptr, val, useBarrier);
 
-  if (isPointerToType(ptr->getType(), val->getType())) {
-    if (useBarrier) {
-      return emitGCWrite(pass, val, base, ptr);
-    } else {
-      return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
-    }
+  if (useBarrier) {
+    return emitGCWrite(pass, val, base, ptr);
+  } else {
+    return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
   }
-
-  llvm::errs() << builder.GetInsertBlock()->getParent() << "\n";
-  ASSERT(false) << "in basic block " << builder.GetInsertBlock()->getName() << ":\n"
-          << "ELIDING STORE DUE TO MISMATCHED TYPES:\n"
-          << "    ptr type: " << str(ptr->getType()) << "\n"
-          << "    val type: " << str(val->getType()) << "\n"
-          << "    val is  : " << str(val) << "\n"
-          << "    ptr is  : " << str(ptr);
-  return NULL;
 }
 
+#if 0
 llvm::Type* // nullable
 needsBitcastToMediateUnknownPointerMismatch(llvm::Value* val, llvm::Value* ptr) {
   if (ptr->getType()->isPointerTy()
@@ -197,6 +195,7 @@ needsBitcastToMediateUnknownPointerMismatch(llvm::Value* val, llvm::Value* ptr) 
   }
   return nullptr;
 }
+#endif
 
 llvm::Value* emitStore(CodegenPass* pass,
                        llvm::Value* val,
@@ -207,9 +206,11 @@ llvm::Value* emitStore(CodegenPass* pass,
     val = getUnitValue();
   }
 
+#if 0
   if (auto eltTy = needsBitcastToMediateUnknownPointerMismatch(val, ptr)) {
     val = emitBitcast(val, eltTy, "specSgen");
   }
+#endif
 
   return emitGCWriteOrStore(pass, val, base, ptr, w);
 }
@@ -327,7 +328,7 @@ void assertValueHasSameTypeAsPhiNode(llvm::Value* v, LLBlock* block, int i) {
 
 // Implementation of CodegenPass helpers {{{
 
-Value* getElementFromComposite(CodegenPass* pass, Value* compositeValue,
+Value* getElementFromComposite(CodegenPass* pass, Type* compositePointeeTy, Value* compositeValue,
                                int indexValue, const std::string& msg, bool assumeImmutable=false) {
   ASSERT(indexValue >= 0);
   Value* idxValue = builder.getInt32(indexValue);
@@ -336,25 +337,33 @@ Value* getElementFromComposite(CodegenPass* pass, Value* compositeValue,
   // the appropriate struct field and emit a load.
   
   if (llvm::isa<llvm::PointerType>(compositeType)) {
-    Value* gep = getPointerToIndex(compositeValue, idxValue, (msg + ".subgep").c_str());
+    Value* gep = getPointerToIndex(compositePointeeTy, compositeValue, idxValue, (msg + ".subgep").c_str());
 
+#if 0
     if (assumeImmutable) {
       if (auto C = dyn_cast<llvm::ConstantExpr>(gep)) {
         if (auto GEP = llvm::cast<llvm::GetElementPtrInst>(C->getAsInstruction())) {
           if (auto GV = llvm::dyn_cast<llvm::GlobalVariable>(GEP->getPointerOperand())) {
+            /*
             auto V = llvm::ConstantFoldLoadThroughGEPConstantExpr(GV->getInitializer(), C);
             if (V) {
               GEP->deleteValue();
               return V;
             }
+            */
           }
           GEP->deleteValue();
         }
       }
     }
+    #endif
 
     //maybeEmitCallToLogPtrRead(pass, gep);
-    return emitNonVolatileLoad(gep, gep->getName() + "_ld");
+    std::string loadname;
+    if (gep->hasName()) { loadname = std::string(gep->getName()) + std::string("_ld"); }
+    else { loadname  = msg + ".subgep.ld"; }
+
+    return emitNonVolatileLoad(compositePointeeTy->getContainedType(indexValue), gep, loadname);
   } else if (llvm::isa<llvm::StructType>(compositeType)) {
     return builder.CreateExtractValue(compositeValue, indexValue, (msg + "subexv").c_str());
   } else if (llvm::isa<llvm::VectorType>(compositeType)) {
@@ -367,8 +376,8 @@ Value* getElementFromComposite(CodegenPass* pass, Value* compositeValue,
 }
 
 
-CodegenPass::CodegenPass(llvm::Module* m, CodegenPassConfig config)
-    : config(config), mod(m), currentProcName("<no proc yet>") {
+CodegenPass::CodegenPass(llvm::Module* m,/*llvm::DataLayout dl,*/ CodegenPassConfig config)
+    : config(config), mod(m), /*datalayout(dl),*/ currentProcName("<no proc yet>") {
   //dib = new DIBuilder(*mod);
 
   // N.B. we assume here that the input module m has already been linked
@@ -379,21 +388,28 @@ CodegenPass::CodegenPass(llvm::Module* m, CodegenPassConfig config)
   if (llvm::Function* f = mod->getFunction("memalloc_cell")) {
     // No attribute mangling for functions outside the runtime.
     llvm::AttributeList attrs = f->getAttributes();
-    auto FI = llvm::AttributeList::FunctionIndex;
 
-    llvm::AttrBuilder toremove;
+    llvm::AttributeMask toremove;
     toremove.addAttribute(
         llvm::Attribute::get(f->getContext(), "stack-protector-buffer-size", "8"));
     toremove.addAttribute(
         llvm::Attribute::get(f->getContext(), "frame-pointer", "none"));
-    attrs = attrs.removeAttributes(f->getContext(), FI, toremove);
+    toremove.addAttribute(
+        llvm::Attribute::get(f->getContext(), "norecurse"));
+    toremove.addAttribute(
+        llvm::Attribute::get(f->getContext(), "uwtable"));  
+    attrs = attrs.removeFnAttributes(f->getContext(), toremove);
 
-    llvm::AttrBuilder toadd;
+    llvm::AttrBuilder toadd(f->getContext());
     toadd.addAttribute(
         llvm::Attribute::get(f->getContext(), "foster-fn"));
     toadd.addAttribute(
         llvm::Attribute::get(f->getContext(), "frame-pointer", "all")); // TODO non-leaf
-    attrs = attrs.addAttributes(f->getContext(), FI, toadd);
+    attrs = attrs.addFnAttributes(f->getContext(), toadd);
+
+    // 
+    attrs = attrs.removeAttributeAtIndex(f->getContext(), llvm::AttributeList::FirstArgIndex,
+                                         llvm::Attribute::NoUndef);
 
     this->fosterFunctionAttributes = attrs;
   }
@@ -432,8 +448,10 @@ llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
   // This variable is dead after being passed to the TextFragment function,
   // so it does not need a GC root.
 
+  auto sty = ArrayTypeAST::getZeroLengthType(TypeAST::i(8));
+
   Value* hstr_bytes; Value* len;
-  if (tryBindArray(this, hstr, /*out*/ hstr_bytes, /*out*/ len)) {
+  if (tryBindArray(this, sty, hstr, /*out*/ hstr_bytes, /*out*/ len)) {
     builder.CreateMemCpy(hstr_bytes, /* dst align */ llvm::MaybeAlign(4),
                                cstr, /* src align */ llvm::MaybeAlign(4),
                                sz);
@@ -537,10 +555,9 @@ void addExternDecls(const std::vector<LLDecl*> decls,
 llvm::GlobalVariable* emitPrivateGlobal(CodegenPass* pass,
                                  llvm::Constant* val,
                                  const std::string& name);
-llvm::GlobalVariable* emitGlobalNonArrayCell(CodegenPass* pass,
+llvm::Constant* mkGlobalNonArrayCellConstant(CodegenPass* pass,
                                      llvm::GlobalVariable* typemap,
-                                     llvm::Constant* body,
-                                     const std::string& name);
+                                     llvm::Constant* body);
 
 void LLModule::codegenModule(CodegenPass* pass) {
   registerKnownDataTypes(datatype_decls, pass);
@@ -576,12 +593,13 @@ void LLModule::codegenModule(CodegenPass* pass) {
     std::string cloname = procs[i]->getCName();
 
     CtorRepr ctorRepr; ctorRepr.smallId = -1;
-    auto globalCell = emitGlobalNonArrayCell(pass,
+    auto globalCellConstant = mkGlobalNonArrayCellConstant(pass,
                           pass->getTypeMapForType(TypeAST::i(64), ctorRepr, pass->mod, NotArray),
-                          const_cell,
-                          cloname + ".closure.cell");
+                          const_cell);
+    auto globalCell = emitPrivateGlobal(pass, globalCellConstant, cloname + ".closure.cell");
 
-    pass->globalValues[cloname] = builder.CreateConstGEP2_32(NULL, globalCell, 0, 2);
+    pass->globalValues[cloname] = builder.CreateConstGEP2_32(globalCellConstant->getType(),
+                                                             globalCell, 0, 2);
   }
 
   for (auto& item : items) {
@@ -616,14 +634,9 @@ bool isReturnTypeOK(llvm::Type* ty) {
 
 llvm::FunctionType*
 getLLVMFunctionType(FnTypeAST* t, const std::string& procSymbol) {
-  if (llvm::PointerType* pt =
-   dyn_cast<llvm::PointerType>(getLLVMType(t))) {
-    ASSERT(isReturnTypeOK(getLLVMType(t->getReturnType())))
+  ASSERT(isReturnTypeOK(getLLVMType(t->getReturnType())))
         << "Cannot use opaque return type for proc " << procSymbol;
-    return dyn_cast<llvm::FunctionType>(slotType(pt));
-  } else {
-    return NULL;
-  }
+  return t->getLLVMFnType();
 }
 
 void setFunctionArgumentNames(llvm::Function* F,
@@ -761,7 +774,7 @@ llvm::Value* allocateSlot(CodegenPass* pass, LLVar* rootvar) {
     // know how to trace the stack slot.
     CtorRepr ctorRepr; ctorRepr.smallId = -1;
     if (const StructTypeAST* sty = rootvar->type->castStructTypeAST()) {
-      registerStructType(sty, "unboxed_tuple", ctorRepr, pass->mod);
+      registerStructType(sty, "unboxed_tuple", ctorRepr, pass->mod/*, pass->datalayout*/);
     }
     llvm::GlobalVariable* typemap = pass->getTypeMapForType(rootvar->type, ctorRepr, pass->mod, NotArray);
     auto padded_ty = llvm::StructType::get(foster::fosterLLVMContext,
@@ -769,8 +782,8 @@ llvm::Value* allocateSlot(CodegenPass* pass, LLVar* rootvar) {
     llvm::AllocaInst* slot = CreateEntryAlloca(padded_ty, rootvar->getName());
     slot->setAlignment(llvm::Align(16));
     builder.CreateStore(builder.CreatePtrToInt(typemap, builder.getInt64Ty()),
-                        getPointerToIndex(slot, builder.getInt32(1), ""));
-    return getPointerToIndex(slot, builder.getInt32(2), "past_tymap");
+                        getPointerToIndex(padded_ty, slot, builder.getInt32(1), ""));
+    return getPointerToIndex(padded_ty, slot, builder.getInt32(2), "past_tymap");
   }
 
 }
@@ -868,12 +881,14 @@ void passPhisAndBr(LLBlock* block, const vector<llvm::Value*>& args) {
     if (v->getType()->isVoidTy()) {
       v = getUnitValue(); // Can't pass a void value!
     }
+    #if 0
     if ((v->getType() != block->phiNodes[i]->getType())
         && matchesExceptForUnknownPointers(v->getType(), block->phiNodes[i]->getType())
         //&& (isPointerToUnknown(v->getType()) || isPointerToUnknown(block->phiNodes[i]->getType()))
         ) {
       v = emitBitcast(v, block->phiNodes[i]->getType(), "genXspec");
     }
+    #endif
     assertValueHasSameTypeAsPhiNode(v, block, i);
     block->phiNodes[i]->addIncoming(v, builder.GetInsertBlock());
     ss << " " << v->getName().str() << ";";
@@ -912,7 +927,7 @@ void LLBr::codegenTerminator(CodegenPass* pass) {
 ////////////////////////////////////////////////////////////////////
 
 void addAndEmitTo(Function* f, BasicBlock* bb) {
-  f->getBasicBlockList().push_back(bb);
+  f->insert(f->end(), bb);
   builder.SetInsertPoint(bb);
 }
 
@@ -1012,16 +1027,17 @@ void LLRebindId::codegenMiddle(CodegenPass* pass) {
 /////////////// LLDeref, LLStore, LLLetVals ////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
-llvm::Value* emitGCRead(CodegenPass* pass, Value* base, Value* slot) {
-  return emitNonVolatileLoad(slot, "deref");
+llvm::Value* emitGCRead(CodegenPass* pass, Value* base, Type* slotty, Value* slot) {
+  return emitNonVolatileLoad(slotty, slot, "deref");
 }
 
 llvm::Value* LLDeref::codegen(CodegenPass* pass) {
   llvm::Value* ptr = base->codegen(pass);
+  ASSERT(this->type) << "LLDeref was missing its type...\n";
   if (isTraced && !llvm::isa<llvm::AllocaInst>(ptr)) {
-    return emitGCRead(pass, nullptr, ptr);
+    return emitGCRead(pass, nullptr, this->type->getLLVMType(), ptr);
   } else {
-    return emitNonVolatileLoad(ptr, "deref");
+    return emitNonVolatileLoad(this->type->getLLVMType(), ptr, "deref");
   }
 }
 
@@ -1040,7 +1056,7 @@ llvm::Value* LLStore::codegen(CodegenPass* pass) {
 void trySetName(llvm::Value* v, const string& name) {
   if (v->getType()->isVoidTy()) {
     // Can't assign a name to void values in LLVM.
-  } else if (isFunctionPointerTy(v->getType())) {
+  } else if (llvm::isa<llvm::Function>(v)) {
     // Don't want to rename functions!
   } else {
     v->setName(name);
@@ -1121,7 +1137,7 @@ llvm::Constant* emitConstantArrayTidy(uint64_t size,
 
 llvm::GlobalVariable* emitPrivateGlobal(CodegenPass* pass,
                                  llvm::Constant* val,
-                                 const std::string& name) {
+                                 const std::string& name) {  
   llvm::GlobalVariable* globalVar = new llvm::GlobalVariable(
       /*Module=*/      *(pass->mod),
       /*Type=*/        val->getType(),
@@ -1133,10 +1149,10 @@ llvm::GlobalVariable* emitPrivateGlobal(CodegenPass* pass,
   return globalVar;
 }
 
-llvm::GlobalVariable* emitGlobalArrayCell(CodegenPass* pass,
+
+llvm::Constant* mkGlobalArrayCellConstant(CodegenPass* pass,
                                      llvm::GlobalVariable* typemap,
-                                     llvm::Constant* body,
-                                     const std::string& name) {
+                                     llvm::Constant* body) {
   std::vector<llvm::Constant*> cell_vals;
   std::vector<llvm::Constant*> pad_vals;
   if (is32Bit()) {
@@ -1149,24 +1165,17 @@ llvm::GlobalVariable* emitGlobalArrayCell(CodegenPass* pass,
   }
   cell_vals.push_back(llvm::ConstantStruct::getAnon(pad_vals));
   cell_vals.push_back(body);
-  auto const_cell = llvm::ConstantStruct::getAnon(cell_vals);
-
-  return emitPrivateGlobal(pass, const_cell, name);
+  return llvm::ConstantStruct::getAnon(cell_vals);
 }
 
-llvm::GlobalVariable* emitGlobalNonArrayCell(CodegenPass* pass,
+llvm::Constant* mkGlobalNonArrayCellConstant(CodegenPass* pass,
                                      llvm::GlobalVariable* typemap,
-                                     llvm::Constant* body,
-                                     const std::string& name) {
+                                     llvm::Constant* body) {
   std::vector<llvm::Constant*> cell_vals;
   cell_vals.push_back(builder.getInt64(0));
   cell_vals.push_back(typemap);
   cell_vals.push_back(body);
-  auto const_cell = llvm::ConstantStruct::getAnon(cell_vals);
-
-  auto rv = emitPrivateGlobal(pass, const_cell, name);
-  //llvm::errs() << "emitGlobalNonArrayCell for " << name << " is " << str(rv) << "\n";
-  return rv;
+  return llvm::ConstantStruct::getAnon(cell_vals);
 }
 
 // Returns a tidy pointer.
@@ -1174,16 +1183,17 @@ llvm::Value* emitByteArray(CodegenPass* pass, llvm::StringRef bytes, llvm::Strin
   auto const_arr_tidy = emitConstantArrayTidy(bytes.size(), getConstantArrayOfString(bytes));
 
   CtorRepr ctorRepr; ctorRepr.smallId = -1;
-  auto arrayGlobal = emitGlobalArrayCell(pass,
-                        pass->getTypeMapForType(TypeAST::i(8), ctorRepr, pass->mod, YesArray),
-                        const_arr_tidy,
-                        cellname.str());
+  auto typemap = pass->getTypeMapForType(TypeAST::i(8), ctorRepr, pass->mod, YesArray);
+  auto arrayGlobalConstant = mkGlobalArrayCellConstant(pass, typemap, const_arr_tidy);
+  auto arrayGlobal = emitPrivateGlobal(pass, arrayGlobalConstant, cellname.str());
 
-  auto rv = builder.CreateBitCast(getPointerToIndex(arrayGlobal, builder.getInt32(1), "cellptr"),
-                                ArrayTypeAST::getZeroLengthTypeRef(TypeAST::i(8)), "arr_ptr");
+  auto rv = getPointerToIndex(arrayGlobalConstant->getType(), arrayGlobal, builder.getInt32(1), "cellptr");  
+  return rv;
+  //auto rv = builder.CreateBitCast(getPointerToIndex(arrayGlobal, builder.getInt32(1), "cellptr"),
+  //                                ArrayTypeAST::getZeroLengthTypeRef(TypeAST::i(8)), "arr_ptr");
 
   //llvm::errs() << "emitByteArray for " << bytes << ":\n    " << str(rv) << "\n";
-  return rv;
+  //return rv;
 }
 
 llvm::Value* LLText::codegen(CodegenPass* pass) {
@@ -1205,7 +1215,7 @@ llvm::Value* LLGlobalSymbol::codegen(CodegenPass* pass) {
   bool isProc = NULL != this->type->castFnTypeAST();
 
   if (auto v = pass->autoDerefs[this->name]) {
-    return builder.CreateLoad(v, this->name);
+    return builder.CreateLoad(this->type->getLLVMType(), v, this->name);
   }
 
   auto v = pass->globalValues[this->name];
@@ -1323,8 +1333,8 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
     llvm::StructType* sty = llvm::StructType::get(builder.getContext(), { pad8, typemap_type, pad, ty });
     llvm::AllocaInst* cell = CreateEntryAlloca(sty, "stackref");
     cell->setAlignment(llvm::Align(16));
-    llvm::Value* slot = getPointerToIndex(cell, builder.getInt32(3), "stackref_slot");
-    builder.CreateStore(ti, getPointerToIndex(cell, builder.getInt32(1), "stackref_meta"));
+    llvm::Value* slot = getPointerToIndex(sty, cell, builder.getInt32(3), "stackref_slot");
+    builder.CreateStore(ti, getPointerToIndex(sty, cell, builder.getInt32(1), "stackref_meta"));
     return slot;
   }
   case LLAllocate::MEM_REGION_GLOBAL_HEAP: {
@@ -1353,7 +1363,7 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
   } else {
     if (const StructTypeAST* sty = this->type->castStructTypeAST()) {
       registerStructType(const_cast<StructTypeAST*>(sty),
-                         this->type_name, this->ctorRepr, pass->mod);
+                         this->type_name, this->ctorRepr, pass->mod/*, pass->datalayout*/);
     }
     if (this->ctorRepr.isNullary) {
       emitFakeComment("nullary ctor!");
@@ -1370,19 +1380,15 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
 //////////////// Arrays ////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
-bool tryBindArray(CodegenPass* pass, llvm::Value* base, Value*& arr, Value*& len) {
+bool tryBindArray(CodegenPass* pass, llvm::Type* sty, llvm::Value* base, Value*& arr, Value*& len) {
   // {i64, [0 x T]}*
-  if (isPointerToStruct(base->getType())) {
-    llvm::Type* sty = slotType(base);
+  if (base->getType()->isPointerTy()) {
     if (sty->getNumContainedTypes() == 2
       && sty->getContainedType(0) == builder.getInt64Ty()) {
-      if (llvm::ArrayType* aty =
-        llvm::dyn_cast<llvm::ArrayType>(sty->getContainedType(1))) {
-        if (aty->getNumElements() == 0) {
-          arr = getPointerToIndex(base, builder.getInt32(1), "arr");
-          len = getElementFromComposite(pass, base, 0, "len");
-          return true;
-        }
+      if (llvm::isa<llvm::ArrayType>(sty->getContainedType(1))) {
+        arr = getPointerToIndex(sty, base, builder.getInt32(1), "arr");
+        len = getElementFromComposite(pass, sty, base, 0, "len");
+        return true;
       }
     }
   }
@@ -1393,18 +1399,25 @@ Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass, Type* ty,
                     bool dynCheck, const std::string& srclines) {
   Value* arr = NULL; Value* len;
 
+  /*
   if (isPointerToUnknown(base->getType())) {
     auto arrayType = ArrayTypeAST::getSizedArrayTypeRef(ty, 0);
     base = emitBitcast(base, arrayType, "genAspec");
   }
+  */
 
-  if (tryBindArray(pass, base, arr, len)) {
+  auto arrayType = ArrayTypeAST::getSizedArrayType(ty, 0);
+
+  llvm::errs() << "getArraySlot: ty = " << str(ty) << "\n";
+  llvm::errs() << "getArraySlot: arrayType = " << str(arrayType) << "\n";
+
+  if (tryBindArray(pass, arrayType, base, arr, len)) {
     if (dynCheck && !pass->config.disableAllArrayBoundsChecks) {
       emitFosterArrayBoundsCheck(pass->mod, idx, len, srclines);
     }
     ASSERT(idx->getType() != llvm::Type::getInt1Ty(builder.getContext()))
       << "Indexing using a boolean subscript is probably not what you want!";
-    return getPointerToIndex(arr, idx, "arr_slot");
+    return getPointerToIndex(arrayType->getContainedType(1), arr, idx, "arr_slot");
   } else {
     ASSERT(false) << "expected array, got " << str(base);
     return NULL;
@@ -1424,10 +1437,12 @@ llvm::Value* LLArrayIndex::codegenARI(CodegenPass* pass, Value** outbase, Type* 
 llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
   ASSERT(this->type) << "LLArrayRead with no type?";
 
+  Type* ty = this->type->getLLVMType();
+  llvm::errs() << "LLArrayRead ty = " << str(ty) << "\n";
   Value* base = NULL;
-  Value* slot = ari->codegenARI(pass, &base, this->type->getLLVMType());
+  Value* slot = ari->codegenARI(pass, &base, ty);
   //Value* val  = emitGCRead(pass, base, slot);
-  Value* val  = emitNonVolatileLoad(slot, "arrayslot");
+  Value* val  = emitNonVolatileLoad(ty, slot, "arrayslot");
   return val;
 }
 
@@ -1441,9 +1456,11 @@ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
   Value* base = NULL;
   Value* slot = ari->codegenARI(pass, &base, val->getType());
 
+#if 0
   if (auto eltTy = needsBitcastToMediateUnknownPointerMismatch(val, slot)) {
     val = emitBitcast(val, eltTy, "specSgen");
   }
+  #endif
 
   emitGCWriteOrStore(pass, val, base, slot);
   return getNullOrZero(getUnitType()->getLLVMType());
@@ -1452,8 +1469,12 @@ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
 
 llvm::Value* LLArrayLength::codegen(CodegenPass* pass) {
   Value* val  = this->value->codegen(pass);
+  auto ety = this->type->getLLVMType();
+  llvm::errs() << "LLArrayLength ety = " << str(ety) << "\n";
+  auto sty = ArrayTypeAST::getSizedArrayType(ety, 0);
+  llvm::errs() << "LLArrayLength sty = " << str(sty) << "\n";
   Value* _bytes; Value* len;
-  if (tryBindArray(pass, val, /*out*/ _bytes, /*out*/ len)) {
+  if (tryBindArray(pass, sty, val, /*out*/ _bytes, /*out*/ len)) {
     // len already assigned.
   } else { ASSERT(false); }
   return len;
@@ -1469,6 +1490,7 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
   std::vector<llvm::Constant*> vals;
   std::vector<std::pair<llvm::Value*, unsigned> > ncvals;
   llvm::Type* elt_ty = this->elem_type->getLLVMType();
+  
   for (unsigned i = 0; i < this->args.size(); ++i) {
     llvm::Value* v = this->args[i]->codegen(pass);
     if (llvm::Constant* c = llvm::dyn_cast<llvm::Constant>(v)) {
@@ -1483,6 +1505,8 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
 
   bool isImmutable = false;
 
+  llvm::errs() << "LLArrayLiteral elt_ty = " << str(elt_ty) << "\n";
+
   // If there are no non-constant values, then the array can be
   // allocated globally instead of on the heap, and we won't need
   // to copy any values.
@@ -1490,21 +1514,22 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
     auto const_arr_tidy = emitConstantArrayTidy(vals.size(), const_arr);
 
     CtorRepr ctorRepr; ctorRepr.smallId = -1;
-    auto arrayGlobal = emitGlobalArrayCell(pass,
-                          pass->getTypeMapForType(this->elem_type, ctorRepr, pass->mod, YesArray),
-                          const_arr_tidy,
-                          ".arr_cell");
+    auto typemap = pass->getTypeMapForType(this->elem_type, ctorRepr, pass->mod, YesArray);
+    auto arrayGlobalConstant = mkGlobalArrayCellConstant(pass, typemap, const_arr_tidy);
+    auto arrayGlobal = emitPrivateGlobal(pass, arrayGlobalConstant, ".arr_cell");
 
-    return builder.CreateBitCast(getPointerToIndex(arrayGlobal, builder.getInt32(1), "cellptr"),
-                                 ArrayTypeAST::getZeroLengthTypeRef(this->elem_type), "arr_ptr");
+    auto rv = getPointerToIndex(arrayGlobalConstant->getType(), arrayGlobal, builder.getInt32(1), "cellptr");
+    //return builder.CreateBitCast(rv, ArrayTypeAST::getZeroLengthTypeRef(this->elem_type), "arr_ptr");
+    return rv;
   } else {
     llvm::GlobalVariable* arrayGlobal = emitPrivateGlobal(pass, const_arr, ".arr");
 
     // Load the heap array which our forebears allocated unto us.
     llvm::Value* heap_arr = this->arr->codegen(pass);
+    auto arrty = ArrayTypeAST::getSizedArrayType(elt_ty, 0);
 
-    Value* heapmem; Value* _len;
-    if (tryBindArray(pass, heap_arr, /*out*/ heapmem, /*out*/ _len)) {
+    Value* heapmem; Value* _lenx;
+    if (tryBindArray(pass, arrty, heap_arr, /*out*/ heapmem, /*out*/ _lenx)) {
       MEMCPY_FROM_GLOBAL_TO_HEAP++;
       // Memcpy from global to heap.
 
@@ -1521,7 +1546,7 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
       for (unsigned i = 0; i < ncvals.size(); ++i) {
         unsigned k  = ncvals[i].second;
         Value* val  = ncvals[i].first;
-        Value* slot = getPointerToIndex(heapmem, llvm::ConstantInt::get(i32, k), "arr_slot");
+        Value* slot = getPointerToIndex(ty, heapmem, llvm::ConstantInt::get(i32, k), "arr_slot");
         bool useBarrier = val->getType()->isPointerTy();
         //maybeEmitCallToLogPtrWrite(pass, slot, val, useBarrier);
         if (useBarrier) {
@@ -1542,9 +1567,14 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
 
 Value* LLRecordIndex::codegen(CodegenPass* pass) {
   Value* val = this->base->codegen(pass);
+  Type* ty = this->type->getLLVMType();
+  if (auto t = this->type->castPtrTypeAST()) {
+    ty = t->getElementTypeC()->getLLVMType();
+  }
+  llvm::outs() << "LLRecordIndex: offset" << this->offset << " ; val " << str(val) << "; ty = " << str(this->type) << "\n";
   if (this->offset >= 0) {
     bool assumeImmutable = false;
-    return getElementFromComposite(pass, val, this->offset, "rcd-idx", assumeImmutable);
+    return getElementFromComposite(pass, ty, val, this->offset, "rcd-idx", assumeImmutable);
   } else {
     llvm::errs() << "WARNING: record index with negative offset!" << "\n";
     return val;
@@ -1563,13 +1593,18 @@ void copyValuesToStruct(CodegenPass* pass,
                         const std::vector<llvm::Value*>& vals,
                         llvm::Value* tup_ptr) {
   ASSERT(tup_ptr != NULL);
+  /*
   ASSERT(isPointerToStruct(tup_ptr->getType()))
         << "copyValuesToStruct can't copy values to non-ptr-to-struct type "
         << str(tup_ptr->getType())
         << "\n" << str(tup_ptr);
+        */
+  std::vector<llvm::Type*> tys;
+  for (auto v : vals) { tys.push_back(v->getType()); }
+  auto tupty = llvm::StructType::get(builder.getContext(), tys);
 
   for (size_t i = 0; i < vals.size(); ++i) {
-    Value* dst = builder.CreateConstGEP2_32(nullptr, tup_ptr, 0, i, "gep");
+    Value* dst = builder.CreateConstGEP2_32(tupty, tup_ptr, 0, i, "gep");
     emitStore(pass, vals[i], dst, tup_ptr, WriteUnspecified);
   }
 }
@@ -1611,20 +1646,13 @@ Value* LLUnboxedTuple::codegen(CodegenPass* pass) {
         // TODO merge type maps for similar types?
         
         std::vector<int> noSkippedIndices;
-        registerStructType(this->type->castStructTypeAST(), "cstupty", ctorRepr, pass->mod);
+        registerStructType(this->type->castStructTypeAST(), "cstupty", ctorRepr, pass->mod/*, pass->datalayout*/);
         auto typemap = pass->getTypeMapForType(this->type, ctorRepr, pass->mod, NotArray);
-        auto globalCell = emitGlobalNonArrayCell(pass, typemap, ct, "cstup");
+        auto globalCellConstant = mkGlobalNonArrayCellConstant(pass, typemap, ct);
+        auto globalCell = emitPrivateGlobal(pass, globalCellConstant, "cstup");
         llvm::Type* ty = getHeapPtrTo(getLLVMType(this->type)); // well, heap-formatted but not on-heap...
         llvm::outs() << "************ " << "type map for unboxed (?) type " << str(this->type) << "\n";
-        return emitBitcast(builder.CreateConstGEP2_32(NULL, globalCell, 0, 2), ty);
-        //return emitPrivateGlobal(pass, ct, "cstup");
-        /*
-    llvm::GlobalVariable* emitGlobalNonArrayCell(CodegenPass* pass,
-                                        llvm::GlobalVariable* typemap,
-                                        llvm::Constant* body,
-                                        const std::string& name) {
-                                        */
-
+        return emitBitcast(builder.CreateConstGEP2_32(globalCellConstant->getType(), globalCell, 0, 2), ty);
     }
   } else {
     return createUnboxedTuple(codegenAll(pass, this->vars));
@@ -1634,6 +1662,7 @@ Value* LLUnboxedTuple::codegen(CodegenPass* pass) {
 
 Value* LLGlobalAppCtor::codegen(CodegenPass* pass) {
   llvm::Type* ty = getLLVMType(this->type);
+  llvm::errs() << "LLGlobalAppCtor ty = " << str(ty) << "\n";
   if (this->args.empty()) {
     return emitNullaryCtor(this->ctor.ctorId.ctorRepr, ty);
   }
@@ -1659,8 +1688,9 @@ Value* LLGlobalAppCtor::codegen(CodegenPass* pass) {
 
   llvm::GlobalVariable* ti = pass->getTypeMapForType(type, this->ctor.ctorId.ctorRepr, pass->mod, NotArray);
   auto ct = llvm::ConstantStruct::getAnon(consts);
-  auto globalCell = emitGlobalNonArrayCell(pass, ti, ct, "csctor");
-  return emitBitcast(builder.CreateConstGEP2_32(NULL, globalCell, 0, 2), ty);
+  auto globalCellConstant = mkGlobalNonArrayCellConstant(pass, ti, ct);
+  auto globalCell = emitPrivateGlobal(pass, globalCellConstant, "csctor");
+  return emitBitcast(builder.CreateConstGEP2_32(globalCellConstant->getType(), globalCell, 0, 2), ty);
 }
 
 ///}}}//////////////////////////////////////////////////////////////
@@ -1688,9 +1718,10 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
     // If we know that the subterm at this position was created with
     // a particular data constructor, emit a cast to that ctor's type.
     if (ctors[i].ctorStructType) {
-      if (v->getType()->isPointerTy()) {
-        v = emitBitcast(v, getHeapPtrTo(ctors[i].ctorStructType->getLLVMType()));
-      } else {
+      //if (v->getType()->isPointerTy()) {
+        //v = emitBitcast(v, getHeapPtrTo(ctors[i].ctorStructType->getLLVMType()));
+      //}
+      if (!v->getType()->isPointerTy()) {
         const CtorRepr& r = ctors[i].ctorId.ctorRepr;
         if (r.isTransparent && !r.isBoxed) {
         } else {
@@ -1705,7 +1736,8 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
       continue;
     }
 
-    v = getElementFromComposite(pass, v, offsets[i], "switch_insp");
+    llvm::Type* ty = ctors[i].ctorStructType->getLLVMType();
+    v = getElementFromComposite(pass, ty, v, offsets[i], "switch_insp");
   }
 
   // Consider code like         case v of Some x -> ... x ...
@@ -1744,7 +1776,7 @@ llvm::Value* LLCallInlineAsm::codegen(CodegenPass* pass) {
                                    this->asmString,
                                    this->constraints,
                                    this->hasSideEffects);
-  return builder.CreateCall(iasm, llvm::makeArrayRef(vs), "asmres");
+  return builder.CreateCall(iasm, llvm::ArrayRef(vs), "asmres");
 }
 
 llvm::Value* emitFnArgCoercions(Value* argV, llvm::Type* expectedType) {
@@ -1757,6 +1789,7 @@ llvm::Value* emitFnArgCoercions(Value* argV, llvm::Type* expectedType) {
     argV = emitBitcast(argV, expectedType, "gen2spec");
   }
 
+#if 0
   // This occurs in polymorphic code.
   if ((argV->getType() != expectedType)
       && matchesExceptForUnknownPointers(argV->getType(), expectedType)) {
@@ -1764,6 +1797,7 @@ llvm::Value* emitFnArgCoercions(Value* argV, llvm::Type* expectedType) {
     //DDiag() << "matched " << str(argV->getType()) << " to " << str(expectedType) << " in call to " << FV->getName();
     argV = emitBitcast(argV, expectedType, "spec2gen");
   }
+  #endif
 
   // If we're calling a C function that returns void, conjure up a unit value.
   if (argV->getType()->isVoidTy() && str(expectedType) == "{}*") {
@@ -1773,15 +1807,17 @@ llvm::Value* emitFnArgCoercions(Value* argV, llvm::Type* expectedType) {
   return argV;
 }
 
-llvm::Type* getClosureType(llvm::Type* retTy, const std::vector<Value*>& nonEnvArgs) {
+
+llvm::FunctionType* getClosureFnType(llvm::Type* retTy, const std::vector<Value*>& nonEnvArgs) {
   std::vector<llvm::Type*> argTys;
   argTys.push_back(builder.getInt8PtrTy());
   for (auto arg : nonEnvArgs) { argTys.push_back(arg->getType()); }
-  return getHeapPtrTo(
-            llvm::StructType::get(foster::fosterLLVMContext,
-              { rawPtrTo(llvm::FunctionType::get(retTy, argTys, false)),
-                builder.getInt8PtrTy() })
-            );
+  return llvm::FunctionType::get(retTy, argTys, false);
+}
+
+llvm::StructType* getClosureTypeForFn(llvm::FunctionType* fnty) {
+  return llvm::StructType::get(foster::fosterLLVMContext,
+              { rawPtrTo(fnty), builder.getInt8PtrTy() });
 }
 
 llvm::Value* LLCall::codegen(CodegenPass* pass) {
@@ -1805,26 +1841,49 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     // Call to top level function
     callingConv = F->getCallingConv();
     FT = F->getFunctionType();
-  } else if (isFunctionPointerTy(FV->getType())) {
-    FT = llvm::dyn_cast<llvm::FunctionType>(FV->getType()->getContainedType(0));
+  //} else if (isFunctionPointerTy(FV->getType())) {
+  //  FT = llvm::dyn_cast<llvm::FunctionType>(FV->getType()->getContainedType(0));
   } else {
-    if (!isPointerToStruct(FV->getType())) {
-      // We can end up in this situation (trying to call a value that
-      // has an unknown/generic type) because inlining does not "push through"
-      // type coercions.
-      FV = emitBitcast(FV, getClosureType(this->type->getLLVMType(), nonEnvArgs), "fnspec");
+    ASSERT (this->base->type != nullptr) << "missing base type for call to " << str(FV) << "; base tag = " << base->tag;
+    if (auto t = this->base->type->castPtrTypeAST()) {
+      if (auto sty = t->getElementTypeC()->castStructTypeAST()) {
+        auto cloty = sty->getLLVMType();
+        // Load code and env pointers from closure...
+        llvm::Value* envPtr =
+            getElementFromComposite(pass, cloty, FV, 1, "getCloEnv");
+        FV = getElementFromComposite(pass, cloty, FV, 0, "getCloCode", true);
+
+        auto subty = sty->getContainedType(0);
+        if (auto fnty = subty->castFnTypeAST()) {
+          FT = fnty->getLLVMFnType();  
+        } else {
+          ASSERT(false) << "unable to codegen call due to non-function type for base";
+        }
+
+        // Pass env pointer as first parameter to function.
+        valArgs.push_back(envPtr);
+        fromClosure = true;
+      } else {
+        FT = getClosureFnType(this->type->getLLVMType(), nonEnvArgs);
+        auto cloty = getClosureTypeForFn(FT);
+        llvm::errs() << "NOTE: base type was non-struct; " << str(t->getElementTypeC())
+                     << " ;; so using instead synthesized FT = " << str(FT) << "\n";
+        llvm::errs() << "cloty = " << str(cloty) << "\n"; 
+        //llvm::errs() << "this->type = " << str(this->type) << "\n";
+        llvm::errs() << "this->type->getLLVMType() = " << str(this->type->getLLVMType()) << "\n";
+
+        // Load code and env pointers from closure...
+        llvm::Value* envPtr =
+            getElementFromComposite(pass, cloty, FV, 1, "getCloEnv");
+        FV = getElementFromComposite(pass, cloty, FV, 0, "getCloCode", true);
+
+        // Pass env pointer as first parameter to function.
+        valArgs.push_back(envPtr);
+        fromClosure = true;
+      }
+    } else {
+      ASSERT(false) << "unable to codegen call of " << str(FV) << " due to non-ref type " << str(this->type);
     }
-
-    ASSERT(isPointerToStruct(FV->getType()));
-    // Load code and env pointers from closure...
-    llvm::Value* envPtr =
-        getElementFromComposite(pass, FV, 1, "getCloEnv");
-    FV = getElementFromComposite(pass, FV, 0, "getCloCode", true);
-
-    FT = dyn_cast<llvm::FunctionType>(slotType(FV));
-    // Pass env pointer as first parameter to function.
-    valArgs.push_back(envPtr);
-    fromClosure = true;
   }
 
   if (pass->config.countClosureCalls && fromClosure) {
@@ -1847,9 +1906,17 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   // Give the instruction a name, if we can...
 
   auto callInst = builder.CreateCall(llvm::FunctionCallee(FT, FV),
-                                     llvm::makeArrayRef(valArgs));
+                                     llvm::ArrayRef(valArgs));
   callInst->setCallingConv(callingConv);
   trySetName(callInst, "calltmp");
+
+  llvm::errs() << "call inst " << str(callInst) << " given fnty " << str(FT) << "\n";
+  //llvm::errs() << "this->type = " << str(this->type) << "\n";
+  llvm::errs() << "this->type->getLLVMType() = " << str(this->type->getLLVMType()) << "\n";
+  //llvm::errs() << "this->base->type = " << str(this->base->type) << "\n";
+  if (this->base->type) {
+  llvm::errs() << "this->base->type->getLLVMType() = " << str(this->base->type->getLLVMType()) << "\n";    
+  }
 
   // See CapnpIL.hs for a note on tail call marker safety.
   if (this->okToMarkAsTailCall && callingConv == llvm::CallingConv::Fast) {

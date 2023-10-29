@@ -6,6 +6,8 @@
 #include "libfoster_gc_roots.h"
 #include "foster_gc.h"
 
+#include "foster_gc_utils.h"
+
 #include <cstring> // for memset
 
 using namespace foster::runtime;
@@ -35,6 +37,10 @@ namespace runtime {
 ////////////////////////////////////////////////////////////////////
 
 extern "C" {
+// Give Codegen-typemaps.cpp access to the typemap struct.
+// I don't know why the definition needs to go here and not in
+// libfoster.cpp!
+foster::runtime::gc::typemap foster_gc_utils_typemap_exemplar;
 
 foster_bare_coro** __foster_get_current_coro_slot();
 foster_bare_coro* foster_get_current_coro_parent() {

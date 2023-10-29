@@ -44,9 +44,6 @@ void initializeKnownNonAllocatingFQNames(llvm::StringSet<>& names);
 void validateInputFile(const std::string& pathstr);
 void validateOutputFile(const std::string& pathstr);
 
-void runFunctionPassesOverModule(llvm::legacy::FunctionPassManager& fpasses,
-                                 llvm::Module* mod);
-
 void ensureDirectoryExists(const std::string& pathstr);
 
 
@@ -72,7 +69,7 @@ bool isPointerToOpaque(llvm::Type* p);
 
 bool typesEq(llvm::Type* t1, llvm::Type* t2);
 
-void storeNullPointerToSlot(llvm::Value* slot);
+void storeNullPointerToSlot(llvm::Value* slot, llvm::Type* ty);
 
 bool is32Bit();
 int  getWordTySize();

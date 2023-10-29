@@ -55,7 +55,7 @@ void __foster_handle_sigsegv(int, siginfo_t* si, void*) {
 
 void __foster_install_sigsegv_handler() {
   struct sigaction sa = {
-      .sa_mask      = 0,
+      .sa_mask      = {0},
       .sa_flags     = SA_ONSTACK | SA_SIGINFO,
   };
   sa.sa_sigaction = __foster_handle_sigsegv;
@@ -103,7 +103,7 @@ struct FosterVirtualCPU {
     stack_t ss = {
         .ss_sp = signal_stack,
         .ss_flags = 0,
-        .ss_size = SIGSTKSZ,
+        .ss_size = static_cast<size_t>(SIGSTKSZ),
     };
     int rv = sigaltstack(&ss, NULL);
     foster__assert(rv == 0, "signaltstack failed");

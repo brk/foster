@@ -24,18 +24,27 @@ STATISTIC(NumSpecialized, "Number of allocations specialized");
 
 namespace {
 
-class SpecializeAllocations : public FunctionPass {
-  Constant *memalloc;
-  Constant *memalloc_16;
-  Constant *memalloc_32;
-  Constant *memalloc_48;
+class SpecializeAllocations : public PassInfoMixin<SpecializeAllocations> {
+  llvm::Function *memalloc;
+  llvm::Function *memalloc_16;
+  llvm::Function *memalloc_32;
+  llvm::Function *memalloc_48;
   bool ready;
 public:
-  static char ID;
-  explicit SpecializeAllocations() : FunctionPass(ID),
+  explicit SpecializeAllocations() :
         memalloc(NULL), memalloc_16(NULL), memalloc_32(NULL), memalloc_48(NULL), ready(false) {}
 
   llvm::StringRef getPassName() const { return "SpecializeAllocations"; }
+
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM) {
+      doInitialization(M);
+      bool anymod = false;
+      for (auto &F : M) {
+        anymod |= runOnFunction(F, M, AM);
+      }
+
+      return anymod ? PreservedAnalyses::none() : PreservedAnalyses::all();
+  }
 
   virtual void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.setPreservesCFG();
@@ -48,29 +57,17 @@ public:
 
   bool doInitialization(Module &M);
 
-  virtual bool doInitialization(Function &F) {
-    return doInitialization(*F.getParent());
-  }
-
   void runOnBasicBlock(BasicBlock&, bool&);
-  virtual bool runOnFunction(Function& F);
+  bool runOnFunction(Function& F, Module &M, ModuleAnalysisManager &AM);
 };
-
-char SpecializeAllocations::ID = 0;
 
 } // unnnamed namespace
 
-namespace llvm {
-  void initializeSpecializeAllocationsPass(llvm::PassRegistry&);
-}
-
-INITIALIZE_PASS(SpecializeAllocations, "foster-malloc-specializer",
-                "Call size-specific allocators when possible.",
-                false, false);
-
 namespace foster {
 
-Pass* createMemallocSpecializerPass() { return new SpecializeAllocations(); }
+void addMemallocSpecializerPass(ModulePassManager &MPM) {
+  MPM.addPass(SpecializeAllocations());
+}
 
 } // namespace foster
 
@@ -83,20 +80,17 @@ bool SpecializeAllocations::doInitialization(Module &M) {
   return true;
 }
 
-llvm::FunctionType* tryGetFunctionType(llvm::Value* fv) {
-  return llvm::cast<llvm::FunctionType>(
-                    cast<llvm::PointerType>(fv->getType())->getElementType());
-}
+llvm::FunctionCallee of(llvm::Function* fv) { return llvm::FunctionCallee(fv); }
 
-llvm::FunctionCallee of(llvm::Value* fv) {
-  return llvm::FunctionCallee(tryGetFunctionType(fv), fv);
+BasicBlock::iterator eraseInstruction(BasicBlock& BB, BasicBlock::iterator I) {
+  BasicBlock::iterator next = I; ++next;
+  return BB.erase(I, next);
 }
 
 // runOnBasicBlock - This method does the actual work of converting
 // instructions over, assuming that the pass has already been initialized.
 //
 void SpecializeAllocations::runOnBasicBlock(BasicBlock& BB, bool& Changed) {
-  BasicBlock::InstListType &BBIL = BB.getInstList();
   const DataLayout& TD = BB.getParent()->getParent()->getDataLayout();
 
   // Can't use range loop because we modify I in the loop...
@@ -114,55 +108,37 @@ void SpecializeAllocations::runOnBasicBlock(BasicBlock& BB, bool& Changed) {
       if (F == memalloc) {
         Constant* ac = dyn_cast<Constant>(call->getArgOperand(0));
         if (ac) {
-          GlobalVariable* gv = dyn_cast<GlobalVariable>(ac->stripPointerCasts());
+          GlobalVariable* gv = dyn_cast<GlobalVariable>(ac);
           assert(gv && "had Constant but no GlobalVariable??");
           ConstantStruct* cs = dyn_cast<ConstantStruct>(gv->getInitializer());
-          ConstantExpr* sze = dyn_cast<ConstantExpr>(cs->getOperand(0));
-          Constant* szc = ConstantFoldConstant(sze, TD);
-          if (szc && !llvm::isa<ConstantInt>(szc)) {
-            szc = ConstantFoldConstant(dyn_cast<ConstantExpr>(szc), TD);
-          }
-          if (!szc) {
+          ConstantInt* sz = dyn_cast<ConstantInt>(cs->getOperand(0));
+          if (!sz) {
             llvm::errs() << "FosterMallocSpecializer: Unable to evaluate allocated size!\n";
             exit(1);
-          }
-          ConstantInt* sz = dyn_cast<ConstantInt>(szc);
-          if (!sz) {
-            llvm::errs() << "FosterMallocSpecializer: Unable to evaluate allocated size to integer!\n";
-            llvm::errs() << (*sze) << "\n";
-            llvm::errs() << "was constant-folded by LLVM to:\n";
-            llvm::errs() << (*szc) << "\n";
-              exit(1);
           }
 
           // OK, we've computed the size of the allocation.
           // Let's see if we can specialize it...
           if (sz->getSExtValue() == 16) {
             // Replace call to memalloc with call to memalloc_16.
-            Constant* mem16 = ConstantExpr::getBitCast(memalloc_16,
-                                                        call->getCalledOperand()->getType());
-            CallInst* newcall = CallInst::Create(of(mem16), ac, "mem16_", &*I);
+            CallInst* newcall = CallInst::Create(of(memalloc_16), ac, "mem16_", &*I);
             call->replaceAllUsesWith(newcall);
-            I = --BBIL.erase(I); // remove & delete the old memalloc call.
+            I = eraseInstruction(BB, I);
             ++NumSpecialized;
             Changed = true;
           } else if (sz->getSExtValue() == 32) {
             // Replace call to memalloc with call to memalloc_32.
-            Constant* mem32 = ConstantExpr::getBitCast(memalloc_32,
-                                                        call->getCalledOperand()->getType());
-            CallInst* newcall = CallInst::Create(of(mem32), ac, "mem32_", &*I);
+            CallInst* newcall = CallInst::Create(of(memalloc_32), ac, "mem32_", &*I);
             call->replaceAllUsesWith(newcall);
-            I = --BBIL.erase(I); // remove & delete the old memalloc call.
+            I = eraseInstruction(BB, I); // remove & delete the old memalloc call.
             ++NumSpecialized;
             Changed = true;
             
           } else if (sz->getSExtValue() == 48) {
             // Replace call to memalloc with call to memalloc_48.
-            Constant* mem48 = ConstantExpr::getBitCast(memalloc_48,
-                                                        call->getCalledOperand()->getType());
-            CallInst* newcall = CallInst::Create(of(mem48), ac, "mem48_", &*I);
+            CallInst* newcall = CallInst::Create(of(memalloc_48), ac, "mem48_", &*I);
             call->replaceAllUsesWith(newcall);
-            I = --BBIL.erase(I); // remove & delete the old memalloc call.
+            I = eraseInstruction(BB, I); // remove & delete the old memalloc call.
             ++NumSpecialized;
             Changed = true;
           } else {
@@ -179,7 +155,7 @@ void SpecializeAllocations::runOnBasicBlock(BasicBlock& BB, bool& Changed) {
   }
 }
 
-bool SpecializeAllocations::runOnFunction(Function& F) {
+bool SpecializeAllocations::runOnFunction(Function& F, Module &M, ModuleAnalysisManager &AM) {
   if (!isFosterFunction(F)) return false;
   if (!ready) return false;
   

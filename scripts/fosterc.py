@@ -51,9 +51,12 @@ def get_static_libs():
          ("libfoster_main.o libcoro.a libcycle.a nacl/lib/amd64/libnacl.a").split(" ")])
 
 def get_link_flags():
-  common = ['-lpthread']
+  # Circa LLVM 15, Clang started defaulting position independent executables,
+  # but at least for now we're sticking with static placement.
+  common = ['-fuse-ld=lld', '-no-pie', '-lpthread']
   if options and options.profile:
     common.append('-lprofiler') # from gperftools
+  
   import platform
   flags = {
     'Darwin': lambda: common + ['-framework', 'CoreFoundation',

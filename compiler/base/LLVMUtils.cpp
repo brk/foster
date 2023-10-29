@@ -109,15 +109,6 @@ void validateOutputFile(const std::string& pathstr) {
   validateFileOrDir(outputPath.str().str(), "output dir", true);
 }
 
-void runFunctionPassesOverModule(llvm::legacy::FunctionPassManager& fpasses,
-                                 Module* mod) {
-  fpasses.doInitialization();
-  for (llvm::Function& f : *mod) {
-    fpasses.run(f);
-  }
-  fpasses.doFinalization();
-}
-
 void ensureDirectoryExists(const std::string& pathstr) {
   if (llvm::sys::fs::create_directory(pathstr, true)) {
     foster::EDiag() << "unable to create directory " << pathstr << "\n";
@@ -239,7 +230,7 @@ Constant* arrayVariableToPointer(GlobalVariable* arr) {
   std::vector<Constant*> idx;
   idx.push_back(zero);
   idx.push_back(zero);
-  return ConstantExpr::getGetElementPtr(nullptr, arr, makeArrayRef(idx));
+  return ConstantExpr::getGetElementPtr(nullptr, arr, llvm::ArrayRef(idx));
 }
 
 bool isFunctionPointerTy(llvm::Type* p) {
@@ -262,9 +253,9 @@ bool isPointerToOpaque(llvm::Type* p) {
   return false;
 }
 
-void storeNullPointerToSlot(llvm::Value* slot) {
+void storeNullPointerToSlot(llvm::Value* slot, llvm::Type* ty) {
   foster::builder.CreateStore(
-    llvm::ConstantPointerNull::getNullValue(slot->getType()->getContainedType(0)),
+    llvm::ConstantPointerNull::getNullValue(ty),
     slot, /*isVolatile=*/ false);
 }
 

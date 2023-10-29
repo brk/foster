@@ -4,7 +4,7 @@ cmake_minimum_required (VERSION 3.6)
 # ~~~~~~~~~~~~~~~~~~~~
 
 set(PYTHON python3)
-set(LLVM_VERSION 12.0.0)
+set(LLVM_VERSION 17.0.2)
 
 find_program(LLVM_CONFIG NAMES llvm-config llvm-config-${LLVM_VERSION}
   PATHS
@@ -44,9 +44,6 @@ project (foster)
 if (NOT (${CMAKE_CXX_COMPILER} STREQUAL ${CLANG}))
   message("CMake wants to use a C++ compiler (${CMAKE_CXX_COMPILER}) that's not the version of Clang we want (${CLANG}).")
   message("To fix this, I'm afriad you'll need to blow away CMake's cache and rebuild. Sorry!")
-  message("Oh, and just to make things extra fun, if you were unfortunate enough to compile LLVM with GCC 5,")
-  message("  you'll need to recompile and reinstall with either GCC 4.x or LLVM, thanks to GCC's cxx11_abi tags.")
-  message("Blergh.")
   return()
 endif (NOT (${CMAKE_CXX_COMPILER} STREQUAL ${CLANG}))
 
@@ -98,8 +95,8 @@ set(CORO_METHOD CORO_ASM
 
 find_program(CAPNP NAMES capnp
   PATHS
-    $ENV{HOME}/.local/capnp-c++-0.8.0/bin
-    $ENV{HOME}/sw/local/capnp-c++-0.8.0/bin
+    $ENV{HOME}/.local/capnp-c++-1.0.1/bin
+    $ENV{HOME}/sw/local/capnp-c++-1.0.1/bin
   DOC "capnp: Cap'n Proto compiler driver")
 
 find_program(MINUPROTO NAMES minuproto
@@ -142,6 +139,7 @@ string(REPLACE ${NDEBUG_FLAG} "" LLVM_CFLAGS "${LLVM_CFLAGS}")
 # and unconditionally add it to CXXFLAGS later.
 string(REPLACE "-std=c++11" "" LLVM_CFLAGS "${LLVM_CFLAGS}")
 string(REPLACE "-std=c++14" "" LLVM_CFLAGS "${LLVM_CFLAGS}")
+string(REPLACE "-std=c++17" "" LLVM_CFLAGS "${LLVM_CFLAGS}")
 
 # llvm-config reports flags for the compiler used to build it,
 # which may result in flags for GCC that clang++ chokes on.
@@ -301,13 +299,11 @@ add_custom_command(
         ${CMAKE_CXX_COMPILER} -g
           ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
           -I ${PROJECT_SOURCE_DIR}/runtime/gc/
-          -I ${PROJECT_SOURCE_DIR}/third_party/chromium_base/
                 -c -o ${LIBRARY_OUTPUT_PATH}/libfoster_main.o
   COMMAND
         ${CLANG} -g -emit-llvm
           ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
           -I ${PROJECT_SOURCE_DIR}/runtime/gc/
-          -I ${PROJECT_SOURCE_DIR}/third_party/chromium_base/
                 -c -o ${PROJECT_BINARY_DIR}/_bitcodelibs_/libfoster_main.bc
   DEPENDS
         ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
@@ -394,10 +390,11 @@ include_directories(
 
 # {{{ Miscellaneous flag munging
 link_directories(${ANTLR_LIBDIR} ${LLVM_LIBDIR})
+add_link_options("-fuse-ld=lld")
 
 add_definitions(${LLVM_CFLAGS} "-ggdb")
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
 
 # Compressing debug sections can significantly reduce link time,
 # but the functionality is specific to GNU gold.
@@ -555,16 +552,17 @@ endif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
 
 set(CLANGLIBS
   ${START_GROUP}
-  clangAST clangAnalysis clangBasic clangDriver clangEdit
+  clangAST clangAnalysis clangBasic clangCodeGen clangDriver clangEdit
   clangFrontend clangFrontendTool clangLex clangParse clangSema
   clangEdit clangASTMatchers clangRewrite clangRewriteFrontend
-  clangSerialization clangToolingCore clangTooling
+  clangSerialization clangToolingCore clangTooling clangToolingSyntax
+  clangSupport
   ${END_GROUP})
 
 add_executable(c2f tools/c2f/c2f.cpp tools/c2f/c2f_cfg.cpp)
 target_link_libraries(c2f
-  ${CLANGLIBS}
-  ${LLVM_LDFLAGS})
+  ${LLVM_LDFLAGS}
+  ${CLANGLIBS})
 
 #####################################################################
 # These files contain code which inherits from LLVM classes,

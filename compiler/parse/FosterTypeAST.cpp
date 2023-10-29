@@ -24,7 +24,7 @@ using foster::fosterLLVMContext;
 
 llvm::Type* foster_generic_coro_t = NULL;
 llvm::Type* foster_generic_split_coro_ty = NULL;
-TypeAST* foster_generic_coro_ast  = NULL;
+StructTypeAST* foster_generic_coro_ast  = NULL;
 
 TypeAST* getGenericClosureEnvType() { return RefTypeAST::get(TypeAST::i(8)); }
 RefTypeAST* getUnitType() {
@@ -192,10 +192,15 @@ void StructTypeAST::setBody(const vector<TypeAST*>& argTypes) {
   sty->setBody(getLoweredTypes());
 }
 
+llvm::StructType* StructTypeAST::getLLVMStructType() const {
+  if (repr) return llvm::dyn_cast<llvm::StructType>(repr);
+  auto sty = llvm::StructType::get(fosterLLVMContext, getLoweredTypes());
+  repr = sty;
+  return sty;
+}
+
 llvm::Type* StructTypeAST::getLLVMType() const {
-  if (repr) return repr;
-  repr = llvm::StructType::get(fosterLLVMContext, getLoweredTypes());
-  return repr;
+  return getLLVMStructType();
 }
 
 TypeAST*& StructTypeAST::getContainedType(int i) {
@@ -215,24 +220,23 @@ StructTypeAST* StructTypeAST::getRecursive(std::string name) {
 
 /////////////////////////////////////////////////////////////////////
 
-// Returns {i64, [t, n]}*
-llvm::Type* ArrayTypeAST::getSizedArrayTypeRef(llvm::Type* t, int64_t n) {
-  return getHeapPtrTo(
-          llvm::StructType::get(t->getContext(),
-                                { llvm::IntegerType::get(t->getContext(), 64)
-                                , llvm::ArrayType::get(t, n) }));
+// Returns {i64, [t, n]}
+llvm::StructType* ArrayTypeAST::getSizedArrayType(llvm::Type* t, int64_t n) {
+  return llvm::StructType::get(t->getContext(),
+            { llvm::IntegerType::get(t->getContext(), 64)
+            , llvm::ArrayType::get(t, n) });
 }
 
 
-llvm::Type* ArrayTypeAST::getZeroLengthTypeRef(TypeAST* t) {
-  return getSizedArrayTypeRef(t->getLLVMType(), 0);
+llvm::StructType* ArrayTypeAST::getZeroLengthType(TypeAST* t) {
+  return getSizedArrayType(t->getLLVMType(), 0);
 }
 
 llvm::Type* ArrayTypeAST::getLLVMType() const {
   if (!repr) {
-    repr = getZeroLengthTypeRef(this->cell);
+    repr = getZeroLengthType(this->cell);
   }
-  return repr;
+  return llvm::PointerType::getUnqual(repr);
 }
 
 TypeAST*& ArrayTypeAST::getContainedType(int i) {

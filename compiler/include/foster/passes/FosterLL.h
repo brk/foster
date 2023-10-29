@@ -246,7 +246,6 @@ struct LLText : public LLExpr {
 
 struct LLVar : public LLExpr {
   string name;
-  // Type is not used
   explicit LLVar(const string& name) : LLExpr("LLVar"), name(name) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
   const string getName() const { return name; }
@@ -464,8 +463,10 @@ struct LLAllocate : public LLExpr {
 struct LLDeref : public LLExpr {
   LLVar* base;
   bool isTraced;
-  explicit LLDeref(LLVar* e, bool isTraced)
-    : LLExpr("LLDeref"), base(e), isTraced(isTraced) {}
+  explicit LLDeref(LLVar* e, TypeAST* ty, bool isTraced)
+    : LLExpr("LLDeref"), base(e), isTraced(isTraced) {
+      this->type = ty;
+  }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 

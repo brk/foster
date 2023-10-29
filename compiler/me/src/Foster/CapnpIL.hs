@@ -313,7 +313,7 @@ dumpExpr (ILAllocArray nonArrayType _ _ _ _sr) =
 dumpExpr x@(ILDeref ty a) =
     (defaultLetable (typeOf x) Ilderef) { parts_of_Letable = [dumpVar a]
                                         , boolvalue_of_Letable = [isTraced ty]
-                                        , type_of_Letable = StrictlyNone }
+                                        }
 
 -- The boolvalue for Deref and Store is used to determine whether loads/stores
 -- should use LLVM's gcread/gcwrite primitives or regular, non-barriered ops.
@@ -452,7 +452,8 @@ dumpFieldLookupClosed t fieldName offset base =
     (defaultLetable t Ilfieldidxclosed) {
         parts_of_Letable = map dumpVar [base],
         primopname_of_Letable = StrictlyJust $ u8fromText fieldName,
-        primopsize_of_Letable = [fromIntegral offset]
+        primopsize_of_Letable = [fromIntegral offset],
+        type_of_Letable = StrictlyJust $ dumpType (tidType base)
     }
 
 dumpArrayLength t arr =
@@ -539,7 +540,8 @@ pbArrayLit ety vals =
                                               lit_of_PbArrayEntry = StrictlyJust $ dumpLiteral ety lit }
 
 -----------------------------------------------------------------------
-dumpVar (TypedId t i) = dumpMoVar t i False
+--dumpVar (TypedId t i) = dumpMoVar t i False
+dumpVar (TypedId t i) = dumpMoVar t i True
 dumpVar' (TypedId t i) = dumpMoVar t i True
 -- Most uses of variables don't need explicit types during LLVM codegen
 -- with a few exceptions for root slots and phi arguments.
@@ -568,6 +570,7 @@ dumpVarIdent i =
         , name_of_TermVar = dumpIdent i
         , typ_of_TermVar  = StrictlyNone
     }
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 {-# SCC dumpILProgramToCapnp #-}

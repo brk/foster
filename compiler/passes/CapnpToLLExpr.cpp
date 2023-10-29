@@ -100,6 +100,8 @@ LLVar* parseTermVar(const pb::TermVar::Reader& v) {
   ASSERT(rv != NULL) << "parseTermVar didn't recognize tag.";
   if (v.hasTyp()) {
     rv->type = TypeAST_from_pb(v.getTyp());
+  } else {
+    llvm::errs() << "no type for LLVar " << v.getName() << "\n";
   }
   return rv;
 }
@@ -452,7 +454,9 @@ LLSwitch* parseSwitch(const pb::Terminator::Reader& b) {
 
 LLExpr* parseDeref(const pb::Letable::Reader& e) {
   bool isTraced = getBool(e);
-  return new LLDeref(parseTermVar( e.getParts()[0]), isTraced);
+  return new LLDeref(parseTermVar( e.getParts()[0]),
+                     TypeAST_from_pb(e.getType()),
+                     isTraced);
 }
 
 LLExpr* parseStore(const pb::Letable::Reader& e) {

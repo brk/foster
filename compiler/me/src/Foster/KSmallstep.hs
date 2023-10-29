@@ -21,7 +21,7 @@ import Data.Int
 import Data.Word
 import Data.DoubleWord
 import Data.Bits
-import Data.Bits.Floating
+--import Data.Bits.Floating
 import Data.Char(toUpper)
 import Data.IORef(IORef, readIORef, newIORef)
 import Data.Array
@@ -730,9 +730,12 @@ evalPrimitiveOp ty opName args =
   error $ "Smallstep.evalPrimitiveOp " ++ show ty ++ " " ++ opName ++ " " -- ++ show args
 
 evalPrimitiveDoubleOp :: String -> [SSValue] -> SSValue
+evalPrimitiveDoubleOp "bitcast_i64" [SSFloat f] = error $ "bitcast_i64 TODO implement without floating-bits"
+{-
 evalPrimitiveDoubleOp "bitcast_i64" [SSFloat f] = let val = (fromIntegral $ coerceToWord f) in
  --trace ("f64-to-i64: f = " ++ show f ++ "; (coerceToWord f) == " ++ show (coerceToWord f) ++ "; result = " ++ show val) $
   SSInt64 val
+-}
 evalPrimitiveDoubleOp "fpowi" [SSFloat d, SSInt32 z] =
   SSFloat (d ** fromIntegral z)
 
@@ -762,10 +765,14 @@ coerce :: (Integral a, Integral b) => (a -> a -> c) -> (b -> b -> c)
 coerce f2 b1 b2 = f2 (fromIntegral b1) (fromIntegral b2)
 
 evalPrimitiveIntOp :: IntSizeBits -> String -> [SSValue] -> SSValue
+evalPrimitiveIntOp I64 "bitcast_f64" [SSInt64 _] = error "TODO bitcast_f64 without floating-bits"
+evalPrimitiveIntOp I64 "bitcast_f32" [SSInt32 _] = error "TODO bitcast_f32 without floating-bits"
+{-
 evalPrimitiveIntOp I64 "bitcast_f64" [SSInt64 z] =
   SSFloat (coerceToFloat $ fromIntegral z)
 evalPrimitiveIntOp I64 "bitcast_f32" [SSInt32 z] =
   SSFloat (coerceToFloat $ fromIntegral z)
+  -}
 
 evalPrimitiveIntOp I64 opName [SSInt64 i1, SSInt64 i2] =
   case tryGetFixnumPrimOp 64 opName :: PrimOpResult Int64 Word64 of
@@ -880,12 +887,15 @@ defaultRoundsDown = ((fromInteger 4611686018427387648) :: Double) == 46116860184
 toDoubleLikeC :: Integer -> Double
 toDoubleLikeC i =
   if defaultRoundsDown
-   then let val = fromInteger i :: Double in
+   then error "TODO toDoubleLikeC without floating-bits"
+        {-
+        let val = fromInteger i :: Double in
         let ulps = ulp val in
         case (ulps >= 2.0, i > 0) of
           (True, True)  -> fromInteger (i + (round $ ulps / 2.0))
           (True, False) -> fromInteger (i - (round $ ulps / 2.0))
           _ -> val
+          -}
    else fromInteger i
 --------------------------------------------------------------------
 

@@ -27,7 +27,7 @@ struct ValAbs;
 // This is the (prefix) struct type for a foster coro.
 extern llvm::Type* foster_generic_coro_t;
 extern llvm::Type* foster_generic_split_coro_ty;
-extern TypeAST* foster_generic_coro_ast;
+extern StructTypeAST* foster_generic_coro_ast;
 
 struct PrettyPrintTypePass;
 
@@ -146,6 +146,7 @@ public:
   virtual const RefTypeAST*    castPtrTypeAST() const { return this; }
 
   TypeAST*& getElementType() { return underlyingType; }
+  const TypeAST* getElementTypeC() const { return underlyingType; }
 
   // given (T), returns (ref T)
   static RefTypeAST* get(TypeAST* baseType);
@@ -195,11 +196,13 @@ public:
 
   virtual void show(PrettyPrintTypePass* pass);
   virtual llvm::Type* getLLVMType() const;
+  llvm::StructType* getLLVMStructType() const;
 
   virtual const StructTypeAST* castStructTypeAST() const { return this; }
 
   virtual int getNumContainedTypes() const { return parts.size(); }
   virtual TypeAST*& getContainedType(int i);
+  TypeAST* getContainedType(int i) const { return parts.at(i); }
 
   static StructTypeAST* get(const std::vector<TypeAST*>& parts);
 
@@ -242,8 +245,8 @@ public:
   virtual int getNumContainedTypes() const { return 1; }
   virtual TypeAST*& getContainedType(int i);
 
-  static  llvm::Type* getZeroLengthTypeRef(TypeAST* t);
-  static  llvm::Type* getSizedArrayTypeRef(llvm::Type* t, int64_t n);
+  static  llvm::StructType* getZeroLengthType(TypeAST* t);
+  static  llvm::StructType* getSizedArrayType(llvm::Type* t, int64_t n);
 
   static ArrayTypeAST* get(TypeAST* tcell);
 };

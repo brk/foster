@@ -5,22 +5,15 @@
 #ifndef LLVM_FOSTER_PASSES_H
 #define LLVM_FOSTER_PASSES_H
 
-namespace llvm {
-  class Module;
-  class Pass;
-}
-
+#include "llvm/IR/PassManager.h"
 
 namespace foster {
 
 void runCleanupPasses(llvm::Module& mod);
 void runWarningPasses(llvm::Module& mod);
 
-llvm::Pass* createGCMallocFinderPass();
-llvm::Pass* createMemallocSpecializerPass();
-llvm::Pass* createEscapingAllocaFinderPass();
-llvm::Pass* createTimerChecksInsertionPass();
-llvm::Pass* createCallingConventionCheckerPass();
+void addMemallocSpecializerPass(llvm::ModulePassManager &MPM);
+void addTimerChecksInsertionPass(llvm::ModulePassManager &MPM);
 
 }
 

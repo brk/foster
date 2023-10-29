@@ -53,7 +53,8 @@ main = {
 
     print_i32 2222222;
 
-  force_gc_for_debugging_purposes !;
+  // TODO this leads to infinite loop!
+  //force_gc_for_debugging_purposes !;
 
     print_i32 ((coro_invoke co {10}) !); // 6666
     print_i32 1234;

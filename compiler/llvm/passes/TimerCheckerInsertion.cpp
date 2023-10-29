@@ -10,6 +10,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Passes/PassPlugin.h"
 #include "llvm/ADT/StringSwitch.h"
 
 #include "llvm/Analysis/LoopInfo.h"
@@ -28,13 +29,39 @@ namespace {
 // This could/should be a LoopPass but I was unable to figure out
 // how to run a loop pass without LLVM asserting due to uninitialized
 // Loop Pass Manager... ugh!
-struct TimerChecksInsertion : public FunctionPass {
-  static char ID;
-  TimerChecksInsertion() : FunctionPass(ID), builder(foster::fosterLLVMContext) {}
+struct TimerChecksInsertion : public PassInfoMixin<TimerChecksInsertion> {
+  TimerChecksInsertion() {}
+
+  llvm::Function* needReschedF;
+  llvm::Function* doReschedF;
 
   llvm::StringRef getPassName() const { return "TimerChecksInsertion"; }
-  llvm::IRBuilder<> builder;
 
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM) {
+      needReschedF = M.getFunction("__foster_need_resched_threadlocal");
+      doReschedF   = M.getFunction("__foster_do_resched");
+
+      if (!needReschedF) {
+        errs() << "Warning: no __foster_need_resched_threadlocal function found.\n";
+        return PreservedAnalyses::all();
+      }
+
+      if (!doReschedF) {
+        errs() << "Warning: no __foster_do_resched function found.\n";
+        return PreservedAnalyses::all();
+      }
+
+      llvm::IRBuilder<> builder(foster::fosterLLVMContext);
+
+      bool anymod = false;
+      for (auto &F : M) {
+        anymod |= runOnFunction(F, builder, M, AM);
+      }
+
+      return anymod ? PreservedAnalyses::none() : PreservedAnalyses::all();
+  };
+
+/*
   virtual void getAnalysisUsage(AnalysisUsage& AU) const {
     AU.addRequired<LoopInfoWrapperPass>();
     AU.addRequired<ScalarEvolutionWrapperPass>();
@@ -42,6 +69,7 @@ struct TimerChecksInsertion : public FunctionPass {
     AU.addPreserved<LoopInfoWrapperPass>();
     AU.addPreserved<ScalarEvolutionWrapperPass>();
   }
+*/
 
   // If F is recursive, or makes calls to statically unknown functions,
   // we should insert a check at the entry.
@@ -70,16 +98,8 @@ struct TimerChecksInsertion : public FunctionPass {
     return trips > 0 && trips < 255;
   }
 
-  llvm::Function* needReschedF;
-  llvm::Function* doReschedF;
 
-  virtual bool doInitialization(Module& M) {
-    needReschedF = M.getFunction("__foster_need_resched_threadlocal");
-    doReschedF   = M.getFunction("__foster_do_resched");
-    return false;
-  }
-
-  void insertCheckAt(Function* F, BasicBlock* bb, Instruction* here) {
+  void insertCheckAt(Function* F, llvm::IRBuilder<>& builder, BasicBlock* bb, Instruction* here) {
       BasicBlock* newbb = bb->splitBasicBlock(here);
       newbb->setName("postcheck_");
       // newbb takes all the stuff after the phi nodes in bb
@@ -88,7 +108,7 @@ struct TimerChecksInsertion : public FunctionPass {
 
       builder.SetInsertPoint(bb);
 
-      Value* needsResched = builder.CreateCall(needReschedF, None, "needsResched");
+      Value* needsResched = builder.CreateCall(needReschedF, std::nullopt, "needsResched");
       BasicBlock* doReschedBB = BasicBlock::Create(foster::fosterLLVMContext, "doyield", F, newbb);
       builder.CreateCondBr(needsResched, doReschedBB, newbb);
 
@@ -97,24 +117,25 @@ struct TimerChecksInsertion : public FunctionPass {
       builder.CreateBr(newbb);
   }
 
-  virtual bool runOnFunction(llvm::Function& F) {
+  virtual bool runOnFunction(llvm::Function& F, llvm::IRBuilder<>& builder, Module &M, ModuleAnalysisManager &AM) {
     if (!isFosterFunction(F)) { return false; }
 
     bool modified = false;
     std::vector<Loop*> loops;
 
-    LoopInfo& LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
+    FunctionAnalysisManager &FAM = AM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
+
+    LoopInfo& LI = FAM.getResult<LoopAnalysis>(F);
     for (auto loop : LI) {
       loops.push_back(loop);
     }
 
-    ScalarEvolution& SE = getAnalysis<ScalarEvolutionWrapperPass>().getSE();
-
+    ScalarEvolution& SE = FAM.getResult<ScalarEvolutionAnalysis>(F);
     for (auto loop : loops) {
       // Don't insert checks in blocked/tiled inner loops.
       if (isKnownAndReasonable(SE.getSmallConstantTripCount(loop))) continue;
       BasicBlock* bb = loop->getHeader();
-      insertCheckAt(&F, bb, bb->getFirstNonPHI());
+      insertCheckAt(&F, builder, bb, bb->getFirstNonPHI());
     }
 
     modified = !loops.empty();
@@ -126,7 +147,7 @@ struct TimerChecksInsertion : public FunctionPass {
     */
     if (loops.empty() && needsHeader(F)) {
       BasicBlock* bb = &F.getEntryBlock();
-      insertCheckAt(&F,  bb, bb->getTerminator());
+      insertCheckAt(&F, builder, bb, bb->getTerminator());
       modified = true;
     }
 
@@ -137,12 +158,23 @@ struct TimerChecksInsertion : public FunctionPass {
   }
 };
 
-char TimerChecksInsertion::ID = 0;
-
 } // unnamed namespace
 
-namespace llvm {
-  void initializeTimerChecksInsertionPass(llvm::PassRegistry&);
+
+#if 0
+extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo
+llvmGetPassPluginInfo() {
+    return {
+        .APIVersion = LLVM_PLUGIN_API_VERSION,
+        .PluginName = "foster-timer-checks",
+        .PluginVersion = "v0.1",
+        .RegisterPassBuilderCallbacks = [](PassBuilder &PB) {
+            PB.registerPipelineStartEPCallback(
+                [](ModulePassManager &MPM, llvm::OptimizationLevel Level) {
+                    MPM.addPass(TimerChecksInsertion());
+                });
+        }
+    };
 }
 
 INITIALIZE_PASS_BEGIN(TimerChecksInsertion, "foster-timer-checks",
@@ -153,11 +185,12 @@ INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
 INITIALIZE_PASS_END(TimerChecksInsertion, "foster-timer-checks",
                 "Insertion of timer checks at loop headers",
                 false, false)
+#endif
 
 namespace foster {
 
-Pass* createTimerChecksInsertionPass() {
-  return new TimerChecksInsertion();
+void addTimerChecksInsertionPass(ModulePassManager &MPM) {
+  MPM.addPass(TimerChecksInsertion());
 }
 
 }

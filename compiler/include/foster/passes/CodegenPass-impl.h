@@ -43,7 +43,8 @@ void emitFosterArrayBoundsCheck(llvm::Module* mod, llvm::Value* idx64,
                                                    llvm::Value* len64,
                                                    const std::string& srclines);
 Value* getUnitValue();
-Value* getPointerToIndex(Value* compositeValue,
+Value* getPointerToIndex(llvm::Type* compositeTy,
+                         Value* compositeValue,
                          Value* idxValue,
                          const std::string& name);
 llvm::AllocaInst* CreateEntryAlloca(llvm::Type* ty,

@@ -389,10 +389,10 @@ int main(int argc, char** argv) {
   // their definition should not be available after linking against libfoster.
   llvm::Type* i32 = foster::builder.getInt32Ty();
   module->getOrInsertFunction("opaquely_i32",
-      FunctionType::get(i32, llvm::makeArrayRef(i32), /*isVarArg=*/ false));
+      FunctionType::get(i32, llvm::ArrayRef(i32), /*isVarArg=*/ false));
   llvm::Type* i64 = foster::builder.getInt64Ty();
   module->getOrInsertFunction("opaquely_i64",
-      FunctionType::get(i64, llvm::makeArrayRef(i64), /*isVarArg=*/ false));
+      FunctionType::get(i64, llvm::ArrayRef(i64), /*isVarArg=*/ false));
 
   libfoster_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/foster_runtime.bc");
   foster::putModuleFunctionsInScope(libfoster_bc.get(), module);
@@ -496,7 +496,7 @@ int main(int argc, char** argv) {
   if (optDumpStats) {
     std::error_code err;
     llvm::raw_fd_ostream out(outdirFile(optOutputName + "lower.stats.txt").c_str(),
-                             err, llvm::sys::fs::OpenFlags::F_None);
+                             err, llvm::sys::fs::OpenFlags::OF_None);
     llvm::PrintStatistics(out);
   }
 

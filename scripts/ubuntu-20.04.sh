@@ -15,6 +15,10 @@ set -x
              libffi-dev libffi7 libedit-dev cmake cmake-curses-gui
     
     sudo apt-get install --yes libncurses5-dev libncurses-dev libncurses5 libtinfo5
+
+    # LLVM 17 needs these libraries
+    sudo apt-get install --yes zlib1g-dev libxml2-dev libzstd-dev
+
     
       # GMP is needed for GHC to build Cabal from source.
       sudo apt-get install --yes libgmp3-dev libgmp-dev libgmp10 
@@ -106,10 +110,7 @@ set -x
     git clone https://github.com/brk/minuproto.git ~/sw/local/minuproto
     cd ~/sw/local/minuproto
     cabal v2-build
-
-    cd ~/foster/compiler/me
-    cabal v2-install happy alex
-    cabal v2-install --only-dependencies
+    cabal v2-install
 
 echo Okay, starting to install LLVM...
 bash ~/foster/scripts/install-llvm.sh
@@ -124,5 +125,13 @@ echo Time to build Foster itself!
 cd ~/foster
 mkdir _obj
 cd _obj
-cmake .. && make
+cmake ..
+
+
+    pushd ~/foster/compiler/me
+    cabal v2-install happy alex
+    cabal v2-install --only-dependencies
+    popd
+
+make
 

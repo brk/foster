@@ -613,7 +613,8 @@ showILProgramStructure (ILProgram procdefs vals _decls _dtypes _lines) =
         <$> text "^^^^^^^^^^^^^^\n"
 
 instance PrettyT ILMiddle where
-  prettyT (ILLetVal     id letable) = text "ILLetVal"     <+> prettyIdent id <+> prettyT letable
+  prettyT (ILLetVal     id letable) = text "ILLetVal"     <+> prettyIdent id <> text " \t "
+                                            <> prettyT letable <+> text "::" <+> prettyT (typeOf letable :: TypeLL)
   prettyT (ILTupleStore vs v _amr)  = text "ILTupleStore" <+> prettyT vs <+> prettyT v -- <+> prettyT amr
   prettyT (ILRebindId   id v)       = text "ILRebindId"   <+> prettyIdent id <+> prettyT v
 

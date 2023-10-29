@@ -9,20 +9,22 @@
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/IR/DataLayout.h"
-#include "llvm/Support/TargetRegistry.h"
+#include "llvm/MC/TargetRegistry.h"
 #include "llvm/Target/TargetOptions.h"
 
 #include "llvm/IR/Verifier.h"
-#include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include "llvm/Passes/PassBuilder.h"
+
+#include "llvm/Transforms/IPO/Internalize.h"
+#include "llvm/Transforms/IPO/GlobalDCE.h"
 
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Host.h"
+#include "llvm/TargetParser/Host.h"
 #include "llvm/Support/Signals.h"
-// #include "llvm/Support/PassNameParser.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/PrettyStackTrace.h"
@@ -181,211 +183,7 @@ void dumpModuleToBitcode(Module* mod, const string& filename) {
   foster::dumpModuleToBitcode(mod, filename);
 }
 
-// The standard LLVM pass logic migrated from the libraries to opt in 3.0.
-// These routines are adapted copies of the ones used by opt.
-namespace  {
 
-  void scheduleInternalizePass(legacy::PassManagerBase& passes) {
-    auto PreserveThese = [=](const GlobalValue& GV) {
-      return GV.getName() == "foster__runtime__main__wrapper"
-          || GV.getName() == "foster__main"
-          || GV.getName() == "foster_coro_delete_self_reference";
-    };
-    passes.add(createInternalizePass(PreserveThese));
-  }
-
-  void AddOptimizationPasses(legacy::PassManagerBase& MPM,
-                             legacy::FunctionPassManager& FPM,
-                             unsigned OptLevel,
-                             bool DisableInline) {
-    PassManagerBuilder Builder;
-    Builder.OptLevel = OptLevel;
-
-    if (DisableInline) {
-      // No inlining pass
-    } else if (OptLevel > 1) {
-      unsigned Threshold = 225;
-      if (OptLevel > 2)
-        Threshold = 275;
-      Builder.Inliner = createFunctionInliningPass(Threshold);
-    } else {
-      Builder.Inliner = createAlwaysInlinerLegacyPass();
-    }
-    Builder.DisableUnrollLoops = OptLevel == 0;
-
-    MPM.add(createVerifierPass());                // Verify that input is correct
-    Builder.populateFunctionPassManager(FPM);
-    Builder.populateModulePassManager(MPM);
-  }
-
-  void addInstructionCombiningPass(legacy::PassManagerBase &PM) {
-    bool ExpensiveCombines = false; //OptLevel > 2;
-    PM.add(createInstructionCombiningPass(ExpensiveCombines));
-  }
-
-  void PopulateLTOPassManager(PassManagerBuilder& PMB,
-  	  	  	      legacy::PassManagerBase &PM,
-                              bool Internalize,
-                              bool RunInliner,
-                              bool DisableGVNLoadPRE) {
-  // Provide AliasAnalysis services for optimizations.
-  //PMB.addInitialAliasAnalysisPasses(PM);
-  {
-    //PM.add(createCFLSteensAAWrapperPass());
-    // CFLAnders segfaults on the code we generate...
-    //PM.add(createCFLAndersAAWrapperPass());
-
-    // Add TypeBasedAliasAnalysis before BasicAliasAnalysis so that
-    // BasicAliasAnalysis wins if they disagree. This is intended to help
-    // support "obvious" type-punning idioms.
-    PM.add(createTypeBasedAAWrapperPass());
-    PM.add(createScopedNoAliasAAWrapperPass());
-  }
-
-  // Now that composite has been compiled, scan through the module, looking
-  // for a main function.  If main is defined, mark all other functions
-  // internal.
-  if (Internalize) {
-    scheduleInternalizePass(PM);
-  }
-
-  // Propagate constants at call sites into the functions they call.  This
-  // opens opportunities for globalopt (and inlining) by substituting function
-  // pointers passed as arguments to direct uses of functions.
-  PM.add(createIPSCCPPass());
-
-  // Now that we internalized some globals, see if we can hack on them!
-  PM.add(createGlobalOptimizerPass());
-  // Promote any localized global vars.
-  PM.add(createPromoteMemoryToRegisterPass());
-
-  // Linking modules together can lead to duplicated global constants, only
-  // keep one copy of each constant.
-  PM.add(createConstantMergePass());
-
-  // Remove unused arguments from functions.
-  PM.add(createDeadArgEliminationPass());
-
-  // Reduce the code after globalopt and ipsccp.  Both can open up significant
-  // simplification opportunities, and both can propagate functions through
-  // function pointers.  When this happens, we often have to resolve varargs
-  // calls, etc, so let instcombine do this.
-  addInstructionCombiningPass(PM);
-  //PMB.addExtensionsToPM(llvm::PassManagerBuilder::EP_Peephole, PM);
-
-
-  // Inline small functions
-  if (RunInliner)
-    PM.add(createFunctionInliningPass());
-
-  PM.add(createPruneEHPass());   // Remove dead EH info.
-
-  // Optimize globals again if we ran the inliner.
-  if (RunInliner)
-    PM.add(createGlobalOptimizerPass());
-  PM.add(createGlobalDCEPass()); // Remove dead functions.
-
-  // If we didn't decide to inline a function, check to see if we can
-  // transform it to pass arguments by value instead of by reference.
-  PM.add(createArgumentPromotionPass());
-
-  // The IPO passes may leave cruft around.  Clean up after them.
-  addInstructionCombiningPass(PM);
-  //PMB.addExtensionsToPM(llvm::PassManagerBuilder::EP_Peephole, PM);
-  //PM.add(createInstructionCombiningPass());
-  PM.add(createJumpThreadingPass());
-
-  // Break up allocas
-  PM.add(createSROAPass());
-
-  // Run a few AA driven optimizations here and now, to cleanup the code.
-  PM.add(createPostOrderFunctionAttrsLegacyPass()); // Add nocapture.
-  PM.add(createGlobalsAAWrapperPass()); // IP alias analysis
-
-  PM.add(createLICMPass());                 // Hoist loop invariants.
-  //if (EnableMLSM)
-  //  PM.add(createMergedLoadStoreMotionPass()); // Merge ld/st in diamonds.
-  PM.add(createGVNPass(DisableGVNLoadPRE)); // Remove redundancies.
-  PM.add(createMemCpyOptPass());            // Remove dead memcpys.
-
-  // Nuke dead stores.
-  PM.add(createDeadStoreEliminationPass());
-
-  // Cleanup and simplify the code after the scalar optimizations.
-  PM.add(createInstructionCombiningPass());
-
-  // More loops are countable; try to optimize them.
-  PM.add(createIndVarSimplifyPass());
-  PM.add(createLoopDeletionPass());
-  bool EnableLoopInterchange = false;
-  if (EnableLoopInterchange)
-    PM.add(createLoopInterchangePass());
-
-  bool LoopVectorize = true;
-  bool DisableUnrollLoops = false;
-  if (!DisableUnrollLoops)
-    PM.add(createSimpleLoopUnrollPass());   // Unroll small loops
-  PM.add(createLoopVectorizePass(true, LoopVectorize));
-  // The vectorizer may have significantly shortened a loop body; unroll again.
-  if (!DisableUnrollLoops)
-    PM.add(createLoopUnrollPass());
-
-  // Now that we've optimized loops (in particular loop induction variables),
-  // we may have exposed more scalar opportunities. Run parts of the scalar
-  // optimizer again at this point.
-  addInstructionCombiningPass(PM); // Initial cleanup
-  PM.add(createCFGSimplificationPass()); // if-convert
-  PM.add(createSCCPPass()); // Propagate exposed constants
-  addInstructionCombiningPass(PM); // Clean up again
-  PM.add(createBitTrackingDCEPass());
-
-  // More scalar chains could be vectorized due to more alias information
-  //if (RunSLPAfterLoopVectorization)
-  //  if (SLPVectorize)
-  //    PM.add(createSLPVectorizerPass()); // Vectorize parallel scalar chains.
-
-  // After vectorization, assume intrinsics may tell us more about pointer
-  // alignments.
-  PM.add(createAlignmentFromAssumptionsPass());
-
-  //if (optCombineLoads)
-  //  PM.add(createLoadCombinePass());
-
-  // Cleanup and simplify the code after the scalar optimizations.
-  addInstructionCombiningPass(PM);
-  //PMB.addExtensionsToPM(llvm::PassManagerBuilder::EP_Peephole, PM);
-
-  PM.add(createJumpThreadingPass());
-
-
-
-
-
-  // addLateLTOOptimizationPasses:
-  // Delete basic blocks, which optimization passes may have killed.
-  PM.add(createCFGSimplificationPass());
-
-  // Drop bodies of available externally objects to improve GlobalDCE.
-  PM.add(createEliminateAvailableExternallyPass());
-
-  // Now that we have optimized the program, discard unreachable functions.
-  PM.add(createGlobalDCEPass());
-
-  // According to LLVM 3.9 comment, speeds compile time but damages dbg info.
-  PM.add(createMergeFunctionsPass());
-}
-
-  void AddStandardLinkPasses(legacy::PassManagerBase &PM) {
-    PM.add(createVerifierPass());                  // Verify that input is correct
-    //PM.add(createStripSymbolsPass(true));
-    PassManagerBuilder Builder;
-    PopulateLTOPassManager(Builder, PM, /*Internalize=*/ true,
-                                        /*RunInliner=*/ true,
-                                        /*DisableGVNLoadPRE*/ true);
-    //Builder.populateLTOPassManager(PM, /*Internalize=*/ true,
-    //                                    /*RunInliner=*/ true);
-  }
-} // namespace
 
 void applyColdCC(const std::string& name, Module* mod) {
   llvm::Function* write_barrier_slowpath = mod->getFunction(name);
@@ -425,67 +223,68 @@ void optimizeModuleAndRunPasses(Module* mod) {
   // to minimize instances of register clobbering on the fast path.
   applyColdCC("foster_write_barrier_with_obj_fullpath", mod);
   
-  { legacy::PassManager passes_first;
-    passes_first.add(llvm::createVerifierPass());
-    passes_first.run(*mod);
-  }
+  llvm::verifyModule(*mod, &errs());
+
+  llvm::LoopAnalysisManager LAM;
+  llvm::FunctionAnalysisManager FAM;
+  llvm::CGSCCAnalysisManager CGAM;
+  llvm::ModuleAnalysisManager MAM;
+
+
+  llvm::PassBuilder PB;
+
+  PB.registerModuleAnalyses(MAM);
+  PB.registerCGSCCAnalyses(CGAM);
+  PB.registerFunctionAnalyses(FAM);
+  PB.registerLoopAnalyses(LAM);
+  PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+
+  llvm::ModulePassManager MPM;
 
   if (!optNoSpecializeMemallocs) {
-    ScopedTimer timer("llvm.opt.memalloc");
-    legacy::FunctionPassManager fpasses_first(mod);
-    // Run this one before inlining, otherwise we won't see the mallocs!
-    fpasses_first.add(foster::createMemallocSpecializerPass());
-    foster::runFunctionPassesOverModule(fpasses_first, mod);
+    foster::addMemallocSpecializerPass(MPM);
   }
 
   if (!optOptimizeZero) {
-    AddOptimizationPasses(passes, fpasses, 2, /*DisableInline*/ optNoInline);
-    AddStandardLinkPasses(passes);
+    MPM.addPass(PB.buildPerModuleDefaultPipeline(OptimizationLevel::O2));
   }
-
-  /*
-  // Add command line passes
-  for (size_t i = 0; i < cmdLinePassList.size(); ++i) {
-    const PassInfo* pi = cmdLinePassList[i];
-    llvm::Pass* p = (pi->getNormalCtor()) ? pi->getNormalCtor()() : NULL;
-    if (p) {
-      passes.add(p);
-    } else {
-      llvm::errs() << "Error: unable to create LLMV pass "
-                << "'" << pi->getPassName() << "'" << "\n";
-    }
-  }
-  */
 
   if (optInsertTimerChecks) {
-    fpasses.add(new llvm::LoopInfoWrapperPass());
-    fpasses.add(foster::createTimerChecksInsertionPass());
+    foster::addTimerChecksInsertionPass(MPM);
   }
 
   if (!optOptimizeZero) {
-    AddOptimizationPasses(passes, fpasses, 3, false);
-    passes.add(llvm::createVerifierPass());
+    PB.buildPerModuleDefaultPipeline(OptimizationLevel::O3);
+    MPM.addPass(llvm::VerifierPass());
   }
 
-  foster::runFunctionPassesOverModule(fpasses, mod);
-  passes.run(*mod);
+    MPM.run(*mod, MAM);
+
+  verifyModule(*mod, &errs());
 }
 
 void runInternalizePasses(Module* mod) {
   ScopedTimer timer("llvm.opt");
-  legacy::PassManager passes;
-  PassManagerBuilder Builder;
-  scheduleInternalizePass(passes);
-  passes.add(createGlobalDCEPass());
-  passes.run(*mod);
+
+  auto PreserveThese = [=](const GlobalValue& GV) {
+    return GV.getName() == "foster__runtime__main__wrapper"
+        || GV.getName() == "foster__main"
+        || GV.getName() == "foster_coro_delete_self_reference";
+  };
+  llvm::internalizeModule(*mod, PreserveThese);
+
+  llvm::ModulePassManager MPM;
+  MPM.addPass(GlobalDCEPass());
+  llvm::ModuleAnalysisManager MAM;
+  MPM.run(*mod, MAM);
 }
 
 llvm::sys::fs::OpenFlags
 fdFlagsForObjectType(CodeGenFileType filetype) {
   if (filetype == CGFT_ObjectFile) {
-    return llvm::sys::fs::OpenFlags::F_None;
+    return llvm::sys::fs::OpenFlags::OF_None;
   }
-  return llvm::sys::fs::OpenFlags::F_Text;
+  return llvm::sys::fs::OpenFlags::OF_Text;
 }
 
 #if defined(LLVM_HOSTTRIPLE)
@@ -531,7 +330,7 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
                         ? CodeGenOpt::None
                         : CodeGenOpt::Aggressive;
 
-  Optional<CodeModel::Model> cgModel = None;
+  std::optional<CodeModel::Model> cgModel = std::nullopt;
   auto tm = target->createTargetMachine(
                 triple.getTriple(),
                 "", // CPU
@@ -616,6 +415,7 @@ int main(int argc, char** argv) {
   calculateOutputNames();
 
   auto mainModulePath = makePathAbsolute(optInputPath);
+  llvm::errs() << "reading " << mainModulePath << "\n";
   llvm::Module* module = readLLVMModuleFromPath(mainModulePath);
 
   if (optCleanupOnly) {
@@ -645,7 +445,7 @@ int main(int argc, char** argv) {
   if (optDumpStats) {
     std::error_code err;
     llvm::raw_fd_ostream out((gOutputNameBase + ".optc.stats.txt").c_str(),
-                             err, llvm::sys::fs::OpenFlags::F_None);
+                             err, llvm::sys::fs::OpenFlags::OF_None);
     llvm::PrintStatistics(out);
   }
 

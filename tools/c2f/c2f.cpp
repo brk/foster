@@ -1492,7 +1492,7 @@ public:
     return true;
   }
 
-  bool HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier& fs, const char* startSpecifier, unsigned specifierLen) override;
+  bool HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier& fs, const char* startSpecifier, unsigned specifierLen, const TargetInfo& Target) override;
 
   bool HandleInvalidPrintfConversionSpecifier(const analyze_printf::PrintfSpecifier& fs, const char* startSpecifier, unsigned specifierLen) override {
     emitStringContentsUpTo(startSpecifier, specifierLen);
@@ -3271,7 +3271,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       if (ctx == BooleanContext) {
         llvm::outs() << "True";
       } else {
-        if (lit->isUTF8() || lit->isAscii()) {
+        if (lit->isUTF8() || lit->isOrdinary()) {
           emitUTF8orAsciiStringLiteral(lit->getString());
         } else {
           llvm::outs() << "// non UTF8 string\n";
@@ -3746,7 +3746,8 @@ private:
 };
 
 
-bool C2F_FormatStringHandler::HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier& fs, const char* startSpecifier, unsigned specifierLen) {
+bool C2F_FormatStringHandler::HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier& fs,
+        const char* startSpecifier, unsigned specifierLen, const TargetInfo& Target) {
   bool followedByNewline = startSpecifier[specifierLen] == '\n';
   emitStringContentsUpTo(startSpecifier, specifierLen + (followedByNewline ? 1 : 0));
 
@@ -4012,7 +4013,12 @@ void initializeIgnoredSymbolNames() {
 
 // You'll probably want to invoke with -fparse-all-comments
 int main(int argc, const char **argv) {
-  CommonOptionsParser op(argc, argv, CtoFosterCategory);
+  auto exp_op = CommonOptionsParser::create(argc, argv, CtoFosterCategory);
+  if (!exp_op) {
+    llvm::errs() << "Failed to parse command line arguments\n";
+    return 1;
+  }
+  CommonOptionsParser& op = exp_op.get();
   ClangTool Tool(op.getCompilations(), op.getSourcePathList());
 
   initializeIgnoredSymbolNames();

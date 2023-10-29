@@ -38,11 +38,6 @@ bool isPointerToSized(Type* ty) {
   return ty->isPointerTy() && ty->getContainedType(0)->isSized();
 }
 
-bool isGarbageCollectible(const TypeAST* typ, Type* ty) {
-  if (isPointerToSized(ty)) return true;
-  return typ->isGarbageCollectible();
-}
-
 // TODO vector of pointers now supported by LLVM...
 // will we allow vectors of pointers-to-GC-heap? probably unwise.
 
@@ -50,7 +45,7 @@ OffsetSet countPointersInType(const TypeAST* typ, Type* ty, Module* mod) {
   ASSERT(ty) << "Can't count pointers in a NULL type!";
 
   OffsetSet rv;
-  if (isGarbageCollectible(typ, ty)) {
+  if (typ->isGarbageCollectible()) {
     // Pointers to functions/labels/other non-sized types do not get GC'd.
     rv.push_back(0);
   }
@@ -97,12 +92,9 @@ Type* getHeapCellHeaderTy() {
 }
 
 // Rounds up to nearest multiple of the given power of two.
-Constant* roundUpToNearestMultiple(Constant* v, Constant* powerOf2) {
-  Constant* mask = ConstantExpr::getSub(powerOf2, builder.getInt64(1));
-  // Compute the value of      let m = p - 1 in ((v + m) & ~m)
-  return ConstantExpr::getAnd(
-           ConstantExpr::getAdd(v, mask),
-           ConstantExpr::getNot(mask));
+uint64_t roundUpToNearestMultiple(uint64_t v, uint64_t powerOf2) {
+  uint64_t mask = powerOf2 - 1;
+  return (v + mask) & ~mask;
 }
 
 // A slot is a cell which is *NOT* directly preceded by a heap cell header.
@@ -114,11 +106,12 @@ Constant* slotSizeOf(Type* ty) {
 // A cell is a memory region which is directly preceded by a heap cell header.
 // Returns the smallest multiple of the default heap alignment
 // which is larger than the size of the given type plus the heap header size.
-Constant* cellSizeOf(Type* ty) {
-  Constant* sz = slotSizeOf(ty);
-  Constant* hs = ConstantExpr::getSizeOf(getHeapCellHeaderTy());
-  Constant* cs = ConstantExpr::getAdd(sz, hs);
-  return roundUpToNearestMultiple(cs, builder.getInt64(kDefaultHeapAlignment));
+Constant* cellSizeOf(Type* ty, Module* m) {
+  auto& dl = m->getDataLayout();
+  uint64_t sz = dl.getTypeAllocSize(ty);
+  uint64_t hs = dl.getTypeAllocSize(getHeapCellHeaderTy());
+  uint64_t rv = roundUpToNearestMultiple(hs + sz, kDefaultHeapAlignment);
+  return ConstantInt::get(builder.getInt64Ty(), rv);
 }
 
 typedef std::pair<Type*, std::pair<ArrayOrNot, int8_t> > TypeSig;
@@ -154,13 +147,10 @@ StructType* getTypeMapType(int numPointers, llvm::Module* mod) {
     //
     // We just avoid the whole mess by getting the named struct type here.
 
-    llvm::Value* memalloc = mod->getFunction("memalloc_array");
+    llvm::Function* memalloc = mod->getFunction("memalloc_array");
     ASSERT(memalloc != NULL);
-    llvm::Type* typemap_ptr_ty = memalloc->getType()
-                                            ->getContainedType(0) // function
-                                            ->getContainedType(1); // arg 1
-    llvm::StructType* tmty = llvm::dyn_cast<llvm::StructType>(
-                              typemap_ptr_ty->getContainedType(0));
+    auto typemapty = mod->getGlobalVariable("foster_gc_utils_typemap_exemplar")->getValueType();
+    llvm::StructType* tmty = llvm::dyn_cast<llvm::StructType>(typemapty);
     if (tmty) { return tmty; }
   }
 
@@ -246,7 +236,7 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
   // Construct the type map itself
   std::vector<Constant*> typeMapFields;
   typeMapFields.push_back(isArray ? slotSizeOf(ty)
-                                  : cellSizeOf(ty));
+                                  : cellSizeOf(ty, mod));
   typeMapFields.push_back(arrayVariableToPointer(typeNameVar));
   typeMapFields.push_back(builder.getInt32(numPointers));
   typeMapFields.push_back(builder.getInt8(ctorId));
@@ -283,7 +273,7 @@ GlobalVariable* emitTypeMap(
   }
 
   TypeSig sig = mkTypeSig(ty, arrayStatus, ctorRepr.smallId);
-  typeMapCache[sig] = constructTypeMap(ty, name, filteredOffsets, arrayStatus, ctorRepr.smallId, mod);
+  typeMapCache[sig] = constructTypeMap(ty, name, filteredOffsets, arrayStatus, ctorRepr.smallId, mod/*, datalayout*/);
   return typeMapCache[sig];
 }
 
@@ -300,7 +290,7 @@ GlobalVariable* emitTypeMap(
 //   argty
 // }
 // See also libfoster_gc_roots.h
-GlobalVariable* emitCoroTypeMap(TypeAST* typ, StructType* sty,
+GlobalVariable* emitCoroTypeMap(const StructTypeAST* typ, StructType* sty,
                                 llvm::Module* mod) {
   bool hasKnownTypes = sty->getNumElements() == 2;
   if (!hasKnownTypes) {
@@ -319,7 +309,7 @@ GlobalVariable* emitCoroTypeMap(TypeAST* typ, StructType* sty,
   // pointers are precisely those which we want the GC to notice.
   CtorRepr bogusCtor; bogusCtor.smallId = -1;
   std::vector<int> v; v.push_back(0); v.push_back(1); v.push_back(4);
-  return emitTypeMap(typ, sty, ss.str(), NotArray, bogusCtor, mod, v);
+  return emitTypeMap(typ, sty, ss.str(), NotArray, bogusCtor, mod, /*datalayout,*/ v);
 }
 
 void registerStructType(const StructTypeAST* structty,
@@ -339,15 +329,17 @@ void registerStructType(const StructTypeAST* structty,
   std::string name = ParsingContext::freshName(desiredName);
   //mod->addTypeName(name, ty);
   //DDiag() << "TODO: registered type " << name << " = " << str(ty) << "; ctor id " << ctorRepr.smallId;
-  emitTypeMap(structty, ty, name, NotArray, ctorRepr, mod, std::vector<int>());
+  emitTypeMap(structty, ty, name, NotArray, ctorRepr, mod, /*datalayout,*/ std::vector<int>());
 }
 
-bool
-isCoroStructType(TypeAST* typ) {
-  if (typ == foster::ParsingContext::lookupType("Foster$GenericCoro")) return true;
+const StructTypeAST*
+castCoroStructType(TypeAST* typ) {
+  if (typ == foster::ParsingContext::lookupType("Foster$GenericCoro")) {
+    return typ->castStructTypeAST();
+  }
 
   if (typ->getLLVMType() == foster_generic_coro_t) {
-    return true;
+    return typ->castStructTypeAST();
   }
   //llvm::outs() << "isCoroStructType? " << str(typ) << "\n";
   //llvm::outs() << "    foster_generic_coro_t = " << str(foster_generic_coro_t) << "\n";
@@ -356,32 +348,10 @@ isCoroStructType(TypeAST* typ) {
     if (sty == foster_generic_coro_ast
      ||  ( sty->getNumContainedTypes() > 0
         && sty->getContainedType(0) == foster_generic_coro_ast)) {
-      return true;
+      return sty;
     }
   }
-  return false;
-}
-
-bool isValidClosureType(const llvm::Type* ty) {
-  if (const llvm::StructType* sty =
-         llvm::dyn_cast_or_null<const llvm::StructType>(ty)) {
-    if (sty->getNumElements() != 2) return false;
-
-    const llvm::Type* maybeEnvTy = sty->getElementType(1);
-    const llvm::Type* maybePtrFn = sty->getElementType(0);
-    if (const llvm::PointerType* ptrMaybeFn
-            = llvm::dyn_cast<llvm::PointerType>(maybePtrFn)) {
-      if (const llvm::FunctionType* fnty
-            = llvm::dyn_cast<llvm::FunctionType>(ptrMaybeFn->getElementType())) {
-        if (fnty->getNumParams() == 0) return false;
-        if (fnty->isVarArg()) return false;
-        if (maybeEnvTy == fnty->getParamType(0)) {
-          return true;
-        }
-      }
-    }
-  }
-  return false;
+  return nullptr;
 }
 
 // Checks that ty == { ___ (i8*, ...)*, i8* }
@@ -389,7 +359,6 @@ bool isGenericClosureType(const llvm::Type* ty) {
   using foster::builder;
   llvm::Type* env = getGenericClosureEnvType()->getLLVMType();
   if (const llvm::StructType* sty= llvm::dyn_cast<const llvm::StructType>(ty)) {
-    if (!isValidClosureType(sty)) return false;
     if (sty->getContainedType(1) != env) return false;
     if (!sty->getContainedType(0)->isPointerTy()) return false;
 
@@ -410,9 +379,9 @@ llvm::GlobalVariable* CodegenPass::getTypeMapForType(TypeAST* typ,
   llvm::GlobalVariable* gv = typeMapCache[mkTypeSig(ty, arrayStatus, ctorRepr.smallId)];
   if (gv) return gv;
 
-  if (isCoroStructType(typ)) {
+  if (auto cty = castCoroStructType(typ)) {
     //llvm::outs() << "Emitting coro type map for " << str(typ) << "\n";
-    gv = emitCoroTypeMap(typ, llvm::dyn_cast<StructType>(ty), mod);
+    gv = emitCoroTypeMap(cty, llvm::dyn_cast<StructType>(ty), mod);
   } else if (/*!ty->isAbstract() &&*/ !ty->isAggregateType()) {
     gv = emitTypeMap(typ, ty, ParsingContext::freshName("gcatom"), arrayStatus,
                      ctorRepr, mod, std::vector<int>());

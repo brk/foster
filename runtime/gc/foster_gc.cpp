@@ -711,8 +711,11 @@ void mark_as_smallmedium(frame15* f) {
 
 // Markable objects live in the upper bits of address space.
 // Unfortunately it appears to be surprisingly hard to force a malloc implementation
-// to not use the lower 4 GB of virtual memory.
-bool non_markable_addr_toosmall(void* addr) { return uintptr_t(addr) <   uintptr_t(0x400000); }
+// to not use the lower 4 GB of virtual memory. Attempting to reserve low pages to prevent
+// the default malloc from using low addresses does not reliably work. Eventually we ought
+// to use a custom allocator. This address-based test is presumably incompatible with
+// position-independent executables, which could have static read-only data arbitrarily placed.
+bool non_markable_addr_toosmall(void* addr) { return uintptr_t(addr) <   uintptr_t(0x200000); }
 bool non_markable_addr_toobig(void* addr) {   return uintptr_t(addr) >= (uintptr_t(1) << address_space_prefix_size_log()); }
 // The compiler, runtime,  and GC cooperate to represent "small" integer values
 // as tagged pointer-sized words; if we see the tag, the other bits aren't an address!

@@ -71,21 +71,22 @@ llvm::Value* getUnitValue() {
     llvm::dyn_cast<llvm::PointerType>(getUnitType()->getLLVMType()));
 }
 
-Value* getPointerToIndex(Value* ptrToCompositeValue,
+Value* getPointerToIndex(llvm::Type* underlyingTy,
+                         Value* ptrToCompositeValue,
                          Value* idxValue,
                          const std::string& name) {
   std::vector<Value*> idx;
   idx.push_back(builder.getInt32(0));
   idx.push_back(idxValue);
 
-  llvm::Type* underlyingTy = ptrToCompositeValue->getType()->getContainedType(0);
   auto indexedTy = llvm::GetElementPtrInst::getIndexedType(underlyingTy, idx);
   ASSERT(indexedTy != nullptr)
       << "Attempt to use index " << str(idxValue)
       << "\non val of type "     << str(ptrToCompositeValue->getType())
+      << "\nwith underlying ty " << str(underlyingTy)
       << "\nwith value "         << str(ptrToCompositeValue);
 
-  return builder.CreateGEP(ptrToCompositeValue, llvm::makeArrayRef(idx), name.c_str());
+  return builder.CreateGEP(underlyingTy, ptrToCompositeValue, llvm::ArrayRef(idx), name.c_str());
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -115,7 +116,6 @@ Constant* getSlotName(llvm::AllocaInst* stackslot, CodegenPass* pass) {
 }
 
 ////////////////////////////////////////////////////////////////////
-Type* getSlotType(llvm::Value* v) { return v->getType()->getPointerElementType(); }
 
 extern char kFosterMain[];
 void CodegenPass::markFosterFunction(Function* f) {
@@ -177,9 +177,8 @@ void emitRecordMallocCallsite(llvm::Module* m,
 }
 
 // |arg| is a 1-based index (0 is the fn return value).
-llvm::Type* getFunctionTypeArgType(llvm::Type* fn_ptr_ty, int arg) {
- return fn_ptr_ty->getContainedType(0) // function
-                 ->getContainedType(arg);
+llvm::Type* getFunctionTypeArgType(llvm::FunctionType* fnty, int arg) {
+ return fnty->getContainedType(arg);
 }
 
 llvm::Value*
@@ -194,7 +193,7 @@ CodegenPass::emitMalloc(TypeAST* typ,
   llvm::GlobalVariable* ti = getTypeMapForType(typ, ctorRepr, mod, NotArray);
   ASSERT(ti != NULL) << "malloc must have type info for type " << str(typ)
                      << "; ctor id " << ctorRepr.smallId;
-  llvm::Type* typemap_type = getFunctionTypeArgType(memalloc_cell->getType(), 1);
+  llvm::Type* typemap_type = getFunctionTypeArgType(memalloc_cell->getFunctionType(), 1);
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
 
   llvm::CallInst* mem = builder.CreateCall(memalloc_cell, typemap, "mem");
@@ -231,7 +230,7 @@ CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
   // 3) (maybe) unboxed structs, for types with a single ctor.
   llvm::GlobalVariable* ti = getTypeMapForType(elt_type, ctorRepr, mod, YesArray);
   ASSERT(ti != NULL);
-  llvm::Type* typemap_type = getFunctionTypeArgType(memalloc->getType(), 1);
+  llvm::Type* typemap_type = getFunctionTypeArgType(memalloc->getFunctionType(), 1);
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
   llvm::Value* num_elts = signExtend(n, builder.getInt64Ty());
   llvm::CallInst* mem = builder.CreateCall(from(memalloc),
@@ -243,8 +242,7 @@ CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
     emitRecordMallocCallsite(mod, mem, typemap, srcloc, linesgv);
   }
 
-  return builder.CreateBitCast(mem,
-                  ArrayTypeAST::getZeroLengthTypeRef(elt_type), "arr_ptr");
+  return mem;
 }
 
 // If _template has type i32, returns (v & 31) unless v is a constant < 32, in
@@ -340,7 +338,7 @@ createFMulAdd(IRBuilder<>& b, llvm::Value* v1, llvm::Value* v2, llvm::Value* v3)
 
 llvm::Value*
 createPowi(IRBuilder<>& b, llvm::Value* vd, llvm::Value* vi) {
-  Type*  tys[] = { vd->getType() };
+  Type*  tys[] = { vd->getType(), vi->getType() };
   Module*    m = b.GetInsertBlock()->getParent()->getParent();
   llvm::Function* intrv = llvm::Intrinsic::getDeclaration(m, llvm::Intrinsic::powi, tys);
   CallInst *CI = b.CreateCall(from(intrv), { vd, vi }, "powi");
