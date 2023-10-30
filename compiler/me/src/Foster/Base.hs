@@ -906,7 +906,7 @@ instance PrettyT ty => PrettyT (E_VarAST ty) where
 
 instance PrettyT t => PrettyT (FosterPrim t) where
   prettyT (NamedPrim (TypedId _ i)) = pretty i
-  prettyT (PrimOp nm _ty) = text nm
+  prettyT (PrimOp nm ty) = text nm <+> text "::" <+> prettyT ty
   prettyT (PrimOpInt op frm to) = text op <> text "from " <> pretty frm <> text " to " <> pretty to
   prettyT (CoroPrim c t1 t2) = pretty c <> text ":[" <> prettyT t1
                                        <> text "," <+> prettyT t2

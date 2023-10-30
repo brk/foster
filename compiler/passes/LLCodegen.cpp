@@ -117,24 +117,6 @@ bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
 }
 #endif
 
-llvm::Value* emitBitcast(llvm::Value* v, llvm::Type* dstTy, llvm::StringRef msg = "") {
-  llvm::Type* srcTy = v->getType();
-  if (srcTy->isVoidTy()) {
-    return getNullOrZero(dstTy);
-  }
-  /*
-  if (isFunctionPointerTy(srcTy) && isLargishStructPointerTy(dstTy)) {
-    ASSERT(false) << "cannot cast " << str(srcTy) << " to " << str(dstTy) << "\n" << str(v);
-  }
-  */
-  if (dstTy->isPointerTy() != srcTy->isPointerTy()) {
-    llvm::errs() << builder.GetInsertBlock()->getParent() << "\n";
-    ASSERT(false) << "cannot cast " << str(srcTy) << " to " << str(dstTy) << "\ndue to pointer-type mismatch\n" << str(v);
-  }
-
-  return builder.CreateBitCast(v, dstTy, msg);
-}
-
 llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot) {
   if (!base) base = getNullOrZero(builder.getInt8PtrTy());
   auto gcwrite_fn = pass->mod->getFunction("foster_write_barrier_with_obj_generic");
@@ -144,10 +126,7 @@ llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot
     // (because we don't need to keep track of lost references, only added ones).
     return builder.CreateStore(val, slot, /*isVolatile=*/ false);
   } else {
-    Value* base_generic = builder.CreateBitCast(base, builder.getInt8PtrTy());
-    Value* slot_generic = builder.CreateBitCast(slot, builder.getInt8PtrTy()->getPointerTo(0));
-    Value*  val_generic = builder.CreateBitCast(val,  builder.getInt8PtrTy());
-    return builder.CreateCall(gcwrite_fn, { val_generic, base_generic, slot_generic });
+    return builder.CreateCall(gcwrite_fn, { val, base, slot });
   }
 }
 
@@ -206,19 +185,13 @@ llvm::Value* emitStore(CodegenPass* pass,
     val = getUnitValue();
   }
 
-#if 0
-  if (auto eltTy = needsBitcastToMediateUnknownPointerMismatch(val, ptr)) {
-    val = emitBitcast(val, eltTy, "specSgen");
-  }
-#endif
-
   return emitGCWriteOrStore(pass, val, base, ptr, w);
 }
 
 Value* emitCallToInspectPtr(CodegenPass* pass, Value* ptr) {
    llvm::Function* rmc = pass->mod->getFunction("inspect_ptr_for_debugging_purposes");
    ASSERT(rmc) << "couldnt find inspect_ptr_for_debugging_purposes";
-   return builder.CreateCall(from(rmc), builder.CreateBitCast(ptr, builder.getInt8PtrTy()));
+   return builder.CreateCall(from(rmc), ptr);
 }
 
 std::vector<llvm::Value*>
@@ -415,24 +388,10 @@ CodegenPass::CodegenPass(llvm::Module* m,/*llvm::DataLayout dl,*/ CodegenPassCon
   }
 }
 
-std::map<std::string, llvm::Type*> gDeclaredSymbolTypes;
-
 llvm::FunctionCallee CodegenPass::lookupFunctionOrDie(const std::string&
                                                        fullyQualifiedSymbol) {
-  //DDiag() << "looking up function " << fullyQualifiedSymbol;
   llvm::Function* f = mod->getFunction(fullyQualifiedSymbol);
   assertHaveFunctionNamed(f, fullyQualifiedSymbol, this);
-  if (llvm::Type* expTy = gDeclaredSymbolTypes[fullyQualifiedSymbol]) {
-    if (expTy != f->getType() && isFunctionPointerTy(expTy)) {
-      // This codepath is triggered by, for example, io/posix,
-      // which uses foster_stdin_read_bytes with expTy = i64 ({ i64, [0 x i8] }*, i32*)*
-      llvm::FunctionType* expFnTy = llvm::dyn_cast<llvm::FunctionType>(expTy->getContainedType(0));
-      return llvm::FunctionCallee(expFnTy, builder.CreateBitCast(f, expTy));
-    }
-    ASSERT(!"lookupFunctionOrDie() tried to do an unexpected type cast!")
-      << "\nsymbol: " << fullyQualifiedSymbol
-      << "\nexpTy: " << str(expTy);
-  }
   return llvm::FunctionCallee(f->getFunctionType(), f);
 }
 
@@ -881,14 +840,6 @@ void passPhisAndBr(LLBlock* block, const vector<llvm::Value*>& args) {
     if (v->getType()->isVoidTy()) {
       v = getUnitValue(); // Can't pass a void value!
     }
-    #if 0
-    if ((v->getType() != block->phiNodes[i]->getType())
-        && matchesExceptForUnknownPointers(v->getType(), block->phiNodes[i]->getType())
-        //&& (isPointerToUnknown(v->getType()) || isPointerToUnknown(block->phiNodes[i]->getType()))
-        ) {
-      v = emitBitcast(v, block->phiNodes[i]->getType(), "genXspec");
-    }
-    #endif
     assertValueHasSameTypeAsPhiNode(v, block, i);
     block->phiNodes[i]->addIncoming(v, builder.GetInsertBlock());
     ss << " " << v->getName().str() << ";";
@@ -945,7 +896,7 @@ ConstantInt* getTagForCtorId(const CtorId& c) {
 llvm::Value* emitCallGetCtorIdOf(CodegenPass* pass, llvm::Value* v) {
   llvm::Function* foster_ctor_id_of = pass->mod->getFunction("foster_ctor_id_of");
   ASSERT(foster_ctor_id_of != NULL);
-  return builder.CreateCall(from(foster_ctor_id_of), emitBitcast(v, builder.getInt8PtrTy()));
+  return builder.CreateCall(from(foster_ctor_id_of), { v });
 }
 
 void codegenSwitch(CodegenPass* pass, LLSwitch* sw, llvm::Value* insp_tag) {
@@ -1016,7 +967,7 @@ llvm::Value* LLBitcast::codegen(CodegenPass* pass) {
     // Can't cast a void value to a unit value,
     // but we can manufacture a unit ptr...
     return llvm::ConstantPointerNull::getNullValue(tgt);
-  } else return (v->getType() == tgt) ? v : emitBitcast(v, tgt);
+  } else return v;
 }
 
 void LLRebindId::codegenMiddle(CodegenPass* pass) {
@@ -1080,11 +1031,7 @@ llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
   if (this->primName == "coro_invoke") { return pass->emitCoroInvokeFn(r, a); }
   if (this->primName == "coro_create") { return pass->emitCoroCreateFn(retType, typeArg); }
   if (this->primName == "coro_isdead") { 
-    auto orig = pass->mod->getFunction("foster_coro_isdead");
-    auto newty = rawPtrTo(llvm::FunctionType::get(builder.getInt1Ty(), 
-                                  { getHeapPtrTo(foster_generic_split_coro_ty) }, false));
-    llvm::outs() << "trying to cast " << str(orig->getType()) << "\nto\n" << str(newty) << "\n";
-    return builder.CreateBitCast(orig, newty);
+    return pass->mod->getFunction("foster_coro_isdead");
   }
   if (this->primName == "coro_parent") {
     auto fn = Function::Create(
@@ -1101,9 +1048,7 @@ llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
       
     BasicBlock* prevBB = builder.GetInsertBlock();
     pass->addEntryBB(fn);
-    builder.CreateRet(
-      builder.CreateBitCast(pass->getCurrentCoroParent(),
-        getHeapPtrTo(foster_generic_coro_t)));
+    builder.CreateRet(pass->getCurrentCoroParent());
     if (prevBB) {
       builder.SetInsertPoint(prevBB);
     }
@@ -1187,13 +1132,7 @@ llvm::Value* emitByteArray(CodegenPass* pass, llvm::StringRef bytes, llvm::Strin
   auto arrayGlobalConstant = mkGlobalArrayCellConstant(pass, typemap, const_arr_tidy);
   auto arrayGlobal = emitPrivateGlobal(pass, arrayGlobalConstant, cellname.str());
 
-  auto rv = getPointerToIndex(arrayGlobalConstant->getType(), arrayGlobal, builder.getInt32(1), "cellptr");  
-  return rv;
-  //auto rv = builder.CreateBitCast(getPointerToIndex(arrayGlobal, builder.getInt32(1), "cellptr"),
-  //                                ArrayTypeAST::getZeroLengthTypeRef(TypeAST::i(8)), "arr_ptr");
-
-  //llvm::errs() << "emitByteArray for " << bytes << ":\n    " << str(rv) << "\n";
-  //return rv;
+  return getPointerToIndex(arrayGlobalConstant->getType(), arrayGlobal, builder.getInt32(1), "cellptr");
 }
 
 llvm::Value* LLText::codegen(CodegenPass* pass) {
@@ -1399,17 +1338,7 @@ Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass, Type* ty,
                     bool dynCheck, const std::string& srclines) {
   Value* arr = NULL; Value* len;
 
-  /*
-  if (isPointerToUnknown(base->getType())) {
-    auto arrayType = ArrayTypeAST::getSizedArrayTypeRef(ty, 0);
-    base = emitBitcast(base, arrayType, "genAspec");
-  }
-  */
-
   auto arrayType = ArrayTypeAST::getSizedArrayType(ty, 0);
-
-  llvm::errs() << "getArraySlot: ty = " << str(ty) << "\n";
-  llvm::errs() << "getArraySlot: arrayType = " << str(arrayType) << "\n";
 
   if (tryBindArray(pass, arrayType, base, arr, len)) {
     if (dynCheck && !pass->config.disableAllArrayBoundsChecks) {
@@ -1438,7 +1367,6 @@ llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
   ASSERT(this->type) << "LLArrayRead with no type?";
 
   Type* ty = this->type->getLLVMType();
-  llvm::errs() << "LLArrayRead ty = " << str(ty) << "\n";
   Value* base = NULL;
   Value* slot = ari->codegenARI(pass, &base, ty);
   //Value* val  = emitGCRead(pass, base, slot);
@@ -1456,12 +1384,6 @@ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
   Value* base = NULL;
   Value* slot = ari->codegenARI(pass, &base, val->getType());
 
-#if 0
-  if (auto eltTy = needsBitcastToMediateUnknownPointerMismatch(val, slot)) {
-    val = emitBitcast(val, eltTy, "specSgen");
-  }
-  #endif
-
   emitGCWriteOrStore(pass, val, base, slot);
   return getNullOrZero(getUnitType()->getLLVMType());
 }
@@ -1470,9 +1392,7 @@ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
 llvm::Value* LLArrayLength::codegen(CodegenPass* pass) {
   Value* val  = this->value->codegen(pass);
   auto ety = this->type->getLLVMType();
-  llvm::errs() << "LLArrayLength ety = " << str(ety) << "\n";
   auto sty = ArrayTypeAST::getSizedArrayType(ety, 0);
-  llvm::errs() << "LLArrayLength sty = " << str(sty) << "\n";
   Value* _bytes; Value* len;
   if (tryBindArray(pass, sty, val, /*out*/ _bytes, /*out*/ len)) {
     // len already assigned.
@@ -1518,9 +1438,7 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
     auto arrayGlobalConstant = mkGlobalArrayCellConstant(pass, typemap, const_arr_tidy);
     auto arrayGlobal = emitPrivateGlobal(pass, arrayGlobalConstant, ".arr_cell");
 
-    auto rv = getPointerToIndex(arrayGlobalConstant->getType(), arrayGlobal, builder.getInt32(1), "cellptr");
-    //return builder.CreateBitCast(rv, ArrayTypeAST::getZeroLengthTypeRef(this->elem_type), "arr_ptr");
-    return rv;
+    return getPointerToIndex(arrayGlobalConstant->getType(), arrayGlobal, builder.getInt32(1), "cellptr");
   } else {
     llvm::GlobalVariable* arrayGlobal = emitPrivateGlobal(pass, const_arr, ".arr");
 
@@ -1650,9 +1568,7 @@ Value* LLUnboxedTuple::codegen(CodegenPass* pass) {
         auto typemap = pass->getTypeMapForType(this->type, ctorRepr, pass->mod, NotArray);
         auto globalCellConstant = mkGlobalNonArrayCellConstant(pass, typemap, ct);
         auto globalCell = emitPrivateGlobal(pass, globalCellConstant, "cstup");
-        llvm::Type* ty = getHeapPtrTo(getLLVMType(this->type)); // well, heap-formatted but not on-heap...
-        llvm::outs() << "************ " << "type map for unboxed (?) type " << str(this->type) << "\n";
-        return emitBitcast(builder.CreateConstGEP2_32(globalCellConstant->getType(), globalCell, 0, 2), ty);
+        return builder.CreateConstGEP2_32(globalCellConstant->getType(), globalCell, 0, 2);
     }
   } else {
     return createUnboxedTuple(codegenAll(pass, this->vars));
@@ -1690,7 +1606,7 @@ Value* LLGlobalAppCtor::codegen(CodegenPass* pass) {
   auto ct = llvm::ConstantStruct::getAnon(consts);
   auto globalCellConstant = mkGlobalNonArrayCellConstant(pass, ti, ct);
   auto globalCell = emitPrivateGlobal(pass, globalCellConstant, "csctor");
-  return emitBitcast(builder.CreateConstGEP2_32(globalCellConstant->getType(), globalCell, 0, 2), ty);
+  return builder.CreateConstGEP2_32(globalCellConstant->getType(), globalCell, 0, 2);
 }
 
 ///}}}//////////////////////////////////////////////////////////////
@@ -1718,9 +1634,6 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
     // If we know that the subterm at this position was created with
     // a particular data constructor, emit a cast to that ctor's type.
     if (ctors[i].ctorStructType) {
-      //if (v->getType()->isPointerTy()) {
-        //v = emitBitcast(v, getHeapPtrTo(ctors[i].ctorStructType->getLLVMType()));
-      //}
       if (!v->getType()->isPointerTy()) {
         const CtorRepr& r = ctors[i].ctorId.ctorRepr;
         if (r.isTransparent && !r.isBoxed) {
@@ -1747,7 +1660,8 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
   // { i999* }* when computing the occurrence for x. But x's physical type then
   // remains i999*, while it ought to be the translation of its source type, X.
   // This bitcast fixes the mismatch.
-  return emitBitcast(v, getLLVMType(this->type), "occty");
+  //return emitBitcast(v, getLLVMType(this->type), "occty");
+  return v;
 }
 
 ///}}}//////////////////////////////////////////////////////////////
@@ -1780,28 +1694,9 @@ llvm::Value* LLCallInlineAsm::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* emitFnArgCoercions(Value* argV, llvm::Type* expectedType) {
-  // This is a an artifact produced by the mutual recursion
-  // of the environments of mutually recursive closures.
-  if (  argV->getType() != expectedType
-    &&  argV->getType() == getGenericClosureEnvType()->getLLVMType()) {
-    DDiag() << "emitting bitcast gen2spec (exp: " << str(expectedType)
-            << "); (actual: " << str(argV->getType()) << ")";
-    argV = emitBitcast(argV, expectedType, "gen2spec");
-  }
-
-#if 0
-  // This occurs in polymorphic code.
-  if ((argV->getType() != expectedType)
-      && matchesExceptForUnknownPointers(argV->getType(), expectedType)) {
-    // Example: matched { i64, [0 x i8] }* to %struct.foster_bytes* in call to prim_print_bytes_stdout
-    //DDiag() << "matched " << str(argV->getType()) << " to " << str(expectedType) << " in call to " << FV->getName();
-    argV = emitBitcast(argV, expectedType, "spec2gen");
-  }
-  #endif
-
   // If we're calling a C function that returns void, conjure up a unit value.
-  if (argV->getType()->isVoidTy() && str(expectedType) == "{}*") {
-    argV = getNullOrZero(llvm::dyn_cast<llvm::PointerType>(expectedType));
+  if (argV->getType()->isVoidTy() && expectedType->isPointerTy()) {
+    return getNullOrZero(llvm::dyn_cast<llvm::PointerType>(expectedType));
   }
 
   return argV;
@@ -1909,14 +1804,6 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
                                      llvm::ArrayRef(valArgs));
   callInst->setCallingConv(callingConv);
   trySetName(callInst, "calltmp");
-
-  llvm::errs() << "call inst " << str(callInst) << " given fnty " << str(FT) << "\n";
-  //llvm::errs() << "this->type = " << str(this->type) << "\n";
-  llvm::errs() << "this->type->getLLVMType() = " << str(this->type->getLLVMType()) << "\n";
-  //llvm::errs() << "this->base->type = " << str(this->base->type) << "\n";
-  if (this->base->type) {
-  llvm::errs() << "this->base->type->getLLVMType() = " << str(this->base->type->getLLVMType()) << "\n";    
-  }
 
   // See CapnpIL.hs for a note on tail call marker safety.
   if (this->okToMarkAsTailCall && callingConv == llvm::CallingConv::Fast) {

@@ -419,12 +419,12 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "f64-to-u64-unsafe"    $ (,) (mkFnType [f64] [i64] ) $ PrimOp "fptoui_f64_i64" i64
   ,(,) "s64-to-f64-unsafe"    $ (,) (mkFnType [i64] [f64] ) $ PrimOp "sitofp_f64" i64
   ,(,) "u64-to-f64-unsafe"    $ (,) (mkFnType [i64] [f64] ) $ PrimOp "uitofp_f64" i64
-  ,(,) "s32-to-f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "sitofp_f64" i32
-  ,(,) "u32-to-f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "uitofp_f64" i32
-  ,(,) "f64-as-i64"    $(,) (mkFnType [f64] [i64]     ) $ PrimOp "bitcast" i64
-  ,(,) "i64-as-f64"    $(,) (mkFnType [i64] [f64]     ) $ PrimOp "bitcast" f64
-  ,(,) "f32-as-i32"    $(,) (mkFnType [f32] [i32]     ) $ PrimOp "bitcast" i32
-  ,(,) "i32-as-f32"    $(,) (mkFnType [i32] [f32]     ) $ PrimOp "bitcast" f32
+  ,(,) "s32-to-f64"           $ (,) (mkFnType [i32] [f64] ) $ PrimOp "sitofp_f64" i32
+  ,(,) "u32-to-f64"           $ (,) (mkFnType [i32] [f64] ) $ PrimOp "uitofp_f64" i32
+  ,(,) "f64-as-i64"           $ (,) (mkFnType [f64] [i64] ) $ PrimOp "bitcast" i64
+  ,(,) "i64-as-f64"           $ (,) (mkFnType [i64] [f64] ) $ PrimOp "bitcast" f64
+  ,(,) "f32-as-i32"           $ (,) (mkFnType [f32] [i32] ) $ PrimOp "bitcast" i32
+  ,(,) "i32-as-f32"           $ (,) (mkFnType [i32] [f32] ) $ PrimOp "bitcast" f32
   ,(,) "s64-to-f32-unsafe"    $ (,) (mkFnType [i64] [f32] ) $ PrimOp "sitofp_f32" i64
   ,(,) "u64-to-f32-unsafe"    $ (,) (mkFnType [i64] [f32] ) $ PrimOp "uitofp_f32" i64
   ,(,) "s32-to-f32-unsafe"    $ (,) (mkFnType [i32] [f32] ) $ PrimOp "sitofp_f32" i32
@@ -436,8 +436,8 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "Int-isSmall"          $ (,) (mkFnType [int] [i1 ] ) $ PrimOp "Int-isSmall" i1
   ,(,) "Int-toSmall"          $ (,) (mkFnType [int] [iwd] ) $ PrimOp "Int-toSmall" i1 -- TODO: Precondition: Int-isSmall
   ,(,) "Int-ofSmall"          $ (,) (mkFnType [iwd] [int] ) $ PrimOp "Int-ofSmall" i1 -- TODO: Precondition: Int-isSmallWord
-  ,(,) "Int-toBig"            $ (,) (mkFnType [int] [big] ) $ PrimOp "bitcast" big -- TODO: Precondition: !isSmall
-  ,(,) "Int-ofBig"            $ (,) (mkFnType [big] [int] ) $ PrimOp "bitcast" int -- No precondition!
+  ,(,) "Int-toBig"            $ (,) (mkFnType [int] [big] ) $ PrimOp "Int-toBig" big -- TODO: Precondition: !isSmall
+  ,(,) "Int-ofBig"            $ (,) (mkFnType [big] [int] ) $ PrimOp "Int-ofBig" int -- No precondition!
   
   ] ++ concatMap fixnumPrimitives [I32, I64, I8, I16, IWd, IDw]
     ++ sizeConversions

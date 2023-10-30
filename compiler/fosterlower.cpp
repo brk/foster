@@ -44,12 +44,6 @@ namespace foster {
   extern bool gPrintLLVMImports; // in StandardPrelude.cpp
 }
 
-// Some stdlib functions, such as those with byte array parameters,
-// will have a mismatch in their supposed vs actual LLVM types.
-// We record these special cases here when loading the stdlib,
-// and bitcast the function on each access.
-extern std::map<std::string, llvm::Type*> gDeclaredSymbolTypes;
-
 using namespace llvm;
 
 static cl::OptionCategory FosterOptCat("Foster-specific Options", "");
@@ -319,24 +313,13 @@ areDeclaredValueTypesOK(llvm::Module* mod,
         // Imported constants should be automatically dereferenced.
         d->autoDeref = true;
       }
-      // TODO check to see if type are sanely bit-castable
-      //      (e.g. they only differ underneath a pointer...).
-      else if (d->getName() == "foster_stdin_read_bytes"
-       || d->getName() == "foster_posix_read_bytes"
-       || d->getName() == "foster_posix_write_bytes"
-       || d->getName() == "foster_posix_write_bytes_to_file") {
-        gDeclaredSymbolTypes[d->getName()] = ty;
-      } else {
-        if (typesAreCastable(v->getType(), ty)) {
-          // TODO generate cast?
-        } else {
-          EDiag() << "mismatch between declared and imported types"
-                  << " for symbol " << d->getName() << ":\n"
-                  << "Declared: " << str(t) << "\n"
-                  << " in LLVM: " << str(ty) << "\n"
-                  << "Imported: " << str(v->getType()) << "\n";
-          return false;
-        }
+      else {
+        EDiag() << "mismatch between declared and imported types"
+                << " for symbol " << d->getName() << ":\n"
+                << "Declared: " << str(t) << "\n"
+                << " in LLVM: " << str(ty) << "\n"
+                << "Imported: " << str(v->getType()) << "\n";
+        return false;
       }
     }
     }

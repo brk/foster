@@ -402,14 +402,14 @@ llvm::GlobalVariable* CodegenPass::getTypeMapForType(TypeAST* typ,
 }
 
 void CodegenPass::emitTypeMapListGlobal() {
-  auto ty = builder.getInt8PtrTy();
+  auto ptr = builder.getPtrTy();
   std::vector<Constant*> vals;
   for (auto p : typeMapCache) {
-    vals.push_back(llvm::ConstantExpr::getBitCast(p.second, ty));
+    vals.push_back(p.second);
   }
-  vals.push_back(llvm::ConstantPointerNull::getNullValue(ty));
+  vals.push_back(llvm::ConstantPointerNull::getNullValue(ptr));
 
-  llvm::ArrayType* arrTy = llvm::ArrayType::get(ty, vals.size());
+  llvm::ArrayType* arrTy = llvm::ArrayType::get(ptr, vals.size());
   Constant* carr = llvm::ConstantArray::get(arrTy, vals);
 
   GlobalVariable* typeMapListGlobal = new GlobalVariable(

@@ -51,8 +51,7 @@ void emitFosterArrayBoundsCheck(llvm::Module* mod, llvm::Value* idx,
   llvm::Function* fosterBoundsCheck = mod->getFunction("foster__boundscheck64");
   ASSERT(fosterBoundsCheck != NULL);
 
-  Value* msg_array = builder.CreateGlobalString(srclines);
-  Value* msg = builder.CreateBitCast(msg_array, builder.getInt8PtrTy());
+  Value* msg = builder.CreateGlobalString(srclines);
   Value* ext = signExtend(idx, len64->getType());
   builder.CreateCall(from(fosterBoundsCheck), { ext, len64, msg });
 }
@@ -61,8 +60,7 @@ void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr) {
   llvm::Function* fosterAssert = mod->getFunction("foster__assert");
   ASSERT(fosterAssert != NULL);
 
-  Value* msg_array = builder.CreateGlobalString(cstr);
-  Value* msg = builder.CreateBitCast(msg_array, builder.getInt8PtrTy());
+  Value* msg = builder.CreateGlobalString(cstr);
   builder.CreateCall(from(fosterAssert), { cond, msg });
 }
 
@@ -111,8 +109,7 @@ Constant* getSlotName(llvm::AllocaInst* stackslot, CodegenPass* pass) {
       /*Name=*/        ".slotname." + slotname);
   slotnameVar->setAlignment(llvm::MaybeAlign(1));
 
-  return llvm::ConstantExpr::getBitCast(arrayVariableToPointer(slotnameVar),
-                                        builder.getInt8PtrTy());
+  return arrayVariableToPointer(slotnameVar);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -176,11 +173,6 @@ void emitRecordMallocCallsite(llvm::Module* m,
   builder.CreateCall(from(rmc), { mem, typemap, srcloc, typedesc });
 }
 
-// |arg| is a 1-based index (0 is the fn return value).
-llvm::Type* getFunctionTypeArgType(llvm::FunctionType* fnty, int arg) {
- return fnty->getContainedType(arg);
-}
-
 llvm::Value*
 CodegenPass::emitMalloc(TypeAST* typ,
                         CtorRepr ctorRepr,
@@ -193,21 +185,16 @@ CodegenPass::emitMalloc(TypeAST* typ,
   llvm::GlobalVariable* ti = getTypeMapForType(typ, ctorRepr, mod, NotArray);
   ASSERT(ti != NULL) << "malloc must have type info for type " << str(typ)
                      << "; ctor id " << ctorRepr.smallId;
-  llvm::Type* typemap_type = getFunctionTypeArgType(memalloc_cell->getFunctionType(), 1);
-  llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
 
-  llvm::CallInst* mem = builder.CreateCall(memalloc_cell, typemap, "mem");
+  llvm::CallInst* mem = builder.CreateCall(memalloc_cell, ti, "mem");
 
   if (this->config.trackAllocSites) {
     llvm::Value* linesgv = (typedesc.empty())
-                ? llvm::ConstantPointerNull::get(builder.getInt8PtrTy())
-                : builder.CreateBitCast(this->getGlobalString(typedesc),
-                                                 builder.getInt8PtrTy());
+                ? llvm::ConstantPointerNull::get(builder.getPtrTy())
+                : this->getGlobalString(typedesc);
 
-    llvm::Value* srcloc = 
-                 builder.CreateBitCast(this->getGlobalString(srcloc_str),
-                                                 builder.getInt8PtrTy());
-    emitRecordMallocCallsite(mod, mem, typemap, srcloc, linesgv);
+    llvm::Value* srcloc = this->getGlobalString(srcloc_str);
+    emitRecordMallocCallsite(mod, mem, ti, srcloc, linesgv);
   }
 
   llvm::Type* ty = typ->getLLVMType();
@@ -215,7 +202,7 @@ CodegenPass::emitMalloc(TypeAST* typ,
     builder.CreateMemSet(mem, builder.getInt8(0), slotSizeOf(ty), llvm::MaybeAlign(4));
   }
 
-  return builder.CreateBitCast(mem, ptrTo(ty), "ptr");
+  return mem;
 }
 
 llvm::Value*
@@ -230,16 +217,14 @@ CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
   // 3) (maybe) unboxed structs, for types with a single ctor.
   llvm::GlobalVariable* ti = getTypeMapForType(elt_type, ctorRepr, mod, YesArray);
   ASSERT(ti != NULL);
-  llvm::Type* typemap_type = getFunctionTypeArgType(memalloc->getFunctionType(), 1);
-  llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
   llvm::Value* num_elts = signExtend(n, builder.getInt64Ty());
   llvm::CallInst* mem = builder.CreateCall(from(memalloc),
-                          { typemap, num_elts, builder.getInt8(init) }, "arrmem");
+                          { ti, num_elts, builder.getInt8(init) }, "arrmem");
 
   if (this->config.trackAllocSites) {
     auto linesgv = llvm::ConstantPointerNull::get(builder.getInt8PtrTy());
     auto srcloc  = llvm::ConstantPointerNull::get(builder.getInt8PtrTy());
-    emitRecordMallocCallsite(mod, mem, typemap, srcloc, linesgv);
+    emitRecordMallocCallsite(mod, mem, ti, srcloc, linesgv);
   }
 
   return mem;
@@ -305,8 +290,7 @@ createCheckedOp(CodegenPass* pass,
   ss << "invariant violated for LLVM intrinisic corresponding to " << op
      << "(" << str(v1->getType()) << ")"
      << "; try running under gdb and break on `foster__assert_failed`";
-  llvm::Value* msg = builder.CreateBitCast(pass->getGlobalString(ss.str()),
-                                                 builder.getInt8PtrTy());
+  llvm::Value* msg = pass->getGlobalString(ss.str());
   b.CreateCall(pass->lookupFunctionOrDie("foster__assert_failed"), msg);
   b.CreateUnreachable();
 
@@ -386,26 +370,19 @@ createFatan2(IRBuilder<>& b, llvm::Value* vd, llvm::Value* vr) {
 llvm::Value*
 createIntIsSmall(IRBuilder<>& b, llvm::Value* vd) {
   auto func = getFunction(b, "foster_prim_Int_isSmall");
-  // Open-coded autowrapper.
-  return b.CreateCall(func, { b.CreateBitCast(vd, func->getFunctionType()->getParamType(0)) });
+  return b.CreateCall(func, { vd }); // Open-coded autowrapper.
 }
 
 llvm::Value*
 createIntToSmall(IRBuilder<>& b, llvm::Value* vd) {
   auto func = getFunction(b, "foster_prim_Int_to_smallWord");
-  // Open-coded autowrapper.
-  return b.CreateCall(func, { b.CreateBitCast(vd, func->getFunctionType()->getParamType(0)) });
+  return b.CreateCall(func, { vd }); // Open-coded autowrapper.
 }
 
 llvm::Value*
 createIntOfSmall(IRBuilder<>& b, llvm::Value* vd) {
   auto func = getFunction(b, "foster_prim_smallWord_to_Int");
-  auto call = b.CreateCall(func, { vd }); // Open-coded autowrapper.
-
-  std::vector<DataCtor*> ctors;
-  auto dt = DataTypeAST("Int", ctors, SourceRange::getEmptyRange());
-  auto intType = dt.getLLVMType();
-  return b.CreateBitCast(call, intType);
+  return b.CreateCall(func, { vd }); // Open-coded autowrapper.
 }
 
 llvm::Value*
@@ -445,12 +422,17 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "fptoui_f32_i32") { return b.CreateFPToUI(VL, b.getInt32Ty(), "fptoui_f32_i32tmp"); }
   else if (op == "sitofp_f32")     { return b.CreateSIToFP(VL, b.getFloatTy(),  "sitofp_f32tmp"); }
   else if (op == "uitofp_f32")     { return b.CreateUIToFP(VL, b.getFloatTy(),  "uitofp_f32tmp"); }
-  else if (op == "bitcast")        { return b.CreateBitCast(VL, assoc->getLLVMType(), "bitcast_tmp"); }
+  else if (op == "bitcast")        {
+    // Needed for non-reinterpreting conversions between i32 and f32, and i64 and f64.
+    ASSERT (VL->getType() != assoc->getLLVMType()) << "superfluous bitcast of " << str(VL);
+    return b.CreateBitCast(VL, assoc->getLLVMType(), "bitcast_tmp"); }
   else if (op == "ftan")           { return createCall1FloatPrim(b, VL, op); }
   else if (op == "fatan")          { return createCall1FloatPrim(b, VL, op); }
   else if (op == "Int-isSmall")    { return createIntIsSmall(b, VL); }
   else if (op == "Int-toSmall")    { return createIntToSmall(b, VL); }
   else if (op == "Int-ofSmall")    { return createIntOfSmall(b, VL); }
+  else if (op == "Int-toBig")      { return VL; } // assuming precondition that it's not small
+  else if (op == "Int-ofBig")      { return VL; }
 
   ASSERT(args.size() > 1) << "CodegenUtils.cpp missing implementation of " << op << "\n";
 
@@ -463,7 +445,7 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
     ASSERT(false) << "primop values for " << op << " did not have equal types\n"
            << "VL: " << str(VL) << " :: " << str(VL->getType()) << "\n"
            << "VR: " << str(VR) << " :: " << str(VR->getType()) << "\n"
-           << "32-bit: " << is32Bit() << "; " << str(getWordTy(b));
+           << "32-bit?: " << is32Bit() << "; " << str(getWordTy(b));
   }
 
   // Other variants: F (float), NSW (no signed wrap), NUW,
@@ -547,8 +529,7 @@ void codegenAutoWrapper(llvm::Function* F,
     std::vector<llvm::Value*> args;
     auto arg = Ffunc->arg_begin();
     for (int n = 0; arg != Ffunc->arg_end(); ++n) {
-      args.push_back(builder.CreateBitCast(&*arg,
-                        F->getFunctionType()->getParamType(n)));
+      args.push_back(&*arg);
       ++arg;
     }
 
@@ -561,7 +542,7 @@ void codegenAutoWrapper(llvm::Function* F,
         builder.CreateRet(getUnitValue());
       } else builder.CreateRetVoid();
     } else {
-      builder.CreateRet(builder.CreateBitCast(callInst, wrappedTy->getReturnType()));
+      builder.CreateRet(callInst);
     }
     //pass->markFosterFunction(Ffunc);
 }
@@ -608,7 +589,7 @@ void codegenCall0ToFunction(llvm::Function* F, llvm::FunctionCallee f) {
     llvm::CallInst* call = builder.CreateCall(f);
     call->setCallingConv(llvm::CallingConv::C);
     // Implicitly: called function may GC...
-    builder.CreateRet(builder.CreateBitCast(call, F->getReturnType()));
+    builder.CreateRet(call);
 }
 
 void codegenCall1ToFunctionWithArg(llvm::Function* F, llvm::FunctionCallee f, llvm::Value* n) {
@@ -618,7 +599,7 @@ void codegenCall1ToFunctionWithArg(llvm::Function* F, llvm::FunctionCallee f, ll
     if (F->getReturnType()->isVoidTy()) {
       builder.CreateRetVoid();
     } else {
-      builder.CreateRet(builder.CreateBitCast(call, F->getReturnType()));
+      builder.CreateRet(call);
     }
 }
 
@@ -658,8 +639,7 @@ struct LLProcAllocDefaultCoro : public LLProcPrimBase {
     // called by the runtime, which will do the appropriate intialization.
     CtorRepr bogusCtor; bogusCtor.smallId = -1;
     Value* dcoro = pass->emitMalloc(getSplitCoroTyp(getUnitType()), bogusCtor, "dcoro", "<default coro>", /*init*/ true);
-    builder.CreateRet(builder.CreateBitCast(dcoro,
-                  ptrTo(foster_generic_coro_ast->getLLVMType())));
+    builder.CreateRet(dcoro);
   }
 
   // Returns { { ... generic coro ... }, argTypes }
