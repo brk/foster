@@ -158,7 +158,7 @@ StructType* getTypeMapType(int numPointers, llvm::Module* mod) {
 
   std::vector<Type*> typeMapTyFields;
   typeMapTyFields.push_back(builder.getInt64Ty());   // cellSize
-  typeMapTyFields.push_back(builder.getInt8PtrTy()); // typeName
+  typeMapTyFields.push_back(builder.getPtrTy());     // typeName
   typeMapTyFields.push_back(builder.getInt32Ty());   // numPtrEntries
   typeMapTyFields.push_back(builder.getInt8Ty());    // ctorId
   typeMapTyFields.push_back(builder.getInt8Ty());    // isCoro

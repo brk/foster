@@ -100,13 +100,13 @@ llvm::StructType* getSplitCoroType(
                                /*isPacked=*/ false);
 }
 
-// Returns retTy(i8* env)
+// Returns retTy(ptr env)
 llvm::FunctionType* getCoroClosureFnType(
   llvm::Type* retTy,
   llvm::Type* argTypes)
 {
   std::vector<llvm::Type*> args;
-  args.push_back(builder.getInt8PtrTy());
+  args.push_back(builder.getPtrTy());
   //addCoroArgs(args, argTypes);
   return FunctionType::get(retTy, args, /*isVarArg=*/ false);
 }
@@ -147,7 +147,7 @@ llvm::StructType* getCoroClosureStructTy(
 {
   std::vector<llvm::Type*> parts;
   parts.push_back(rawPtrTo(getCoroClosureFnType(retTy, argTypes)));
-  parts.push_back(builder.getInt8PtrTy());
+  parts.push_back(builder.getPtrTy());
   return llvm::StructType::get(builder.getContext(), parts, /*isPacked=*/ false);
 }
 
@@ -164,10 +164,10 @@ llvm::FunctionType* getCoroCreateFnTy(
                    /*isVarArg=*/ false);
 }
 
-// Returns void (i8*)
+// Returns void (ptr)
 llvm::FunctionType* getCoroWrapperFnTy() {
   std::vector<llvm::Type*> fnTyArgs;
-  fnTyArgs.push_back(builder.getInt8PtrTy());
+  fnTyArgs.push_back(builder.getPtrTy());
   return llvm::FunctionType::get(
                    /*Result=*/   builder.getVoidTy(),
                    /*Params=*/   fnTyArgs,
@@ -437,8 +437,7 @@ Value* emitCoroWrapperFn(
   // which might be different than its creator.
 
   Value* env_addr = gep(fgty, fcg, 0, coroField_Env(), "envaddr");
-  auto envty = builder.getInt8PtrTy();
-  Value* env      = builder.CreateLoad(envty, env_addr, "env_ptr");
+  Value* env      = builder.CreateLoad(builder.getPtrTy(), env_addr, "env_ptr");
 
   Value* arg_addr = gep(fcty, ptr_f_c, 0, 1, "argaddr");
   Value* arg      = builder.CreateLoad(faty, arg_addr, "arg");
@@ -546,11 +545,11 @@ Value* CodegenPass::emitCoroCreateFn(
 
   // fcoro->g.parent = NULL;
   Value* fcoro_parent = gep(gfcoroty, gfcoro, 0, coroField_Invoker(), "fcoro_parent");
-  storeNullPointerToSlot(fcoro_parent, gfcoroty->getContainedType(coroField_Invoker()));
+  storeNullPointerToSlot(fcoro_parent);
 
   // fcoro->g.indirect_self = NULL;
   Value* fcoro_indirect_self = gep(gfcoroty, gfcoro, 0, coroField_IndirectSelf(), "fcoro_self");
-  storeNullPointerToSlot(fcoro_indirect_self, gfcoroty->getContainedType(coroField_IndirectSelf()));
+  storeNullPointerToSlot(fcoro_indirect_self);
 
   Value* fcoro_tag = gep(gfcoroty, gfcoro, 0, coroField_EffectTag(), "fcoro_tag");
   builder.CreateStore(builder.getInt64(0), fcoro_tag);

@@ -75,23 +75,17 @@ llvm::Type* NamedTypeAST::getLLVMType() const {
 ////////////////////////////////////////////////////////////////////
 
 llvm::Type* DataTypeAST::getLLVMType() const {
-  if (this->name == "CString") {
-    return foster::builder.getInt8PtrTy();
-  }
   if (this->name == "CVoid") {
     return foster::builder.getVoidTy();
   }
-  llvm::StructType* dt_opaque_named_ty =
-         llvm::StructType::create(fosterLLVMContext,
-                                               std::string(this->name + ".DT"));
-  return getHeapPtrTo(dt_opaque_named_ty);
+  return foster::builder.getPtrTy();
 }
 
 ////////////////////////////////////////////////////////////////////
 
 llvm::Type* RefTypeAST::getLLVMType() const {
   if (!repr) {
-    repr = getHeapPtrTo(underlyingType->getLLVMType());
+    repr = foster::builder.getPtrTy();
   }
   return repr;
 }

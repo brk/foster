@@ -118,7 +118,7 @@ bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
 #endif
 
 llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot) {
-  if (!base) base = getNullOrZero(builder.getInt8PtrTy());
+  if (!base) base = getNullOrZero(builder.getPtrTy());
   auto gcwrite_fn = pass->mod->getFunction("foster_write_barrier_with_obj_generic");
 
   if (llvm::isa<llvm::ConstantExpr>(val)) {
@@ -546,7 +546,7 @@ void LLModule::codegenModule(CodegenPass* pass) {
     auto Ffunc = pass->mod->getFunction(procs[i]->getCName() + ".proc");
     ASSERT(Ffunc) << "Couldn't find a closure wrapper for " << procs[i]->getCName();
     cell_vals.push_back(Ffunc);
-    cell_vals.push_back(getNullOrZero(builder.getInt8PtrTy()));
+    cell_vals.push_back(getNullOrZero(builder.getPtrTy()));
     auto const_cell = llvm::ConstantStruct::getAnon(cell_vals);
 
     std::string cloname = procs[i]->getCName();
@@ -629,7 +629,7 @@ void codegenClosureWrapper(llvm::Function* F, llvm::CallingConv::ID cc,
                            std::string symbolName, CodegenPass* pass) {
     auto FT = F->getFunctionType();
     std::vector<llvm::Type*> argTys;
-    argTys.push_back(builder.getInt8PtrTy());
+    argTys.push_back(builder.getPtrTy());
     for (size_t i = 0; i < FT->getNumParams(); ++i) { argTys.push_back(FT->getParamType(i)); }
     auto FfuncT = llvm::FunctionType::get(FT->getReturnType(), argTys, false);
     std::string funcSymbolName = symbolName + ".proc";
@@ -1705,14 +1705,14 @@ llvm::Value* emitFnArgCoercions(Value* argV, llvm::Type* expectedType) {
 
 llvm::FunctionType* getClosureFnType(llvm::Type* retTy, const std::vector<Value*>& nonEnvArgs) {
   std::vector<llvm::Type*> argTys;
-  argTys.push_back(builder.getInt8PtrTy());
+  argTys.push_back(builder.getPtrTy());
   for (auto arg : nonEnvArgs) { argTys.push_back(arg->getType()); }
   return llvm::FunctionType::get(retTy, argTys, false);
 }
 
 llvm::StructType* getClosureTypeForFn(llvm::FunctionType* fnty) {
   return llvm::StructType::get(foster::fosterLLVMContext,
-              { rawPtrTo(fnty), builder.getInt8PtrTy() });
+              { rawPtrTo(fnty), builder.getPtrTy() });
 }
 
 llvm::Value* LLCall::codegen(CodegenPass* pass) {

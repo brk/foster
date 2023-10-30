@@ -222,8 +222,8 @@ CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
                           { ti, num_elts, builder.getInt8(init) }, "arrmem");
 
   if (this->config.trackAllocSites) {
-    auto linesgv = llvm::ConstantPointerNull::get(builder.getInt8PtrTy());
-    auto srcloc  = llvm::ConstantPointerNull::get(builder.getInt8PtrTy());
+    auto linesgv = llvm::ConstantPointerNull::get(builder.getPtrTy());
+    auto srcloc  = llvm::ConstantPointerNull::get(builder.getPtrTy());
     emitRecordMallocCallsite(mod, mem, ti, srcloc, linesgv);
   }
 

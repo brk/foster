@@ -69,7 +69,7 @@ bool isPointerToOpaque(llvm::Type* p);
 
 bool typesEq(llvm::Type* t1, llvm::Type* t2);
 
-void storeNullPointerToSlot(llvm::Value* slot, llvm::Type* ty);
+void storeNullPointerToSlot(llvm::Value* slot);
 
 bool is32Bit();
 int  getWordTySize();

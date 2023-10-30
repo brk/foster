@@ -253,9 +253,9 @@ bool isPointerToOpaque(llvm::Type* p) {
   return false;
 }
 
-void storeNullPointerToSlot(llvm::Value* slot, llvm::Type* ty) {
+void storeNullPointerToSlot(llvm::Value* slot) {
   foster::builder.CreateStore(
-    llvm::ConstantPointerNull::getNullValue(ty),
+    llvm::ConstantPointerNull::get(foster::builder.getPtrTy()),
     slot, /*isVolatile=*/ false);
 }
 
