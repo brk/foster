@@ -21,8 +21,6 @@ using namespace llvm;
 
 namespace foster {
 
-bool gPrintLLVMImports = false;
-
 void putFunctionInScope(const Function& f, Module* linkee) {
   // Ensure that, when parsing, function calls to this name will find it
   FunctionType* fnty = f.getFunctionType();
@@ -30,11 +28,6 @@ void putFunctionInScope(const Function& f, Module* linkee) {
   // Ensure that codegen for the given function finds the 'declare'
   // TODO make lazy prototype?
   linkee->getOrInsertFunction(f.getName(), fnty, f.getAttributes());
-
-  if (gPrintLLVMImports) {
-    outs() << "inserting variable in global scope: " << f.getName() << " : "
-        << str(fnty) << "\n";
-  }
 }
 
 // Add module m's C-linkage functions in the global scopes,

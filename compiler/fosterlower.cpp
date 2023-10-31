@@ -40,10 +40,6 @@ using std::string;
 using foster::ScopedTimer;
 using foster::EDiag;
 
-namespace foster {
-  extern bool gPrintLLVMImports; // in StandardPrelude.cpp
-}
-
 using namespace llvm;
 
 static cl::OptionCategory FosterOptCat("Foster-specific Options", "");
@@ -136,11 +132,6 @@ optDumpStats("dump-stats",
 static cl::opt<bool>
 optPrintTimings("fosterc-time",
   cl::desc("Print timing measurements of compiler passes"),
-  cl::cat(FosterOptCat));
-
-static cl::opt<bool>
-optPrintLLVMImports("foster-print-llvm-imports",
-  cl::desc("Print imported symbols from imported LLVM modules"),
   cl::cat(FosterOptCat));
 
 static cl::list<std::string>
@@ -296,7 +287,6 @@ int main(int argc, char** argv) {
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend\n");
 
-  foster::gPrintLLVMImports = optPrintLLVMImports;
   foster::validateInputFile(optInputPath + ".cb");
 
   foster::ensureDirectoryExists(outdirFile(""));
