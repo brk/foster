@@ -172,21 +172,19 @@ makeAllocationsExplicit bbgp prohibitAllocations procId = do
     (CCLetVal id (ILAppCtor _genty (_cid, CR_TransparentU) [v] _sr)) -> do
             return $
               (mkMiddle $ CCRebindId (text "TransparentU") (TypedId (tidType v) id) v)
-    (CCLetVal id (ILAppCtor genty (cid, repr) vs sr)) -> do
+    (CCLetVal id (ILAppCtor _genty (cid, repr) vs sr)) -> do
       if prohibitAllocations
         then compiledThrowE [text "Unable to eliminate allocations from " <> pretty procId]
         else do
-            id' <- ccFreshId "ctor-alloc"
             let tynm = T.concat [ctorTypeName cid, ".", ctorCtorName cid]
             let t = LLStructType (map tidType vs)
-            let obj = (TypedId (LLPtrType t) id' )
+            let obj = TypedId (LLPtrType t) id
             let memregion = MemRegionGlobalHeap
             let info = AllocInfo t memregion tynm (Just repr) Nothing
                           (T.pack $ "ctor-allocator:"++show (prettyT cid)) NoZeroInit
             return $
-              (mkMiddle $ CCLetVal id' (ILAllocate info sr)) <*>
-              (mkMiddle $ CCTupleStore vs obj memregion)  <*>
-              (mkMiddle $ CCLetVal id  (ILBitcast genty obj))
+              (mkMiddle $ CCLetVal id (ILAllocate info sr)) <*>
+              (mkMiddle $ CCTupleStore vs obj memregion)
     (CCTupleStore   {}   ) -> return $ mkMiddle insn
     (CCLetVal  _id  _l   ) -> return $ mkMiddle insn
     (CCLetFuns ids clos)   ->
