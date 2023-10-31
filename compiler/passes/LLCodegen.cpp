@@ -131,16 +131,21 @@ needsBitcastToMediateUnknownPointerMismatch(llvm::Value* val, llvm::Value* ptr) 
 }
 #endif
 
+llvm::Value* substituteUnitForVoid(Value* argV) {
+  // If we're calling a C function that returns void, conjure up a unit value.
+  if (argV->getType()->isVoidTy()) {
+    return getUnitValue();
+  }
+
+  return argV;
+}
+
 llvm::Value* emitStore(CodegenPass* pass,
                        llvm::Value* val,
                        llvm::Value* ptr,
                        llvm::Value* base,
                        WriteSelector w = WriteUnspecified) {
-  if (val->getType()->isVoidTy()) {
-    val = getUnitValue();
-  }
-
-  return emitGCWriteOrStore(pass, val, base, ptr, w);
+  return emitGCWriteOrStore(pass, substituteUnitForVoid(val), base, ptr, w);
 }
 
 Value* emitCallToInspectPtr(CodegenPass* pass, Value* ptr) {
@@ -764,8 +769,6 @@ void LLRetVoid::codegenTerminator(CodegenPass* pass) {
   builder.CreateRetVoid();
 }
 
-Value* emitFnArgCoercions(Value*, Type*);
-
 void LLRetVal::codegenTerminator(CodegenPass* pass) {
   llvm::Value* rv = this->val->codegen(pass);
   bool fnReturnsVoid = builder.getCurrentFunctionReturnType()->isVoidTy();
@@ -779,7 +782,7 @@ void LLRetVal::codegenTerminator(CodegenPass* pass) {
   if (fnReturnsVoid) {
     builder.CreateRetVoid();
   } else {
-    builder.CreateRet(emitFnArgCoercions(rv, builder.getCurrentFunctionReturnType()));
+    builder.CreateRet(rv);
   }
 }
 
@@ -1639,16 +1642,6 @@ llvm::Value* LLCallInlineAsm::codegen(CodegenPass* pass) {
   return builder.CreateCall(iasm, llvm::ArrayRef(vs), "asmres");
 }
 
-llvm::Value* emitFnArgCoercions(Value* argV, llvm::Type* expectedType) {
-  // If we're calling a C function that returns void, conjure up a unit value.
-  if (argV->getType()->isVoidTy() && expectedType->isPointerTy()) {
-    return getNullOrZero(llvm::dyn_cast<llvm::PointerType>(expectedType));
-  }
-
-  return argV;
-}
-
-
 llvm::FunctionType* getClosureFnType(llvm::Type* retTy, const std::vector<Value*>& nonEnvArgs) {
   std::vector<llvm::Type*> argTys;
   argTys.push_back(builder.getPtrTy());
@@ -1737,7 +1730,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   // Collect all args, performing coercions if needed.
   for (auto arg : nonEnvArgs) {
     llvm::Type* expectedType = FT->getParamType(valArgs.size());
-    llvm::Value* argV = emitFnArgCoercions(arg, expectedType);
+    llvm::Value* argV = substituteUnitForVoid(arg);
     assertValueHasExpectedType(argV, expectedType, FV);
     valArgs.push_back(argV);
   }
