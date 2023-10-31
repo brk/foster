@@ -171,7 +171,7 @@ makeAllocationsExplicit bbgp prohibitAllocations procId = do
               (mkMiddle $ CCLetVal id  (ILBitcast genty v))
     (CCLetVal id (ILAppCtor _genty (_cid, CR_TransparentU) [v] _sr)) -> do
             return $
-              (mkMiddle $ CCRebindId (text "TransparentU") (TypedId (tidType v) id) v)
+              (mkMiddle $ CCRebindId (text "TransparentU") id v)
     (CCLetVal id (ILAppCtor _genty (cid, repr) vs sr)) -> do
       if prohibitAllocations
         then compiledThrowE [text "Unable to eliminate allocations from " <> pretty procId]
@@ -355,12 +355,12 @@ simplifyCFG bbgp =
              error $ "mapBlockM found wrong number of blocks"
       where unblock (f, ms_blk, l) = (f, blockToList ms_blk, l)
 
-     substIn' :: Insn' e x -> State (Map LLVar LLVar) [Insn' e x]
-     substIn' (CCRebindId _ v1 v2) = do modify (Map.insert v1 v2)
+     substIn' :: Insn' e x -> State (Map Ident LLVar) [Insn' e x]
+     substIn' (CCRebindId _ id v2) = do modify (Map.insert id v2)
                                         return []
      substIn' insn = do
        subst <- get
-       let s v = Map.findWithDefault v v subst
+       let s v = Map.findWithDefault v (tidIdent v) subst
        return [substIn s insn]
 
      substIn :: VarSubstFor (Insn' e x)
@@ -390,7 +390,7 @@ data TC = TCtup        [LLVar]
 -- TODO we can also use availTuples' to avoid redundant allocations of ctors
 
 -- |||||||||||| Pre-allocation redundancy elimination |||||||||||{{{
-data Avails = Avails { availSubst    :: AvailMap LLVar LLVar
+data Avails = Avails { availSubst    :: AvailMap Ident LLVar
                      , availTuples   :: AvailMap Ident [LLVar]
                      --, availTuples'  :: AvailMap [LLVar] LLVar
                      , availOccs     :: AvailMap (LLVar, Occurrence TypeLL) LLVar
@@ -408,7 +408,7 @@ availsXfer = mkFTransfer3 go go (distributeXfer availsLattice go)
     go :: Insn' e x -> Avails -> Avails
     go (CCLetVal id (ILOccurrence ty v occ)) f = f { availOccs = insertAvailMap (v, occ) (TypedId ty id) (availOccs f) }
     go (CCLetVal id (ILTuple _kind vs _)) f = f { availTuples = insertAvailMap id vs (availTuples f) }
-    go (CCRebindId _ v1 v2 ) f = f { availSubst = insertAvailMap v1 v2 (availSubst f) }
+    go (CCRebindId _ id v2 ) f = f { availSubst = insertAvailMap id v2 (availSubst f) }
     go _ f = f
 
 availsRewrite :: forall m. FuelMonad m => FwdRewrite m Insn' Avails
@@ -428,7 +428,7 @@ availsRewrite = mkFRewrite d
         --             o0 = occ t [0]
         --             o1 = o0         <<<<
         -- This rewrite is triggered by (for example) test-vlist.
-        (v' : _) -> return $ Just (mkMiddle $ CCRebindId (text "occ-reuse") (TypedId ty id) v' )
+        (v' : _) -> return $ Just (mkMiddle $ CCRebindId (text "occ-reuse") id v' )
         
         [] -> case (occ, lookupAvailMap (tidIdent v) (availTuples a)) of
                 -- If we have  t = (v0, v1)
@@ -441,7 +441,7 @@ availsRewrite = mkFRewrite d
                 ([(n, _)], [vs]) -> let vk = vs !! n in
                                     --trace ("replacing occ " ++ show (tidIdent v) ++ "&" ++ show n ++ " with " ++ show vk)
                                       (return $ Just $ mkMiddle $ CCRebindId (text "static tuple lookup")
-                                                                             (TypedId (tidType vk) id)  vk)
+                                                                             id vk)
                 _ -> return Nothing
 
     d _ _ = return Nothing
@@ -531,7 +531,7 @@ liveness = mkBTransfer go
     go (CCLetVal  id letable ) s = Set.union   (without s [id]) (Set.fromList $ freeIdentsL letable)
     go (CCLetFuns ids clzs   ) s = Set.unions ((without s ids):(map (Set.fromList . freeIdentsC) clzs))
     go (CCTupleStore vs v _) s = insert s (v:vs)
-    go (CCRebindId   _ v1 v2) s = insert (without s [tidIdent v1]) [v2]
+    go (CCRebindId   _ id v2) s = insert (without s [id]) [v2]
     go node@(CCLast _ last) fdb =
           let s = Set.unions (map (fact fdb) (successors node)) in
           case last of
@@ -552,7 +552,7 @@ deadBindElim = mkBRewrite d
     d :: Insn' e x -> Fact x Live -> m (Maybe (Graph Insn' e x))
     d (CCLetVal id letable) live |
       isDead id live && isPure letable = return $ Just emptyGraph
-    d (CCRebindId _ v _) live | isDead (tidIdent v) live
+    d (CCRebindId _ id _) live | isDead id live
                                        = return $ Just emptyGraph
     d _ _ = return Nothing
     -- TODO drop fns/closures?

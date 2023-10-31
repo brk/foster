@@ -83,7 +83,7 @@ data Insn' e x where
         CCLetVal     :: Ident   -> Letable TypeLL          -> Insn' O O
         CCLetFuns    :: [Ident] -> [Closure]               -> Insn' O O
         CCTupleStore :: [LLVar] -> LLVar -> AllocMemRegion -> Insn' O O
-        CCRebindId   :: Doc AnsiStyle -> LLVar -> LLVar    -> Insn' O O
+        CCRebindId   :: Doc AnsiStyle -> Ident -> LLVar    -> Insn' O O
         CCLast       :: BlockId ->          CCLast -> Insn' O C -- first arg is block entry label id
 
 type RootVar = LLVar
@@ -599,7 +599,7 @@ instance PrettyT (Insn' e x) where
                                    vcat [red (text recfun) <+> prettyIdent id <+> text "=" <+> prettyT fn
                                         | (id,fn) <- zip ids fns])
   prettyT (CCTupleStore vs tid _memregion) = indent 4 $ text "stores " <+> prettyT vs <+> text "to" <+> prettyT tid
-  prettyT (CCRebindId d v1 v2) = indent 4 $ text "REPLACE " <+> prettyT v1 <+> text "WITH" <+> prettyT v2 <+> parens d
+  prettyT (CCRebindId d id v2) = indent 4 $ text "REPLACE " <+> prettyT id <+> text "WITH" <+> prettyT v2 <+> parens d
   prettyT (CCLast _  cclast     ) = prettyT cclast
 
 prettyR roots = (if Set.size roots > 15 then text "..." else pretty roots) <> parens (pretty (Set.size roots))
