@@ -117,20 +117,6 @@ llvm::Value* emitGCWriteOrStore(CodegenPass* pass,
   }
 }
 
-#if 0
-llvm::Type* // nullable
-needsBitcastToMediateUnknownPointerMismatch(llvm::Value* val, llvm::Value* ptr) {
-  if (ptr->getType()->isPointerTy()
-      && !isPointerToType(ptr->getType(), val->getType())) {
-    auto eltTy = llvm::dyn_cast<llvm::PointerType>(ptr->getType())->getElementType();
-    if (matchesExceptForUnknownPointers(val->getType(), eltTy)) {
-      return eltTy;
-    }
-  }
-  return nullptr;
-}
-#endif
-
 llvm::Value* substituteUnitForVoid(Value* argV) {
   // If we're calling a C function that returns void, conjure up a unit value.
   if (argV->getType()->isVoidTy()) {
@@ -408,7 +394,6 @@ void registerKnownDataTypes(const std::vector<LLDecl*> datatype_decls,
 void createCompilerFlagsGlobalString(CodegenPass* pass) {
   std::stringstream ss;
   ss << "{";
-  ss << "'emitLifetimeInfo':" << pass->config.emitLifetimeInfo << ",";
   ss << "'disableAllArrayBoundsChecks':" << pass->config.disableAllArrayBoundsChecks;
   ss << "}";
   auto gv = builder.CreateGlobalString(ss.str(), "__foster_fosterlower_config");

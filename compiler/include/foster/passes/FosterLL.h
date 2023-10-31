@@ -42,7 +42,6 @@ struct CodegenPassConfig {
   bool useNUW;
   bool trackAllocSites;
   bool countClosureCalls;
-  bool emitLifetimeInfo;
   bool disableAllArrayBoundsChecks;
 };
 

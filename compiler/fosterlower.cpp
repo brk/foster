@@ -81,24 +81,6 @@ optCountClosureCalls("count-closure-calls",
   cl::desc("Emit code to count the number of dynamic closure calls made."),
   cl::cat(FosterOptCat));
 
-// Note: bootstrap/testcases/lifetime-no-inline-crash fails when run thusly:
-//   ./gotest.sh bootstrap/testcases/lifetime-no-inline-crash -I ../stdlib --me-arg=--no-inline --optimize=O2 --asm --be-arg=--enable-lifetime-info
-// I haven't yet figured out whether we are generating subtly incorrect lifetime
-// markers (likely), or whether LLVM 3.2 is incorrectly inlining our lifetime
-// markers (unlikely). TODO create an independent testcase based on out.preopt.ll
-// with no dependency on libfoster to attempt to narrow down the problem.
-//
-// Anyways, we default to not doing anything with lifetime info because
-// the middle-end already reuses gc slots, and I don't think LLVM reuses
-// gcroot-marked stack slots, even with lifetime info enabled.
-//
-// Also note that even if lifetime info is disabled, we can still use the
-// generated markers to emit explicit stores for killing dead stack slots.
-static cl::opt<bool>
-optEnableLifetimeInfo("enable-lifetime-info",
-  cl::desc("Enable lifetime info for GC roots"),
-  cl::cat(FosterOptCat));
-
 static cl::opt<bool>
 optDisableAllArrayBoundsChecks("unsafe-disable-array-bounds-checks",
   cl::desc("Unsafely omit array bounds checking"),
@@ -377,7 +359,6 @@ int main(int argc, char** argv) {
     config.useNUW            = optForceNUW;
     config.trackAllocSites   = optTrackAllocSites;
     config.countClosureCalls = optCountClosureCalls;
-    config.emitLifetimeInfo  = optEnableLifetimeInfo;
     config.disableAllArrayBoundsChecks
                              = optDisableAllArrayBoundsChecks;
 
