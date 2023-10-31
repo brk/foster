@@ -277,8 +277,8 @@ sourceLoc (SourceRange startline startcol _ _ _ mb_file) =
 -- |||||||||||||||||||||||| Expressions |||||||||||||||||||||||||{{{
 dumpExpr :: IL.Letable TypeLL -> FC.Letable
 dumpExpr (ILAlloc    {}) = error "ILAlloc should have been translated away!"
-dumpExpr (ILBitcast t v) =
-    (defaultLetable t Ilbitcast) { parts_of_Letable = [dumpVar v] }
+dumpExpr (ILTyApp t v _tys) =
+    (defaultLetable t Iltyapp) { parts_of_Letable = [dumpVar v] }
 dumpExpr (ILLiteral ty lit) = dumpLiteral ty lit
 dumpExpr x@(ILKillProcess _ msg) =
     (defaultLetable (typeOf x) Ilkillprocess) {

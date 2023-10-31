@@ -87,7 +87,7 @@ struct Letable {
     ilcall            @  6;
     ilcallprimop      @  7;
     ilbytearray       @  8;
-    ilbitcast         @  9;
+    iltyapp           @  9;
     ilkillprocess     @ 10;
     ilderef           @ 11;
     ilstore           @ 12;

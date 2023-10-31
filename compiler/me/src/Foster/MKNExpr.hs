@@ -2991,7 +2991,7 @@ letableOfSubexpr subexpr = do
                                  qv v   >>= \v' -> return $ ILArrayPoke {-ty-} ari' v'
     MKArrayLit    _ ty v elts -> qv v   >>= \v' ->
                                  mapM qelt elts >>= \elts' -> return $ ILArrayLit ty v' elts'
-    MKTyApp       _ ty v [] -> qv v >>= \v' -> return $ ILBitcast ty v'
+    MKTyApp       _ ty v [] -> qv v >>= \v' -> return $ ILTyApp ty v' []
     MKTyApp       {} -> error $ "MKNExpr saw tyapp that wasn't eliminated by monomorphization"
     _ -> error $ "non-Letable thing seen by letableOfSubexpr..."
 

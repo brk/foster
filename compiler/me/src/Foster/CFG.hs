@@ -172,7 +172,8 @@ instance PrettyT t => PrettyT (Letable t) where
       ILArrayRead  _t (ArrayIndex v1 v2 _rng _s)  -> text "ILArrayRead" <+> prettyId v1 <> text "[" <> prettyId v2 <> text "]"
       ILArrayPoke  (ArrayIndex _v1 _v2 _rng _s) _v3 -> text $ "ILArrayPoke..."
       ILArrayLit _ _v _vals -> text $ "ILArrayLit..."
-      ILBitcast   t v       -> text "bitcast " <+> prettyTypedVar v <+> text "to" <+> prettyT t
+      ILTyApp   t v []      -> text "tyapp-bitcast " <+> prettyTypedVar v <+> text "to" <+> prettyT t
+      ILTyApp   t v tys     -> text "tyapp " <+> prettyTypedVar v <+> text "to" <+> prettyT t <+> text "with" <+> list (map prettyT tys)
       ILAllocate _info _sr  -> text "allocate ..." -- <+> pretty (allocType info)
 
 instance PrettyT BasicBlockGraph where

@@ -539,14 +539,14 @@ LLExpr* LLExpr_from_pb(const be::Letable::Reader& e) {
   switch (e.getTag()) {
   case pb::Letable::Tag::ILBOOL:        rv = parseBool(e); break;
   case pb::Letable::Tag::ILCALL:        rv = parseCall(e); break;
-  case pb::Letable::Tag::ILCALLPRIMOP: rv = parseCallPrimOp(e); break;
+  case pb::Letable::Tag::ILCALLPRIMOP:  rv = parseCallPrimOp(e); break;
   case pb::Letable::Tag::ILINT:         rv = parseInt(e); break;
   case pb::Letable::Tag::ILFLOAT:       rv = parseFloat(e); break;
   case pb::Letable::Tag::ILTEXT:        rv = parseText(e); break;
   case pb::Letable::Tag::ILUNIT:        rv = parseUnitValue(e); break;
   case pb::Letable::Tag::ILDEREF:       rv = parseDeref(e); break;
   case pb::Letable::Tag::ILSTORE:       rv = parseStore(e); break;
-  case pb::Letable::Tag::ILBITCAST:     rv = parseBitcast(e); break;
+  case pb::Letable::Tag::ILTYAPP:       rv = parseBitcast(e); break;
   case pb::Letable::Tag::ILARRAYREAD:  rv = parseArrayRead(e); break;
   case pb::Letable::Tag::ILARRAYPOKE:  rv = parseArrayPoke(e); break;
   case pb::Letable::Tag::ILARRAYLENGTH:rv = parseArrayLength(e); break;

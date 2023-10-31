@@ -45,7 +45,7 @@ data Letable ty =
         | ILArrayPoke      (ArrayIndex (TypedId ty)) (TypedId ty)
         | ILArrayLit    ty (TypedId ty) [Either Literal (TypedId ty)]
         -- Others
-        | ILBitcast     ty (TypedId ty) -- inserted during monomorphization
+        | ILTyApp       ty (TypedId ty) [ty]
         deriving (Functor, Show, Eq)
 
 instance TExpr (Letable ty) ty where
@@ -60,7 +60,7 @@ instance TExpr (Letable ty) ty where
       ILAlloc      v _  _sr -> [v]
       ILDeref    _ v    -> [v]
       ILStore      v v2 -> [v,v2]
-      ILBitcast  _ v    -> [v]
+      ILTyApp    _ v _tys -> [v]
       ILAllocArray _ v _ _ _sr -> [v]
       ILArrayRead _ ai  -> freeTypedIds ai
       ILArrayPoke   ai v-> (v):(freeTypedIds ai)
@@ -79,7 +79,7 @@ instance TypedWith (Letable MonoType) MonoType where
       ILAlloc      v _ _sr -> PtrType (tidType v)
       ILDeref      t _  -> t
       ILStore       {}  -> TupleType []
-      ILBitcast    t _  -> t
+      ILTyApp      t _ _tys  -> t
       ILAllocArray t _ _ _ _sr -> t
       ILArrayRead  t _  -> t
       ILArrayPoke   {}  -> TupleType []
@@ -99,7 +99,7 @@ instance TypedWith (Letable TypeLL) TypeLL where
       ILAlloc      v _ _sr -> LLPtrType (tidType v)
       ILDeref    t _    -> t
       ILStore      {}   -> LLPtrType (LLStructType [])
-      ILBitcast  t _    -> t
+      ILTyApp    t _ _tys -> t
       ILAllocArray t _ _ _ _sr -> t
       ILArrayRead t _   -> t
       ILArrayPoke   _ _ -> LLPtrType (LLStructType [])
@@ -122,7 +122,7 @@ substVarsInLetable s letable = case letable of
   ILAlloc       v rgn  sr                  -> ILAlloc       (s v) rgn sr
   ILDeref       t v                        -> ILDeref       t (s v)
   ILStore       v1 v2                      -> ILStore       (s v1) (s v2)
-  ILBitcast     t v                        -> ILBitcast     t (s v)
+  ILTyApp       t v tys                    -> ILTyApp     t (s v) tys
   ILAllocArray  t v amr zi sr              -> ILAllocArray  t (s v) amr zi sr
   ILArrayRead   t (ArrayIndex v1 v2 rng a) -> ILArrayRead   t (ArrayIndex (s v1) (s v2) rng a)
   ILArrayPoke  (ArrayIndex v1 v2 rng a) v3 -> ILArrayPoke  (ArrayIndex (s v1) (s v2) rng a) (s v3)
@@ -144,7 +144,7 @@ letableSize letable = case letable of
       ILAlloc        {} -> 1
       ILDeref        {} -> 1 -- 0?
       ILStore        {} -> 0 -- 1?
-      ILBitcast      {} -> 0
+      ILTyApp        {} -> 0
       ILAllocArray   {} -> 1
       ILArrayRead    {} -> 1
       ILArrayPoke    {} -> 1
@@ -163,7 +163,7 @@ isPure letable = case letable of
       ILAlloc        {} -> True
       ILDeref        {} -> True
       ILStore     _v1 _ -> False -- true iff v1 unaliased && dead?
-      ILBitcast      {} -> True
+      ILTyApp        {} -> True
       ILAllocArray   {} -> True
       ILArrayRead    {} -> True
       ILArrayPoke    {} -> False -- as with store
