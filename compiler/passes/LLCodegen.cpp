@@ -67,55 +67,10 @@ bool tryBindArray(CodegenPass* pass, llvm::Type* sty, Value* base, Value*& arr, 
 
 namespace {
 
-llvm::Type* getLLVMType(TypeAST* type) {
+llvm::Type* getLLVMType(const TypeAST* type) {
   ASSERT(type) << "getLLVMType must be given a non-null type!";
   return type->getLLVMType();
 }
-
-llvm::Type* slotType(llvm::Type* t) { return t->getContainedType(0); }
-llvm::Type* slotType(llvm::Value* v) { return slotType(v->getType()); }
-
-#if 0
-bool isLargishStructPointerTy(llvm::Type* ty) {
-  if (llvm::PointerType* pt = llvm::dyn_cast<llvm::PointerType>(ty)) {
-    if (llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(pt->getElementType())) {
-      return st->getNumElements() >= 2;
-    }
-  }
-  return false;
-}
-
-bool isPointerToUnknown(Type* ty) {
-  return ty->isPointerTy() &&
-         slotType(ty)->isIntegerTy(kUnknownBitsize);
-}
-#endif
-
-#if 0
-bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
-  //DDiag() << "matchesExceptForUnknownPointers ? " << str(aty) << " =?= " << str(ety);
-  if (aty == ety) return true;
-  if (aty == foster_generic_coro_t || ety == foster_generic_coro_t) return true;
-  
-  if (aty->isPointerTy() && ety->isPointerTy()) {
-    if (isPointerToUnknown(aty) || isPointerToUnknown(ety)) { return true; }
-    return matchesExceptForUnknownPointers(slotType(aty), slotType(ety));
-  }
-  if (aty->getTypeID() != ety->getTypeID()) return false;
-
-  if (aty->isIntegerTy() && ety->isIntegerTy()) {
-    return llvm::cast<llvm::IntegerType>(aty)->getBitWidth()
-        == llvm::cast<llvm::IntegerType>(ety)->getBitWidth();
-  }
-  // TODO vector types? metadata? floating point?
-  if (aty->getNumContainedTypes() != ety->getNumContainedTypes()) return false;
-  for (size_t i = 0; i < aty->getNumContainedTypes(); ++i) {
-    if (! matchesExceptForUnknownPointers(aty->getContainedType(i),
-                                          ety->getContainedType(i))) return false;
-  }
-  return true;
-}
-#endif
 
 llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot) {
   if (!base) base = getNullOrZero(builder.getPtrTy());
@@ -201,10 +156,6 @@ codegenAll(CodegenPass* pass, const std::vector<LLVar*>& args) {
     vals.push_back(args[i]->codegen(pass));
   }
   return vals;
-}
-
-bool isPointerToStruct(llvm::Type* ty) {
-  return ty->isPointerTy() && llvm::isa<llvm::StructType>(slotType(ty));
 }
 
 llvm::Value* emitFakeComment(std::string s) {
@@ -500,7 +451,7 @@ void addExternDecls(const std::vector<LLDecl*> decls,
 
       } else { // Not a function type, must be a regular global.
 
-        auto g = pass->mod->getOrInsertGlobal(declName, fosterType->getLLVMType());
+        auto g = pass->mod->getOrInsertGlobal(declName, getLLVMType(fosterType));
         if (d->autoDeref) {
           pass->autoDerefs[declName] = g;
         }
@@ -963,7 +914,7 @@ void LLSwitch::codegenTerminator(CodegenPass* pass) {
 llvm::Value* LLBitcast::codegen(CodegenPass* pass) {
   llvm::Value* v = var->codegen(pass);
   llvm::Type* tgt = getLLVMType(this->type);
-  if (v->getType()->isVoidTy() && tgt == getUnitType()->getLLVMType()) {
+  if (v->getType()->isVoidTy() && tgt->isPointerTy()) {
     // Can't cast a void value to a unit value,
     // but we can manufacture a unit ptr...
     return llvm::ConstantPointerNull::getNullValue(tgt);
@@ -986,9 +937,9 @@ llvm::Value* LLDeref::codegen(CodegenPass* pass) {
   llvm::Value* ptr = base->codegen(pass);
   ASSERT(this->type) << "LLDeref was missing its type...\n";
   if (isTraced && !llvm::isa<llvm::AllocaInst>(ptr)) {
-    return emitGCRead(pass, nullptr, this->type->getLLVMType(), ptr);
+    return emitGCRead(pass, nullptr, getLLVMType(this->type), ptr);
   } else {
-    return emitNonVolatileLoad(this->type->getLLVMType(), ptr, "deref");
+    return emitNonVolatileLoad(getLLVMType(this->type), ptr, "deref");
   }
 }
 
@@ -1025,8 +976,8 @@ void LLLetVals::codegenMiddle(CodegenPass* pass) {
 ///}}}///////////////////////////////////////////////////////////////
 
 llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
-  llvm::Type* r = retType->getLLVMType();
-  llvm::Type* a = typeArg->getLLVMType();
+  llvm::Type* r = getLLVMType(retType);
+  llvm::Type* a = getLLVMType(typeArg);
   if (this->primName == "coro_yield") { return pass->emitCoroYieldFn(r, a); }
   if (this->primName == "coro_invoke") { return pass->emitCoroInvokeFn(r, a); }
   if (this->primName == "coro_create") { return pass->emitCoroCreateFn(retType, typeArg); }
@@ -1154,7 +1105,7 @@ llvm::Value* LLGlobalSymbol::codegen(CodegenPass* pass) {
   bool isProc = NULL != this->type->castFnTypeAST();
 
   if (auto v = pass->autoDerefs[this->name]) {
-    return builder.CreateLoad(this->type->getLLVMType(), v, this->name);
+    return builder.CreateLoad(getLLVMType(this->type), v, this->name);
   }
 
   auto v = pass->globalValues[this->name];
@@ -1198,8 +1149,8 @@ std::string APInt_toBase256_lsb0(llvm::APInt tmp) {
 }
 
 llvm::Value* LLInt::codegen(CodegenPass* pass) {
-  ASSERT(this->type && this->type->getLLVMType());
-  llvm::Type* ty = this->type->getLLVMType();
+  ASSERT(this->type && getLLVMType(this->type));
+  llvm::Type* ty = getLLVMType(this->type);
   auto arb = this->getAPInt();
 
   // Our type could be an LLVM type, or an arbitrary precision int type.
@@ -1234,7 +1185,7 @@ llvm::Value* LLInt::codegen(CodegenPass* pass) {
 
 llvm::Value* LLKillProcess::codegen(CodegenPass* pass) {
   emitFosterAssert(pass->mod, builder.getFalse(), this->stringValue.c_str());
-  return llvm::UndefValue::get(this->type->getLLVMType());
+  return llvm::UndefValue::get(getLLVMType(this->type));
 }
 
 ///}}}//////////////////////////////////////////////////////////////
@@ -1245,7 +1196,7 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
                     LLAllocate::MemRegion region,
                     CtorRepr ctorRepr, std::string typedesc,
                     SourceLoc loc, bool init) {
-  llvm::Type* ty = type->getLLVMType();
+  llvm::Type* ty = getLLVMType(type);
 
   switch (region) {
   case LLAllocate::MEM_REGION_STACK: {
@@ -1306,7 +1257,7 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
     }
     if (this->ctorRepr.isNullary) {
       emitFakeComment("nullary ctor!");
-      return emitNullaryCtor(this->ctorRepr, getHeapPtrTo(this->type->getLLVMType()));
+      return emitNullaryCtor(this->ctorRepr, getHeapPtrTo(getLLVMType(this->type)));
       // return null pointer, or'ed with ctor smallId, bitcast to appropriate result.
     } else {
       return allocateCell(pass, this->type, this->region, this->ctorRepr,
@@ -1366,7 +1317,7 @@ llvm::Value* LLArrayIndex::codegenARI(CodegenPass* pass, Value** outbase, Type* 
 llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
   ASSERT(this->type) << "LLArrayRead with no type?";
 
-  Type* ty = this->type->getLLVMType();
+  Type* ty = getLLVMType(this->type);
   Value* base = NULL;
   Value* slot = ari->codegenARI(pass, &base, ty);
   //Value* val  = emitGCRead(pass, base, slot);
@@ -1385,13 +1336,13 @@ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
   Value* slot = ari->codegenARI(pass, &base, val->getType());
 
   emitGCWriteOrStore(pass, val, base, slot);
-  return getNullOrZero(getUnitType()->getLLVMType());
+  return getNullOrZero(builder.getPtrTy());
 }
 
 
 llvm::Value* LLArrayLength::codegen(CodegenPass* pass) {
   Value* val  = this->value->codegen(pass);
-  auto ety = this->type->getLLVMType();
+  auto ety = getLLVMType(this->type);
   auto sty = ArrayTypeAST::getSizedArrayType(ety, 0);
   Value* _bytes; Value* len;
   if (tryBindArray(pass, sty, val, /*out*/ _bytes, /*out*/ len)) {
@@ -1409,7 +1360,7 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
   //
   std::vector<llvm::Constant*> vals;
   std::vector<std::pair<llvm::Value*, unsigned> > ncvals;
-  llvm::Type* elt_ty = this->elem_type->getLLVMType();
+  llvm::Type* elt_ty = getLLVMType(this->elem_type);
   
   for (unsigned i = 0; i < this->args.size(); ++i) {
     llvm::Value* v = this->args[i]->codegen(pass);
@@ -1485,9 +1436,9 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
 
 Value* LLRecordIndex::codegen(CodegenPass* pass) {
   Value* val = this->base->codegen(pass);
-  Type* ty = this->type->getLLVMType();
+  Type* ty = getLLVMType(this->type);
   if (auto t = this->type->castPtrTypeAST()) {
-    ty = t->getElementTypeC()->getLLVMType();
+    ty = getLLVMType(t->getElementTypeC());
   }
   llvm::outs() << "LLRecordIndex: offset" << this->offset << " ; val " << str(val) << "; ty = " << str(this->type) << "\n";
   if (this->offset >= 0) {
@@ -1511,12 +1462,7 @@ void copyValuesToStruct(CodegenPass* pass,
                         const std::vector<llvm::Value*>& vals,
                         llvm::Value* tup_ptr) {
   ASSERT(tup_ptr != NULL);
-  /*
-  ASSERT(isPointerToStruct(tup_ptr->getType()))
-        << "copyValuesToStruct can't copy values to non-ptr-to-struct type "
-        << str(tup_ptr->getType())
-        << "\n" << str(tup_ptr);
-        */
+
   std::vector<llvm::Type*> tys;
   for (auto v : vals) { tys.push_back(v->getType()); }
   auto tupty = llvm::StructType::get(builder.getContext(), tys);
@@ -1649,7 +1595,7 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
       continue;
     }
 
-    llvm::Type* ty = ctors[i].ctorStructType->getLLVMType();
+    llvm::Type* ty = getLLVMType(ctors[i].ctorStructType);
     v = getElementFromComposite(pass, ty, v, offsets[i], "switch_insp");
   }
 
@@ -1742,7 +1688,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     ASSERT (this->base->type != nullptr) << "missing base type for call to " << str(FV) << "; base tag = " << base->tag;
     if (auto t = this->base->type->castPtrTypeAST()) {
       if (auto sty = t->getElementTypeC()->castStructTypeAST()) {
-        auto cloty = sty->getLLVMType();
+        auto cloty = getLLVMType(sty);
         // Load code and env pointers from closure...
         llvm::Value* envPtr =
             getElementFromComposite(pass, cloty, FV, 1, "getCloEnv");
@@ -1759,13 +1705,13 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
         valArgs.push_back(envPtr);
         fromClosure = true;
       } else {
-        FT = getClosureFnType(this->type->getLLVMType(), nonEnvArgs);
+        FT = getClosureFnType(getLLVMType(this->type), nonEnvArgs);
         auto cloty = getClosureTypeForFn(FT);
         llvm::errs() << "NOTE: base type was non-struct; " << str(t->getElementTypeC())
                      << " ;; so using instead synthesized FT = " << str(FT) << "\n";
         llvm::errs() << "cloty = " << str(cloty) << "\n"; 
         //llvm::errs() << "this->type = " << str(this->type) << "\n";
-        llvm::errs() << "this->type->getLLVMType() = " << str(this->type->getLLVMType()) << "\n";
+        llvm::errs() << "getLLVMType(this->type) = " << str(getLLVMType(this->type)) << "\n";
 
         // Load code and env pointers from closure...
         llvm::Value* envPtr =
