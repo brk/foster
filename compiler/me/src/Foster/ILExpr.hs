@@ -29,14 +29,13 @@ import Foster.MainOpts (getNoPreAllocOpt)
 import Foster.SourceRange(SourceRange(..), SourceLines, rangeOf)
 
 import Data.Map(Map)
-import Data.List(zipWith4)
 import Data.Maybe(fromMaybe)
 import Control.Monad.State(evalState, State, get, gets, modify)
 import Control.Monad.IO.Class(liftIO)
 import qualified Data.Set as Set(toList, union, unions, difference,
                                  member, Set, empty, size, fromList)
 import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
-                                 insert, findWithDefault)
+                                 insert)
 import qualified Data.Text as T(pack, isInfixOf, concat)
 
 --import qualified Criterion.Measurement as Criterion(secs)
@@ -166,9 +165,9 @@ makeAllocationsExplicit bbgp prohibitAllocations procId = do
             return $
               (mkMiddle $ CCLetVal id (ILAllocate info (rangeOf allocsrc))) <*>
               (mkMiddle $ CCTupleStore vs (TypedId (LLPtrType t) id) memregion)
-    (CCLetVal id (ILAppCtor genty (_cid, CR_Transparent) [v] _sr)) -> do
+    (CCLetVal id (ILAppCtor _genty (_cid, CR_Transparent) [v] _sr)) -> do
             return $
-              (mkMiddle $ CCLetVal id  (ILBitcast genty v))
+              (mkMiddle $ CCRebindId (text "CR_Transparent") id v)
     (CCLetVal id (ILAppCtor _genty (_cid, CR_TransparentU) [v] _sr)) -> do
             return $
               (mkMiddle $ CCRebindId (text "TransparentU") id v)
@@ -200,15 +199,13 @@ makeAllocationsExplicit bbgp prohibitAllocations procId = do
     --                  c2 = Closure env=e2 proc=p2 captures=[c1,e1]
     -- to::
     --          LET e1     = ALLOC [typeOf c1]
-    --          LET e2     = ALLOC [typeOf c1, typeOf e1.gen]
-    --          LET c1     = ALLOC [procTy p1, typeOf e1.gen]
-    --          LET c2     = ALLOC [procTy p2, typeOf e2.gen]
-    --          LET e1.gen = BITCAST e1 to i8* // wait until all allocations are
-    --          LET e2.gen = BITCAST e2 to i8* // done so bitcasts aren't stale.
-    --          TUPLESTORE [p1, e1.gen] to c1
-    --          TUPLESTORE [p2, e2.gen] to c2
-    --          TUPLESTORE [c1]         to e1
-    --          TUPLESTORE [c1, e1.gen] to e2
+    --          LET e2     = ALLOC [typeOf c1, ptr (typeOf e1)]
+    --          LET c1     = ALLOC [procTy p1, ptr (typeOf e1)]
+    --          LET c2     = ALLOC [procTy p2, ptr (typeOf e2)]
+    --          TUPLESTORE [p1, e1] to c1
+    --          TUPLESTORE [p2, e2] to c2
+    --          TUPLESTORE [c1]     to e1
+    --          TUPLESTORE [c1, e1] to e2
     -- Actually, we also need to genericize the environments for the proc types.
     --
     -- We split apart the allocation and initialization of closure environments
@@ -229,12 +226,6 @@ makeClosureAllocationExplicit ids clos = do
                       LLProcType (generic_env_ptr_ty:rest) rt cc
       generic_procty othertype = error $ "ILExpr.hs: generic_procty called for " ++ show othertype
 
-  gen_proc_vars <- mapM (\procvar -> do
-                          gen_proc_id <- ccFreshId (T.pack ".gen.proc")
-                          return (TypedId (generic_procty $ tidType procvar)
-                                           gen_proc_id)
-                        ) (map closureProcVar clos)
-
   let gen id = TypedId generic_env_ptr_ty id
   let envids = map (tidIdent . closureEnvVar) clos
   env_gens <- mapM (\envid -> do ccFreshId (prependedTo ".gen"
@@ -254,10 +245,9 @@ makeClosureAllocationExplicit ids clos = do
                             DoZeroInit)
                           (MissingSourceRange "env-allocator") in
            (CCLetVal envid ealloc , CCTupleStore vs envvar memregion, envvar)
-  let cloAllocsAndStores cloid gen_proc_var clo env_gen_id =
-           let bitcast = ILBitcast (tidType gen_proc_var) (closureProcVar clo) in
+  let cloAllocsAndStores cloid clo env_gen_id =
            let memregion = MemRegionGlobalHeap in
-           let vs = [gen_proc_var, gen env_gen_id] in
+           let vs = [closureProcVar clo, gen env_gen_id] in
            let t  = LLStructType (map tidType vs) in
            let t' = fnty_of_procty (generic_procty (tidType (closureProcVar clo))) in
            let clovar = TypedId t' cloid in
@@ -266,10 +256,9 @@ makeClosureAllocationExplicit ids clos = do
                            DoZeroInit)
                          (MissingSourceRange "clo-allocator") in
            (CCLetVal cloid calloc
-           , [CCLetVal (tidIdent gen_proc_var) bitcast
-             ,CCTupleStore vs clovar memregion])
+           , [CCTupleStore vs clovar memregion])
   let (envallocs, env_tuplestores, envvars) = unzip3 $ zipWith  envAllocsAndStores envids clos
-  let (cloallocs, clo_tuplestores         ) = unzip  $ zipWith4 cloAllocsAndStores ids gen_proc_vars clos env_gens
+  let (cloallocs, clo_tuplestores         ) = unzip  $ zipWith3 cloAllocsAndStores ids clos env_gens
   let bitcasts = [CCLetVal envgen (ILBitcast generic_env_ptr_ty envvv)
                  | (envvv, envgen) <- zip envvars env_gens]
   return $ mkMiddles $ envallocs ++ cloallocs ++ bitcasts
@@ -360,7 +349,10 @@ simplifyCFG bbgp =
                                         return []
      substIn' insn = do
        subst <- get
-       let s v = Map.findWithDefault v (tidIdent v) subst
+       let s v = go v where
+                  go v = case Map.lookup (tidIdent v) subst of
+                            Nothing -> v
+                            Just v' -> go v'
        return [substIn s insn]
 
      substIn :: VarSubstFor (Insn' e x)
@@ -416,7 +408,7 @@ availsRewrite = mkFRewrite d
   where
     d :: Insn' e x -> Avails -> m (Maybe (Graph Insn' e x))
 
-    d (CCLetVal id (ILOccurrence ty v occ)) a =
+    d (CCLetVal id (ILOccurrence _ty v occ)) a =
       case lookupAvailMap (v, occ) (availOccs a) of
         -- If we have  t = (v0, v1)
         --             ...
