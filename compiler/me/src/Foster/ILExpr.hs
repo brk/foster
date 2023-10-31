@@ -34,8 +34,7 @@ import Control.Monad.State(evalState, State, get, gets, modify)
 import Control.Monad.IO.Class(liftIO)
 import qualified Data.Set as Set(toList, union, unions, difference,
                                  member, Set, empty, size, fromList)
-import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
-                                 insert)
+import qualified Data.Map as Map(singleton, insertWith, lookup, empty, insert)
 import qualified Data.Text as T(pack, isInfixOf, concat)
 
 --import qualified Criterion.Measurement as Criterion(secs)
@@ -227,24 +226,17 @@ makeClosureAllocationExplicit ids clos = do
       generic_procty othertype = error $ "ILExpr.hs: generic_procty called for " ++ show othertype
 
   let gen id = TypedId generic_env_ptr_ty id
-  let envids = map (tidIdent . closureEnvVar) clos
-  env_gens <- mapM (\envid -> do ccFreshId (prependedTo ".gen"
-                                                  (identPrefix envid))) envids
-  let env_gen_map = Map.fromList $ zip envids env_gens
-  let substGenEnv v = case Map.lookup (tidIdent v) env_gen_map of
-                           Nothing -> v
-                           Just id -> gen id
   -- TODO allocation source of clo?
   let envAllocsAndStores envid clo =
            let memregion = MemRegionGlobalHeap in
-           let vs = map substGenEnv $ closureCaptures clo in
+           let vs = closureCaptures clo in
            let t = LLStructType (map tidType vs) in
            let envvar = TypedId (LLPtrType t) envid in
            let ealloc = ILAllocate (AllocInfo t memregion "env" Nothing Nothing
                             (T.pack $ "env-allocator:"++show (prettyT $ tidIdent (closureProcVar clo)))
                             DoZeroInit)
                           (MissingSourceRange "env-allocator") in
-           (CCLetVal envid ealloc , CCTupleStore vs envvar memregion, envvar)
+           (CCLetVal envid ealloc , CCTupleStore vs envvar memregion)
   let cloAllocsAndStores cloid clo env_gen_id =
            let memregion = MemRegionGlobalHeap in
            let vs = [closureProcVar clo, gen env_gen_id] in
@@ -257,11 +249,11 @@ makeClosureAllocationExplicit ids clos = do
                          (MissingSourceRange "clo-allocator") in
            (CCLetVal cloid calloc
            , [CCTupleStore vs clovar memregion])
-  let (envallocs, env_tuplestores, envvars) = unzip3 $ zipWith  envAllocsAndStores envids clos
-  let (cloallocs, clo_tuplestores         ) = unzip  $ zipWith3 cloAllocsAndStores ids clos env_gens
-  let bitcasts = [CCLetVal envgen (ILBitcast generic_env_ptr_ty envvv)
-                 | (envvv, envgen) <- zip envvars env_gens]
-  return $ mkMiddles $ envallocs ++ cloallocs ++ bitcasts
+  let envids = map (tidIdent . closureEnvVar) clos
+  let (envallocs, env_tuplestores) = unzip $ zipWith  envAllocsAndStores envids clos
+  let (cloallocs, clo_tuplestores) = unzip $ zipWith3 cloAllocsAndStores ids clos envids
+
+  return $ mkMiddles $ envallocs ++ cloallocs
                     ++ concat clo_tuplestores ++ env_tuplestores
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
