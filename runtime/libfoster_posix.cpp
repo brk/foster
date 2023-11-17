@@ -144,7 +144,7 @@ int64_t foster_posix_get_tuntap_fd() {
     close(fd);
     foster__perror("foster_posix_get_tuntap_fd failed to connect to tun8");
   }
-#elif defined(OS_MACOSX)
+#elif defined(OS_MAC)
   fd = open("/dev/tun8", O_RDWR);
   if (fd < 0) {
     foster__perror("foster_posix_get_tuntap_fd failed to open /dev/tun8");

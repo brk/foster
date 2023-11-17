@@ -151,7 +151,7 @@ void fosterSchedulingTimerThread(std::atomic<bool>& ending) {
 namespace foster {
 namespace runtime {
 
-#ifdef OS_MACOSX
+#ifdef OS_MAC
   // http://stackoverflow.com/questions/11237579/how-to-create-a-nsautoreleasepool-without-objective-c
   id allocAndInitAutoreleasePool() {
     id pool = class_createInstance((Class) objc_getClass("NSAutoreleasePool"), 0);

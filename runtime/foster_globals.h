@@ -5,7 +5,7 @@
 #ifndef FOSTER_GLOBALS_H
 #define FOSTER_GLOBALS_H
 
-#ifdef OS_MACOSX
+#ifdef OS_MAC
 #include <objc/runtime.h>
 #include <objc/objc-runtime.h>
 #else

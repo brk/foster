@@ -2380,7 +2380,7 @@ void collect_roots_from_stack_of_coro(foster_bare_coro* coro) {
 template<typename T>
 T* allocate_lazily_zero_mapped(size_t num_elts) {
   size_t len = sizeof(T) * num_elts;
-#if OS_MACOSX
+#if OS_MAC
   // On macOS, multi-page malloc() will lazily zero-initialize:
   // https://developer.apple.com/library/content/documentation/Performance/Conceptual/ManagingMemory/Articles/MemoryAlloc.html
   return (T*) malloc(len);
