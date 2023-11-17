@@ -25,8 +25,6 @@
 #include "foster_gc_utils.h"
 #include "foster_globals.h"
 
-#include "crypto_hash_sha256.h"
-
 #define ENABLE_CLOCKTIMER 1
 #include "clocktimer.h"
 
@@ -347,15 +345,6 @@ int64_t memcpy_i8_to_at_from_at_len(foster_bytes* to,   int64_t   to_at,
     memmove(to->bytes + to_at, from->bytes + from_at, len_sz);
   }
   return req_len - len;
-}
-
-int8_t foster_crypto_hash_sha256(foster_bytes* output, foster_bytes* input) {
-  if (output->cap != crypto_hash_sha256_BYTES) {
-    return 1;
-  }
-  return crypto_hash_sha256(reinterpret_cast<unsigned char*>(output->bytes),
-                            reinterpret_cast<const unsigned char*>(input->bytes),
-                            input->cap); // returns zero
 }
 
 void print_float_f32(float f) { return fprint_f32(stdout, f); }

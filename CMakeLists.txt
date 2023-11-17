@@ -75,16 +75,6 @@ if (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
 endif (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
 # }}}
 
-if (NOT EXISTS ${LIBRARY_OUTPUT_PATH}/nacl)
-  if   (EXISTS ${PROJECT_SOURCE_DIR}/third_party/nacl-20110221/build/foster)
-    file (COPY ${PROJECT_SOURCE_DIR}/third_party/nacl-20110221/build/foster/lib
-          DESTINATION ${LIBRARY_OUTPUT_PATH}/nacl)
-  else (EXISTS ${PROJECT_SOURCE_DIR}/third_party/nacl-20110221/build/foster)
-    message("Please cd to  ${PROJECT_SOURCE_DIR}/third_party/nacl-20110221/    and run  ./do")
-    return()
-  endif (EXISTS ${PROJECT_SOURCE_DIR}/third_party/nacl-20110221/build/foster)
-endif (NOT EXISTS ${LIBRARY_OUTPUT_PATH}/nacl)
-
 # {{{ ~~~~~~~~~~~~~~~~~~~~ libcoro ~~~~~~~~~~~~~~~~~~~~~~
 set(CORO_METHOD CORO_ASM
     CACHE

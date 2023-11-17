@@ -5,9 +5,9 @@ snafuinclude Bytes "bytes";
 snafuinclude Bench "bench/measure";
 snafuinclude Fmt "fmt";
 
-foreign import foster_crypto_hash_sha256 as nacl_sha256 :: { Array Int8 => Array Int8 => Int8 };
+//foreign import foster_crypto_hash_sha256 as nacl_sha256 :: { Array Int8 => Array Int8 => Int8 };
 
-
+/*
 main = {
   inbytes = read_stdin_bytes_list ! |> bytesFlattenRaw;
   let (s, h) = elapsed-time { inbytes |> sha256aa };
@@ -21,3 +21,6 @@ main = {
   print_text (sha256string h);
   s |> fmt-duration |> print_text;
 };
+*/
+
+main = { print_text "sha256 support temporarily disabled" };

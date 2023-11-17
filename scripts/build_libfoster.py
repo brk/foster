@@ -47,8 +47,7 @@ def compile_source(src):
   corodir    = os.path.join(srcdir, 'third_party', 'libcoro')
   jepages    = os.path.join(srcdir, 'third_party', 'jemalloc_pages', 'include')
   hdrhist    = os.path.join(srcdir, 'third_party', 'HdrHistogram_c', 'src')
-  nacl       = os.path.join(srcdir, 'third_party', 'nacl-20110221/build/foster/include/amd64')
-  include_dirs = [bindir, runtime, runtime_gc, basedir, corodir, jepages, hdrhist, nacl]
+  include_dirs = [bindir, runtime, runtime_gc, basedir, corodir, jepages, hdrhist]
   includes = ' '.join(['-I ' + path for path in include_dirs])
   defines = ' -D'.join(['', coro_method])
   flags = debug_flag + defines + " -std=c++14 -O2 -march=native"
