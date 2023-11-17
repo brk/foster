@@ -63,6 +63,7 @@ set(GENERATED           ${PROJECT_BINARY_DIR}/_generated_)
 set(ANTLR_VERSION 3.4)
 find_path(ANTLR_DIR antlr-${ANTLR_VERSION}.jar
   PATHS $ENV{HOME}/antlr/${ANTLR_VERSION}
+        $ENV{HOME}/.local/antlr/${ANTLR_VERSION}
         $ENV{HOME}/sw/local/antlr/${ANTLR_VERSION}
   DOC   "ANTLR library install dir")
 set(ANTLR_JAR ${ANTLR_DIR}/antlr-${ANTLR_VERSION}.jar
