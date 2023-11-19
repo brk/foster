@@ -156,7 +156,7 @@ INLINE_ELAPSED(__inline__)
 
 /* MacOS/Mach (Darwin) time-base register interface (unlike UpTime,
    from Carbon, requires no additional libraries to be linked). */
-#if defined(HAVE_MACH_ABSOLUTE_TIME) && defined(HAVE_MACH_MACH_TIME_H) && !defined(HAVE_TICK_COUNTER)
+#if __MACH__ || (defined(HAVE_MACH_ABSOLUTE_TIME) && defined(HAVE_MACH_MACH_TIME_H) && !defined(HAVE_TICK_COUNTER))
 #include <mach/mach_time.h>
 typedef uint64_t ticks;
 #define getticks       mach_absolute_time
