@@ -1391,7 +1391,7 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
       // Memcpy from global to heap.
 
       int64_t size_in_bytes = pass->mod->getDataLayout().getTypeAllocSize(elt_ty)
-                                  * this->args.size();
+                                  * int64_t(this->args.size());
       
       builder.CreateMemCpy(heapmem, llvm::MaybeAlign(1),
                            arrayVariableToPointer(arrayGlobal), llvm::MaybeAlign(1),

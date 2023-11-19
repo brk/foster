@@ -12,14 +12,15 @@
 #include <unistd.h> // for read(), write(), access()
 #include <cstring> // for strerror_r
 
-#ifdef OS_LINUX
-#include <fcntl.h> // for O_RDWR
+#if OS_LINUX
 // <cstring> provides strncpy and memset
 #include <sys/ioctl.h>
 #include <net/if.h> // for ifreq
 
 #include <linux/if_tun.h> // for IFF_TUN
-#elif defined(OS_MACOSX)
+#endif
+
+#if OS_POSIX
 #include <fcntl.h> // for O_RDWR
 #endif
 
