@@ -50,7 +50,6 @@ extern "C" char* __foster_fosterlower_config;
 #define TRACK_NUM_ALLOC_BYTES         1
 #define TRACK_NUM_OBJECTS_MARKED      1
 #define TRACK_WRITE_BARRIER_COUNTS    1
-#define TRACK_BYTES_ALLOCATED_PINHOOK 0
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
 #define USE_FIFO_SIZE 0
 #define DEBUG_VERIFY_MARK_BITS        0
@@ -85,11 +84,6 @@ extern void* foster__typeMapList[];
 
 static_assert(IMMIX_GRANULES_PER_LINE == 16,    "documenting expected values");
 static_assert(IMMIX_GRANULES_PER_BLOCK == 2048, "documenting expected values");
-
-extern "C" {
-  void foster_pin_hook_memalloc_cell(uint64_t nbytes);
-  void foster_pin_hook_memalloc_array(uint64_t nbytes);
-}
 
 namespace foster {
 namespace runtime {
@@ -599,7 +593,6 @@ struct large_array_allocator {
     allot->set_header(arr_elt_map);
     allot->set_num_elts(num_elts);
     designate_as_valid_object_start_addr(allot->body_addr());
-    if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
     if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
     if (TRACK_NUM_ALLOC_BYTES) { gcglobals.num_alloc_bytes += total_bytes; }
 
@@ -783,7 +776,6 @@ namespace helpers {
     allot->set_header(arr_elt_map);
     allot->set_num_elts(num_elts);
     designate_as_valid_object_start_addr(allot->body_addr());
-    if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
     if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
     if (TRACK_NUM_ALLOC_BYTES) { gcglobals.num_alloc_bytes += total_bytes; }
 
@@ -826,7 +818,6 @@ namespace helpers {
     //          How much overhead on a benchmark that's mixed, like sac-qsort?
 
     if (GC_ASSERTIONS) { gc_assert(frame15_id_of(allot) == frame15_id_of(allot->body_addr()), "cell prechecked: metadata and body address on different frames!"); }
-    if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_cell(cell_size); }
     if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
     if (TRACK_NUM_ALLOC_BYTES) { gcglobals.num_alloc_bytes += cell_size; }
     if (FOSTER_GC_ALLOC_HISTOGRAMS) { allocate_cell_prechecked_histogram((int) cell_size); }
