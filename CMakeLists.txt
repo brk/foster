@@ -6,6 +6,9 @@ cmake_minimum_required (VERSION 3.6)
 set(PYTHON python3)
 set(LLVM_VERSION 17.0.2)
 
+# LLVM's prebuilt binaries target this version so we must as well.
+SET(CMAKE_OSX_DEPLOYMENT_TARGET 13.6)
+
 find_program(LLVM_CONFIG NAMES llvm-config llvm-config-${LLVM_VERSION}
   PATHS
     $ENV{HOME}/llvm/${LLVM_VERSION}/bin
@@ -181,6 +184,15 @@ SET(CMAKE_SKIP_BUILD_RPATH        FALSE)
 SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 SET(CMAKE_INSTALL_RPATH "${LLVM_LIBDIR}:${ANTLR_LIBDIR}")
 
+# For now, assume we have zstd installed via Homebrew
+if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+  execute_process(COMMAND brew --prefix
+    OUTPUT_VARIABLE HOMEBREW_PREFIX
+  )
+  string(STRIP "${HOMEBREW_PREFIX}"     HOMEBREW_PREFIX)
+  set(LLVM_LDFLAGS "${LLVM_LDFLAGS} -L${HOMEBREW_PREFIX}/lib")
+endif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+  
 # }}}
 
 ####################### Compilation Rules ##########################
