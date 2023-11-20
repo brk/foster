@@ -85,7 +85,7 @@ regular:
   hex = [a-fA-F0-9];
   any = [\000-\377];
   sign = "+" | "-";
-  symbolcommon = [+*?<>!-];
+  symbolcommon = [-+*?<>!];
   symmultistart = "=" | symbolcommon;
   identcontinue = dig | let | symmultistart;
   lowerid = lower identcontinue*;
