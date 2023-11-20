@@ -31,7 +31,7 @@ fn main() {
     cc::Build::new()
         .file(fosterlexer_c)
         .include(out_dir)
-        .include("gen")
+        .include("inc")
         .compile("fosterlexer");
     
     println!("cargo:rerun-if-changed=extract_token_defs.py");
