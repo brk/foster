@@ -3,13 +3,14 @@ use codemap::Span;
 use std::collections::VecDeque;
 
 #[derive(Debug,PartialEq,Hash)]
-pub struct TransUnit(pub Vec<Import>, pub Vec<Spanned<Item>>);
+pub struct TransUnit(pub Vec<Spanned<Item>>);
 
 #[derive(Debug,PartialEq,Hash)]
 pub struct Import { pub name: Token, pub path: Token, pub span: Span }
 
 #[derive(Debug,PartialEq,Hash)]
 pub enum Item {
+     Import(Import),
      Decl(Token, Type, Token),
      Defn(Token, Expr, Token),
      TypeCase(Tyformal, Vec<Tyformal>, Vec<DataCtor>),
@@ -81,6 +82,7 @@ pub enum Type_ {
     Tuple(Vec<Type>, Option<Token>),
     Fun(Vec<Type>),
     Var(Token),
+    Forall(Vec<Tyformal>, Type),
 }
 
 #[derive(Debug,PartialEq,Hash)]

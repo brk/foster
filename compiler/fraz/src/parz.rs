@@ -52,7 +52,7 @@ pomelo::pomelo! {
     %include { use codemap::{Span, Spanned}; }
     %include { use std::collections::VecDeque; }
 
-    %verbose;
+    %stack_size 2000;
  
     %error ParseError;
     %syntax_error {
@@ -72,28 +72,26 @@ pomelo::pomelo! {
            ;
 
     %type transunit TransUnit;
-    transunit ::= import_star(B) item_star(C) FINI { TransUnit(B, C) }
-    
-    %type import_star Vec<Import>;
-    import_star ::=                              { Vec::new() }
-    import_star ::= import_star(mut B) import(C) { B.push(C); B }
+    transunit ::= item_star(C) FINI { TransUnit(C) }
     
     %type import Import;
-    import ::= INCLUDE(O) x(B) STR(C) SEMI(X) { Import { name: B, path: C, span: token_range(O,X) } }
+    import ::= INCLUDE(O) id(B) STR(C) SEMI(X) { Import { name: B, path: C, span: token_range(O,X) } }
     
     %type item_star Vec<Spanned<Item>>;
     item_star ::=                          { Vec::new() }
     item_star ::= item_star(mut B) item(C) { B.push(C); B }
     
     %type item Spanned<Item>;
-    item ::= x(B) DCOLON(D) t(C)      SEMI(X)                                             { spanned(Item::Decl( B, C,    D), token_range(B, X)) }
-    item ::= x(B) EQUAL(Q)  phrase(C) SEMI(X)                                             { spanned(Item::Defn( B, C,    Q), token_range(B, X)) }
-    item ::= TYPE(O) CASE tyformal(B)  parens_tyformal_star(C)   datactor_star(D) SEMI(X) { spanned(Item::TypeCase( B, C, D), token_range(O, X)) }
-    item ::= EFFECT(O)    tyformal(B)  parens_tyformal_star(C) effectctor_star(D) SEMI(X) { spanned(Item::Effect(   B, C, D), token_range(O, X)) }
-    item ::= FOREIGN(O) IMPORT x(B) asid?(C) DCOLON t(D) SEMI(X)                          { spanned(Item::ForeignImport( B, C, D), token_range(O, X)) }
-    item ::= FOREIGN(O) TYPE  tyformal(B) SEMI(X)                                         { spanned(Item::ForeignType( B), token_range(O, X)) }
-    item ::= UNEXPECTED(O)                                                                { spanned(Item::Unexpected(O), O) }
-    
+    item ::= import(B)                                                                      { let span = B.span; spanned(Item::Import(B), span) }
+    item ::= xid(B) DCOLON(D) t(C)      SEMI(X)                                             { spanned(Item::Decl( B, C,    D), token_range(B, X)) }
+    item ::= xid(B) EQUAL(Q)  phrase(C) SEMI(X)                                             { spanned(Item::Defn( B, C,    Q), token_range(B, X)) }
+    item ::= TYPE(O) CASE tyformal(B)  parens_tyformal_star(C)   datactor_star(D) SEMI(X)   { spanned(Item::TypeCase( B, C, D), token_range(O, X)) }
+    item ::= EFFECT(O)    tyformal(B)  parens_tyformal_star(C) effectctor_star(D) SEMI(X)   { spanned(Item::Effect(   B, C, D), token_range(O, X)) }
+    item ::= FOREIGN(O) IMPORT xid(B) asid?(C) DCOLON t(D) SEMI(X)                          { spanned(Item::ForeignImport( B, C, D), token_range(O, X)) }
+    item ::= FOREIGN(O) TYPE  tyformal(B) SEMI(X)                                           { spanned(Item::ForeignType( B), token_range(O, X)) }
+    item ::= UNEXPECTED(O)                                                                  { spanned(Item::Unexpected(O), O) }
+
+
     %type parens_tyformal_star Vec<Tyformal>;
     parens_tyformal_star ::=                                                { Vec::new() }
     parens_tyformal_star ::= parens_tyformal_star(mut B) parens_tyformal(C) { B.push(C); B }
@@ -127,20 +125,14 @@ pomelo::pomelo! {
     dctor ::= DOLLAR ctor(B) { B }
     
     %type ctor Span;
-    ctor ::= x(B) { B }
-    
-    %type x Span;
-    x ::= id(B) { B }
-    
-    %type a Span;
-    a ::= id(B) { B }
+    ctor ::= xid(B) { B }
     
     %type pid Span;
     pid ::= id(B) { B }
     
     %type xid Span;
     xid ::= id(B) { B }
-    xid ::= OPRNAME(B) { B }
+    xid ::= LPAREN SYMBOL(B) RPAREN { B }
     
     %type id Span;
     id ::= SMALLIDENT(B) { B }
@@ -193,8 +185,8 @@ pomelo::pomelo! {
     binops ::= binop_phrase_plus(B)  { B }
     
     %type binop Binop;
-    binop ::= SYMBOL(B)               { Binop::Symbol(B) }
-    binop ::= BACKTICK x(B) BACKTICK  { Binop::Ident( B) }
+    binop ::= SYMBOL(B)                 { Binop::Symbol(B) }
+    binop ::= BACKTICK xid(B) BACKTICK  { Binop::Ident( B) }
     
     %type binops_opt Vec<(Binop, Expr)>;
     binops_opt ::=            { Vec::new() }
@@ -220,7 +212,7 @@ pomelo::pomelo! {
     lvalue_star ::= lvalue_star(mut B) lvalue(C)        { B.push(C); B }
     
     %type nopr Span;
-    nopr ::= x(B)       { B }
+    nopr ::= id(B)      { B }
     nopr ::= SYMBOL(B)  { B }
     
     %type lvalue Expr;
@@ -231,7 +223,7 @@ pomelo::pomelo! {
     suffix ::= DOT_LBRACK(O) e(B) RBRACK(X)    { Suffix::DotSqBrackets(B, token_range(O, X)) }
     suffix ::=     LBRACK(O) e(B) RBRACK(X)    { Suffix::RawSqBrackets(B, token_range(O, X)) }
     suffix ::= BANG(B)                         { Suffix::Bang(B) }
-    suffix ::= DOT(B) x(C)                     { Suffix::DotIdent(B, C) }
+    suffix ::= DOT(B) id(C)                    { Suffix::DotIdent(B, C) }
     suffix ::= CLN_LBRACK(O) t_sepby_COMMA(B) RBRACK(X) { Suffix::TypeApp(B, token_range(O, X)) }
     
     %type suffix_star Vec<Suffix>;
@@ -239,7 +231,7 @@ pomelo::pomelo! {
     suffix_star ::= suffix_star(mut B) suffix(C)   { B.push(C); B }
     
     %type atom Expr;
-    atom ::= x(B)                                   { Expr(spanned(Box::new(Expr_::Var(B)), B)) }
+    atom ::= xid(B)                                 { Expr(spanned(Box::new(Expr_::Var(B)), B)) }
     atom ::= lit(B)                                 { let span = lit_span(&B); Expr(spanned(Box::new(Expr_::Lit(B)), span)) }
     atom ::= ifexpr(B)                              { B }
     atom ::= CASE(O) e(B) of_pmatch_plus(C) END(X)  { Expr(spanned(Box::new(Expr_::Case(B, C)), token_range(O, X))) }
@@ -319,7 +311,7 @@ pomelo::pomelo! {
     patom_star ::= patom_star(mut B) patom(C)  { B.push(C); B }
     
     %type patom PatAtom;
-    patom ::= x(B)                                  { PatAtom::Ident(B) }
+    patom ::= pid(B)                                { PatAtom::Ident(B) }
     patom ::= UNDERSCORE(B)                         { PatAtom::Under(B) }
     patom ::= lit(B)                                { PatAtom::Lit(B) }
     patom ::= LPAREN(O) RPAREN(X)                   { PatAtom::Tuple(Vec::new(), token_range(O, X)) }
@@ -338,26 +330,34 @@ pomelo::pomelo! {
     ifexpr ::= IF(O) stmts(B) THEN stmts(C)               END(X)  { Expr(spanned(Box::new(Expr_::If(B, C, None   )), token_range(O, X))) }
     
     %type tyformal Tyformal;
-    tyformal ::= x(B)                { Tyformal::Tyformal(B, None) }
-    tyformal ::= x(B) COLON kind(C)  { Tyformal::Tyformal(B, Some(C)) }
+    tyformal ::= xid(B)                { Tyformal::Tyformal(B, None) }
+    tyformal ::= xid(B) COLON kind(C)  { Tyformal::Tyformal(B, Some(C)) }
+
+    %type tyformalr Tyformal;
+    tyformalr ::= LPAREN(O) xid(B) COLON kind(C) RPAREN(X) { Tyformal::Tyformal(B, Some(C)) }
     
+    %type tyformalr_plus Vec<Tyformal>;
+    tyformalr_plus ::= tyformalr(C)                       { vec![C] }
+    tyformalr_plus ::= tyformalr_plus(mut B) tyformalr(C) { B.push(C); B }
+
     %type kind Span;
-    kind ::= x(B)  { B }
+    kind ::= xid(B)  { B }
     
     %type t Type;
-    t ::= PERCENT(P) x(B) COLON tp(C) COLON e(D)  { let span = token_range(P, expr_span(&D)); Type(spanned(Box::new(Type_::Refined(B, C, D)), span)) }
+    t ::= PERCENT(P) xid(B) COLON tp(C) COLON e(D)  { let span = token_range(P, expr_span(&D)); Type(spanned(Box::new(Type_::Refined(B, C, D)), span)) }
     t ::= tp(B)  { B }
     
     %type tp Type;
     tp ::= tatom(B) tatom_plus(C)  { let span = token_range(ty_span(&B), ty_span(C.last().unwrap_or(&B))); Type(spanned(Box::new(Type_::App(B, C)), span)) }
     tp ::= tatom(B)                { B }
+    tp ::= FORALL(O) tyformalr_plus(B) t(C) { let span = token_range(O, ty_span(&C)); Type(spanned(Box::new(Type_::Forall(B, C)     ), span)) }
     
     %type tatom_plus Vec<Type>;
     tatom_plus ::= tatom(C)                    { vec![C] }
     tatom_plus ::= tatom_plus(mut B) tatom(C)  { B.push(C); B }
     
     %type tatom Type;
-    tatom ::= a(B)                                           { Type(spanned(Box::new(Type_::Var(B)     ), B)) }
+    tatom ::= xid(B)                                         { Type(spanned(Box::new(Type_::Var(B)     ), B)) }
     tatom ::= LPAREN(O) RPAREN(X)                            { Type(spanned(Box::new(Type_::Unit       ), token_range(O, X))) }
     tatom ::= LPAREN(O) t_sepby_COMMA(B) RPAREN(X) HASH?(C)  { Type(spanned(Box::new(Type_::Tuple(B, C)), token_range(O, C.unwrap_or(X)))) }
     tatom ::= LCURLY(O) t_sepby_DARROW(B) RCURLY(X)          { Type(spanned(Box::new(Type_::Fun(B)     ), token_range(O, X))) }

@@ -165,6 +165,7 @@ regular:
   "effect"              { return mk(EFFECT); }
   "handle"              { return mk(HANDLE); }
   "forall"              { return mk(FORALL); }
+  "import"              { return mk(IMPORT); }
   "include"             { return mk(INCLUDE); }
   "foreign"             { return mk(FOREIGN); }
   "snafuinclude"        { return mk(INCLUDE); }
