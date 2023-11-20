@@ -7,6 +7,10 @@ edition = "2021"
 
 [dependencies]
 argh = "0.1.6"
+cityhash = "0.1.1"
+codemap = "*"
+codemap-diagnostic = "*"
+codespan-reporting = "*"
 libc = "*"
 
 [build-dependencies]

@@ -1,5 +1,5 @@
 #[allow(dead_code)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FrazToken {
     pub tok: i32,
     pub off: i32,
@@ -28,7 +28,7 @@ pub struct FLToken {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct FLScanner {
-    pub buf: *mut u8,
+    pub buf: *const u8,
     pub num_errors: libc::c_int,
     pub ptr: libc::c_int,
     pub cur: libc::c_int,
@@ -44,7 +44,9 @@ const INCLUDE  : libc::c_int =         2;
 const STR      : libc::c_int =         3;
 //const SEMI     : libc::c_int =         4;
 
-pub fn tokenize(contents: &mut String) -> Vec<FrazToken> {
+/// `baseidx` allows constructing tokens with offsets that
+/// correspond to a virtually concatenated source listing.
+pub fn tokenize(contents: &str, baseidx: i32) -> Vec<FrazToken> {
     let mut t = FLToken {
         tok: 0,
         line: 0,
@@ -53,7 +55,7 @@ pub fn tokenize(contents: &mut String) -> Vec<FrazToken> {
         endcol: 0,
     };
     let mut s = FLScanner {
-        buf: contents.as_mut_ptr(),
+        buf: contents.as_ptr(),
         num_errors: 0,
         ptr: 0,
         cur: 0,
@@ -75,7 +77,7 @@ pub fn tokenize(contents: &mut String) -> Vec<FrazToken> {
         }
         toks.push(FrazToken {
             tok: t.tok,
-            off: prevcur,
+            off: baseidx + prevcur,
             len: s.cur - prevcur,
         });
         prevcur = s.cur;
@@ -91,7 +93,7 @@ fn nonwhite(it: &mut std::slice::Iter<FrazToken>) -> Option<FrazToken> {
     }
 }
 
-pub fn extract_raw_include_paths<'a>(contents: &'a [u8], toks: &Vec<FrazToken>) -> Vec<&'a [u8]> {
+pub fn extract_raw_include_path_toks(toks: &Vec<FrazToken>) -> Vec<FrazToken> {
     let mut it = toks.iter();
     let mut rawpaths = vec![];
     loop {
@@ -103,9 +105,7 @@ pub fn extract_raw_include_paths<'a>(contents: &'a [u8], toks: &Vec<FrazToken>) 
                 let _semi = nonwhite(&mut it);
                 match _path {
                     Some(path) if path.tok == STR => {
-                        let off = path.off as usize;
-                        let fin = off + path.len as usize;
-                        rawpaths.push(str_lit_contents(&contents[off..fin]));
+                        rawpaths.push(path);
                     },
                     _ => continue
                 }
@@ -117,7 +117,7 @@ pub fn extract_raw_include_paths<'a>(contents: &'a [u8], toks: &Vec<FrazToken>) 
 }
 
 /// Returns a slice of the quote-mark-less contents of the given string literal
-fn str_lit_contents(s: &[u8]) -> &[u8] {
+pub fn str_lit_contents(s: &[u8]) -> &[u8] {
     let mut firstquote = 0;
     while let Some(c) = s.get(firstquote) {
         if *c == '\'' as u8 || *c == '"' as u8 { break; }
