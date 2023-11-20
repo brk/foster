@@ -7,14 +7,11 @@ use crate::syn;
 #[derive(Copy,Clone,Debug)]
 pub enum ParseError {
   ParsingFailed,
-  InvalidToken
+  InvalidToken,
+  EmptyInput
 }
 
 fn token_range(s: Span, e: Span) -> Span { s.merge(e) }
-
-// fn token_range(s: &parser::Token, e: &parser::Token) -> Span {
-//     return s.extra().merge(e.extra())
-// }
 
 fn spanned<T>(n: T, s: Span) -> Spanned<T> {
   Spanned { node: n, span: s }
@@ -43,6 +40,7 @@ fn lit_span(lit: &syn::Lit) -> Span {
         syn::Lit::Str(tokspan) => tokspan,
     }
 }
+
 fn expr_span(e: &syn::Expr) -> Span { e.0.span }
 
 use pomelo;
@@ -407,6 +405,7 @@ include!(concat!(env!("OUT_DIR"), "/tokcvt.rs"));
 pub fn tryparse(toks: Vec<super::lex::FrazToken>, cm: codemap::CodeMap)
             -> Result<syn::TransUnit, ParseError> {
     let mut p = parser::Parser::new(&cm);
+    let final_span = toks.last().ok_or(ParseError::EmptyInput)?.span;
     for tok in toks.into_iter() {
         if tok.tok < 0 {
             // skip whitespace and comments
@@ -415,6 +414,7 @@ pub fn tryparse(toks: Vec<super::lex::FrazToken>, cm: codemap::CodeMap)
             p.parse(pt?)?;
         }
     }
+    p.parse(parser::Token::FINI(final_span))?;
     let (ast, _cm) = p.end_of_input()?;
     println!("{:?}", ast);
     Ok(ast)

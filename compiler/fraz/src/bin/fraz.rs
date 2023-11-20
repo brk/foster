@@ -118,8 +118,9 @@ fn footprint_with_rootfile(rootfile: String, incpaths: &[PathBuf]) {
         numbytes += file.source().as_bytes().len();
         numlines += file.source().lines().count();
         println!(
-            "{:016x} {}",
+            "{:016x}   {:>6.1} KB    {}",
             city_hash_64(file.source().as_ref()),
+            (file.source().as_bytes().len() as f64) / 1024.0,
             file.name()
         );
     }
@@ -141,10 +142,11 @@ fn tokendump_with_rootfile(rootfile: String) {
             let toks = fraz::lex::tokenize(file.source(), file.span);
             for t in toks {
                 println!(
-                    "{{type: {}, bufidx: {:?}, len: {}}}",
+                    "{{type: {}, bufidx: {:?}, len: {}, name: {}}}",
                     t.tok,
                     t.span.low(),
-                    t.span.len()
+                    t.span.len(),
+                    fraz::lex::gen::token_name(&t)
                 );
             }
         }

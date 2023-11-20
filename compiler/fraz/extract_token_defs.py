@@ -24,6 +24,19 @@ def emit_c(tokens):
 def emit_rustconst(tokens):
     for t in tokens:
         print("pub const {} : i32 = {};".format(t, tokens[t]))
+    print("")
+    print("""
+pub fn token_name(t: &super::FrazToken) -> &str {
+    match t.tok {
+        %s
+        -2 => "WHITESPACE",
+        -3 => "LINECOMMENT",
+        -4 => "BLOCKCOMMENT",
+        -5 => "NEWLINE",
+        _ => "!token_name_unknown!"
+    }
+}
+"""  % ('\n'.join('        {0} => "{0}",'.format(t) for t in tokens)))
 
 def emit_rustconvert(tokens):
     print("""

@@ -23,13 +23,19 @@ fn main() {
         .stdout(tokcvt_rs)
         .status().expect("failed to execute python3");
 
+    let fosterlexer_c = format!("{}/fosterlexer.c", out_dir);
+    Command::new("re2c")
+        .args(&["src/fosterlexer.re", "--input", "custom", "-8", "-W", "-o", &fosterlexer_c])
+        .status().expect("failed to execute re2c");
+
     cc::Build::new()
-        .file("gen/fosterlexer.c")
+        .file(fosterlexer_c)
         .include(out_dir)
+        .include("gen")
         .compile("fosterlexer");
     
     println!("cargo:rerun-if-changed=extract_token_defs.py");
     println!("cargo:rerun-if-changed=src/parz.rs");
-    println!("cargo:rerun-if-changed=gen/fosterlexer.c");
+    println!("cargo:rerun-if-changed=src/fosterlexer.re");
     println!("cargo:rerun-if-changed=build.rs");
 }

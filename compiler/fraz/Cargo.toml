@@ -11,6 +11,7 @@ cityhash = "0.1.1"
 codemap = "*"
 codemap-diagnostic = "*"
 codespan-reporting = "*"
+human_format = "1.0"
 pomelo = "*"
 libc = "*"
 
