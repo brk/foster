@@ -17,6 +17,9 @@ compiler/me/dist-newstyle
 compiler/me/src/Foster/Tokens.hs
 compiler/me/src/FosterIL_capnp.hs
 compiler/me/src/FosterIL_capnp.foster
+compiler/fraz/target
+compiler/fraz/gen
+compiler/fraz/Cargo.lock
 tools/lemon-foster/lemon-foster
 **/fosterc-tmp/
 **/fosterc-z3-cache.cbor
