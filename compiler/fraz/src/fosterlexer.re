@@ -65,7 +65,8 @@ void report_lexical_error(Scanner* s, Token* t, const char* msg, int buff_end) {
     s->num_errors++;
 }
 
-void scan_token_start(Scanner* s, Token* t, int buff_end, YYCTYPE* yych) {
+void scan_token_start(Scanner* s, Token* t, int buff_end) {
+  YYCTYPE yych = 0;
 
 regular:
   if (s->cur >= buff_end) { return mk(FINI); }
@@ -74,7 +75,7 @@ regular:
 /*!re2c
   re2c:yyfill:enable = 0;
   re2c:yych:emit = 0;
-  re2c:variable:yych = '*yych';
+  re2c:variable:yych = 'yych';
 
   whitespace = [ \t\v\f]+;
   dig = [0-9];
@@ -234,8 +235,8 @@ tridquo:
 */
 }
 
-int scan_token(Scanner* scanner, Token* t, int buffer_size, YYCTYPE* yych) {
-    scan_token_start(scanner, t, buffer_size, yych);
+int scan_token(Scanner* scanner, Token* t, int buffer_size) {
+    scan_token_start(scanner, t, buffer_size);
 
     int typ = t->tok;
     int chan = 0;

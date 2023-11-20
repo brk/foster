@@ -10,7 +10,6 @@ extern "C" {
         s: *mut FLScanner,
         t: *mut FLToken,
         buff_end: libc::c_int,
-        yych: *mut libc::c_uchar,
     );
 }
 
@@ -63,11 +62,10 @@ pub fn tokenize(contents: &str, filespan: codemap::Span) -> Vec<FrazToken> {
     };
     let mut toks = vec![];
     let len: libc::c_int = contents.len().try_into().unwrap();
-    let mut yych: libc::c_uchar = 0;
     let mut prevcur = s.cur;
 
     loop {
-        unsafe { scan_token_start(&mut s, &mut t, len, &mut yych) }
+        unsafe { scan_token_start(&mut s, &mut t, len) }
         if t.tok == gen::FINI {
             break;
         }
