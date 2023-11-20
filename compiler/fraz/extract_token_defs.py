@@ -27,7 +27,10 @@ def emit_rustconst(tokens):
     print("")
     print("""
 pub fn token_name(t: &super::FrazToken) -> &str {
-    match t.tok {
+    raw_token_name(t.tok)
+}
+pub fn raw_token_name(tok: i32) -> &'static str {
+    match tok {
         %s
         -2 => "WHITESPACE",
         -3 => "LINECOMMENT",
@@ -73,12 +76,12 @@ def run(args):
             if line == '}':
                 if args.mode == 'rustconst':
                     emit_rustconst(tokens)
-                if args.mode == 'rustconvert':
+                elif args.mode == 'rustconvert':
                     emit_rustconvert(tokens)
                 elif args.mode == 'c':
                     emit_c(tokens)
                 else:
-                    raise Exception("unknown mode: " + args.mode)
+                    raise Exception("unknown mode:", args.mode)
                 state = 'done'
                 break
 

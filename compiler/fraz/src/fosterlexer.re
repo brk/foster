@@ -128,6 +128,7 @@ regular:
   "{"                   { return mk(LCURLY); }
   "}"                   { return mk(RCURLY); }
   ".["                  { return mk(DOT_LBRACK); }
+  ":["                  { return mk(CLN_LBRACK); }
   "["                   { return mk(LBRACK); }
   "]"                   { return mk(RBRACK); }
   ";"                   { return mk(SEMI); }
@@ -136,6 +137,7 @@ regular:
   "="                   { return mk(EQUAL); }
   "`"                   { return mk(BACKTICK); }
   "@"                   { return mk(HASH); }
+  "."                   { return mk(DOT); }
 
   "$"                   { return mk(DOLLAR); }
   "%"                   { return mk(PERCENT); }
@@ -156,6 +158,7 @@ regular:
   "let"                 { return mk(LET); }
   "end"                 { return mk(END); }
   "else"                { return mk(ELSE); }
+  "then"                { return mk(THEN); }
   "type"                { return mk(TYPE); }
   "case"                { return mk(CASE); }
   "prim"                { return mk(PRIM); }
@@ -197,12 +200,17 @@ regular:
 */
 
 linecomment:
+  if (s->cur >= buff_end) { return; }
 /*!re2c
   "\n"          { saw_newline_at(s, YYCURSOR); return; }
   *             { goto linecomment; }
 */
 
 comment:
+  if (s->cur >= buff_end) {
+    report_lexical_error(s, t, "lexing an unterminated block comment", buff_end);
+    t->tok = UNEXPECTED;
+    return; }
 /*!re2c
   "*/"          { if (--s->commentdepth == 0) { return; } else goto comment; }
   "/*"          { ++s->commentdepth; goto comment; }
@@ -215,6 +223,10 @@ comment:
    in case of error messages. Yuck! Comments don't have the problem because they do not have any
    internal lexical structure to get wrong (e.g. escape sequences). */
 trisquo:
+  if (s->cur >= buff_end) {
+    report_lexical_error(s, t, "lexing a triple-quoted string", buff_end);
+    t->tok = UNEXPECTED;
+    return; }
 /*!re2c
   "'''"         { return; }
   "\n"          { saw_newline_at(s, YYCURSOR); goto trisquo; }
@@ -225,6 +237,10 @@ trisquo:
 */
 
 tridquo:
+  if (s->cur >= buff_end) {
+    report_lexical_error(s, t, "lexing a triple-quoted string", buff_end);
+    t->tok = UNEXPECTED;
+    return; }
 /*!re2c
   '"""'         { return; }
   "\n"          { saw_newline_at(s, YYCURSOR); goto tridquo; }

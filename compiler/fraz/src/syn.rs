@@ -16,6 +16,7 @@ pub enum Item {
      Effect(  Tyformal, Vec<Tyformal>, Vec<Spanned<EffectCtor>>),
      ForeignImport(Token, Option<Token>, Type),
      ForeignType(Tyformal),
+     Unexpected(Span),
 }
 
 #[derive(Debug,PartialEq,Hash)]
@@ -124,7 +125,9 @@ pub enum Suffix {
     Caret(Token),
     DotSqBrackets(Expr, Span),
     RawSqBrackets(Expr, Span),
+    TypeApp(Vec<Type>, Span),
     Bang(Token),
+    DotIdent(Token, Token)
 }
 
 #[derive(Debug,PartialEq,Hash)]

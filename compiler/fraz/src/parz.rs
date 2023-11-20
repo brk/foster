@@ -26,11 +26,13 @@ fn vd_singleton<T>(n: T) -> VecDeque<T> {
 fn ty_span(t: &syn::Type) -> Span { t.0.span }
 
 fn suffix_span(suff: &syn::Suffix) -> Span {
-    *match suff {
-        syn::Suffix::Caret(tokspan) => tokspan,
-        syn::Suffix::DotSqBrackets(_, span) => span,
-        syn::Suffix::RawSqBrackets(_, span) => span,
-        syn::Suffix::Bang(tokspan) => tokspan,
+    match suff {
+        syn::Suffix::Caret(tokspan) => *tokspan,
+        syn::Suffix::DotSqBrackets(_, span) => *span,
+        syn::Suffix::RawSqBrackets(_, span) => *span,
+        syn::Suffix::Bang(tokspan) => *tokspan,
+        syn::Suffix::DotIdent(dot, id) => token_range(*dot, *id),
+        syn::Suffix::TypeApp(_tys, span) => *span,
     }
 }
 
@@ -50,8 +52,12 @@ pomelo::pomelo! {
     %include { use codemap::{Span, Spanned}; }
     %include { use std::collections::VecDeque; }
 
+    %verbose;
+ 
     %error ParseError;
-    %syntax_error { syntax_error(token, extra) }
+    %syntax_error {
+        //yy.yystack.iter().for_each(|ent| eprintln!("\ttok: {} @{}, state: {}", ent.major, crate::lex::gen::raw_token_name(ent.major), ent.stateno));
+        syntax_error(token, extra) }
     %parse_fail { parse_fail() }
     %stack_overflow { stack_overflow() }
 
@@ -86,6 +92,7 @@ pomelo::pomelo! {
     item ::= EFFECT(O)    tyformal(B)  parens_tyformal_star(C) effectctor_star(D) SEMI(X) { spanned(Item::Effect(   B, C, D), token_range(O, X)) }
     item ::= FOREIGN(O) IMPORT x(B) asid?(C) DCOLON t(D) SEMI(X)                          { spanned(Item::ForeignImport( B, C, D), token_range(O, X)) }
     item ::= FOREIGN(O) TYPE  tyformal(B) SEMI(X)                                         { spanned(Item::ForeignType( B), token_range(O, X)) }
+    item ::= UNEXPECTED(O)                                                                { spanned(Item::Unexpected(O), O) }
     
     %type parens_tyformal_star Vec<Tyformal>;
     parens_tyformal_star ::=                                                { Vec::new() }
@@ -224,6 +231,8 @@ pomelo::pomelo! {
     suffix ::= DOT_LBRACK(O) e(B) RBRACK(X)    { Suffix::DotSqBrackets(B, token_range(O, X)) }
     suffix ::=     LBRACK(O) e(B) RBRACK(X)    { Suffix::RawSqBrackets(B, token_range(O, X)) }
     suffix ::= BANG(B)                         { Suffix::Bang(B) }
+    suffix ::= DOT(B) x(C)                     { Suffix::DotIdent(B, C) }
+    suffix ::= CLN_LBRACK(O) t_sepby_COMMA(B) RBRACK(X) { Suffix::TypeApp(B, token_range(O, X)) }
     
     %type suffix_star Vec<Suffix>;
     suffix_star ::=                                { Vec::new() }
