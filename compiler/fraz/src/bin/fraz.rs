@@ -1,7 +1,9 @@
 use argh::FromArgs;
 use cityhash::cityhash_1_1_1::city_hash_64;
+use human_format::Formatter;
 use std::fs;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 /// Fraz driver options struct
 #[derive(FromArgs, PartialEq, Debug)]
@@ -153,14 +155,54 @@ fn tokendump_with_rootfile(rootfile: String) {
     }
 }
 
+fn timed<F, R>(dur: &mut Duration, f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    let start = Instant::now();
+    let rv = f();
+    *dur += start.elapsed();
+    rv
+}
+
 fn compile_with_rootfile(rootfile: String, incpaths: &[PathBuf]) {
     let mut seenfiles = vec![];
     let mut alltokens = vec![];
-    let codemap = scavenge(rootfile, incpaths, &mut seenfiles, &mut alltokens);
-    match fraz::parz::tryparse(alltokens, codemap) {
+    let mut times: FrazCompileTimes = Default::default();
+
+    let compiler_start = Instant::now();
+
+    let codemap = timed(&mut times.lexscavenge, || {
+        scavenge(rootfile, incpaths, &mut seenfiles, &mut alltokens)
+    });
+
+    let parseresult = timed(&mut times.parsing, || {
+        fraz::parz::tryparse(alltokens, codemap)
+    });
+
+    match parseresult {
         Ok(_ast) => (),
         Err(pe) => eprintln!("parse error: {:?}", pe),
     }
+    println!("{:?}", times);
+
+    let mut numlines = 0;
+    for file in seenfiles {
+        numlines += file.source().lines().count();
+    }
+    println!("# source lines: {}", numlines);
+    println!(
+        "source lines/second: {}",
+        Formatter::new().format((numlines as f64) / compiler_start.elapsed().as_secs_f64())
+    );
+}
+
+struct CompilerContext {
+    verbose: bool,
+}
+
+struct TcEnv {
+    uniq: u64,
 }
 
 /// Main compiler driver
@@ -174,6 +216,19 @@ struct FrazCompile {
     /// root file
     #[argh(positional)]
     rootfile: Option<String>,
+}
+
+#[derive(Default, Debug)]
+struct FrazCompileTimes {
+    lexscavenge: Duration,
+    parsing: Duration,
+    typecheck: Duration,
+    monomorph: Duration,
+    staticchk: Duration,
+    loophdsnk: Duration,
+    inlining: Duration,
+    closureconv: Duration,
+    codegenprep: Duration,
 }
 
 fn main() {
