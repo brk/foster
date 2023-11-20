@@ -18,4 +18,5 @@ libc = "*"
 [build-dependencies]
 cc = "1.0"
 
-
+[profile.release]
+debug = 1
