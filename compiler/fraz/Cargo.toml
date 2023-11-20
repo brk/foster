@@ -11,6 +11,7 @@ cityhash = "0.1.1"
 codemap = "*"
 codemap-diagnostic = "*"
 codespan-reporting = "*"
+pomelo = "*"
 libc = "*"
 
 [build-dependencies]

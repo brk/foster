@@ -1,4 +1,6 @@
 pub mod lex;
+pub mod syn;
+pub mod parz;
 
 use std::ffi::OsStr;
 use std::path::Path;
@@ -14,7 +16,7 @@ mod tests {
     }
 }
 
-pub fn resolve_include_path(raw: &[u8], search_paths: &Vec<PathBuf>) -> Option<PathBuf> {
+pub fn resolve_include_path(raw: &[u8], search_paths: &[PathBuf]) -> Option<PathBuf> {
     let rawpath = Path::new(OsStr::new(str::from_utf8(raw).unwrap()));
     for search in search_paths {
         // Try foo/bar.foster
@@ -31,5 +33,5 @@ pub fn resolve_include_path(raw: &[u8], search_paths: &Vec<PathBuf>) -> Option<P
             return Some(direct);
         }
     }
-    return None;
+    None
 }

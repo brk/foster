@@ -2,8 +2,7 @@
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FrazToken {
     pub tok: i32,
-    pub off: i32,
-    pub len: i32,
+    pub span: codemap::Span,
 }
 
 extern "C" {
@@ -39,14 +38,11 @@ pub struct FLScanner {
     pub linepos_prev: libc::c_int,
 }
 
-const FINI     : libc::c_int =         1;
-const INCLUDE  : libc::c_int =         2;
-const STR      : libc::c_int =         3;
-//const SEMI     : libc::c_int =         4;
+pub mod gen {
+    include!(concat!(env!("OUT_DIR"), "/toknums.rs"));
+}
 
-/// `baseidx` allows constructing tokens with offsets that
-/// correspond to a virtually concatenated source listing.
-pub fn tokenize(contents: &str, baseidx: i32) -> Vec<FrazToken> {
+pub fn tokenize(contents: &str, filespan: codemap::Span) -> Vec<FrazToken> {
     let mut t = FLToken {
         tok: 0,
         line: 0,
@@ -72,39 +68,38 @@ pub fn tokenize(contents: &str, baseidx: i32) -> Vec<FrazToken> {
 
     loop {
         unsafe { scan_token_start(&mut s, &mut t, len, &mut yych) }
-        if t.tok == FINI {
+        if t.tok == gen::FINI {
             break;
         }
         toks.push(FrazToken {
             tok: t.tok,
-            off: baseidx + prevcur,
-            len: s.cur - prevcur,
+            span: filespan.subspan(prevcur as u64, s.cur as u64),
         });
         prevcur = s.cur;
     }
-    return toks;
+    toks
 }
 
 fn nonwhite(it: &mut std::slice::Iter<FrazToken>) -> Option<FrazToken> {
     loop {
         let tok = it.next()?;
         if tok.tok < 0 { continue }
-        return Some(*tok)
+        return Some(*tok);
     }
 }
 
-pub fn extract_raw_include_path_toks(toks: &Vec<FrazToken>) -> Vec<FrazToken> {
+pub fn extract_raw_include_path_toks(toks: &[FrazToken]) -> Vec<FrazToken> {
     let mut it = toks.iter();
     let mut rawpaths = vec![];
     loop {
         match nonwhite(&mut it) {
             None => break,
-            Some(tok) if tok.tok == INCLUDE => {
+            Some(tok) if tok.tok == gen::INCLUDE => {
                 let _name = nonwhite(&mut it);
                 let _path = nonwhite(&mut it);
                 let _semi = nonwhite(&mut it);
                 match _path {
-                    Some(path) if path.tok == STR => {
+                    Some(path) if path.tok == gen::STR => {
                         rawpaths.push(path);
                     },
                     _ => continue
@@ -113,20 +108,20 @@ pub fn extract_raw_include_path_toks(toks: &Vec<FrazToken>) -> Vec<FrazToken> {
             _ => break,
         }
     }
-    return rawpaths
+    rawpaths
 }
 
 /// Returns a slice of the quote-mark-less contents of the given string literal
 pub fn str_lit_contents(s: &[u8]) -> &[u8] {
     let mut firstquote = 0;
     while let Some(c) = s.get(firstquote) {
-        if *c == '\'' as u8 || *c == '"' as u8 { break; }
+        if *c == b'\'' || *c == b'"' { break; }
         firstquote += 1
     }
     let mut numquotes = 0;
     while let Some(c) = s.get(firstquote + numquotes) {
-        if *c == '\'' as u8 || *c == '"' as u8 { numquotes += 1; }
+        if *c == b'\'' || *c == b'"' { numquotes += 1; }
         else { break; }
     }
-    return &s[firstquote + numquotes .. s.len() - numquotes]
+    &s[firstquote + numquotes .. s.len() - numquotes]
 }
