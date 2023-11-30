@@ -136,7 +136,7 @@ regular:
   ":"                   { return mk(COLON); }
   "="                   { return mk(EQUAL); }
   "`"                   { return mk(BACKTICK); }
-  "@"                   { return mk(HASH); }
+  "@"                   { return mk(HASH); } // parz.rs needs to use ATSIGN first
   "."                   { return mk(DOT); }
 
   "$"                   { return mk(DOLLAR); }

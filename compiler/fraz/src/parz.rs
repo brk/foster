@@ -411,7 +411,7 @@ fn stack_overflow() -> ParseError {
 // pattern matches, for better or for worse...
 include!(concat!(env!("OUT_DIR"), "/tokcvt.rs"));
 
-pub fn tryparse(toks: Vec<super::lex::FrazToken>, cm: codemap::CodeMap)
+pub fn tryparse(toks: Vec<super::lex::FrazToken>, cm: &mut codemap::CodeMap)
             -> Result<syn::TransUnit, ParseError> {
     let mut p = parser::Parser::new(&cm);
     let final_span = toks.last().ok_or(ParseError::EmptyInput)?.span;
@@ -425,7 +425,7 @@ pub fn tryparse(toks: Vec<super::lex::FrazToken>, cm: codemap::CodeMap)
     }
     p.parse(parser::Token::FINI(final_span))?;
     let (ast, _cm) = p.end_of_input()?;
-    println!("{:?}", ast);
+    //println!("{:?}", ast);
     Ok(ast)
 
 }

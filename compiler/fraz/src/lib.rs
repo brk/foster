@@ -1,6 +1,7 @@
 pub mod lex;
 pub mod syn;
 pub mod parz;
+pub mod tochez;
 
 use std::ffi::OsStr;
 use std::path::Path;

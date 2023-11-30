@@ -1,5 +1,5 @@
 use argh::FromArgs;
-use cityhash::cityhash_1_1_1::city_hash_64;
+use fasthash::xx;
 use human_format::Formatter;
 use std::fs;
 use std::path::PathBuf;
@@ -119,9 +119,10 @@ fn footprint_with_rootfile(rootfile: String, incpaths: &[PathBuf]) {
         numfiles += 1;
         numbytes += file.source().as_bytes().len();
         numlines += file.source().lines().count();
+
         println!(
             "{:016x}   {:>6.1} KB    {}",
-            city_hash_64(file.source().as_ref()),
+            xx::hash64(file.source().as_bytes()),
             (file.source().as_bytes().len() as f64) / 1024.0,
             file.name()
         );
@@ -172,28 +173,37 @@ fn compile_with_rootfile(rootfile: String, incpaths: &[PathBuf]) {
 
     let compiler_start = Instant::now();
 
-    let codemap = timed(&mut times.lexscavenge, || {
+    let mut codemap = timed(&mut times.lexscavenge, || {
         scavenge(rootfile, incpaths, &mut seenfiles, &mut alltokens)
     });
 
     let parseresult = timed(&mut times.parsing, || {
-        fraz::parz::tryparse(alltokens, codemap)
+        fraz::parz::tryparse(alltokens, &mut codemap)
     });
 
     match parseresult {
-        Ok(_ast) => (),
+        Ok(_ast) => {
+            timed(&mut times.codegenprep, || {
+                let ss = fraz::tochez::tochez_transunit(&_ast, &codemap);
+                fraz::tochez::emit(&ss)
+            });
+        },
         Err(pe) => eprintln!("parse error: {:?}", pe),
     }
     println!("{:?}", times);
 
-    let mut numlines = 0;
+    let mut numlines: usize = 0;
+    let mut numbytes: usize = 0;
     for file in seenfiles {
         numlines += file.source().lines().count();
+        numbytes += file.source().as_bytes().len();
     }
+    let elapsed = compiler_start.elapsed().as_secs_f64();
     println!("# source lines: {}", numlines);
     println!(
-        "source lines/second: {}",
-        Formatter::new().format((numlines as f64) / compiler_start.elapsed().as_secs_f64())
+        "source lines/second: {}\t\tMB/s: {}",
+        Formatter::new().format((numlines as f64) / elapsed),
+        Formatter::new().format((numbytes as f64 / 1e6) / elapsed)
     );
 }
 
