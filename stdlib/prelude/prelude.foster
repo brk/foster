@@ -35,6 +35,11 @@ until = { cond : { Bool } => body : { () } =>
 
 /////
 
+ref-poke = { forall v:Type, x : v => r : Ref v => (>^) x r };
+array-poke-i32 = { forall v:Type, x : v => r : Array v => i : Int32 => x >^ r.[i] };
+
+/////
+
 cmdline-arg-or :: { Int32 => Int32 => Int32 };
 cmdline-arg-or = { i => d =>
   n0 = tmp_Int32_of_base_10_Text (get_cmdline_arg_n i);
@@ -160,8 +165,11 @@ newDArray = { forall v:Type,
   x = (prim ref n);
 
   until { x^ ==Int32 0 } {
-      f x^            >^ a.[x^ -Int32  1];
-      ( x^ -Int32 1 ) >^ x
+      //f x^            >^ a.[x^ -Int32  1];
+      (f x^) |> array-poke-i32 a (x^ -Int32  1);
+      
+      // ( x^ -Int32 1 ) >^ x
+      (x^ -Int32 1) |> ref-poke x
   };
   a
 };
@@ -181,8 +189,8 @@ newArrayReplicate = { forall v:Type,
   x = (prim ref n);
 
   until { x^ ==Int32 0 } {
-      v >^ a.[x^ -Int32 1];
-      (       x^ -Int32 1 ) >^ x
+      v |> array-poke-i32  a (x^ -Int32 1);
+      (x^ -Int32 1 ) |> ref-poke x
   };
   a
 };
@@ -199,7 +207,7 @@ arrayFromRange32 = { sm => lg => f =>
   REC go = { n =>
     if n >SInt32 0 then
       i = n -Int32 1;
-      f  (i +Int32 sm) >^ arr.[i];
+      f  (i +Int32 sm) |> array-poke-i32 arr i;
       go  i
     end
   };
@@ -219,7 +227,7 @@ arrayFromRange32Up = { sm => lg => f =>
   arr = allocDArray (lg -Int32 sm);
   REC go = { n => lim =>
     if n <SInt32 lim then
-      f  (n +Int32 sm) >^ arr.[n];
+      f  (n +Int32 sm) |> array-poke-i32 arr n;
       go (n +Int32 1) lim
     end
   };
@@ -284,8 +292,8 @@ tmp_Int32_of_base_10_Text = { t:Text =>
    if is_ascii_digit c
      then
        s = (sext_i8_to_i32 c) -Int32 48;
-       (acc^ +Int32 (s *Int32 pow^)) >^ acc;
-       (pow^           *Int32 base ) >^ pow;
+       (acc^ +Int32 (s *Int32 pow^)) |> array-poke-i32 acc;
+       (pow^           *Int32 base ) |> ref-poke pow;
        True
      else False
    end;
@@ -521,12 +529,13 @@ tmp_Text_of_UInt64_localmut_rev = { n:Int64 =>
   buf = allocDArray 16;
   REC go = { n : Int64 => idx : Int32 =>
     if n <UInt64 10
-      then (n |> trunc_i64_to_i8 |> tmp_Byte_of_Int8_digit) >^ buf.[idx];
+      then (n |> trunc_i64_to_i8 |> tmp_Byte_of_Int8_digit)
+                |> array-poke-i32 buf idx;
            idx +Int32 1
 
       else r = trunc_i64_to_i8 (urem-Int64 n 10);
            q =                  udiv-Int64 n 10 ;
-           (r |> tmp_Byte_of_Int8_digit) >^ buf.[idx];
+           r |> tmp_Byte_of_Int8_digit |> array-poke-i32 buf idx;
            go q (idx +Int32 1)
     end
   };

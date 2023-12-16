@@ -3,13 +3,13 @@ use codemap::Span;
 use std::collections::VecDeque;
 use num_bigint::BigInt;
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub struct TransUnit(pub Vec<Spanned<Item>>);
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub struct Import { pub name: Token, pub path: Token, pub span: Span }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum Item {
      Import(Import),
      Decl(Token, Type, Token),
@@ -21,33 +21,33 @@ pub enum Item {
      Unexpected(Span),
 }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum EffectCtor {
     EffPlain(Token, Vec<Type>),
     EffResume(Token, Vec<Type>, Type),
 }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum Pat {
     PatOf(Patside, Vec<Patside>)
 }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum PatLhs {
     Wildcard(Token),
     Tuple(Vec<Pat>, TokenRange),
 }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum Patside {
     Dctor(Token, Vec<PatAtom>),
     Atom(PatAtom),
 }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum PatMatch { PatMatch(Pat, Option<Expr>, Stmts) }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum PatAtom {
     Ident(Token),
     Under(Token),
@@ -55,27 +55,27 @@ pub enum PatAtom {
     Tuple(Vec<Pat>, TokenRange),
 }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum PatBind {
     Ident(Token),
     PatLhs(PatLhs),
 }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum Formal {
     Formal(Token, Option<Type>)
 }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum Tyformal {
     Tyformal(Token, Option<Token>),
     TyformalParens(Token, Box<Tyformal>, Token),
 }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub struct Type(pub Spanned<Box<Type_>>);
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum Type_ {
     Refined(Token, Type, Expr),
     App(Type, Vec<Type>),
@@ -86,16 +86,16 @@ pub enum Type_ {
     Forall(Vec<Tyformal>, Type),
 }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum Binop {
     Symbol(Token),
     Ident(Token),
 }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum Stmts { Stmts(VecDeque<Stmt>) }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum Stmt {
     Rec(Vec<(PatBind, Expr)>, Span),
     Expr(Expr),
@@ -103,10 +103,10 @@ pub enum Stmt {
     PatBind(PatLhs, Expr),
 }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub struct Expr(pub Spanned<Box<Expr_>>);
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum Expr_ {
     Var(Token),
     Lit(Lit),
@@ -123,7 +123,7 @@ pub enum Expr_ {
     Chain(Expr, Vec<(Binop, Expr)>),
 }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum Suffix {
     Caret(Token),
     DotSqBrackets(Expr, Span),
@@ -133,16 +133,16 @@ pub enum Suffix {
     DotIdent(Token, Token)
 }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum Lit {
     Num(Token),
     Str(Token),
 }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum EffMatch { EffMatch(Patside, Stmts) }
 
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum DataCtor { DataCtor(Token, Vec<Type>) }
 
 type Token = Span;

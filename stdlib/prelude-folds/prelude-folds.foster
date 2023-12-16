@@ -267,7 +267,7 @@ arrayFold = { forall t:Type r:Type,
 arrayZero32 = { a : Array Int32 =>
   REC go = { n =>
     if n <SInt64 arrayLength a
-      then 0 >^ a.[trunc_i64_to_i32 n]; go (n +Int64 1)
+      then 0 |> array-poke-i32 a (trunc_i64_to_i32 n); go (n +Int64 1)
     end
   };
   go 0

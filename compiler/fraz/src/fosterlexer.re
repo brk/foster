@@ -155,6 +155,7 @@ regular:
   "or"                  { return mk(OR); }
   "as"                  { return mk(AS); }
   "rec"                 { return mk(REC); }
+  "REC"                 { return mk(REC); }
   "let"                 { return mk(LET); }
   "end"                 { return mk(END); }
   "else"                { return mk(ELSE); }
