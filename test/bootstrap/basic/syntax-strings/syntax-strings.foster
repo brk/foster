@@ -2,13 +2,13 @@ snafuinclude Text "text";
 
 main = {
   expect_i1 True;
-  print_i1 ( 'a' ==Int32 97);
+  print_i1 ( b'a'.[0] ==Int32 97);
 
   expect_i1 True;
-  print_i1 ( 'a' ==Int8 97);
+  print_i1 ( b'a'.[0] ==Int8 97);
 
   expect_i1 False;
-  print_i1 (prim __COMPILES__ ("本" ==Int8 0));
+  print_i1 (prim __COMPILES__ False (b"本".[0] ==Int8 0));
 
   expect_text "abc";
   print_text  """abc""";
@@ -25,8 +25,8 @@ main = {
   expect_text "abc";
   print_text r"""abc""";
 
-  expect_text "abc";
-  print_text r'''abc''';
+  expect_text "abcde";
+  print_text r'''abcde''';
 
   expect_text "a\\nc";
   print_text r"a\nc";

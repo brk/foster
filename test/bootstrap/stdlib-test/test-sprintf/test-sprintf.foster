@@ -3,26 +3,26 @@ snafuinclude Text "text";
 
 main = {
   expect_text "abcd"; 
-  print_text (foster_sprintf_i64 0xabcd ("x" as Int8) 0 0 -1);
+  print_text (foster_sprintf_i64 0xabcd b"x".[0] 0 0 -1);
 
   expect_text "ABCD"; 
-  print_text (foster_sprintf_i64 0xabcd ("X" as Int8) 0 0 -1);
+  print_text (foster_sprintf_i64 0xabcd b"x".[0] 0 0 -1);
 
   expect_text "0xabcd";
-  print_text (foster_sprintf_i64 0xabcd ("x" as Int8) 3 0 -1);
+  print_text (foster_sprintf_i64 0xabcd b"x".[0] 3 0 -1);
 
   expect_text "0XABCD"; 
-  print_text (foster_sprintf_i64 0xabcd ("X" as Int8) 3 0 -1);
+  print_text (foster_sprintf_i64 0xabcd b"x".[0] 3 0 -1);
 
   expect_text "  abcd"; 
-  print_text (foster_sprintf_i64 0xabcd ("x" as Int8) 0  6 -1);
+  print_text (foster_sprintf_i64 0xabcd b"x".[0] 0  6 -1);
 
   expect_text "00abcd"; 
-  print_text (foster_sprintf_i64 0xabcd ("x" as Int8) 4 6 -1);
+  print_text (foster_sprintf_i64 0xabcd b"x".[0] 4 6 -1);
 
   expect_text "001234"; 
-  print_text (foster_sprintf_i64 1234 ("d" as Int8) 4 6 -1);
+  print_text (foster_sprintf_i64 1234 b"d".[0] 4 6 -1);
 
   expect_text "abcd  "; 
-  print_text (foster_sprintf_i64 0xabcd ("x" as Int8) 12 6 -1);
+  print_text (foster_sprintf_i64 0xabcd b"x".[0] 12 6 -1);
 };

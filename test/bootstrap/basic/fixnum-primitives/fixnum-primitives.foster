@@ -22,7 +22,7 @@ numerical-ops = {
   print_i1 (maxReprUInt64 ! ==Int64 n1);
 
   expect_i1 True;
-  print_i1 (maxReprUInt64 ! ==Int64 ((maxReprSInt64 !) *Int64 2) +Int64 1);
+  print_i1 (maxReprUInt64 ! ==Int64 ((((maxReprSInt64 !) *Int64 2) +Int64 1)));
 
   expect_i1 True;
   print_i1 (0 >SInt64 n1);

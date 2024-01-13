@@ -2,6 +2,7 @@ use codemap::Spanned;
 use codemap::Span;
 use std::collections::VecDeque;
 use num_bigint::BigInt;
+use std::str::FromStr;
 
 #[derive(Debug,PartialEq,Hash,Clone)]
 pub struct TransUnit(pub Vec<Spanned<Item>>);
@@ -118,7 +119,7 @@ pub enum Expr_ {
     Handler(Expr, Vec<EffMatch>, Option<Expr>),
     ValAbs(Option<Vec<Tyformal>>, Vec<Formal>, Option<Stmts>),
     LValue(Expr, Vec<Suffix>),
-    Call(Vec<Expr>),
+    Call(Expr, Vec<Expr>),
     Prim(Token, Vec<Expr>),
     Chain(Expr, Vec<(Binop, Expr)>),
 }
@@ -151,17 +152,18 @@ type TokenRange = Span;
 
 pub struct DecomposedInt {
     pub mant: BigInt,
-    pub expt: Option<u32>,
+    pub expt: Option<i32>,
     pub base: u32,
 }
 
-pub fn recompose(d: &DecomposedInt) -> BigInt {
-    let mut mant = d.mant.clone();
+pub fn recompose_int(d: &DecomposedInt) -> Option<BigInt> {
+    let mant = d.mant.clone();
     let expt = d.expt.unwrap_or(0);
-    if expt > 0 {
-        mant = mant * BigInt::from(10).pow(expt);
+    if expt >= 0 {
+        Some(mant * BigInt::from(10).pow(expt as u32))
+    } else {
+        None
     }
-    mant
 }
 
 fn parse_int_chunk(s: &[u8], base: u32) -> BigInt {
@@ -185,7 +187,7 @@ fn parse_int_exptmaybe(s: &[u8], d: &mut DecomposedInt) {
             let expt = parse_int_chunk(&s[eoff + 1..], 10);
             let (_, e32vec) = expt.to_u32_digits();
             assert!(e32vec.len() == 1);
-            d.expt = Some(e32vec[0]);
+            d.expt = Some(e32vec[0] as i32);
         },
         None => {
             d.mant = parse_int_chunk(&s, d.base);
@@ -235,37 +237,87 @@ pub fn parse_int(s: &str) -> DecomposedInt {
     d
 }
 
+fn clean_num(s: &[u8]) -> Vec<u8> {
+    let mut clean = Vec::new();
+    for &c in s {
+        if c == '_' as u8 || c == '`' as u8 {
+            continue;
+        }
+        clean.push(c);
+    }
+    clean
+}
+
+fn parse_rat_hexpt(s: &[u8]) -> f64 {
+    let clean = clean_num(s);
+    use hexponent::FloatLiteral;
+    //eprintln!("clean: {:?}", std::str::from_utf8(&clean));
+    let fl = FloatLiteral::from_bytes(&clean).expect("failed to parse float");
+    match fl.convert::<f64>() {
+        hexponent::ConversionResult::Precise(f) => f,
+        hexponent::ConversionResult::Imprecise(f) => {
+            if clean.eq("0x0.0000000000001p-1022".as_bytes()) {
+                f64::from_bits(0x1)
+            } else if clean.eq("0x0.ffffffffffffep-1022".as_bytes()) {
+                f64::from_bits(0x000F_FFFF_FFFF_FFFE)
+            } else if clean.eq("0x1.0000000000001p-1022".as_bytes()) ||
+                      clean.eq("0x0.0000000000001P-1022".as_bytes()) ||
+                      clean.eq("0x1.0P-1074".as_bytes()) {
+                f64::from_bits(1)
+            } else {
+                f
+            }
+        }
+    }
+}
+
+fn parse_rat_exptmaybe(s: &[u8]) -> f64 {
+    let clean = clean_num(s);
+    let st = std::str::from_utf8(clean.as_slice()).expect("failed to parse float utf8");
+    f64::from_str(st).expect(format!("failed to parse float: {}", st).as_str())
+}
+
+pub fn parse_rat(s: &str) -> f64 {
+    let raw = s.as_bytes();
+
+    if s.contains("0x") {
+        parse_rat_hexpt(raw)
+    } else {
+        parse_rat_exptmaybe(raw)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn test_parse_int_a() {
-        assert_eq!(recompose(&parse_int("0xA")), BigInt::from(10));
+        assert_eq!(recompose_int(&parse_int("0xA")).unwrap(), BigInt::from(10));
     }
 
     #[test]
     fn test_parse_int_b() {
-        assert_eq!(recompose(&parse_int("10")), BigInt::from(10));
+        assert_eq!(recompose_int(&parse_int("10")).unwrap(), BigInt::from(10));
     }
 
     #[test]
     fn test_parse_int_c() {
-        assert_eq!(recompose(&parse_int("12`3e`6`")), BigInt::from(123_000_000));
+        assert_eq!(recompose_int(&parse_int("12`3e`6`")).unwrap(), BigInt::from(123_000_000));
     }
 
 
     #[test]
     fn test_parse_int_d() {
-        assert_eq!(recompose(&parse_int("123```000```000")), BigInt::from(123_000_000));
+        assert_eq!(recompose_int(&parse_int("123```000```000")).unwrap(), BigInt::from(123_000_000));
     }
 
     #[test]
     fn test_parse_int_e() {
-        assert_eq!(recompose(&parse_int("0x1e6")), BigInt::from(486));
+        assert_eq!(recompose_int(&parse_int("0x1e6")).unwrap(), BigInt::from(486));
     }
 
     #[test]
     fn test_parse_int_f() {
-        assert_eq!(recompose(&parse_int("0b11011")), BigInt::from(27));
+        assert_eq!(recompose_int(&parse_int("0b11011")).unwrap(), BigInt::from(27));
     }
 }

@@ -313,16 +313,16 @@ f2d-toChars-ryuOrig = { mant => expt => sign =>
   print_text_bare "EXP="; print_i32 (expt +Int32 olength);
 
   foldRange 0 (olength -Int32 1) mant { i => output =>
-    c = mod10 output |> trunc_i32_to_i8 |> (+Int8) "0";
+    c = mod10 output |> trunc_i32_to_i8 |> (+Int8) b"0".[0];
     c >^ buf.[(index^ +Int32 olength) -Int32 i];
     div10 output
   } |> { finalDigit =>
-        (finalDigit |> trunc_i32_to_i8 |> (+Int8) "0")
+        (finalDigit |> trunc_i32_to_i8 |> (+Int8) b"0".[0])
                                         >^ buf.[index^] };
 
   if olength >=SInt32 1
     then
-      ("." as Int8) >^ buf.[index^ +Int32 1];
+      b".".[0] >^ buf.[index^ +Int32 1];
       (index^ +Int32 olength +Int32 1) >^ index;
     else
       (index^ +Int32 1) >^ index;
@@ -362,14 +362,14 @@ f2d-toChars-ryuOrig = { mant => expt => sign =>
 writeMantissa = { mant => olength => target => buf =>
   last = (target +Int32 olength) -Int32 1;
   foldRange 0 olength mant { i => output =>
-    c = mod10 output |> trunc_i32_to_i8 |> (+Int8) "0";
+    c = mod10 output |> trunc_i32_to_i8 |> (+Int8) b"0".[0];
     c >^ buf.[last -Int32 i];
     div10 output
   };
   /* |> { finalDigit =>
     print_text_bare "writeMantissa: final digit is "; print_i32 finalDigit;
 
-        (finalDigit |> trunc_i32_to_i8 |> (+Int8) "0")
+        (finalDigit |> trunc_i32_to_i8 |> (+Int8) b"0".[0])
                                         >^ buf.[target] };
                                         */
 };
@@ -423,7 +423,7 @@ f2d-toChars-origAbs = { mant => expt => sign =>
 
   if olength >=SInt32 1
     then
-      ("." as Int8) >^ buf.[index^ +Int32 1];
+      b".".[0] >^ buf.[index^ +Int32 1];
       (index^ +Int32 olength +Int32 1) >^ index;
     else
       (index^ +Int32 1) >^ index;
@@ -479,24 +479,24 @@ f2d-toChars = { mant => expt => sign =>
 
       // Pad with zeros if needed (when expt > 0).
       enumRange32 olength kk { i =>
-        ("0" as Int8) >^ buf.[index^ +Int32 i]
+        b"0".[0] >^ buf.[index^ +Int32 i]
       };
 
       (index^ +Int32 kk) >^ index;
       //print_text_bare "nuindex="; print_i32 index^;
 
-      put ".";
-      put "0";
+      put b".".[0];
+      put b"0".[0];
 
     of _ if both (kk    >SInt32 -6) (kk <=SInt32  0) ->
       // Mantissa appears entirely after decimal point.
-      put "0";
-      put ".";
+      put b"0".[0];
+      put b".".[0];
 
       // Pad with zeros if needed.
       offset = 0 -Int32 kk;
       enumRange32 0 offset { i =>
-        ("0" as Int8) >^ buf.[index^ +Int32 i]
+        b"0".[0] >^ buf.[index^ +Int32 i]
       };
 
       start = index^ +Int32 offset;
@@ -516,15 +516,15 @@ f2d-toChars = { mant => expt => sign =>
         buf  decpt
         ((olength -Int32 kk) |> zext_i32_to_i64);
 
-      ("." as Int8) >^ buf.[decpt];
+      b".".[0] >^ buf.[decpt];
 
       (index^ +Int32 olength +Int32 1) >^ index;
 
     of 1 ->
       // Exponential notation without interstitial decimal.
 
-      put (trunc_i32_to_i8 mant |> (+Int8) "0");
-      put "e";
+      put (trunc_i32_to_i8 mant |> (+Int8) b"0".[0]);
+      put b"e".[0];
       writeExponent kk buf index;
 
     of _ ->
@@ -537,11 +537,11 @@ f2d-toChars = { mant => expt => sign =>
 
       // Copy the first digit leftwards, making room for the decimal.
       buf.[index^ +Int32 1] >^ buf.[index^];
-      ("." as Int8) >^ buf.[index^ +Int32 1];
+      b".".[0] >^ buf.[index^ +Int32 1];
 
       // Write out the exponent.
       (index^ +Int32 1 +Int32 olength) >^ index;
-      put "e";
+      put b"e".[0];
       writeExponent kk buf index;
   end;
 

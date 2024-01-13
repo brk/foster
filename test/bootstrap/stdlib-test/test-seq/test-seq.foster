@@ -1,5 +1,6 @@
 snafuinclude Seq "data/seq";
 snafuinclude Prelude "prelude";
+snafuinclude Fmt "fmt";
 snafuinclude Ryu "fmt/ryu/ryu-d2s";
 
 print_arri32 = { arr : Array Int32 =>
@@ -73,6 +74,8 @@ seqRangeDown = { n =>
 };
 
 part1 = { 
+  print-expect-mark "part1";
+
   s = seqFromFunction 28 { idx => idx };
   expect_i1 True;
   print_i1 (seqContainsAny s { x => x ==Int32 8 });

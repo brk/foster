@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 argh = "0.1.12"
-fasthash = "*"
+highway = "*"
 codemap = "*"
 codemap-diagnostic = "*"
 codespan-reporting = "*"
@@ -15,6 +15,7 @@ human_format = "1.0"
 pomelo = "*"
 libc = "*"
 num-bigint = "*"
+hexponent = "*"
 
 [build-dependencies]
 cc = "1.0"

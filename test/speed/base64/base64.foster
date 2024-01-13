@@ -7,7 +7,7 @@ snafuinclude Fmt "fmt";
 // https://github.com/kostya/benchmarks/blob/master/base64/test.c
 
 main = {
-  str = newArrayReplicate 9`999`999  ('a' as Int8);
+  str = newArrayReplicate 9`999`999  b"a".[0];
 
   t0 = foster_gettime_microsecs !;
   sr = prim ref 0;

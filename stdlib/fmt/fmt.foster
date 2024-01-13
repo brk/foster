@@ -2,8 +2,14 @@ snafuinclude Text "text";
 snafuinclude RyuD2S "fmt/ryu/ryu-d2s";
 snafuinclude RyuD2Fixed "fmt/ryu/ryu-d2fixed";
 
+fmt-i32 :: { Int32 => Text };
+fmt-i32 = { v => v |> sext_i32_to_i64 |> fmt-i64 };
+
 fmt-i64 :: { Int64 => Text };
 fmt-i64 = { v => v |> tmp_Text_of_Int64 };
+
+fmt-i64x :: { Int64 => Text };
+fmt-i64x = { v => v |> tmp_Text_16_of_UInt64 };
 
 fmt-f64x :: { Float64 => Text };
 fmt-f64x = { f =>
@@ -11,8 +17,8 @@ fmt-f64x = { f =>
   then
     expt = ilogb-Float64!! f;
     mantissaBits = bitand-Int64 kDOUBLE_MANTISSA_MASK (f64-as-i64 f);
-    mantissaHex0 = textStripLeftWhile (tmp_Text_16_of_UInt64 mantissaBits) { c => c ==Int8 ('0' as Int8) };
-    mantissaHex = textStripRightWhile mantissaHex0 { c => c ==Int8 ('0' as Int8) };
+    mantissaHex0 = textStripLeftWhile (tmp_Text_16_of_UInt64 mantissaBits) { c => c ==Int8 b"0".[0] };
+    mantissaHex = textStripRightWhile mantissaHex0 { c => c ==Int8 b"0".[0] };
     //234.567
     //0x1.d5224dd2f1aap+7
     trailer = if expt ==Int64 0 then "p0" else "p+" ++Text fmt-i64 expt end;

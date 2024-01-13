@@ -1,7 +1,7 @@
 use argh::FromArgs;
-use fasthash::xx;
+use highway::{HighwayHasher, HighwayHash, Key};
 use human_format::Formatter;
-use std::fs;
+use std::fs::{self, File};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -108,6 +108,12 @@ fn scavenge(
     codemap
 }
 
+fn hh64(data: &[u8]) -> u64 {
+    let mut h = HighwayHasher::new(Key::default());
+    h.append(data);
+    h.finalize64()
+}
+
 fn footprint_with_rootfile(rootfile: String, incpaths: &[PathBuf]) {
     let mut seenfiles = vec![];
     let mut alltokens = vec![];
@@ -122,7 +128,7 @@ fn footprint_with_rootfile(rootfile: String, incpaths: &[PathBuf]) {
 
         println!(
             "{:016x}   {:>6.1} KB    {}",
-            xx::hash64(file.source().as_bytes()),
+            hh64(file.source().as_bytes()),
             (file.source().as_bytes().len() as f64) / 1024.0,
             file.name()
         );
@@ -166,7 +172,7 @@ where
     rv
 }
 
-fn compile_with_rootfile(rootfile: String, incpaths: &[PathBuf]) {
+fn compile_with_rootfile(rootfile: String, incpaths: &[PathBuf], chezpath: PathBuf) {
     let mut seenfiles = vec![];
     let mut alltokens = vec![];
     let mut times: FrazCompileTimes = Default::default();
@@ -181,15 +187,24 @@ fn compile_with_rootfile(rootfile: String, incpaths: &[PathBuf]) {
         fraz::parz::tryparse(alltokens, &mut codemap)
     });
 
+    let chezpath_ = chezpath.clone();
+    let chezpath_ = chezpath_.display();
+    let mut chezout = match File::create(chezpath) {
+        Err(why) => panic!("couldn't create {}: {}", chezpath_, why),
+        Ok(file) => file,
+    };
+
     match parseresult {
         Ok(_ast) => {
             timed(&mut times.codegenprep, || {
                 let ss = fraz::tochez::tochez_transunit(&_ast, &codemap);
-                fraz::tochez::emit(&ss)
-            });
+                fraz::tochez::emit(&ss, &mut chezout).unwrap();
+            })
         },
-        Err(pe) => eprintln!("parse error: {:?}", pe),
-    }
+        Err(pe) => {
+            eprintln!("parse error: {:?}", pe);
+        }
+    };
     println!("{:?}", times);
 
     let mut numlines: usize = 0;
@@ -207,6 +222,7 @@ fn compile_with_rootfile(rootfile: String, incpaths: &[PathBuf]) {
     );
 }
 
+/*
 struct CompilerContext {
     verbose: bool,
 }
@@ -214,6 +230,7 @@ struct CompilerContext {
 struct TcEnv {
     uniq: u64,
 }
+*/
 
 /// Main compiler driver
 #[derive(FromArgs, PartialEq, Debug)]
@@ -226,18 +243,22 @@ struct FrazCompile {
     /// root file
     #[argh(positional)]
     rootfile: Option<String>,
+
+    /// chez output
+    #[argh(option)]
+    chezout: Option<String>,
 }
 
 #[derive(Default, Debug)]
 struct FrazCompileTimes {
     lexscavenge: Duration,
     parsing: Duration,
-    typecheck: Duration,
-    monomorph: Duration,
-    staticchk: Duration,
-    loophdsnk: Duration,
-    inlining: Duration,
-    closureconv: Duration,
+    //typecheck: Duration,
+    //monomorph: Duration,
+    //staticchk: Duration,
+    //loophdsnk: Duration,
+    //inlining: Duration,
+    //closureconv: Duration,
     codegenprep: Duration,
 }
 
@@ -259,9 +280,13 @@ fn main() {
         FrazSubcommand::Compile(fc) => match fc.rootfile {
             None => println!("no root file provided"),
             Some(rootfile) => {
+                let chezpath = match fc.chezout {
+                    None => PathBuf::from("chezout.ss"),
+                    Some(chezpath) => PathBuf::from(chezpath)
+                };
                 let incpaths: Vec<PathBuf> =
                     fc.searchpaths.into_iter().map(PathBuf::from).collect();
-                compile_with_rootfile(rootfile, &incpaths);
+                compile_with_rootfile(rootfile, &incpaths, chezpath);
             }
         },
     }

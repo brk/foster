@@ -23,8 +23,8 @@ heapsort-inplace-unstable = { arr => cmp =>
 
   do-swap = { a => b =>
     tmp = arr.[a];
-    arr.[b] >^ arr.[a];
-    tmp     >^ arr.[b];
+    arr.[b] |> array-poke-i32 arr a;
+    tmp     |> array-poke-i32 arr b;
   };
 
   siftDown = { start => fin =>

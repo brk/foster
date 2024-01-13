@@ -29,6 +29,8 @@
 #include "clocktimer.h"
 
 #include <signal.h>
+#include <execinfo.h>
+#include <unistd.h>
 
 ////////////////////////////////////////////////////////////////
 
@@ -48,7 +50,15 @@ void __foster_handle_sigsegv(int, siginfo_t* si, void*) {
           si->si_addr);
 
   fflush(stdout);
-  exit(2);
+
+  void *array[20];
+  size_t size;
+
+  // get void*'s for all entries on the stack
+  size = backtrace(array, 20);
+  backtrace_symbols_fd(array, size, STDERR_FILENO);
+  fflush(stderr);
+  exit(3);
 }
 
 void __foster_install_sigsegv_handler() {

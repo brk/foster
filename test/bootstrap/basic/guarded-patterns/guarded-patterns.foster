@@ -13,6 +13,7 @@ main = {
   part3 !;
   part4 !;
   part5 !;
+  part5a !;
   part5b !;
   //part6 !; TODO re-enable when or-patterns are compiled early
 };
@@ -103,7 +104,9 @@ part5 = {
                 of (a, 2) if a ==Int32 8 -> 7
                 of _ -> 999
               end);
+};
 
+part5a = {
               /*
   expect_i32 6;
   print_i32 (case (1, 8)

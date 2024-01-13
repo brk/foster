@@ -48,7 +48,7 @@ primArrayBoxedIndex = { a => i =>
 primArrayBoxedWrite :: forall (t:Boxed) { Array t => Word => t => () };
 primArrayBoxedWrite = { arr => idx => val =>
   if idx <UWord arrayLengthWord arr
-    then val >^ arr.[idx]; ()
+    then val |> array-poke-i32 arr (trunc_Word_to_i32 idx); ()
     else ()
   end
 };
@@ -90,10 +90,6 @@ seraGetIndexBlock = { v => logicalIndex =>
   case vListGet vlist physicalIndex
     of $Some arr -> arr
     of $None     ->
-        print_text "list length, logical index, physical index:\n";
-        print_i32 (vListLength vlist);
-        print_i64 (zext_Word_to_i64 logicalIndex);
-        print_i32 (physicalIndex);
         prim kill-entire-process "seraGetIndexBlock computed a bogus physical index"
   end
 };
@@ -145,7 +141,7 @@ seraAllocateDataBlock = { forall b:Boxed, v : Sera b =>
   seraBlockAppend v block;
 };
 
-seraBlockAppend = { forall b:Boxed, v : Sera b => block : ?? BLOCK =>
+seraBlockAppend = { forall b:Boxed, v : Sera b => block : Array b =>
   ib = seraIndexBlockRef v;
   vListCons block ib^ >^ ib;
 };
@@ -191,7 +187,6 @@ seraSnoc =  { v => i =>
           0 >^ (seraNumDataBlocksInLastRef v);
           ()
         };
-
         seraAllocateDataBlock v;
         incrWord (seraNumDataBlocksInLastRef v);
         0 >^ (seraNumElemsInLastRef v);

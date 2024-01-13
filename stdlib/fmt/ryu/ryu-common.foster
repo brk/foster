@@ -17,8 +17,8 @@ DIGIT_TABLE = b"""
 
 put2 :: { Array Int8 => Int32 => Int32 => () };
 put2 = { buf => offset => num =>
-  DIGIT_TABLE.[num]          >^ buf.[offset];
-  DIGIT_TABLE.[num +Int32 1] >^ buf.[offset +Int32 1];
+  DIGIT_TABLE.[num]          |> array-poke-i32 buf offset;
+  DIGIT_TABLE.[num +Int32 1] |> array-poke-i32 buf (offset +Int32 1);
 };
 
 decimalLength9 = { v : Int32 =>

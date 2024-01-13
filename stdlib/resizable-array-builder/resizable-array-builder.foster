@@ -107,7 +107,7 @@ rabCheckLimit = { rab => lim =>
 rabWriteWord8_ :: { ResizableArrayBuilder => Word => Int8 => () };
 rabWriteWord8_ = { rab => offset => value =>
   let ($ResizableArrayBuilder rcap rsiz) = rab;
-  value >^ rcap^.[offset];
+  value |> array-poke-i32 rcap^ (offset |> trunc_Word_to_i32);
 };
 
 setBit   = { w => r => w `bitor-Word` (1 `bitshl-Word` r) };

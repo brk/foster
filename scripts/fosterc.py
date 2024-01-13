@@ -48,7 +48,7 @@ def shared(lib):
 
 def get_static_libs():
     return ' '.join([os.path.join(nativelib_dir(), lib) for lib in
-         ("libfoster_main.o libcoro.a libcycle.a nacl/lib/amd64/libnacl.a").split(" ")])
+         ("libfoster_main.o libcoro.a libcycle.a").split(" ")])
 
 def get_link_flags():
   # Circa LLVM 15, Clang started defaulting position independent executables,

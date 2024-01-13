@@ -7,6 +7,8 @@ main = {
   ref-if    !;
   tuprefs1  !;
   tuprefs2  !;
+  print_i32 12345;
+  expect_i32 12345;
   hof-until !;
 
   expect_i1 False; print_i1 (prim __COMPILES__ { 0 >^ 0 });

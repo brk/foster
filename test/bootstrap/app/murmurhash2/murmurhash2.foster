@@ -1,4 +1,5 @@
 snafuinclude PreludePrintExpect "prelude/print-expect";
+snafuinclude Prelude "prelude";
 
 //murmurhash2-step = { k:Int32, h:Int32, r:Int32, m:Int32 =>
 //  bitxor(h * m, kx * m) where

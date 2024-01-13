@@ -143,9 +143,17 @@ pomelo::pomelo! {
     stmts ::= stmt_start(B) stmt_cont_star(mut C) { C.push_front(B); Stmts::Stmts(C) }
     
     %type stmt_start Stmt;
-    stmt_start ::= REC(X) pbinding(B)  { let span = token_range(X, expr_span(&B.1)); Stmt::Rec(vec![B], span) }
+    //stmt_start ::= REC(X) pbinding(B)  { let span = token_range(X, expr_span(&B.1)); Stmt::Rec(vec![B], span) }
+    stmt_start ::= stmt_rec_plus(V)  { let span = token_range(V.0[0], expr_span(&V.1[V.1.len() - 1].1)); Stmt::Rec(V.1, span) }
     stmt_start ::= ext_pbinding(B)     { B }
     
+    %type stmt_rec_plus (Vec<Span>, Vec<(PatBind, Expr)>);
+    stmt_rec_plus ::=                      stmt_rec(C) { ( vec![C.0] , vec![C.1]) }
+    stmt_rec_plus ::= stmt_rec_plus(mut B) stmt_rec(C) { B.0.push(C.0); B.1.push(C.1); B }
+
+    %type stmt_rec (Span, (PatBind, Expr));
+    stmt_rec ::= REC(X) pbinding(B)  { (X, B) }
+
     %type stmt_cont_star VecDeque<Stmt>;
     stmt_cont_star ::=                                     { VecDeque::new() }
     stmt_cont_star ::= stmt_cont_star(mut B) stmt_cont(C)  { B.extend(C); B }
@@ -179,7 +187,8 @@ pomelo::pomelo! {
     comma_separated_list_p ::= comma_separated_list_p(mut B) COMMA p(C)  { B.push(C); B }
     
     %type e Expr;
-    e ::= phrase(C) binops_opt(D)  { let span = D.last().map_or(expr_span(&C), |p| { expr_span(&p.1) }); Expr(spanned(Box::new(Expr_::Chain(C, D)), span)) }
+    e ::= phrase(C) binops(D)  { let span = D.last().map_or(expr_span(&C), |p| { expr_span(&p.1) }); Expr(spanned(Box::new(Expr_::Chain(C, D)), span)) }
+    e ::= phrase(C)            { C }
     
     %type binops Vec<(Binop, Expr)>;
     binops ::= binop_phrase_plus(B)  { B }
@@ -187,10 +196,6 @@ pomelo::pomelo! {
     %type binop Binop;
     binop ::= SYMBOL(B)                 { Binop::Symbol(B) }
     binop ::= BACKTICK xid(B) BACKTICK  { Binop::Ident( B) }
-    
-    %type binops_opt Vec<(Binop, Expr)>;
-    binops_opt ::=            { Vec::new() }
-    binops_opt ::= binops(B)  { B }
     
     %type binop_phrase (Binop, Expr);
     binop_phrase ::= binop(B) phrase(C)  { (B, C) }
@@ -200,7 +205,8 @@ pomelo::pomelo! {
     binop_phrase_plus ::= binop_phrase_plus(mut B) binop_phrase(C)  { B.push(C); B }
     
     %type phrase Expr;
-    phrase ::= lvalue_plus(C)                       { let span = C.last().expect("lvalue_plus nonempty").0.span; Expr(spanned(Box::new(Expr_::Call(C)), span)) }
+    phrase ::= lvalue(B)                            { B }
+    phrase ::= lvalue(B) lvalue_plus(C)             { let span = token_range(expr_span(&B), C.last().map_or(expr_span(&B), expr_span)); Expr(spanned(Box::new(Expr_::Call(B, C)), span)) }
     phrase ::= PRIM(O) nopr(B) lvalue_star(C)       { let span = token_range(O, C.last().map_or(B, expr_span)); Expr(spanned(Box::new(Expr_::Prim(B, C)), span)) }
     
     %type lvalue_plus Vec<Expr>;
@@ -216,8 +222,9 @@ pomelo::pomelo! {
     nopr ::= SYMBOL(B)  { B }
     
     %type lvalue Expr;
-    lvalue ::= atom(B) suffix_star(C)  { let span = C.last().map_or(expr_span(&B), suffix_span); Expr(spanned(Box::new(Expr_::LValue(B,C)), span)) }
-    
+    lvalue ::= atom(B)                 { B }
+    lvalue ::= atom(B) suffix_plus(C)  { let span = C.last().map_or(expr_span(&B), suffix_span); Expr(spanned(Box::new(Expr_::LValue(B,C)), span)) }
+
     %type suffix Suffix;
     suffix ::= CARET(B)                        { Suffix::Caret(B) }
     suffix ::= DOT_LBRACK(O) e(B) RBRACK(X)    { Suffix::DotSqBrackets(B, token_range(O, X)) }
@@ -225,11 +232,11 @@ pomelo::pomelo! {
     suffix ::= BANG(B)                         { Suffix::Bang(B) }
     suffix ::= DOT(B) id(C)                    { Suffix::DotIdent(B, C) }
     suffix ::= CLN_LBRACK(O) t_sepby_COMMA(B) RBRACK(X) { Suffix::TypeApp(B, token_range(O, X)) }
-    
-    %type suffix_star Vec<Suffix>;
-    suffix_star ::=                                { Vec::new() }
-    suffix_star ::= suffix_star(mut B) suffix(C)   { B.push(C); B }
-    
+
+    %type suffix_plus Vec<Suffix>;
+    suffix_plus ::=                    suffix(C)   { vec![C] }
+    suffix_plus ::= suffix_plus(mut B) suffix(C)   { B.push(C); B }
+
     %type atom Expr;
     atom ::= xid(B)                                 { Expr(spanned(Box::new(Expr_::Var(B)), B)) }
     atom ::= lit(B)                                 { let span = lit_span(&B); Expr(spanned(Box::new(Expr_::Lit(B)), span)) }

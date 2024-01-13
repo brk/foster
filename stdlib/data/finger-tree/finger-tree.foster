@@ -710,17 +710,18 @@ ftFFcreate = { b => s => i => trees =>
       of _ -> q = sdiv-Int32 trees 3;
               q1 = q -Int32 1;
               mb = { j => FT_Node3:[c] s3 (b j) (b (j +Int32 s)) (b (j +Int32 s2)) };
+              mkval = { k => q => 3 *Int32 q |> (+Int32) k |> (*Int32) s |> (+Int32) i };
               case srem-Int32 trees 3
                 of 1 -> FT_Deep nsz (createTwo i)
                                     (ftFFcreate:[FT_Node c] mb s3 (i +Int32 s2) q1)
-                                    (createTwo (i +Int32 (2 +Int32 (3 *Int32 q1)) *Int32 s))
+                                    (createTwo (mkval 2 q1))
                 of 2 -> FT_Deep nsz (createThr i)
                                     (ftFFcreate:[FT_Node c] mb s3 (i +Int32 s3) q1)
-                                    (createTwo (i +Int32 (3 +Int32 (3 *Int32 q1)) *Int32 s))
+                                    (createTwo (mkval 3 q1))
                 of _ -> q2 = q -Int32 2;
                         FT_Deep nsz (createThr i)
                                     (ftFFcreate:[FT_Node c] mb s3 (i +Int32 s3) q2)
-                                    (createThr (i +Int32 (3 +Int32 (3 *Int32 q2)) *Int32 s))
+                                    (createThr (mkval 3 q2))
               end;
     end;
 };
@@ -825,7 +826,7 @@ ftToArray = { size => ft =>
   len = ftTreeSize size ft;
   arr = allocDArray:[a] len;
   f = { idx => val => unit =>
-          val >^ arr.[idx];
+          val |> array-poke-i32 arr idx;
           unit
       };
   ftFoldlTreeWithIndex size f ft ();

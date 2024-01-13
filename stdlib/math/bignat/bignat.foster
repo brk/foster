@@ -139,22 +139,22 @@ foster_nat_add_digits = { a => b =>
     u = foldRange 0 (arrayLength32 sm) 0 { i => u =>
         ci = (a.[i] +Word b.[i] +Word u);
         unext = addCarryOfWord ci;
-        (bitand-Word ci (digitNumBitsMask !)) >^ c.[i];
+        (bitand-Word ci (digitNumBitsMask !)) |> array-poke-i32 c i;
         unext
       };
     p = if arrayLength32 sm <SInt32 arrayLength32 lg
           then
             foldRange (arrayLength32 sm) (arrayLength32 lg) u { i => u =>
-              (lg.[i] +Word u) >^ c.[i];
+              (lg.[i] +Word u) |> array-poke-i32 c i;
               unext = addCarryOfWord c.[i];
-              (bitand-Word c.[i] (digitNumBitsMask !)) >^ c.[i];
+              (bitand-Word c.[i] (digitNumBitsMask !)) |> array-poke-i32 c i;
               unext
             }
           else
             u
         end;
 
-    p >^ c.[arrayLength32 lg];
+    p |> array-poke-i32 c (arrayLength32 lg);
 
     // The C version clears digits from used to olduse,
     // but we don't need to because we allocate from scratch.
@@ -277,12 +277,12 @@ foster_nat_sub_digits = { lg => sm =>
   c = allocDArray:[Word] (arrayLength32 lg);
   u = foldRange 0 (arrayLength32 sm) 0 { i => u =>
         ci = lg.[i] -Word sm.[i] -Word u;
-        (bitand-Word ci (digitNumBitsMask !)) >^ c.[i];
+        (bitand-Word ci (digitNumBitsMask !)) |> array-poke-i32 c i;
         subCarryOfWord ci
       };
   p = foldRange (arrayLength32 sm) (arrayLength32 lg) u { i => u =>
         ci = lg.[i] -Word u;
-        (bitand-Word ci (digitNumBitsMask !)) >^ c.[i];
+        (bitand-Word ci (digitNumBitsMask !)) |> array-poke-i32 c i;
         subCarryOfWord ci
       };
 
@@ -358,7 +358,7 @@ natAddMulVVW = { z : Array Word => zo : Int32 => x : Array Word => y : Word =>
       case natMulAddWWW x.[i] y z.[i +Int32 zo] of (z1, z0) ->
       case natAddWW0 z0 c                     of (cp, rawlo) ->
       case splitCarry (cp +Word z1) rawlo     of (carry, digit) ->
-               digit >^ z.[i +Int32 zo];
+               digit |> array-poke-i32 z (i +Int32 zo);
                carry
       end
       end
@@ -374,7 +374,7 @@ natBasicMulA = { x : Array Word => y : Array Word =>
     if d !=Word 0 then
       i = trunc_i64_to_i32 i6;
       r = natAddMulVVW z i x d;
-      r >^ z.[arrayLength32 x +Int32 i];
+      r |> array-poke-i32 z (arrayLength32 x +Int32 i);
       ()
     end
   };
@@ -542,7 +542,7 @@ natMulDigit_A = { a : Array Word => k : Word =>
 
         case splitWordX2 (uX +WordX2 (aiX *WordX2 kX)) of
         (rhi, rlo) ->
-          (bitand-Word rlo foster_MP_MASK) >^ c.[ix];
+          (bitand-Word rlo foster_MP_MASK) |> array-poke-i32 c ix;
 
           // Propagate carry:  [0|0|  c   ][b|  a  | ]  ====>
           //                               [0|  c  |b]
@@ -553,7 +553,7 @@ natMulDigit_A = { a : Array Word => k : Word =>
         end
   };
 
-  u >^ c.[arrayLength32 a];
+  u |> array-poke-i32 c (arrayLength32 a);
   c
 };
 
@@ -575,7 +575,7 @@ foster_div_nat_digit_nz = { n => b =>
                  wb = w >=UWord b;
                  t  = if wb then udiv-Word w b else 0 end;
 
-                 t >^ q.[k32];
+                 t |> array-poke-i32 q k32;
                  if wb then
                             w -Word (t *Word b)
                        else w
@@ -643,12 +643,12 @@ shlVU = { z : Array Word => x : Array Word => s : Word =>
         if i ==Int32 0 then w0 else
           ip = i -Int32 1;
           w1 = x.[ip];
-          (combine  w1 s_hat  w0 s) >^ z.[i];
+          (combine  w1 s_hat  w0 s) |> array-poke-i32 z i;
           loop ip w1
         end
     };
 
-    (bitshl-Word (loop (n -Int32 1) w1) s) >^ z.[0];
+    (bitshl-Word (loop (n -Int32 1) w1) s) |> array-poke-i32 z 0;
     c
   end
 };
@@ -665,12 +665,12 @@ shrVU = { z : Array Word => x : Array Word => s : Word =>
       if i ==Int32 (n -Int32 1) then w0 else
         ip = i +Int32 1;
         w1 = x.[ip];
-        (combine  w0 s  w1 s_hat) >^ z.[i];
+        (combine  w0 s  w1 s_hat) |> array-poke-i32 z i;
         loop ip w1
       end
     };
 
-    (bitlshr-Word (loop 0 w1) s) >^ z.[n -Int32 1];
+    (bitlshr-Word (loop 0 w1) s) |> array-poke-i32 z (n -Int32 1);
     c
   end
 };
@@ -705,7 +705,7 @@ subVVfrom = { j : Int32 => z : Array Word =>
   REC loop = { i : Int32 => c : Word =>
     if i ==Int32 arrayLength32 y then c else
       case subWW x.[i +Int32 j] y.[i] c of (cn, zi) ->
-        zi >^ z.[i +Int32 j];
+        zi |> array-poke-i32 z (i +Int32 j);
         loop (i +Int32 1) cn
       end
     end
@@ -723,7 +723,7 @@ addVVfrom = { j : Int32 => z : Array Word =>
   REC loop = { i : Int32 => c : Word =>
     if i ==Int32 arrayLength32 y then c else
       case addWW x.[i +Int32 j] y.[i] c of (cn, zi) ->
-        zi >^ z.[i +Int32 j];
+        zi |> array-poke-i32 z (i +Int32 j);
         loop (i +Int32 1) cn
       end
     end
@@ -737,7 +737,7 @@ mulAddVWW = { z : Array Word => zo : Int32 => zn : Int32 =>
   assert (zn >=SInt32 zo) "(zn >=SInt32 zo)";
   foldRange 0 (zn -Int32 zo) r { i => c =>
     case natMulAddWWW x.[i] y c of (cn, zi) ->
-      zi >^ z.[zo +Int32 i];
+      zi |> array-poke-i32 z (zo +Int32 i);
       cn
     end
   }
@@ -846,7 +846,7 @@ natLShdTo = { a => n => res =>
   // TODO memcpy?
   // Fill in the top digits:
   arrayEnum a { e : Word => ik : Int64 =>
-    e >^ res.[trunc_i64_to_i32 ik +Int32 n];
+    e |> array-poke-i32 res (trunc_i64_to_i32 ik +Int32 n);
     // It's safe to compute i + n without checking for overflow,
     // because i <= arraySize a and n + i cannot overflow if
     //                   i <= k and n + k cannot oveflow.
@@ -855,7 +855,7 @@ natLShdTo = { a => n => res =>
 
   //TODO this fails if we don't fully inline:
   //  foldRange 0 n () { k => unit => 0 >^ res[k]; unit };
-  foldRange:[Int32] 0 n 0 { k => zero => 0 >^ res.[k]; 0 };
+  foldRange:[Int32] 0 n 0 { k => zero => 0 |> array-poke-i32 res k; 0 };
   ()
 };
 
@@ -872,7 +872,7 @@ natLShd_A =  { a => n =>
 natCopyTo :: { Array Word => Array Word => () };
 natCopyTo = { a => res =>
   arrayEnum a { e : Word => ik : Int64 =>
-    e >^ res.[trunc_i64_to_i32 ik];
+    e |> array-poke-i32 res (trunc_i64_to_i32 ik);
     // It's safe to compute i + n without checking for overflow,
     // because i <= arraySize a and n + i cannot overflow if
     //                   i <= k and n + k cannot oveflow.
@@ -892,7 +892,7 @@ natMul2d_A = { a => n =>
     r         = allocDArray:[Word] (sz +Int32 1);
     d         = srem-Int32 n (digitNumBits !);
 
-    0 >^ r.[sz]; // zero out the slop digit.
+    0 |> array-poke-i32 r sz; // zero out the slop digit.
 
     // Step 0:          [////|////|////|////] (a)
     //
@@ -921,11 +921,11 @@ natMul2d_A = { a => n =>
                      (bitor-Word u
                      (bitshl-Word r.[i] dW));
 
-                 v >^ r.[i];
+                 v |> array-poke-i32 r i;
                  rr
                };
        if carry !=Word 0
-         then carry >^ r.[rml];
+         then carry |> array-poke-i32 r rml;
          else ()
        end
     end;
@@ -1061,7 +1061,7 @@ natDivLTM_NBB = { a : Array Word => b : Array Word =>
 
     until { isGE (natCmpDigits x^ y^) }
     {
-      (q.[n -Int32 t] +Word 1) >^ q.[n -Int32 t];
+      (q.[n -Int32 t] +Word 1) |> array-poke-i32 q (n -Int32 t);
       (foster_nat_sub_digits x^ y^) >^ x;
     };
 
@@ -1087,10 +1087,10 @@ natDivLTM_NBB = { a : Array Word => b : Array Word =>
                trunc_WordX2_to_Word (bitand-WordX2 tmp3 maskW)
            end;
 
-        (qit +Word 1) >^ q.[it1];
+        (qit +Word 1) |> array-poke-i32 q it1;
 
         REC loop = {
-          (q.[it1] -Word 1) >^ q.[it1];
+          (q.[it1] -Word 1) |> array-poke-i32 q it1;
           t1 = newDArray 2 { k =>
                     case k
                       of 0 -> if t <SInt32 1 then 0 else x^.[t -Int32 1] end
@@ -1148,7 +1148,7 @@ natDivLarge = { uIn : Array Word => v0 : Array Word =>
 
     // D1.
     shlVU v v0  shift;
-    shlVU u uIn shift >^ u.[f];
+    shlVU u uIn shift |> array-poke-i32 u f;
 
     dbgW "v.[0]" v.[0];
     dbgW "v.[1]" v.[1];
@@ -1186,15 +1186,15 @@ natDivLarge = { uIn : Array Word => v0 : Array Word =>
         else () end;
 
         // D4.
-        mulAddVWW qhatv 0 n v qhatref^ 0 >^ qhatv.[n];
+        mulAddVWW qhatv 0 n v qhatref^ 0 |> array-poke-i32 qhatv n;
         if subVVfrom j u u qhatv !=Word 0 then
           c = addVVfrom j u u v;
 
-          (u.[j +Int32 n] +Word c) >^ u.[j +Int32 n];
+          (u.[j +Int32 n] +Word c) |> array-poke-i32 u (j +Int32 n);
           (qhatref^ -Word 1) >^ qhatref;
         else () end;
 
-        qhatref^ >^ q.[j];
+        qhatref^ |> array-poke-i32 q j;
         loop (j -Int32 1)
       else
         ()

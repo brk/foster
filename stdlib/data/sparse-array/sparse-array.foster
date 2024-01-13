@@ -1,3 +1,5 @@
+snafuinclude PreludePoke "prelude/poke";
+
 // Sparse arrays underlie (H)AMTs and QP tries,
 // as well as Google's SparseHash tree structure:
 //
@@ -64,7 +66,7 @@ sparseArrayInsert = { sa => elem => idx =>
         // Replacing an existing element;
         // don't need to grow the array or shift offsets.
         arrx = arrayCopy arr;
-        elem >^ arrx.[sparseArrayOffset bitmap idx];
+        elem |> array-poke-i32 arrx (sparseArrayOffset bitmap idx);
         SparseArray arrx bitmap
       else
         // Inserting a new element;

@@ -7,7 +7,7 @@ base64-encode-bare = { a =>
 
   lookup = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-  emitv = { target => v : Int8 => lookup.[v] >^ res.[target]; };
+  emitv = { target => v : Int8 => lookup.[v] |> array-poke-i32 res target; };
   prepw = { w => trunc_i32_to_i8 w |> bitand-Int8 0b00111111 };
   emit3v = { target => v0 : Int8 => v1 => v2 =>
     xa = bitor-Int32 (bitor-Int32 (             (zext_i8_to_i32 v2))
@@ -30,14 +30,14 @@ base64-encode-bare = { a =>
       then emit3 from target;
            go (from +Int32 3) (target +Int32 4)
       else
-        c = ('=' as Int8);
+        c = b"=".[0];
         case remaining
           of 1 -> emit3v target a.[from] 0                0;
-                  c >^ res.[target +Int32 2];
-                  c >^ res.[target +Int32 3];
+                  c |> array-poke-i32 res (target +Int32 2);
+                  c |> array-poke-i32 res (target +Int32 3);
                   target +Int32 4
           of 2 -> emit3v target a.[from] a.[from +Int32 1] 0;
-                  c >^ res.[target +Int32 3];
+                  c |> array-poke-i32 res (target +Int32 3);
                   target +Int32 4
           of _ -> target
         end
@@ -55,7 +55,7 @@ noinline_llvm_base64-encode-bare4 = { a =>
 
   lookup = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-  emitv = { target => v : Int8 => lookup.[v] >^ res.[target]; };
+  emitv = { target => v : Int8 => lookup.[v] |> array-poke-i32 res target; };
   prepw = { w => trunc_i32_to_i8 w |> bitand-Int8 0b00111111 };
   emit4v = { target => v0 : Int8 => v1 => v2 => v3 =>
     xa = octet4ToInt32 v0 v1 v2 v3;
@@ -79,13 +79,13 @@ noinline_llvm_base64-encode-bare4 = { a =>
       then emit4 from target;
            go (from +Int32 3) (target +Int32 4)
       else
-        c = ('=' as Int8);
+        c = b"=".[0];
         case remaining
           of 1 -> emit4v target a.[from] 0                0 0;
-                  c >^ res.[target +Int32 2];
-                  c >^ res.[target +Int32 3];
+                  c |> array-poke-i32 res (target +Int32 2);
+                  c |> array-poke-i32 res (target +Int32 3);
           of 2 -> emit4v target a.[from] a.[from +Int32 1] 0 0;
-                  c >^ res.[target +Int32 3];
+                  c |> array-poke-i32 res (target +Int32 3);
           of _ -> ()
         end
     end

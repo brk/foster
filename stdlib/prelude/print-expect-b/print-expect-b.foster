@@ -4,16 +4,16 @@ snafuinclude Text "text";
 fmt-i64bb = { x : Int64 => n : Int32 =>
   bitchr = { i : Int64 =>
     if 0 ==Int64 (bitand-Int64 x (bitshl-Int64 1 i))
-    then ('0' as Int8)
-    else ('1' as Int8)
+    then b"0".[0]
+    else b"1".[0]
     end
   };
 
   len = n +Int32 2;
   arr = newDArray0 len { i =>
           case i
-            of 0 -> ('0' as Int8)
-            of 1 -> ('b' as Int8)
+            of 0 -> b"0".[0]
+            of 1 -> b"b".[0]
             of _ -> bitchr (zext_i32_to_i64 (n -Int32 (i -Int32 1)))
           end
         };

@@ -1,0 +1,2 @@
+ref-poke = { forall v:Type, r : Ref v => x : v => x >^ r };
+array-poke-i32 = { forall v:Type, arr : Array v => i : Int32 => x : v => x >^ arr.[i] };

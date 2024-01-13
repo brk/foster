@@ -93,6 +93,7 @@ regular:
   underid = "_"   identcontinue*;
   hexclump = (dig hex*) | lowerid | upperid;
   scinotation = [eE] sign? dig+;
+  hexscinotation = [pP] sign? dig+;
 
   strtag = [rb];
 
@@ -184,7 +185,8 @@ regular:
 
   whitespace            { return mk(WHITESPACE); }
 
-    sign? "0" [xb] hexclump? (backtick hexclump)* ('.' hexclump* (backtick hexclump+)* )?
+    sign? "0b" hexclump? (backtick hexclump)* ('.' hexclump* (backtick hexclump+)* )?
+  | sign? "0x" hexclump? (backtick hexclump)* ('.' hexclump* (backtick hexclump+)* hexscinotation? )?
   | sign? dig      dig*      (backtick dig+    )* ('.' dig*      (backtick dig+     )* )? scinotation?
                         { return mk(NUM); }
 

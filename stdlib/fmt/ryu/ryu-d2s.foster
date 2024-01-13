@@ -305,14 +305,14 @@ div100_d = { x => x `sdiv-Int64` 100 };
 writeMantissa = { mant : Int64 => olength => target => buf =>
   last = (target +Int32 olength) -Int32 1;
   foldRange 0 olength mant { i => output : Int64  =>
-    c = mod10_d output |> trunc_i64_to_i8 |> (+Int8) "0";
-    c >^ buf.[last -Int32 i];
+    c = mod10_d output |> trunc_i64_to_i8 |> (+Int8) b"0".[0];
+    c |> array-poke-i32 buf (last -Int32 i);
     div10_d output
   };
   /* |> { finalDigit =>
     print_text_bare "writeMantissa: final digit is "; print_i32 finalDigit;
 
-        (finalDigit |> trunc_i32_to_i8 |> (+Int8) "0")
+        (finalDigit |> trunc_i32_to_i8 |> (+Int8) b"0".[0])
                                         >^ buf.[target] };
                                         */
 };
@@ -321,27 +321,26 @@ writeMantissa = { mant : Int64 => olength => target => buf =>
 // starting at index (which will contain a digit or a minus sign).
 //
 writeExponent = { kk => buf => index =>
-  put = { c : Int8 => c >^ buf.[index^]; (index^ +Int32 1) >^ index };
+  put = { c : Int8 => c |> array-poke-i32 buf index^; (index^ +Int32 1) >^ index };
 
   exp_0 = kk -Int32 1;
 
   exp = if exp_0 <SInt32 0
           then
-            put "-";
+            put b"-".[0];
             (0 -Int32 exp_0)
           else
             exp_0
         end;
 
   // Invariant: exp >= 0 && exp < 100.
-
   if exp >=SInt32 10
     then
-      DIGIT_TABLE.[ exp *Int32 2          ] >^ buf.[index^];
-      DIGIT_TABLE.[(exp *Int32 2) +Int32 1] >^ buf.[index^ +Int32 1];
+      DIGIT_TABLE.[ exp *Int32 2          ] |> array-poke-i32 buf index^;
+      DIGIT_TABLE.[(exp *Int32 2) +Int32 1] |> array-poke-i32 buf (index^ +Int32 1);
       (2 +Int32 index^) >^ index;
     else
-      put ("0" +Int8 (trunc_i32_to_i8 exp));
+      put (b"0".[0] +Int8 (trunc_i32_to_i8 exp));
   end;
 };
 
@@ -349,9 +348,9 @@ d2d-toChars :: { Int64 => Int32 => Bool => Text };
 d2d-toChars = { mant => expt => sign =>
   index = prim ref 0;
   buf = allocDArray 25;
-  put = { c : Int8 => c >^ buf.[index^]; (index^ +Int32 1) >^ index };
+  put = { c : Int8 => c |> array-poke-i32 buf index^; (index^ +Int32 1) >^ index };
 
-  if sign then put "-" end;
+  if sign then put b"-".[0] end;
 
   olength = decimalLength17 mant;
 
@@ -366,7 +365,7 @@ d2d-toChars = { mant => expt => sign =>
     print_text_bare "EXP="; print_i32 kk;
     print_text_bare "i="; print_i32 i;
     */
-  
+    
     case olength
         of _ if both (expt >=SInt32  0) (kk <=SInt32 18) ->
             // Small enough to write out in full;
@@ -379,25 +378,25 @@ d2d-toChars = { mant => expt => sign =>
 
             // Pad with zeros if needed (when expt > 0).
             enumRange32 olength kk { i =>
-                ("0" as Int8) >^ buf.[index^ +Int32 i]
+                b"0".[0] |> array-poke-i32 buf (index^ +Int32 i)
             };
 
             (index^ +Int32 kk) >^ index;
             //print_text_bare "nuindex="; print_i32 index^;
 
-            put ".";
-            put "0";
+            put b".".[0];
+            put b"0".[0];
 
         of _ if both (kk    >SInt32 -9) (kk <=SInt32  0) ->
             // Mantissa appears entirely after decimal point.
             
-            put "0";
-            put ".";
+            put b"0".[0];
+            put b".".[0];
 
             // Pad with zeros if needed.
             offset = 0 -Int32 kk;
             enumRange32 0 offset { i =>
-                ("0" as Int8) >^ buf.[index^ +Int32 i]
+               b"0".[0] |> array-poke-i32 buf (index^ +Int32 i)
             };
 
             start = index^ +Int32 offset;
@@ -411,21 +410,22 @@ d2d-toChars = { mant => expt => sign =>
             writeMantissa mant olength index^ buf;
 
             // Make room for the decimal
-            decpt = index^ +Int32 kk |> zext_i32_to_i64;
+            decpt = index^ +Int32 kk;
+            decpt64 = decpt |> zext_i32_to_i64;
             memcpy_i8_to_at_from_at_len
-                buf (decpt |> (+Int64) 1)
-                buf  decpt
+                buf (decpt64 |> (+Int64) 1)
+                buf  decpt64
                 ((olength -Int32 kk) |> zext_i32_to_i64);
 
-            ("." as Int8) >^ buf.[decpt];
+            b".".[0] |> array-poke-i32 buf decpt;
 
             (index^ +Int32 olength +Int32 1) >^ index;
 
         of 1 ->
             // Exponential notation without interstitial decimal.
             
-            put (trunc_i64_to_i8 mant |> (+Int8) "0");
-            put "e";
+            put (trunc_i64_to_i8 mant |> (+Int8) b"0".[0]);
+            put b"e".[0];
             writeExponent kk buf index;
 
         of _ ->
@@ -437,12 +437,12 @@ d2d-toChars = { mant => expt => sign =>
             writeMantissa mant olength (index^ +Int32 1) buf;
 
             // Copy the first digit leftwards, making room for the decimal.
-            buf.[index^ +Int32 1] >^ buf.[index^];
-            ("." as Int8) >^ buf.[index^ +Int32 1];
+            buf.[index^ +Int32 1] |> array-poke-i32 buf index^;
+            b".".[0] |> array-poke-i32 buf (index^ +Int32 1);
 
             // Write out the exponent.
             (index^ +Int32 1 +Int32 olength) >^ index;
-            put "e";
+            put b"e".[0];
             writeExponent kk buf index;
     end;
 

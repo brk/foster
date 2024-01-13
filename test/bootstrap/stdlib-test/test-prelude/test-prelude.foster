@@ -49,6 +49,9 @@ main = {
   end;
   */
 
+  expect_text "circa line 52";
+  print_text "circa line 52";
+
   expect_i32 (observeWordUnsignedWraparound !);
   print_i32 (wordNumBits32 !);
 
@@ -81,10 +84,14 @@ main = {
 
   test-ord !;
   test-int-primitives !;
+  print-expect-mark "test-bytes";
   test-bytes !;
   test-misc-1 !;
+  print-expect-mark "test-misc-2";
   test-misc-2 !;
+  print-expect-mark "test-div-mod";
   test-div-mod !;
+  print-expect-mark "test-bits";
   test-bits !;
   test-logf !;
 
@@ -109,10 +116,10 @@ test-misc-1 = {
 
 test-misc-2 = {
   expect_i1 True;
-  print_i1 (prim __COMPILES__ { x : BInt => 0 });
+  print_i1 (prim __COMPILES__ True { x : BInt => 0 });
 
   expect_i1 False;
-  print_i1 (prim __COMPILES__ { x : DoesNotExist => 0 });
+  print_i1 (prim __COMPILES__ False { x : DoesNotExist => 0 });
 
   expect_i32 0;
   expect_i32 1;
@@ -328,6 +335,8 @@ test-div-mod = {
   expect_i32 0;
   print_i32 (udiv-Int32 1 -2);
 
+  print-expect-mark "test-div-mod-A";
+
   expect_i32 2147483647;
   print_i32 (udiv-Int32 -1 2);
 
@@ -342,6 +351,8 @@ test-div-mod = {
 
   expect_i32 1;
   print_i32 (ediv-Int32 -1 -2);
+
+  print-expect-mark "test-div-mod-B";
 
   expect_i32 1; // see below
   print_i32 (udiv-Int32 -1 -2);
@@ -364,6 +375,8 @@ test-div-mod = {
 
   expect_i32 -1;
   print_i32 (sdiv-Int32 -4 3);
+
+  print-expect-mark "test-div-mod-C";
 
   expect_i32 0;
   print_i32 (udiv-Int32 4 -3);

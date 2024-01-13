@@ -569,6 +569,7 @@ tcRhoText rng b expTy = do
              m@MetaTyVarTC {} -> do unify m ty [text "text literal"]
                                     return ab
              RefinedTypeTC v _ _ -> check (tidType v)
+             {-
              PrimIntTC I8 | T.length b == 1 ->
                if fromEnum (T.head b) >= 256
                  then tcFails [text "Rune cannot be represented as an Int8:"
@@ -576,6 +577,7 @@ tcRhoText rng b expTy = do
                  else return $ AnnLiteral rng t (LitInt $ LiteralInt (fromIntegral $ fromEnum $ T.head b) 8  b)
              PrimIntTC I32 | T.length b == 1 ->
                       return $ AnnLiteral rng t (LitInt $ LiteralInt (fromIntegral $ fromEnum $ T.head b) 32 b)
+             -}
              t -> tcFails [string $ "Unable to check Text constant in context"
                                     ++ " expecting non-Text type " ++ show t
                           , prettySourceRangeInfo (rangeOf rng)]

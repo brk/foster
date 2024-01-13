@@ -122,7 +122,7 @@ paddedWithThisManyLeftZeros = { t => n =>
 
 rabAppendThisManyLeftZeros :: { ResizableArrayBuilder => Int32 => () };
 rabAppendThisManyLeftZeros = { rab => n =>
-  enumRange32 0 n { i => rabAppendWord8 rab "0"; };
+  enumRange32 0 n { i => rabAppendWord8 rab b"0".[0]; };
 };
 
 append_nine_digits :: { ResizableArrayBuilder => Int32 => () };
@@ -143,7 +143,7 @@ append_nine_digits = { rab => digits =>
               rabWriteWord8 rab (base +Word 3) DIGIT_TABLE.[c0 +Int32 1];
               loop (i +Word 4) next
          else
-              rabWriteWord8 rab index ("0" +Int8 (trunc_i32_to_i8 d));
+              rabWriteWord8 rab index (b"0".[0] +Int8 (trunc_i32_to_i8 d));
          end
        };
        loop 0 digits
@@ -166,7 +166,7 @@ append_n_digits = { rab => digits => olength =>
         //print_text_bare "digits ::::::: "; print_i32 digits;
 
         fin = foldRange 0 olength digits { i => output =>
-            c = mod10 output |> trunc_i32_to_i8 |> (+Int8) "0";
+            c = mod10 output |> trunc_i32_to_i8 |> (+Int8) b"0".[0];
             rabWriteWord8 rab (last -Int32 i |> zext_i32_to_Word) c;
             div10 output
         };
@@ -207,7 +207,7 @@ append_c_digits = { rab => count => digits =>
         last = (target +Int32 count) -Int32 1;
 
         fin = foldRange 0 olength digits { i => output =>
-            c = mod10 output |> trunc_i32_to_i8 |> (+Int8) "0";
+            c = mod10 output |> trunc_i32_to_i8 |> (+Int8) b"0".[0];
             rabWriteWord8 rab (last -Int32 i |> zext_i32_to_Word) c;
             div10 output
         };
@@ -217,10 +217,9 @@ append_c_digits = { rab => count => digits =>
 
 fmtPortionBeforeDecimal :: { ResizableArrayBuilder => Int32 => Int64 => Bool => Int32 => () };
 fmtPortionBeforeDecimal = { rab => e2 => m2 => sign => precision =>
-  if sign then rabAppendWord8 rab "-" end;
+  if sign then rabAppendWord8 rab b"-".[0] end;
 
   nonzero = prim ref False;
-
   if e2 >=SInt32 -52
   then
     idx = if e2 <SInt32 0
@@ -267,8 +266,8 @@ fmtPortionBeforeDecimal = { rab => e2 => m2 => sign => precision =>
         }; 
     end;
 
-    if nonzero^ then () else rabAppendWord8 rab "0" end;
-    if precision >SInt32 0 then rabAppendWord8 rab "." end;
+    if nonzero^ then () else rabAppendWord8 rab b"0".[0] end;
+    if precision >SInt32 0 then rabAppendWord8 rab b".".[0] end;
 };
 
 fmtPortionAfterDecimal = { rab => e2 => m2 => precision : Int32 =>
@@ -358,7 +357,7 @@ fmtPortionAfterDecimal = { rab => e2 => m2 => precision : Int32 =>
             if roundUp^ !=Int32 0
             then index = prim ref (rabSize rab);
                  roundIndex = index^;
-                 c = prim ref ("X" as Int8);
+                 c = prim ref (b"X".[0]);
 
                  REC loop = { roundIndex_prev : Word => dotIndex : Int32 => roundUp : Int32 =>
                     roundIndex = roundIndex_prev -Word 1;
@@ -367,18 +366,18 @@ fmtPortionAfterDecimal = { rab => e2 => m2 => precision : Int32 =>
                     end;
                       
                     case ()
-                      of _ if (roundIndex ==Word -1) `either` (c^ ==Int8 "-") ->
-                            rabWriteWord8 rab (roundIndex +Word 1) "1";
+                      of _ if (roundIndex ==Word -1) `either` (c^ ==Int8 b"-".[0]) ->
+                            rabWriteWord8 rab (roundIndex +Word 1) b"1".[0];
                             if dotIndex >SInt32 0
                               then
-                                rabWriteWord8 rab (dotIndex          |> zext_i32_to_Word) "0";
-                                rabWriteWord8 rab (dotIndex +Int32 1 |> zext_i32_to_Word) "1";
+                                rabWriteWord8 rab (dotIndex          |> zext_i32_to_Word) b"0".[0];
+                                rabWriteWord8 rab (dotIndex +Int32 1 |> zext_i32_to_Word) b"1".[0];
                             end;
-                            rabWriteWord8 rab (postincrWord index) "0";
-                      of _ if c^ ==Int8 "." ->
+                            rabWriteWord8 rab (postincrWord index) b"0".[0];
+                      of _ if c^ ==Int8 b".".[0] ->
                             loop roundIndex (roundIndex |> trunc_Word_to_i32) roundUp
-                      of _ if c^ ==Int8 "9" ->
-                            rabWriteWord8 rab roundIndex "0";
+                      of _ if c^ ==Int8 b"9".[0] ->
+                            rabWriteWord8 rab roundIndex b"0".[0];
                             loop roundIndex dotIndex 1
                       of _ if (roundUp ==Int32 2) `both` (isEven-Int8 c^) ->
                             ()
@@ -428,8 +427,8 @@ ryu-d2fixed = { precision => value =>
 
         rab = newResizableArrayBuilder !;
 
-        //print_text_bare "e2: "; print_i32 e2;
-        //print_text_bare "m2: "; print_i64 m2;
+        // print_text_bare "e2: "; print_i32 e2;
+        // print_text_bare "m2: "; print_i64 m2;
 
         fmtPortionBeforeDecimal rab e2 m2 sign precision;
         fmtPortionAfterDecimal rab e2 m2 precision;

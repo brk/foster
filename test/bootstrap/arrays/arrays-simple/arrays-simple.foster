@@ -1,4 +1,5 @@
 snafuinclude PreludePrintExpect "prelude/print-expect";
+snafuinclude PreludePoke "prelude/poke";
 snafuinclude Text "text";
 
 main = {
@@ -32,7 +33,7 @@ newDArray32 = { n : Int32 => f : { Int32 => Int32 } =>
   a = allocDArray:[Int32] n;
   REC go = { x =>
     if x ==Int32 0 then () else
-      f x >^ a.[x -Int32  1];
+      f x |> array-poke-i32 a (x -Int32  1);
       go (x -Int32 1)
     end
   };
@@ -52,7 +53,7 @@ newDArray8 = { n : Int32 => f : { Int32 => Int8 } =>
   a = allocDArray:[Int8] n;
   REC go = { x =>
     if x ==Int32 0 then () else
-      f x >^ a.[x -Int32  1];
+      f x |> array-poke-i32 a (x -Int32 1);
       go (x -Int32 1)
     end
   };
@@ -91,19 +92,19 @@ arrays-indexing = { i8 : Int8 => i32 : Int32 => i64 : Int64 => iw : Word =>
   print_i32 a.[iw];
 
   expect_i1 True;
-  print_i1 (prim __COMPILES__ a.[0] );
+  print_i1 (prim __COMPILES__ True a.[0] );
 
   expect_i1 True;
-  print_i1 (prim __COMPILES__ a.[255] );
+  print_i1 (prim __COMPILES__ True a.[255] );
 
   expect_i1 True;
-  print_i1 (prim __COMPILES__ a.[ir32] );
+  print_i1 (prim __COMPILES__ True a.[ir32] );
 
   expect_i1 False;
-  print_i1 (prim __COMPILES__ a.[runit] );
+  print_i1 (prim __COMPILES__ False a.[runit] );
 
   expect_i1 False;
-  print_i1 (prim __COMPILES__ a.[()] );
+  print_i1 (prim __COMPILES__ False a.[()] );
 };
 
 noinline_arrays_indir = {

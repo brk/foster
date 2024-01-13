@@ -1,4 +1,5 @@
 snafuinclude PreludePrintExpectB "prelude/print-expect-b";
+snafuinclude PreludePoke "prelude/poke";
 
 main = {
   expect_i32b 0b`11100;

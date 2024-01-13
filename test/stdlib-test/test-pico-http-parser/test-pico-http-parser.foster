@@ -278,13 +278,13 @@ parse-http-version = { buf => idx => len => ret => rest =>
  print_text "parse-http-version line 260 failed";
     -2 >^ ret; Failed
     else
-      expect-char-prechecked idx buf len ret ("H" as Int8) Failed { idx =>
-      expect-char-prechecked idx buf len ret ("T" as Int8) Failed { idx =>
-      expect-char-prechecked idx buf len ret ("T" as Int8) Failed { idx =>
-      expect-char-prechecked idx buf len ret ("P" as Int8) Failed { idx =>
-      expect-char-prechecked idx buf len ret ("/" as Int8) Failed { idx =>
-      expect-char-prechecked idx buf len ret ("1" as Int8) Failed { idx =>
-      expect-char-prechecked idx buf len ret ("." as Int8) Failed { idx =>
+      expect-char-prechecked idx buf len ret b"H".[0] Failed { idx =>
+      expect-char-prechecked idx buf len ret b"T".[0] Failed { idx =>
+      expect-char-prechecked idx buf len ret b"T".[0] Failed { idx =>
+      expect-char-prechecked idx buf len ret b"P".[0] Failed { idx =>
+      expect-char-prechecked idx buf len ret b"/".[0] Failed { idx =>
+      expect-char-prechecked idx buf len ret b"1".[0] Failed { idx =>
+      expect-char-prechecked idx buf len ret b".".[0] Failed { idx =>
         parse-int 1 idx buf len ret Failed rest
       } } } } } } }
   end

@@ -249,12 +249,15 @@ listEqual = { eq => xs => ys =>
 // https://hackage.haskell.org/package/base-4.9.0.0/docs/src/Data.OldList.html#sortBy
 listSortBy :: forall (a:Type) { { a => a => Bool } => List a => List a };
 listSortBy = { cmpGT => xs =>
-
-  REC helper = { xss =>
-    case xss
-      of $Nil -> Nil
-      of $Cons cs ($Nil) -> cs
-      of _ -> mergePairs xss |> helper
+  REC merge = { xs => ys =>
+    case (xs, ys)
+      of ($Nil, _) -> ys
+      of (_, $Nil) -> xs
+      of ($Cons x xs, $Cons y ys) ->
+        if cmpGT x y
+          then Cons y (merge (Cons x xs) ys)
+          else Cons x (merge xs (Cons y ys))
+        end
     end
   };
 
@@ -266,15 +269,11 @@ listSortBy = { cmpGT => xs =>
     end
   };
 
-  REC merge = { xs => ys =>
-    case (xs, ys)
-      of ($Nil, _) -> ys
-      of (_, $Nil) -> xs
-      of ($Cons x xs, $Cons y ys) ->
-        if cmpGT x y
-          then Cons y (merge (Cons x xs) ys)
-          else Cons x (merge xs (Cons y ys))
-        end
+  REC helper = { xss =>
+    case xss
+      of $Nil -> Nil
+      of $Cons cs ($Nil) -> cs
+      of _ -> mergePairs xss |> helper
     end
   };
 

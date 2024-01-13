@@ -6,6 +6,7 @@ snafuinclude PreludeFixnums "prelude-fixnums";
 snafuinclude PreludeFolds   "prelude-folds";
 snafuinclude PreludePrintExpect "prelude/print-expect";
 snafuinclude PreludeMemcpy "prelude/memcpy";
+snafuinclude PreludePoke "prelude/poke";
 
 ignore :: forall (a:Type) { a => () };
 ignore = { _a => () };
@@ -32,11 +33,6 @@ do-while = { cond : { Bool } => body : { () } =>
 until = { cond : { Bool } => body : { () } =>
   if cond ! then () else body ! ; until cond body end
 };
-
-/////
-
-ref-poke = { forall v:Type, x : v => r : Ref v => (>^) x r };
-array-poke-i32 = { forall v:Type, x : v => r : Array v => i : Int32 => x >^ r.[i] };
 
 /////
 
@@ -120,6 +116,13 @@ wordNumBits32 = {
 wordNumBits :: { Word };
 wordNumBits = {
   sext_i32_to_Word (wordNumBits32 !)
+};
+
+/////
+
+print-expect-mark = { t: Text =>
+  expect_text t;
+  print_text t;
 };
 
 /////
@@ -292,7 +295,7 @@ tmp_Int32_of_base_10_Text = { t:Text =>
    if is_ascii_digit c
      then
        s = (sext_i8_to_i32 c) -Int32 48;
-       (acc^ +Int32 (s *Int32 pow^)) |> array-poke-i32 acc;
+       (acc^ +Int32 (s *Int32 pow^)) |> ref-poke acc;
        (pow^           *Int32 base ) |> ref-poke pow;
        True
      else False
@@ -318,7 +321,7 @@ tmp_Text_of_Int32_digit = { n:Int32 =>
 };
 
 tmp_Byte_of_Int8_digit = { n:Int8 =>
-  ("0" as Int8) +Int8 n
+  b"0".[0] +Int8 n
 };
 
 tmp_Text_16_of_Int32_digit = { n => tmp_Text_16_of_Int8_nibble (cast_i32_to_i8 n) };
@@ -637,6 +640,15 @@ listToArrayWithIndex = { xs => f =>
   };
 
   arrayFromRange32Up 0 (listLength32 xs) uncons
+};
+
+arrayZero32 = { a : Array Int32 =>
+  REC go = { n =>
+    if n <SInt64 arrayLength a
+      then 0 |> array-poke-i32 a (trunc_i64_to_i32 n); go (n +Int64 1)
+    end
+  };
+  go 0
 };
 
 // }}}
