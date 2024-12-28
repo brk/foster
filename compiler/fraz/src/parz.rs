@@ -367,7 +367,7 @@ pomelo::pomelo! {
     tatom ::= xid(B)                                         { Type(spanned(Box::new(Type_::Var(B)     ), B)) }
     tatom ::= LPAREN(O) RPAREN(X)                            { Type(spanned(Box::new(Type_::Unit       ), token_range(O, X))) }
     tatom ::= LPAREN(O) t_sepby_COMMA(B) RPAREN(X) HASH?(C)  { Type(spanned(Box::new(Type_::Tuple(B, C)), token_range(O, C.unwrap_or(X)))) }
-    tatom ::= LCURLY(O) t_sepby_DARROW(B) RCURLY(X)          { Type(spanned(Box::new(Type_::Fun(B)     ), token_range(O, X))) }
+    tatom ::= LCURLY(O) t_sepby_DARROW(B) eff?(E) RCURLY(X)   { Type(spanned(Box::new(Type_::Fun(B, E )), token_range(O, X))) }
     
     %type t_sepby_DARROW Vec<Type>;
     t_sepby_DARROW ::= t(C)                               { vec![C] }
@@ -377,6 +377,24 @@ pomelo::pomelo! {
     t_sepby_COMMA ::= t(C)                             { vec![C] }
     t_sepby_COMMA ::= t_sepby_COMMA(mut B) COMMA t(C)  { B.push(C); B }
     
+    %type eff EffectRow;
+    eff ::= ATSIGN(X) xid(A)  { EffectRow::Variable(A) }
+    eff ::= ATSIGN(X) LPAREN(O) RPAREN(C)  { EffectRow::Empty }
+    eff ::= ATSIGN(X) LPAREN(O) single_effect_plus(F) RPAREN(C)  { EffectRow::Implicit(F) }
+    eff ::= ATSIGN(X) LPAREN(O) single_effect_plus(F) VBAR RPAREN(C)  { EffectRow::Closed(F) }
+    eff ::= ATSIGN(X) LPAREN(O) single_effect_plus(F) VBAR xid(V) RPAREN(C)  { EffectRow::Open(F, V) }
+
+    %type xid_plus Vec<Span>;
+    xid_plus ::= xid(C)  { vec![C] }
+    xid_plus ::= xid_plus(mut B) xid(C)  { B.push(C); B }
+
+    %type single_effect SingleEffect;
+    single_effect ::= MINUS(M) xid_plus(X)  { SingleEffect::Single(true, X) }
+    single_effect ::=          xid_plus(X)  { SingleEffect::Single(false, X) }
+
+    %type single_effect_plus Vec<SingleEffect>;
+    single_effect_plus :: = single_effect(C)  { vec![C] }
+    single_effect_plus :: = single_effect_plus(mut B) COMMA single_effect(C)  { B.push(C); B }
 }
 
 // If it evaluates to Ok(()), the parser will try to recover and continue.

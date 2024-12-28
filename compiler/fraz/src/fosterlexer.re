@@ -132,12 +132,13 @@ regular:
   ":["                  { return mk(CLN_LBRACK); }
   "["                   { return mk(LBRACK); }
   "]"                   { return mk(RBRACK); }
+  "|"                   { return mk(VBAR); }
   ";"                   { return mk(SEMI); }
   ","                   { return mk(COMMA); }
   ":"                   { return mk(COLON); }
   "="                   { return mk(EQUAL); }
   "`"                   { return mk(BACKTICK); }
-  "@"                   { return mk(HASH); } // parz.rs needs to use ATSIGN first
+  "@"                   { return mk(ATSIGN); } // parz.rs needs to use ATSIGN first
   "."                   { return mk(DOT); }
 
   "$"                   { return mk(DOLLAR); }

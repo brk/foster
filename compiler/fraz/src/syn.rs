@@ -82,7 +82,7 @@ pub enum Type_ {
     App(Type, Vec<Type>),
     Unit,
     Tuple(Vec<Type>, Option<Token>),
-    Fun(Vec<Type>),
+    Fun(Vec<Type>, Option<EffectRow>),
     Var(Token),
     Forall(Vec<Tyformal>, Type),
 }
@@ -145,6 +145,21 @@ pub enum EffMatch { EffMatch(Patside, Stmts) }
 
 #[derive(Debug,PartialEq,Hash,Clone)]
 pub enum DataCtor { DataCtor(Token, Vec<Type>) }
+
+#[derive(Debug,PartialEq,Hash,Clone)]
+pub enum SingleEffect {
+    Single(bool, Vec<Span>),
+}
+
+#[derive(Debug,PartialEq,Hash,Clone)]
+pub enum EffectRow {
+    Variable(Token),
+    Empty,
+    Closed(Vec<SingleEffect>),
+    Open(Vec<SingleEffect>, Token),
+    Implicit(Vec<SingleEffect>),
+}
+
 
 type Token = Span;
 type TokenRange = Span;
