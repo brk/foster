@@ -1400,7 +1400,21 @@ pub fn tochez_transunit(ast: &TransUnit, cm: &CodeMap) -> ChezSyntax {
 
     // Chez Scheme does not support single-precision floats except as FFI values,
     // so we have to use doubles for everything.
-    ss.push(ChezSyntax::Raw("(define i32-as-f32 i64-as-f64)".to_string()));
+    ss.push(ChezSyntax::Raw("(define i32-as-f32 (lambda (x)
+    (let* [(s (bitwise-bit-set? x 31))
+           (e (bitwise-bit-field x 23 31))
+           (m32 (bitwise-and x #x07fffff))
+           (m64 (* m32 (expt 2 29)))
+           ]
+           (if (and (= e 0) (= m32 0))
+                    (inexact (if s -0.0 0.0))
+                (if (= e 255)
+                    (if (= m32 0)
+                        (if s -inf.0 +inf.0)
+                        (if s -nan.0 nan.0))
+                    (encode-float-bits (if s -1 1) (fx- e 127) m64)))
+            )
+))".to_string()));
     ss.push(ChezSyntax::Raw("(define i32-as-f64 i64-as-f64)".to_string()));
     ss.push(ChezSyntax::Raw("(define +f32 +f64)".to_string()));
     ss.push(ChezSyntax::Raw("(define -f32 -f64)".to_string()));
