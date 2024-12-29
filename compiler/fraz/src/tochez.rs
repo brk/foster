@@ -1369,23 +1369,7 @@ pub fn tochez_transunit(ast: &TransUnit, cm: &CodeMap) -> ChezSyntax {
     ss.push(ChezSyntax::Raw("(define ==f64 =)".to_string()));
     ss.push(ChezSyntax::Raw("(define !=f64 (lambda (x y) (not (= x y))))".to_string()));
 
-    ss.push(ChezSyntax::Raw("(define f64-as-i64 (lambda (x)
-        (let* [(v (decode-float (inexact x)))
-               (m (vector-ref v 0))
-               (e (vector-ref v 1))
-               (s (vector-ref v 2))
-               (soz (if (negative? s) 1 0))
-               (sbit (bitwise-arithmetic-shift-left soz 63))]
-
-               ;(write (list 'f64-as-i64 'x= x 'v= v 'm= m 'e= e 's= s)) (newline)
-                (if (and (= e 0) (= m 0))
-                    (if (= s 1) 0 #x8000000000000000)
-                    (+ sbit
-                         (bitwise-arithmetic-shift-left
-                          (fx+ e 1075)
-                          52)
-                         (- m #x10000000000000))
-                )) ))".to_string()));
+    ss.push(ChezSyntax::Raw("(define f64-as-i64 (lambda (x) (flbit-field x 0 64) ) )".to_string()));
     ss.push(ChezSyntax::Raw("(define encode-float (lambda (s e m) (inexact (* s m (expt 2 e))) ))".to_string()));
     // Note! Chez float decoding of 1.0 yields #(4503599627370496 -52 1)
     // whereas the raw bit pattern is 0x3FF0000000000000 corresponding to #(0 1023 0)
