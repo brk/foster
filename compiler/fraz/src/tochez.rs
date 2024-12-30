@@ -1155,11 +1155,12 @@ pub fn tochez_transunit(ast: &TransUnit, cm: &CodeMap) -> ChezSyntax {
                     (string-set! s2 j (string-ref s1 i))))))))
       ".to_string()));
     ss.push(ChezSyntax::Raw("(define-record-type TextFragmentR (fields vec utf8len))".to_string()));
-    ss.push(ChezSyntax::Raw("(define-record-type TextConcat (fields lhs rhs utf8len))".to_string()));
-    ss.push(ChezSyntax::Raw("(define TextConcat make-TextConcat)".to_string()));
-    ss.push(ChezSyntax::Raw("(define TextConcat-2-get TextConcat-utf8len)".to_string()));
-    ss.push(ChezSyntax::Raw("(define TextConcat-1-get TextConcat-rhs)".to_string()));
-    ss.push(ChezSyntax::Raw("(define TextConcat-0-get TextConcat-lhs)".to_string()));
+    ss.push(ChezSyntax::Raw("(define-record-type TextConcatR (fields lhs rhs utf8len))".to_string()));
+    ss.push(ChezSyntax::Raw("(define TextConcat make-TextConcatR)".to_string()));
+    ss.push(ChezSyntax::Raw("(define TextConcat? TextConcatR?)".to_string()));
+    ss.push(ChezSyntax::Raw("(define TextConcat-2-get TextConcatR-utf8len)".to_string()));
+    ss.push(ChezSyntax::Raw("(define TextConcat-1-get TextConcatR-rhs)".to_string()));
+    ss.push(ChezSyntax::Raw("(define TextConcat-0-get TextConcatR-lhs)".to_string()));
     ss.push(ChezSyntax::Raw("(define TextFragment-strlit (lambda (s n) (make-TextFragmentR (foster-vector-bytes-of-string s) n) ))".to_string())); 
     ss.push(ChezSyntax::Raw("(define TextFragment (lambda (v n) 
         (cond
@@ -1183,6 +1184,9 @@ pub fn tochez_transunit(ast: &TransUnit, cm: &CodeMap) -> ChezSyntax {
          (+ (- 0 (bitwise-arithmetic-shift-left 1 s)) x))
         (else x)
         )))".to_string()));
+
+    ss.push(ChezSyntax::Raw(format!("(define foster-shift-mask (lambda (w) (fxbit-field -1 0 (fxfirst-bit-set w)) ))")));
+    ss.push(ChezSyntax::Raw(format!("(define foster-shift-masked (lambda (n w) (bitwise-and n (foster-shift-mask w)) ))")));
     
     let intsizes = vec![
         IntSizeConfig::ISC(8, "i8".to_string(), "Int8".to_string()),
@@ -1209,9 +1213,6 @@ pub fn tochez_transunit(ast: &TransUnit, cm: &CodeMap) -> ChezSyntax {
                     }
                 }
 
-                ss.push(ChezSyntax::Raw(format!("(define foster-shift-mask (lambda (w) (fxbit-field -1 0 (fxfirst-bit-set w)) ))")));
-                ss.push(ChezSyntax::Raw(format!("(define foster-shift-masked (lambda (n w) (bitwise-and n (foster-shift-mask w)) ))")));
-                
                 ss.push(ChezSyntax::Raw(format!("(define bitshl-{} (lambda (x y) (trunc-{} (bitwise-arithmetic-shift-left x (foster-shift-masked y {})))))", nmalong, nmalong, sza)));
                 ss.push(ChezSyntax::Raw(format!("(define bitashr-{} (lambda (x y) (trunc-{} (foster-bitashr-core x y {}))))", nmalong, nmalong, sza)));
                 ss.push(ChezSyntax::Raw(format!("(define bitlshr-{} (lambda (x y) (trunc-{} (bitwise-arithmetic-shift-right (trunc-{} x) y))))", nmalong, nmalong, nmalong)));
@@ -1411,7 +1412,7 @@ pub fn tochez_transunit(ast: &TransUnit, cm: &CodeMap) -> ChezSyntax {
                 (if (= e 255)
                     (if (= m32 0)
                         (if s -inf.0 +inf.0)
-                        (if s -nan.0 nan.0))
+                        (if s -nan.0 +nan.0))
                     (encode-float-bits (if s -1 1) (fx- e 127) m64)))
             )
 ))".to_string()));
@@ -1460,6 +1461,9 @@ pub fn tochez_transunit(ast: &TransUnit, cm: &CodeMap) -> ChezSyntax {
                     match ctor {
                         DataCtor::DataCtor(name, tys) => {
                             let ctorname = span_str(cm, &name);
+                            // Ensure that the underlying record type name is distinct from
+                            // the constructor name.
+                            let recordname = format!("^{}", ctorname);
                             let mut ctorfields = Vec::new();
                             ctorfields.push(ChezSyntax::Raw("fields".to_string()));
                             for (n, _) in tys.iter().enumerate() {
@@ -1470,15 +1474,16 @@ pub fn tochez_transunit(ast: &TransUnit, cm: &CodeMap) -> ChezSyntax {
                             }
                             let nullary = ctorfields.len() == 1;
                             let fields = ChezSyntax::Call(ctorfields);
-                            ss.push(ChezSyntax::Call(vec![ChezSyntax::Raw("define-record-type".to_string()), ChezSyntax::Raw(ctorname.clone()), fields]));
+                            ss.push(ChezSyntax::Call(vec![ChezSyntax::Raw("define-record-type".to_string()), ChezSyntax::Raw(recordname.clone()), fields]));
 
                             if nullary {
                                 // Nullary constructors are treated as constants rather than functions.
-                                ss.push(ChezSyntax::Call(vec![ChezSyntax::Raw(format!("define {} (make-{})", ctorname, ctorname))]));
+                                ss.push(ChezSyntax::Call(vec![ChezSyntax::Raw(format!("define {} (make-{})", ctorname, recordname))]));
                             } else {
-                                ss.push(ChezSyntax::Call(vec![ChezSyntax::Raw(format!("define {} make-{}", ctorname, ctorname))]));
+                                ss.push(ChezSyntax::Call(vec![ChezSyntax::Raw(format!("define {} make-{}", ctorname, recordname))]));
                             }
                             
+                            ss.push(ChezSyntax::Call(vec![ChezSyntax::Raw(format!("define {}? {}?", ctorname, recordname))]));
                         }
                     }
                 }
