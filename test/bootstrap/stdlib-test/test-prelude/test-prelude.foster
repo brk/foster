@@ -2,6 +2,7 @@ snafuinclude Prelude "prelude";
 snafuinclude Bitwise "math/bitwise";
 snafuinclude Bytes   "bytes";
 snafuinclude Heapsort "prelude/heapsort";
+snafuinclude RyuD2Fixed "fmt/ryu/ryu-d2fixed";
 
 type case BInt of $B Int32;
 

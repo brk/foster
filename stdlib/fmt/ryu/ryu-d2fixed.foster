@@ -436,3 +436,6 @@ ryu-d2fixed = { precision => value =>
         rab |> rabToRawArray |> textFromRawASCII
     end
 };
+
+print_float_p9f64 = { x: Float64 => ryu-d2fixed 9 x |> print_text };
+expect_float_p9f64 = { x: Float64 => ryu-d2fixed 9 x |> expect_text };

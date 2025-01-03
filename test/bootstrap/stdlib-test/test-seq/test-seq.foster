@@ -2,6 +2,7 @@ snafuinclude Seq "data/seq";
 snafuinclude Prelude "prelude";
 snafuinclude Fmt "fmt";
 snafuinclude Ryu "fmt/ryu/ryu-d2s";
+snafuinclude RyuD2Fixed "fmt/ryu/ryu-d2fixed";
 
 print_arri32 = { arr : Array Int32 =>
   print_text_bare "[";

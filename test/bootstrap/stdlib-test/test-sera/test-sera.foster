@@ -4,6 +4,8 @@ snafuinclude Prelude "prelude";
 snafuinclude Vlist "data/vlist";
 snafuinclude Bitwise "math/bitwise";
 
+snafuinclude RyuD2Fixed "fmt/ryu/ryu-d2fixed";
+
 snafuinclude Prelude "prelude";
 //snafuinclude Sera    "sera";
 snafuinclude Measure "bench/measure";

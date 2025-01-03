@@ -2,6 +2,7 @@ snafuinclude Big "math/bignum";
 snafuinclude Nat "math/bignat";
 
 snafuinclude PreludePrintExpectB "prelude/print-expect-b";
+snafuinclude RyuD2Fixed "fmt/ryu/ryu-d2fixed";
 
 main = {
   //t0 !;

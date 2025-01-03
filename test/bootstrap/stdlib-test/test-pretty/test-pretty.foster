@@ -3,6 +3,8 @@ snafuinclude Prelude "prelude";
 snafuinclude PrintExpect "prelude/print-expect";
 snafuinclude Gen "control/gen";
 
+snafuinclude RyuD2Fixed "fmt/ryu/ryu-d2fixed";
+
 main = {
     doc1 = DocGroup ((DocText "A") `DocHJuxt`
                 (DocLine `DocHJuxt` DocGroup (DocText "B"

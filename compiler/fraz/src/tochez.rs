@@ -1308,9 +1308,7 @@ pub fn tochez_transunit(ast: &TransUnit, cm: &CodeMap) -> ChezSyntax {
          )))))".to_string()));
     ss.push(ChezSyntax::Raw("(define prim_print_bytes_stderr (lambda (bv n off) (prim_print_bytes_to bv n off (current-error-port))))".to_string()));
     ss.push(ChezSyntax::Raw("(define prim_print_bytes_stdout (lambda (bv n off) (prim_print_bytes_to bv n off (current-output-port))))".to_string()));
-    ss.push(ChezSyntax::Raw("(define expect_float_p9f64 (lambda (x) (fprintf (current-error-port) \"~,9f\" x) (newline (current-error-port))))".to_string()));
-    ss.push(ChezSyntax::Raw("(define print_float_p9f64 (lambda (x) (printf \"~,9f\" x) (newline)))".to_string()));
-    
+
     ss.push(ChezSyntax::Raw("(define vector-copy-nonoverlapping! (lambda (from fromat to toat reqlen)
        (letrec [(f (lambda (n)
                 (if (< n reqlen) 
@@ -1370,7 +1368,7 @@ pub fn tochez_transunit(ast: &TransUnit, cm: &CodeMap) -> ChezSyntax {
     ss.push(ChezSyntax::Raw("(define ==f64 =)".to_string()));
     ss.push(ChezSyntax::Raw("(define !=f64 (lambda (x y) (not (= x y))))".to_string()));
 
-    ss.push(ChezSyntax::Raw("(define f64-as-i64 (lambda (x) (flbit-field x 0 64) ) )".to_string()));
+    ss.push(ChezSyntax::Raw("(define f64-as-i64 (lambda (x) (flbit-field (inexact x) 0 64) ) )".to_string()));
     ss.push(ChezSyntax::Raw("(define encode-float (lambda (s e m) (inexact (* s m (expt 2 e))) ))".to_string()));
     // Note! Chez float decoding of 1.0 yields #(4503599627370496 -52 1)
     // whereas the raw bit pattern is 0x3FF0000000000000 corresponding to #(0 1023 0)
@@ -1393,11 +1391,8 @@ pub fn tochez_transunit(ast: &TransUnit, cm: &CodeMap) -> ChezSyntax {
      
     ss.push(ChezSyntax::Raw("(define f64-to-u32-unsafe (lambda (x) (trunc-Int32 (abs (exact (round x)))) ))".to_string()));
 
-    ss.push(ChezSyntax::Raw("(define s32-to-f64 (lambda (x) x))".to_string()));
-    ss.push(ChezSyntax::Raw("(define u32-to-f64 (lambda (x) x))".to_string()));
-
-    ss.push(ChezSyntax::Raw("(define print_float_f64   print_float_p9f64)".to_string()));
-    ss.push(ChezSyntax::Raw("(define expect_float_f64 expect_float_p9f64)".to_string()));
+    ss.push(ChezSyntax::Raw("(define s32-to-f64 (lambda (x) (inexact x)))".to_string()));
+    ss.push(ChezSyntax::Raw("(define u32-to-f64 (lambda (x) (inexact x)))".to_string()));
 
     // Chez Scheme does not support single-precision floats except as FFI values,
     // so we have to use doubles for everything.
@@ -1495,7 +1490,7 @@ pub fn tochez_transunit(ast: &TransUnit, cm: &CodeMap) -> ChezSyntax {
                 let tyformals = "...tyformals...";
                 //let effectctors = span_str(cm, *effectctors);
                 let effectctors = "...effectctors...";
-                ss.push(ChezSyntax::Raw(format!("(effect {} {} {})", tyformal, tyformals, effectctors)));
+                ss.push(ChezSyntax::Raw(format!("; (effect {} {} {})", tyformal, tyformals, effectctors)));
             },
             Item::ForeignImport(name, _ty, _eq) => {
                 let name = span_str(cm, &name);

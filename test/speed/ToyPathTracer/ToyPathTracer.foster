@@ -511,6 +511,9 @@ test0 = {
   f3Print (f3Normalize (F3 1.2 3.4 5.6));
 };
 
+print_float_f32 = { f => f |> f32-to-f64 |> print_float_p9f64 };
+expect_float_f32 = { f => f |> f32-to-f64 |> expect_float_p9f64 };
+
 main = {
   emit !
 };

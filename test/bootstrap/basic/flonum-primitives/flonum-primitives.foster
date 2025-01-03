@@ -26,25 +26,18 @@ floating-ops = {
   expect_i64 -6;
   print_i64 (-6.25 |> f64-to-s64-unsafe);
 
-/*
   expect_i64 4294967290;
   print_i64 (if opaquely_i32 0 ==Int32 0 then -6.25 else 6.25 end
-              |> f64-to-u64-unsafe);
-*/
+              |> f64-as-i64);
 
   test-float-classification !;
 
-  /* These next two are temporarily disabled because I haven't yet
-     figured out how to get Chez Scheme to print these numbers the
-     same way that a C printf implementation does.
-     TODO: remove print_float_p9f64 entirely!
   expect_text      "18446744073709551616.000000000";
   print_float_p9f64 18446744073709551616.0;
 
   // A bit strange, until you realize it's the same float as above.
   expect_text      "18446744073709551616.000000000";
   print_float_p9f64 18446744073709552000.0;
-  */
 
   expect_i64x (0x43efffffffffffff);
   print_i64x  (f64-as-i64 18446744073709549568.0);

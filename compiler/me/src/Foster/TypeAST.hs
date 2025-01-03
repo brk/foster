@@ -195,13 +195,6 @@ primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     ,(,) "prim_print_bytes_stdout" $ mkProcType [ArrayTypeAST i8, i32, i32] []
     ,(,) "prim_print_bytes_stderr" $ mkProcType [ArrayTypeAST i8, i32, i32] []
 
-    ,(,) "print_float_p9f64"       $ mkProcType [f64] []
-    ,(,) "expect_float_p9f64"      $ mkProcType [f64] []
-    ,(,) "print_float_f64"         $ mkProcType [f64] []
-    ,(,) "expect_float_f64"        $ mkProcType [f64] []
-    ,(,) "print_float_f32"         $ mkProcType [f32] []
-    ,(,) "expect_float_f32"        $ mkProcType [f32] []
-
     -- Calls to this function are internally transformed to AIAllocArray nodes.
     -- forall a, i32 -> Array a
     ,(,) "allocDArray" $ let a = BoundTyVar "a" (MissingSourceRange "allocDArray") in

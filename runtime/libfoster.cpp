@@ -217,11 +217,6 @@ int cleanup() {
   return gc::cleanup();
 }
 
-void fprint_f32(FILE* f, float x) { fprintf(f, "%f\n", x); }
-void fprint_f64(FILE* f, double x) { fprintf(f, "%f\n", x); }
-void fprint_p9f64(FILE* f, double x) { fprintf(f, "%.9f\n", x); }
-// TODO .17g for doubles?
-
 void fprint_i64(FILE* f, int64_t x) { fprintf(f, "%" PRId64 "\n", x); }
 
 void fprint_bytes_from(FILE* f, foster_bytes* array, uint32_t n, uint32_t off) {
@@ -356,15 +351,6 @@ int64_t memcpy_i8_to_at_from_at_len(foster_bytes* to,   int64_t   to_at,
   }
   return req_len - len;
 }
-
-void print_float_f32(float f) { return fprint_f32(stdout, f); }
-void expect_float_f32(float f) { return fprint_f32(stderr, f); }
-
-void print_float_f64(double f) { return fprint_f64(stdout, f); }
-void expect_float_f64(double f) { return fprint_f64(stderr, f); }
-
-void print_float_p9f64(double f) { return fprint_p9f64(stdout, f); }
-void expect_float_p9f64(double f) { return fprint_p9f64(stderr, f); }
 
 int32_t get_cmdline_n_args() { return __foster_globals.args.size(); }
 

@@ -1,5 +1,6 @@
 snafuinclude PreludePrintExpect "prelude/print-expect";
 snafuinclude Polylabel "geometry/polylabel";
+snafuinclude RyuD2Fixed "fmt/ryu/ryu-d2fixed";
 
 test-01 = {
   a = prim mach-array-literal
@@ -15,11 +16,11 @@ test-01 = {
 
   let (px, py) = polylabel64 p 0.1;
 
-  expect_float_f64 0.5625;
-  print_float_f64 px;
+  expect_float_p9f64 0.5625;
+  print_float_p9f64 px;
 
-  expect_float_f64 0.5625;
-  print_float_f64 py;
+  expect_float_p9f64 0.5625;
+  print_float_p9f64 py;
   
 };
 

@@ -969,14 +969,6 @@ evalNamedPrimitive "get_cmdline_arg_n" gs [SSInt32 i] =
                               then args !! ii else ""
          return $ withTerm gs (SSTmValue $ textFragmentOf argN)
 
-evalNamedPrimitive "expect_float_p9f64" gs [SSFloat f] =
-      do expectStringNL gs (T.unpack $ toFixed 9 f)
-         return $ withTerm gs unit
-
-evalNamedPrimitive "print_float_p9f64" gs [SSFloat f] =
-      do printStringNL gs (T.unpack $ toFixed 9 f)
-         return $ withTerm gs unit
-
 -- {{{
 -- to[to_at..to_at+req_len] = from[from_at..from_at+req_len]
 evalNamedPrimitive "memcpy_i8_to_at_from_at_len" gs

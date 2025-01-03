@@ -60,6 +60,11 @@ noinline_mustnotallo_example3 = { a =>
   end
 };
 
+
+print_float_f32 = { f => f |> f32-to-f64 |> print_float_p9f64 };
+expect_float_f32 = { f => f |> f32-to-f64 |> expect_float_p9f64 };
+
+
 main = {
   expect_float_f32 56;
   print_float_f32 (f3SqrLen (F3 2 4 6));
