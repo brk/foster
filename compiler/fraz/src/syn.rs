@@ -1,6 +1,5 @@
 use codemap::Spanned;
 use codemap::Span;
-use std::collections::VecDeque;
 use num_bigint::BigInt;
 use std::str::FromStr;
 
@@ -89,11 +88,11 @@ pub enum Binop {
 }
 
 #[derive(Debug,PartialEq,Hash,Clone)]
-pub enum Stmts { Stmts(VecDeque<Stmt>) }
+pub enum Stmts { Stmts(Vec<Stmt>) }
 
 #[derive(Debug,PartialEq,Hash,Clone)]
 pub enum Stmt {
-    Rec(Vec<(PatBind, Expr)>, Span),
+    Rec(Vec<(PatBind, Expr)>),
     Expr(Expr),
     PatBind(PatBind, Expr),
 }
