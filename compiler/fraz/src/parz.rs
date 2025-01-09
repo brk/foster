@@ -4,6 +4,8 @@ use codemap::{Span, Spanned, CodeMap};
 use std::collections::VecDeque;
 use crate::syn;
 
+use std::time::Instant;
+
 #[derive(Copy,Clone,Debug)]
 pub enum ParseError {
   ParsingFailed,
@@ -45,12 +47,16 @@ fn lit_span(lit: &syn::Lit) -> Span {
 
 fn expr_span(e: &syn::Expr) -> Span { e.0.span }
 
+fn push_stmtpart(mut B: &mut Vec<syn::Stmt>, C: (Option<syn::Stmt>, syn::Stmt)) {
+    if let Some(R) = C.0 { B.push(R); }
+    B.push(C.1);
+}
+
 use pomelo;
 pomelo::pomelo! {
     %include { use crate::parz::*; }
     %include { use crate::syn::*; }
     %include { use codemap::{Span, Spanned}; }
-    %include { use std::collections::VecDeque; }
 
     %stack_size 2000;
  
@@ -140,32 +146,22 @@ pomelo::pomelo! {
     id ::= UNDERIDENT(B) { B }
     
     %type stmts Stmts;
-    stmts ::= stmt_start(B) stmt_cont_star(mut C) { C.push_front(B); Stmts::Stmts(C) }
-    
-    %type stmt_start Stmt;
-    //stmt_start ::= REC(X) pbinding(B)  { let span = token_range(X, expr_span(&B.1)); Stmt::Rec(vec![B], span) }
-    stmt_start ::= stmt_rec_plus(V)  { let span = token_range(V.0[0], expr_span(&V.1[V.1.len() - 1].1)); Stmt::Rec(V.1, span) }
-    stmt_start ::= ext_pbinding(B)     { B }
-    
-    %type stmt_rec_plus (Vec<Span>, Vec<(PatBind, Expr)>);
-    stmt_rec_plus ::=                      stmt_rec(C) { ( vec![C.0] , vec![C.1]) }
-    stmt_rec_plus ::= stmt_rec_plus(mut B) stmt_rec(C) { B.0.push(C.0); B.1.push(C.1); B }
+    stmts ::= stmtparts(S)                            { let mut B = Vec::new(); push_stmtpart(&mut B, S); Stmts::Stmts(B) }
+    stmts ::= stmt_semi_plus(mut V) stmtparts(S)      { push_stmtpart(&mut V, S); Stmts::Stmts(V) }
+    stmts ::= stmt_semi_plus(mut V)                   { Stmts::Stmts(V) }
 
-    %type stmt_rec (Span, (PatBind, Expr));
-    stmt_rec ::= REC(X) pbinding(B)  { (X, B) }
+    %type stmt_semi_plus Vec<Stmt>;
+    stmt_semi_plus ::=                       stmtparts(S) SEMI { let mut B = Vec::new(); push_stmtpart(&mut B, S); B }
+    stmt_semi_plus ::= stmt_semi_plus(mut V) stmtparts(S) SEMI { push_stmtpart(&mut V, S); V }
 
-    %type stmt_cont_star VecDeque<Stmt>;
-    stmt_cont_star ::=                                     { VecDeque::new() }
-    stmt_cont_star ::= stmt_cont_star(mut B) stmt_cont(C)  { B.extend(C); B }
+    %type stmtparts (Option<Stmt>, Stmt);
+    stmtparts ::= stmt_rec_plus(V) SEMI ext_pbinding(B) { (Some(Stmt::Rec(V)), B) }
+    stmtparts ::=                       ext_pbinding(B) { (None, B) }
     
-    %type stmt_cont VecDeque<Stmt>;
-    stmt_cont ::= SEMI stmt_start_opt(B) { B }
-    
-    %type stmt_start_opt VecDeque<Stmt>;
-    stmt_start_opt ::=               { VecDeque::new() }
-    stmt_start_opt ::= stmt_start(B) { vd_singleton(B) }
-    
-    
+    %type stmt_rec_plus Vec<(PatBind, Expr)>;
+    stmt_rec_plus ::=                           REC pbinding(B) { vec![B] }
+    stmt_rec_plus ::= stmt_rec_plus(mut S) SEMI REC pbinding(B) { S.push(B); S }
+
     %type ext_pbinding Stmt;
     ext_pbinding ::= e(B)                   { Stmt::Expr(B) }
     ext_pbinding ::= patbind(B) EQUAL e(C)  { Stmt::PatBind(B, C) }
@@ -436,17 +432,29 @@ pub fn tryparse(toks: Vec<super::lex::FrazToken>, cm: &mut codemap::CodeMap)
             -> Result<syn::TransUnit, ParseError> {
     let mut p = parser::Parser::new(&cm);
     let final_span = toks.last().ok_or(ParseError::EmptyInput)?.span;
-    for tok in toks.into_iter() {
-        if tok.tok < 0 {
-            // skip whitespace and comments
-        } else {
-            let pt = convert_token(tok).ok_or(ParseError::InvalidToken);
-            p.parse(pt?)?;
+    let mut cvted_toks = Vec::new();
+    let cvt_start = Instant::now();
+        for tok in toks.into_iter() {
+            if tok.tok < 0 {
+                // skip whitespace and comments
+            } else {
+                let pt = convert_token(tok).ok_or(ParseError::InvalidToken);
+                cvted_toks.push(pt?);
+            }
         }
+    let cvt_dur = cvt_start.elapsed();
+    let cvt_count = cvted_toks.len();
+    let par_start = Instant::now();
+    for tok in cvted_toks {
+        p.parse(tok)?;
     }
+    let par_dur = par_start.elapsed();
+
+    println!("token conversion: {:?}; token parsing: {:?}; num tokens: {}", cvt_dur, par_dur, cvt_count);
+
     p.parse(parser::Token::FINI(final_span))?;
     let (ast, _cm) = p.end_of_input()?;
-    //println!("{:?}", ast);
+    
     Ok(ast)
 
 }

@@ -395,7 +395,7 @@ fn tochez_patbind(patbind: &PatBind, expr: &Expr, cm: &CodeMap) -> ChezSyntax {
 
 fn tochez_stmt_then(stmt: &Stmt, cont: ChezSyntax, cm: &CodeMap) -> ChezSyntax {
     match stmt {
-        Stmt::Rec(patbinds, _span) => {
+        Stmt::Rec(patbinds) => {
             let binds = patbinds.iter().map(|pb| tochez_patbind(&pb.0, &pb.1, cm)).collect();
             ChezSyntax::Call(vec![ChezSyntax::Raw("letrec".to_string()), ChezSyntax::Call(binds), cont])
         },
@@ -421,14 +421,14 @@ fn tochez_stmt_single(stmt: &Stmt, cm: &CodeMap) -> ChezSyntax {
     }
 }
 
-fn tochez_stmts_vd(stmts: &std::collections::VecDeque<Stmt>, cm: &CodeMap) -> ChezSyntax {
+fn tochez_stmts_vd(stmts: &Vec<Stmt>, cm: &CodeMap) -> ChezSyntax {
     assert!(stmts.len() > 0);
     // Foster statements are syntactically single bindings or a bare expression,
     // but semantically they are a sequence of (possibly unnamed) bindings,
     // so we process them in reverse order to build up a nested let expression,
     // rather than using `begin` or such.
     
-    let mut cont = tochez_stmt_single(stmts.back().unwrap(), cm);
+    let mut cont = tochez_stmt_single(stmts.last().unwrap(), cm);
     for stmt in stmts.iter().rev().skip(1) {
         cont = tochez_stmt_then(stmt, cont, cm);
     }
@@ -1044,7 +1044,7 @@ fn tochez_expr(ast: &Expr, cm: &CodeMap) -> ChezSyntax {
 fn _tyformal_name(cm: &CodeMap, tyformal: &Tyformal) -> String {
     match tyformal {
         Tyformal::Tyformal(name, _) => tochez_name(name, cm),
-        Tyformal::TyformalParens(name, _, _) => tochez_name(name, cm),
+        Tyformal::TyformalParens(_, tyfm, _) => _tyformal_name(cm, &tyfm),
     }
 }
 
