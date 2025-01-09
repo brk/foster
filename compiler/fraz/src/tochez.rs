@@ -341,12 +341,42 @@ fn tochez_pat(pat: &Pat, cm: &CodeMap) -> ChezSyntax {
     }
 }
 
-fn tochez_patlhs(patlhs: &PatLhs, cm: &CodeMap) -> ChezSyntax {
-    match patlhs {
-        PatLhs::Wildcard(_) => {
-            ChezSyntax::Raw("...wildcard...".to_string())
+fn tochez_let_1(name: ChezSyntax, expr: ChezSyntax, cont: ChezSyntax) -> ChezSyntax {
+    ChezSyntax::Call(vec![ChezSyntax::Raw("let".to_string()),
+        ChezSyntax::Call(vec![ChezSyntax::Call(vec![name, expr])]), cont])
+}
+
+fn tochez_let_patbind_cont(lhs: &PatBind, rhs: &Expr, cont: ChezSyntax, cm: &CodeMap) -> ChezSyntax {
+    match lhs {
+        PatBind::Ident(name) => {
+            let s = span_str(cm, name);
+            let lhs = ChezSyntax::Raw(s);
+            let rhs = tochez_expr(rhs, cm);
+            tochez_let_1(lhs, rhs, cont)
         },
-        PatLhs::Tuple(pats, _range) => {
+        PatBind::Wildcard(_) => {
+            let lhs = ChezSyntax::Raw("_".to_string());
+            let rhs = tochez_expr(rhs, cm);
+            tochez_let_1(lhs, rhs, cont)
+        },
+        PatBind::Tuple(pats, _range) => {
+            let pat = Pat::PatOf(Patside::Atom(PatAtom::Tuple(pats.clone(), _range.clone())), Vec::new());
+            let fail = ChezSyntax::Raw("\"let-pat match failure\"".to_string());
+            let c1 = tochez_scrut_cont_body(&pat, cont, &None, fail, cm);
+            tochez_let_1(ChezSyntax::Raw("_scrutinee".to_string()), tochez_expr(&rhs, cm), c1)
+        },
+    }
+}
+
+fn tochez_patbind(patbind: &PatBind, expr: &Expr, cm: &CodeMap) -> ChezSyntax {
+    // N.B. the syntax being returned is called ::Call but it's not implementing
+    // a function call, it's constructing (part of) the syntax of a let binding.
+    match patbind {
+        PatBind::Ident(name) => {
+            let s = span_str(cm, name);
+            ChezSyntax::Call(vec![ChezSyntax::Raw(s), tochez_expr(expr, cm)])
+        },
+        PatBind::Tuple(pats, _range) => {
             let mut forms = Vec::new();
             forms.push(ChezSyntax::Raw("list".to_string()));
             for pat in pats {
@@ -354,25 +384,13 @@ fn tochez_patlhs(patlhs: &PatLhs, cm: &CodeMap) -> ChezSyntax {
             }
             ChezSyntax::Call(forms)
         },
-    }
-}
-
-fn tochez_patbind(patbind: &PatBind, expr: &Expr, cm: &CodeMap) -> ChezSyntax {
-    match patbind {
-        PatBind::Ident(name) => {
-            let s = span_str(cm, name);
-            ChezSyntax::Call(vec![ChezSyntax::Raw(s), tochez_expr(expr, cm)])
-        },
-        PatBind::PatLhs(patlhs) => {
-            let lhs = tochez_patlhs(patlhs, cm);
+        PatBind::Wildcard(_) => {
+            // Since we don't synthesize a unique name here, we're effectively
+            // assuming that at most one wildcard will be bound.
+            let lhs = ChezSyntax::Raw("_".to_string());
             ChezSyntax::Call(vec![lhs, tochez_expr(expr, cm)])
         },
     }
-}
-
-fn tochez_let_1(name: ChezSyntax, expr: ChezSyntax, cont: ChezSyntax) -> ChezSyntax {
-    ChezSyntax::Call(vec![ChezSyntax::Raw("let".to_string()),
-        ChezSyntax::Call(vec![ChezSyntax::Call(vec![name, expr])]), cont])
 }
 
 fn tochez_stmt_then(stmt: &Stmt, cont: ChezSyntax, cm: &CodeMap) -> ChezSyntax {
@@ -386,94 +404,9 @@ fn tochez_stmt_then(stmt: &Stmt, cont: ChezSyntax, cm: &CodeMap) -> ChezSyntax {
             let rhs = tochez_expr(expr, cm);
             tochez_let_1(lhs, rhs, cont)
         },
-        Stmt::ExprBind(lhs, rhs) if expr_is_var(lhs) => {
-            let lhs = tochez_expr(lhs, cm);
-            let rhs = tochez_expr(rhs, cm);
-            tochez_let_1(lhs, rhs, cont)
-        },
-        Stmt::ExprBind(lhs, rhs) => {
-            let pat = Pat::PatOf(Patside::Atom(patatom_of_expr(lhs.clone(), &cm)), Vec::new());
-            let fail = ChezSyntax::Raw("\"let-expr match failure\"".to_string());
-            let c1 = tochez_scrut_cont_body(&pat, cont, &None, fail, cm);
-            tochez_let_1(ChezSyntax::Raw("_scrutinee".to_string()), tochez_expr(&rhs, cm), c1)        },
         Stmt::PatBind(lhs, rhs) => {
-            let pat = Pat::PatOf(Patside::Atom(patatom_of_patlhs(lhs)), Vec::new());
-            let fail = ChezSyntax::Raw("\"let-pat match failure\"".to_string());
-            let c1 = tochez_scrut_cont_body(&pat, cont, &None, fail, cm);
-            tochez_let_1(ChezSyntax::Raw("_scrutinee".to_string()), tochez_expr(&rhs, cm), c1)
+            tochez_let_patbind_cont(lhs, rhs, cont, cm)
         },
-    
-    }
-}
-
-fn patatom_of_patlhs(patlhs: &PatLhs) -> PatAtom {
-    match patlhs {
-        PatLhs::Wildcard(tok) => {
-            PatAtom::Under(tok.clone())
-        },
-        PatLhs::Tuple(pats, _range) => {
-            PatAtom::Tuple(pats.clone(), _range.clone())
-        },
-    }
-}
-
-fn patatom_of_expr(expr: Expr, cm: &CodeMap) -> PatAtom {
-    let e0span = expr.0.span;
-    match *expr.0.node {
-        Expr_::Var(tok) => {
-            PatAtom::Ident(tok)
-        },
-        Expr_::Lit(lit) => {
-            PatAtom::Lit(lit)
-        },
-        Expr_::Tuple(expr, exprs, _hashtok) => {
-            let mut pats = Vec::new();
-            pats.push(pat_of_expr(expr, cm));
-            for e in exprs {
-                pats.push(pat_of_expr(e, cm));
-            }
-            PatAtom::Tuple(pats, e0span)
-        },
-        other => {
-            panic!("patatom_of_expr: not a pattern atom: {:?}\n{:?}", other, 
-                cm.look_up_span(e0span))
-        },
-    }
-}
-
-fn pat_of_expr(expr: Expr, cm: &CodeMap) -> Pat {
-    let e0span = expr.0.span;
-    let boxe = expr.0.node;
-    match *boxe {
-        Expr_::Var(tok) => {
-            let s = span_ref(cm, &tok);
-            if s.eq("True") || s.eq("False") {
-                Pat::PatOf(Patside::Dctor(tok, Vec::new()), Vec::new())
-            } else {
-                Pat::PatOf(Patside::Atom(PatAtom::Ident(tok)), Vec::new())
-            }
-        },
-        Expr_::Lit(lit) => {
-            Pat::PatOf(Patside::Atom(PatAtom::Lit(lit)), Vec::new())
-        },
-        Expr_::Tuple(expr, exprs, _hashtok) => {
-            let mut pats = Vec::new();
-            pats.push(pat_of_expr(expr, cm));
-            for e in exprs {
-                pats.push(pat_of_expr(e, cm));
-            }
-            Pat::PatOf(Patside::Atom(PatAtom::Tuple(pats, e0span)), Vec::new())
-        },
-        other => {
-            panic!("pat_of_expr: not a pattern: {:?}", other)
-        },
-    }
-}
-
-fn expr_is_var(expr: &Expr) -> bool {
-    match &*expr.0.node {
-        Expr_::Var(_) => true,
-        _ => false,
     }
 }
 

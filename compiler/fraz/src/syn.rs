@@ -34,12 +34,6 @@ pub enum Pat {
 }
 
 #[derive(Debug,PartialEq,Hash,Clone)]
-pub enum PatLhs {
-    Wildcard(Token),
-    Tuple(Vec<Pat>, TokenRange),
-}
-
-#[derive(Debug,PartialEq,Hash,Clone)]
 pub enum Patside {
     Dctor(Token, Vec<PatAtom>),
     Atom(PatAtom),
@@ -59,7 +53,8 @@ pub enum PatAtom {
 #[derive(Debug,PartialEq,Hash,Clone)]
 pub enum PatBind {
     Ident(Token),
-    PatLhs(PatLhs),
+    Wildcard(Token),
+    Tuple(Vec<Pat>, TokenRange),
 }
 
 #[derive(Debug,PartialEq,Hash,Clone)]
@@ -100,8 +95,7 @@ pub enum Stmts { Stmts(VecDeque<Stmt>) }
 pub enum Stmt {
     Rec(Vec<(PatBind, Expr)>, Span),
     Expr(Expr),
-    ExprBind(Expr, Expr),
-    PatBind(PatLhs, Expr),
+    PatBind(PatBind, Expr),
 }
 
 #[derive(Debug,PartialEq,Hash,Clone)]

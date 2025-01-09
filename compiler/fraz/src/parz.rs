@@ -167,20 +167,16 @@ pomelo::pomelo! {
     
     
     %type ext_pbinding Stmt;
-    ext_pbinding ::= e(B)                  { Stmt::Expr(B) }
-    ext_pbinding ::= e(B)      EQUAL e(C)  { Stmt::ExprBind(B, C) }
-    ext_pbinding ::= patlhs(B) EQUAL e(C)  { Stmt::PatBind(B, C) }
+    ext_pbinding ::= e(B)                   { Stmt::Expr(B) }
+    ext_pbinding ::= patbind(B) EQUAL e(C)  { Stmt::PatBind(B, C) }
     
     %type pbinding (PatBind, Expr);
     pbinding ::= patbind(B) EQUAL e(C)  { (B, C) }
     
     %type patbind PatBind;
-    patbind ::= xid(B)     { PatBind::Ident(B) }
-    patbind ::= patlhs(B)  { PatBind::PatLhs(B) }
-    
-    %type patlhs PatLhs;
-    patlhs ::= UNDERSCORE(X)                                      { PatLhs::Wildcard(token_range(X, X)) }
-    patlhs ::= LET(O) LPAREN comma_separated_list_p(B) RPAREN(X)  { PatLhs::Tuple(B, token_range(O, X)) }
+    patbind ::= xid(B)                                             { PatBind::Ident(B) }
+    patbind ::= LET(O) LPAREN comma_separated_list_p(B) RPAREN(X)  { PatBind::Tuple(B, token_range(O, X)) }
+    patbind ::= UNDERSCORE(X)                                      { PatBind::Wildcard(token_range(X, X)) }
     
     %type comma_separated_list_p Vec<Pat>;
     comma_separated_list_p ::= p(C)                                      { vec![C] }
