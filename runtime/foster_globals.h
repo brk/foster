@@ -37,13 +37,10 @@ struct FosterGlobals {
 
 extern FosterGlobals __foster_globals;
 
-namespace base { class DictionaryValue; }
-
 namespace foster {
 namespace runtime {
   void parse_runtime_options(int argc, char** argv);
   std::string dump_global_config_options();
-  void extract_global_config_options(const base::DictionaryValue&);
 }
 }
 

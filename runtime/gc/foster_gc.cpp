@@ -17,7 +17,6 @@
 
 #include "execinfo.h" // for backtrace
 
-#include <functional>
 #include <stddef.h> // offsetof
 
 // jemalloc_pages
