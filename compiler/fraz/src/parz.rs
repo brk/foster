@@ -1,7 +1,6 @@
 #![allow(clippy::upper_case_acronyms)]
 
 use codemap::{Span, Spanned, CodeMap};
-use std::collections::VecDeque;
 use crate::syn;
 
 use std::time::Instant;
@@ -17,12 +16,6 @@ fn token_range(s: Span, e: Span) -> Span { s.merge(e) }
 
 fn spanned<T>(n: T, s: Span) -> Spanned<T> {
   Spanned { node: n, span: s }
-}
-
-fn vd_singleton<T>(n: T) -> VecDeque<T> {
-    let mut vd = VecDeque::new();
-    vd.push_back(n);
-    vd
 }
 
 fn ty_span(t: &syn::Type) -> Span { t.0.span }
@@ -47,9 +40,9 @@ fn lit_span(lit: &syn::Lit) -> Span {
 
 fn expr_span(e: &syn::Expr) -> Span { e.0.span }
 
-fn push_stmtpart(mut B: &mut Vec<syn::Stmt>, C: (Option<syn::Stmt>, syn::Stmt)) {
-    if let Some(R) = C.0 { B.push(R); }
-    B.push(C.1);
+fn push_stmtpart(b: &mut Vec<syn::Stmt>, c: (Option<syn::Stmt>, syn::Stmt)) {
+    if let Some(r) = c.0 { b.push(r); }
+    b.push(c.1);
 }
 
 use pomelo;
@@ -148,7 +141,7 @@ pomelo::pomelo! {
     %type stmts Stmts;
     stmts ::= stmtparts(S)                            { let mut B = Vec::new(); push_stmtpart(&mut B, S); Stmts::Stmts(B) }
     stmts ::= stmt_semi_plus(mut V) stmtparts(S)      { push_stmtpart(&mut V, S); Stmts::Stmts(V) }
-    stmts ::= stmt_semi_plus(mut V)                   { Stmts::Stmts(V) }
+    stmts ::= stmt_semi_plus(V)                       { Stmts::Stmts(V) }
 
     %type stmt_semi_plus Vec<Stmt>;
     stmt_semi_plus ::=                       stmtparts(S) SEMI { let mut B = Vec::new(); push_stmtpart(&mut B, S); B }
